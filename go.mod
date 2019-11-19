@@ -1,11 +1,13 @@
 module github.com/seaweedfs/seaweedfs-operator
 
 require (
+	github.com/go-openapi/spec v0.17.2
 	github.com/operator-framework/operator-sdk v0.11.1-0.20191027213559-041ec5463883
 	github.com/spf13/pflag v1.0.3
 	k8s.io/api v0.0.0-20190918155943-95b840bb6a1f
 	k8s.io/apimachinery v0.0.0-20190913080033-27d36303b655
 	k8s.io/client-go v11.0.1-0.20190409021438-1a26190bd76a+incompatible
+	k8s.io/kube-openapi v0.0.0-20190401085232-94e1e7b7574c
 	sigs.k8s.io/controller-runtime v0.2.0
 )
 

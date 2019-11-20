@@ -1,9 +1,9 @@
 apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
-  name: seaweedfsclusters.cluster.seaweedfs.com
+  name: seaweedfsclusters.seaweedfs.com
 spec:
-  group: cluster.seaweedfs.com
+  group: seaweedfs.com
   names:
     kind: SeaweedfsCluster
     listKind: SeaweedfsClusterList
@@ -32,14 +32,14 @@ spec:
           description: SeaweedfsClusterSpec defines the desired state of SeaweedfsCluster
           properties:
             filer:
-              description: SeaweedfsFilerSpec defines the desired state of filer server
-                in cluster
+              description: FilerSpec defines the desired state of filer server in
+                cluster
               properties:
-                dir_list_limit:
+                dirListLimit:
                   description: DirListLimit limit sub dir listing size, default 100000
                   format: int32
                   type: integer
-                disable_dir_listing:
+                disableDirListing:
                   description: DisableDirListing turn off directory listing
                   type: boolean
                 max_mb:
@@ -56,14 +56,14 @@ spec:
                   type: integer
               type: object
             master:
-              description: SeaweedfsMasterSpec defines the desired state of master
-                server in cluster
+              description: MasterSpec defines the desired state of master server in
+                cluster
               properties:
                 default_replication:
                   description: DefaultReplication set the data replication policy
                     in volumes. default "000"
                   type: string
-                disable_http:
+                disableHttp:
                   description: DisableHTTP if disable http proto, only gRPC operations
                     are allowed. GRPC port is http port + 10000
                   type: boolean
@@ -72,7 +72,7 @@ spec:
                     is 9333 Master servers also use it identify each other.
                   format: int32
                   type: integer
-                replication_size:
+                replicas:
                   description: Replicas a size of a raft cluster. The master servers
                     are coordinated by Raft protocol, to elect a leader.
                   format: int32
@@ -82,15 +82,15 @@ spec:
               type: string
             volumes:
               items:
-                description: SeaweedfsVolumeSpec defines the desired state of volume
-                  servers in cluster
+                description: VolumeSpec defines the desired state of volume servers
+                  in cluster
                 properties:
                   compaction_mbps:
                     description: CompactionMbps limit background compaction or copying
                       speed in mega bytes per second
                     format: int32
                     type: integer
-                  data_center:
+                  dataCenter:
                     description: DataCenter current volume server's data center name
                     type: string
                   max:

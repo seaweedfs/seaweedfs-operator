@@ -1,8 +1,8 @@
 // NOTE: Boilerplate only.  Ignore this file.
 
-// Package v1alpha1 contains API Schema definitions for the cluster v1alpha1 API group
+// Package v1alpha1 contains API Schema definitions for the seaweedfs v1alpha1 API group
 // +k8s:deepcopy-gen=package,register
-// +groupName=cluster.seaweedfs.com
+// +groupName=seaweedfs.com
 package v1alpha1
 
 import (
@@ -12,7 +12,7 @@ import (
 
 var (
 	// SchemeGroupVersion is group version used to register these objects
-	SchemeGroupVersion = schema.GroupVersion{Group: "cluster.seaweedfs.com", Version: "v1alpha1"}
+	SchemeGroupVersion = schema.GroupVersion{Group: "seaweedfs.com", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme
 	SchemeBuilder = &scheme.Builder{GroupVersion: SchemeGroupVersion}

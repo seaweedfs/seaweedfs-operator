@@ -2,7 +2,7 @@ module github.com/seaweedfs/seaweedfs-operator
 
 require (
 	github.com/go-openapi/spec v0.17.2
-	github.com/operator-framework/operator-sdk v0.11.1-0.20191027213559-041ec5463883
+	github.com/operator-framework/operator-sdk v0.12.1-0.20191119193908-3b2f6845f05b
 	github.com/spf13/pflag v1.0.3
 	k8s.io/api v0.0.0-20190918155943-95b840bb6a1f
 	k8s.io/apimachinery v0.0.0-20190913080033-27d36303b655

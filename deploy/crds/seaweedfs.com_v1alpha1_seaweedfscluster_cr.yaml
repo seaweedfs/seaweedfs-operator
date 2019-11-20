@@ -1,4 +1,4 @@
-apiVersion: cluster.seaweedfs.com/v1alpha1
+apiVersion: seaweedfs.com/v1alpha1
 kind: SeaweedfsCluster
 metadata:
   name: example-seaweedfscluster

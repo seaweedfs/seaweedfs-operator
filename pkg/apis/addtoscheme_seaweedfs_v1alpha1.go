@@ -1,7 +1,7 @@
 package apis
 
 import (
-	"github.com/seaweedfs/seaweedfs-operator/pkg/apis/cluster/v1alpha1"
+	"github.com/seaweedfs/seaweedfs-operator/pkg/apis/seaweedfs/v1alpha1"
 )
 
 func init() {

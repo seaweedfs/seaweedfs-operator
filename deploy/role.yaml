@@ -54,7 +54,7 @@ rules:
     verbs:
       - get
   - apiGroups:
-      - cluster.seaweedfs.com
+      - seaweedfs.com
     resources:
       - '*'
       - seaweedfsclusters

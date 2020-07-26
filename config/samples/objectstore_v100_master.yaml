@@ -1,0 +1,7 @@
+apiVersion: objectstore.seaweedfs.com/v100
+kind: Master
+metadata:
+  name: master-sample
+spec:
+  # Add fields here
+  foo: bar

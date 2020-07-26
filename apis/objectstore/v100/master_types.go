@@ -28,8 +28,10 @@ type MasterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of Master. Edit Master_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// Mdir is data directory to store meta data
+	Mdir           string `json:"mdir,omitempty"`
+	// MetricsAddress is Prometheus gateway address
+	MetricsAddress string `json:"metricsAddress,omitempty"`
 }
 
 // MasterStatus defines the observed state of Master

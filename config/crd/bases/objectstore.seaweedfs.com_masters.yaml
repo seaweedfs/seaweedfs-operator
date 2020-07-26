@@ -1,0 +1,60 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.3.0
+  creationTimestamp: null
+  name: masters.objectstore.seaweedfs.com
+spec:
+  group: objectstore.seaweedfs.com
+  names:
+    kind: Master
+    listKind: MasterList
+    plural: masters
+    singular: master
+  scope: Namespaced
+  subresources:
+    status: {}
+  validation:
+    openAPIV3Schema:
+      description: Master is the Schema for the masters API
+      properties:
+        apiVersion:
+          description: 'APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+          type: string
+        kind:
+          description: 'Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+          type: string
+        metadata:
+          type: object
+        spec:
+          description: MasterSpec defines the desired state of Master
+          properties:
+            mdir:
+              description: Mdir is data directory to store meta data
+              type: string
+            metricsAddress:
+              description: MetricsAddress is Prometheus gateway address
+              type: string
+          type: object
+        status:
+          description: MasterStatus defines the observed state of Master
+          type: object
+      type: object
+  version: v100
+  versions:
+  - name: v100
+    served: true
+    storage: true
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

@@ -1,7 +1,0 @@
-apiVersion: seaweedfs.com/v1alpha1
-kind: SeaweedfsCluster
-metadata:
-  name: example-seaweedfscluster
-spec:
-  # Add fields here
-  size: 3

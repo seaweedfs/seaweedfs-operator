@@ -1,0 +1,6 @@
+domain: seaweedfs.com
+layout: go.kubebuilder.io/v2
+repo: github.com/seaweedfs/seaweedfs-operator
+version: 3-alpha
+plugins:
+  go.sdk.operatorframework.io/v2-alpha: {}

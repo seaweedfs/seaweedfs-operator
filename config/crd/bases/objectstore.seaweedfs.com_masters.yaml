@@ -37,7 +37,7 @@ spec:
           description: MasterSpec defines the desired state of Master
           properties:
             mdir:
-              description: Mdir is data directory to store meta data
+              description: Mdir is the directory to store meta data
               type: string
             metricsAddress:
               description: MetricsAddress is Prometheus gateway address

@@ -28,8 +28,8 @@ type MasterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Mdir is data directory to store meta data
-	Mdir           string `json:"mdir,omitempty"`
+	// Mdir is the directory to store meta data
+	Mdir string `json:"mdir,omitempty"`
 	// MetricsAddress is Prometheus gateway address
 	MetricsAddress string `json:"metricsAddress,omitempty"`
 }

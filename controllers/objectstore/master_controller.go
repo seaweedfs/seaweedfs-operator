@@ -42,7 +42,8 @@ type MasterReconciler struct {
 
 // +kubebuilder:rbac:groups=objectstore.seaweedfs.com,resources=masters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=objectstore.seaweedfs.com,resources=masters/status,verbs=get;update;patch
-
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;
 func (r *MasterReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
 	log := r.Log.WithValues("master", req.NamespacedName)
@@ -50,22 +51,10 @@ func (r *MasterReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	// your logic here
 	log.Info("start Reconcile ...")
 
-	// fetch the master instance
-	master := &objectstorev100.Master{}
-	err := r.Get(ctx, req.NamespacedName, master)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile request.
-			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			// Return and don't requeue
-			log.Info("Master resource not found. Ignoring since object must be deleted")
-			return ctrl.Result{RequeueAfter: time.Second * 5}, nil
-		}
-		// Error reading the object - requeue the request.
-		log.Error(err, "Failed to get Master")
-		return ctrl.Result{}, err
+	master, done, result, err := r.findMasterInstance(req, ctx, log)
+	if done {
+		return result, err
 	}
-	log.Info("Get master " + master.Name)
 
 	// Check if the deployment already exists, if not create a new one
 	found := &appsv1.Deployment{}
@@ -85,7 +74,7 @@ func (r *MasterReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		log.Error(err, "Failed to get Deployment")
 		return ctrl.Result{}, err
 	}
-	log.Info("Get deployment" + found.Name)
+	log.Info("Get deployment " + found.Name)
 
 	// Update the Memcached status with the pod names
 	// List the pods for this memcached's deployment
@@ -99,13 +88,19 @@ func (r *MasterReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return ctrl.Result{}, err
 	}
 
+	log.Info("pods", "count", len(podList.Items))
+
+	for _, pod := range podList.Items {
+		log.Info("pod", "name", pod.Name, "podIP", pod.Status.PodIP)
+	}
+
 	return ctrl.Result{RequeueAfter: time.Second * 5}, nil
 }
 
 // deploymentForMaster returns a memcached Deployment object
 func (r *MasterReconciler) deploymentForMaster(m *objectstorev100.Master) *appsv1.Deployment {
 	ls := lablesForMaster(m.Name)
-	replicas := int32(3)
+	replicas := int32(0)
 
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -122,10 +117,11 @@ func (r *MasterReconciler) deploymentForMaster(m *objectstorev100.Master) *appsv
 					Labels: ls,
 				},
 				Spec: corev1.PodSpec{
+					Hostname: "mastername",
 					Containers: []corev1.Container{{
 						Image:   "chrislusf/seaweedfs:latest",
 						Name:    "master",
-						Command: []string{"master", "-ip=xxxxx"},
+						Command: []string{"weed", "master"},
 						Ports: []corev1.ContainerPort{{
 							ContainerPort: 9333,
 							Name:          "master",
@@ -143,7 +139,7 @@ func (r *MasterReconciler) deploymentForMaster(m *objectstorev100.Master) *appsv
 // lablesForMaster returns the labels for selecting the resources
 // belonging to the given memcached CR name.
 func lablesForMaster(name string) map[string]string {
-	return map[string]string{"app": "seaweedfs", "memcached_cr": name}
+	return map[string]string{"app": "seaweedfs", "role": "master", "name": name}
 }
 
 // getPodNames returns the pod names of the array of pods passed in
@@ -158,6 +154,5 @@ func getPodNames(pods []corev1.Pod) []string {
 func (r *MasterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&objectstorev100.Master{}).
-		Owns(&appsv1.Deployment{}).
 		Complete(r)
 }

@@ -23,10 +23,8 @@ import (
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -51,30 +49,17 @@ func (r *MasterReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	// your logic here
 	log.Info("start Reconcile ...")
 
-	master, done, result, err := r.findMasterInstance(req, ctx, log)
+	master, done, result, err := r.findMasterCustomResourceInstance(ctx, log, req)
 	if done {
 		return result, err
 	}
 
-	// Check if the deployment already exists, if not create a new one
-	found := &appsv1.Deployment{}
-	err = r.Get(ctx, types.NamespacedName{Name: master.Name, Namespace: master.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		// Define a new deployment
-		dep := r.deploymentForMaster(master)
-		log.Info("Creating a new Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
-		err = r.Create(ctx, dep)
-		if err != nil {
-			log.Error(err, "Failed to create new Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
-			return ctrl.Result{}, err
-		}
-		// Deployment created successfully - return and requeue
-		return ctrl.Result{Requeue: true}, nil
-	} else if err != nil {
-		log.Error(err, "Failed to get Deployment")
-		return ctrl.Result{}, err
+	if done, result, err = r.ensureMasterStatefulSet(ctx, log, master); done {
+		return result, err
 	}
-	log.Info("Get deployment " + found.Name)
+	if done, result, err = r.ensureMasterService(ctx, log, master); done {
+		return result, err
+	}
 
 	// Update the Memcached status with the pod names
 	// List the pods for this memcached's deployment

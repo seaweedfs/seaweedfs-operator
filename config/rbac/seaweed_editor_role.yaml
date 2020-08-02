@@ -1,13 +1,13 @@
-# permissions for end users to edit masters.
+# permissions for end users to edit seaweeds.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: master-editor-role
+  name: seaweed-editor-role
 rules:
 - apiGroups:
-  - objectstore.seaweedfs.com
+  - seaweed.seaweedfs.com
   resources:
-  - masters
+  - seaweeds
   verbs:
   - create
   - delete
@@ -17,8 +17,8 @@ rules:
   - update
   - watch
 - apiGroups:
-  - objectstore.seaweedfs.com
+  - seaweed.seaweedfs.com
   resources:
-  - masters/status
+  - seaweeds/status
   verbs:
   - get

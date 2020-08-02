@@ -6,20 +6,20 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.3.0
   creationTimestamp: null
-  name: masters.objectstore.seaweedfs.com
+  name: seaweeds.seaweed.seaweedfs.com
 spec:
-  group: objectstore.seaweedfs.com
+  group: seaweed.seaweedfs.com
   names:
-    kind: Master
-    listKind: MasterList
-    plural: masters
-    singular: master
+    kind: Seaweed
+    listKind: SeaweedList
+    plural: seaweeds
+    singular: seaweed
   scope: Namespaced
   subresources:
     status: {}
   validation:
     openAPIV3Schema:
-      description: Master is the Schema for the masters API
+      description: Seaweed is the Schema for the seaweeds API
       properties:
         apiVersion:
           description: 'APIVersion defines the versioned schema of this representation
@@ -34,22 +34,19 @@ spec:
         metadata:
           type: object
         spec:
-          description: MasterSpec defines the desired state of Master
+          description: SeaweedSpec defines the desired state of Seaweed
           properties:
-            mdir:
-              description: Mdir is the directory to store meta data
-              type: string
             metricsAddress:
               description: MetricsAddress is Prometheus gateway address
               type: string
           type: object
         status:
-          description: MasterStatus defines the observed state of Master
+          description: SeaweedStatus defines the observed state of Seaweed
           type: object
       type: object
-  version: v100
+  version: v1
   versions:
-  - name: v100
+  - name: v1
     served: true
     storage: true
 status:

@@ -1,5 +1,5 @@
 /*
-Copyright 2020 SeaweedFS.
+
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,10 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v100 contains API Schema definitions for the objectstore v100 API group
+// Package v1 contains API Schema definitions for the seaweed v1 API group
 // +kubebuilder:object:generate=true
-// +groupName=objectstore.seaweedfs.com
-package v100
+// +groupName=seaweed.seaweedfs.com
+package v1
 
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -26,7 +26,7 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects
-	GroupVersion = schema.GroupVersion{Group: "objectstore.seaweedfs.com", Version: "v100"}
+	GroupVersion = schema.GroupVersion{Group: "seaweed.seaweedfs.com", Version: "v1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}

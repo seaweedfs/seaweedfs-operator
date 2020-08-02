@@ -7,9 +7,9 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - objectstore.seaweedfs.com
+  - seaweed.seaweedfs.com
   resources:
-  - masters
+  - seaweeds
   verbs:
   - create
   - delete
@@ -19,9 +19,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - objectstore.seaweedfs.com
+  - seaweed.seaweedfs.com
   resources:
-  - masters/status
+  - seaweeds/status
   verbs:
   - get
   - patch

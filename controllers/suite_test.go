@@ -1,5 +1,5 @@
 /*
-Copyright 2020 SeaweedFS.
+
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	objectstorev100 "github.com/seaweedfs/seaweedfs-operator/apis/objectstore/v100"
+	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -62,7 +62,7 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(err).ToNot(HaveOccurred())
 	Expect(cfg).ToNot(BeNil())
 
-	err = objectstorev100.AddToScheme(scheme.Scheme)
+	err = seaweedv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme

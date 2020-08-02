@@ -1,5 +1,5 @@
 /*
-Copyright 2020 SeaweedFS.
+
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v100
+package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,19 +23,17 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// MasterSpec defines the desired state of Master
-type MasterSpec struct {
+// SeaweedSpec defines the desired state of Seaweed
+type SeaweedSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Mdir is the directory to store meta data
-	Mdir string `json:"mdir,omitempty"`
 	// MetricsAddress is Prometheus gateway address
 	MetricsAddress string `json:"metricsAddress,omitempty"`
 }
 
-// MasterStatus defines the observed state of Master
-type MasterStatus struct {
+// SeaweedStatus defines the observed state of Seaweed
+type SeaweedStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 }
@@ -43,24 +41,24 @@ type MasterStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// Master is the Schema for the masters API
-type Master struct {
+// Seaweed is the Schema for the seaweeds API
+type Seaweed struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   MasterSpec   `json:"spec,omitempty"`
-	Status MasterStatus `json:"status,omitempty"`
+	Spec   SeaweedSpec   `json:"spec,omitempty"`
+	Status SeaweedStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// MasterList contains a list of Master
-type MasterList struct {
+// SeaweedList contains a list of Seaweed
+type SeaweedList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Master `json:"items"`
+	Items           []Seaweed `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&Master{}, &MasterList{})
+	SchemeBuilder.Register(&Seaweed{}, &SeaweedList{})
 }

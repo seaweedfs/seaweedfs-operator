@@ -1,11 +1,10 @@
 domain: seaweedfs.com
 layout: go.kubebuilder.io/v2
-multigroup: true
 repo: github.com/seaweedfs/seaweedfs-operator
 resources:
-- group: objectstore
-  kind: Master
-  version: v100
+- group: seaweed
+  kind: Seaweed
+  version: v1
 version: 3-alpha
 plugins:
-  go.sdk.operatorframework.io/v2-alpha: {}
+  go.operator-sdk.io/v2-alpha: {}

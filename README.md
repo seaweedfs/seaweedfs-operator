@@ -17,6 +17,6 @@ $ make install
 $ make run ENABLE_WEBHOOKS=false 
 
 # From another terminal in the same directory
-$ kubectl apply -f config/samples/objectstore_v100_master.yaml
+$ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 
 ```

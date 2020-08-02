@@ -20,11 +20,11 @@ func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done boo
 	_ = context.Background()
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
-	if done, result, err = r.ensureMasterStatefulSet(seaweedCR); done {
+	if done, result, err = r.ensureMasterService(seaweedCR); done {
 		return done, result, err
 	}
 
-	if done, result, err = r.ensureMasterService(seaweedCR); done {
+	if done, result, err = r.ensureMasterStatefulSet(seaweedCR); done {
 		return done, result, err
 	}
 

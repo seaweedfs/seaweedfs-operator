@@ -24,10 +24,8 @@ func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done boo
 		return done, result, err
 	}
 
-	for masterIndex := 0; masterIndex < MasterClusterSize; masterIndex++ {
-		if done, result, err = r.ensureMasterService(seaweedCR, masterIndex); done {
-			return done, result, err
-		}
+	if done, result, err = r.ensureMasterService(seaweedCR); done {
+		return done, result, err
 	}
 
 	return false, ctrl.Result{}, nil
@@ -49,7 +47,7 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 			return true, ctrl.Result{}, err
 		}
 		// Deployment created successfully - return and requeue
-		return true, ctrl.Result{Requeue: true}, nil
+		return false, ctrl.Result{}, nil
 	} else if err != nil {
 		log.Error(err, "Failed to get Deployment")
 		return true, ctrl.Result{}, err
@@ -58,7 +56,7 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 	return false, ctrl.Result{}, nil
 }
 
-func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed, masterIndex int) (bool, ctrl.Result, error) {
+func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	ctx := context.Background()
 	log := r.Log.WithValues("sw-master-service", seaweedCR.Name)
 
@@ -66,17 +64,17 @@ func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed, ma
 	err := r.Get(ctx, types.NamespacedName{Name: seaweedCR.Name, Namespace: seaweedCR.Namespace}, masterService)
 	if err != nil && errors.IsNotFound(err) {
 		// Define a new deployment
-		dep := r.createMasterService(seaweedCR, masterIndex)
+		dep := r.createMasterService(seaweedCR)
 		log.Info("Creating a new master headless service", "Namespace", dep.Namespace, "Name", dep.Name)
 		err = r.Create(ctx, dep)
 		if err != nil {
-			log.Error(err, "Failed to creater service master", "masterIndex", masterIndex)
+			log.Error(err, "Failed to creater service master", "Namespace", dep.Namespace, "Name", dep.Name)
 			return true, ctrl.Result{}, err
 		}
 		// Deployment created successfully - return and requeue
-		return true, ctrl.Result{Requeue: true}, nil
+		return false, ctrl.Result{}, nil
 	} else if err != nil {
-		log.Error(err, "Failed to get service master", "masterIndex", masterIndex)
+		log.Error(err, "Failed to get service master", "Namespace", seaweedCR.Namespace, "Name", seaweedCR.Name)
 		return true, ctrl.Result{}, err
 	}
 	log.Info("Get master service " + masterService.Name)

@@ -1,8 +1,6 @@
 package controllers
 
 import (
-	"fmt"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -10,17 +8,21 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-func (r *SeaweedReconciler) createMasterService(m *seaweedv1.Seaweed, masterIndex int) *corev1.Service {
+func (r *SeaweedReconciler) createMasterService(m *seaweedv1.Seaweed) *corev1.Service {
 	labels := labelsForMaster(m.Name)
-	labels["name"] = fmt.Sprintf("master-%d", masterIndex)
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.Name,
+			Name:      m.Name + "-master",
 			Namespace: m.Namespace,
+			Labels:    labels,
+			Annotations: map[string]string{
+				"service.alpha.kubernetes.io/tolerate-unready-endpoints": "true",
+			},
 		},
 		Spec: corev1.ServiceSpec{
-			ClusterIP: "None",
+			ClusterIP:                "None",
+			PublishNotReadyAddresses: true,
 			Ports: []corev1.ServicePort{
 				{
 					Name:     "swfs-master",

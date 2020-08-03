@@ -85,13 +85,13 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 							},
 						},
 						Command: []string{
-							"weed",
-							"master",
-							"-volumePreallocate",
-							"-volumeSizeLimitMB=1000",
-							fmt.Sprintf("-ip=$(POD_NAME).%s-master", m.Name),
-							fmt.Sprintf("-peers=%s-master-0.%s-master:9333,%s-master-1.%s-master:9333,%s-master-2.%s-master:9333",
-								m.Name, m.Name, m.Name, m.Name, m.Name, m.Name),
+							"/bin/sh",
+							"-ec",
+							fmt.Sprintf("sleep 60; weed master -volumePreallocate -volumeSizeLimitMB=1000 %s %s",
+								fmt.Sprintf("-ip=$(POD_NAME).%s-master", m.Name),
+								fmt.Sprintf("-peers=%s-master-0.%s-master:9333,%s-master-1.%s-master:9333,%s-master-2.%s-master:9333",
+									m.Name, m.Name, m.Name, m.Name, m.Name, m.Name),
+							),
 						},
 						Ports: []corev1.ContainerPort{
 							{

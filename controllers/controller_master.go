@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -36,7 +37,7 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 	log := r.Log.WithValues("sw-master-statefulset", seaweedCR.Name)
 
 	masterStatefulSet := &appsv1.StatefulSet{}
-	err := r.Get(ctx, types.NamespacedName{Name: seaweedCR.Name, Namespace: seaweedCR.Namespace}, masterStatefulSet)
+	err := r.Get(ctx, types.NamespacedName{Name: seaweedCR.Name + "-master", Namespace: seaweedCR.Namespace}, masterStatefulSet)
 	if err != nil && errors.IsNotFound(err) {
 		// Define a new deployment
 		dep := r.createMasterStatefulSet(seaweedCR)
@@ -46,13 +47,15 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 			log.Error(err, "Failed to create new statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
 			return true, ctrl.Result{}, err
 		}
+		// sleep 60 seconds for DNS to have pod IP addresses ready
+		time.Sleep(time.Minute)
 		// Deployment created successfully - return and requeue
 		return false, ctrl.Result{}, nil
 	} else if err != nil {
 		log.Error(err, "Failed to get Deployment")
 		return true, ctrl.Result{}, err
 	}
-	log.Info("Get master cluster " + masterStatefulSet.Name)
+	log.Info("Get master stateful set " + masterStatefulSet.Name)
 	return false, ctrl.Result{}, nil
 }
 
@@ -61,20 +64,20 @@ func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed) (b
 	log := r.Log.WithValues("sw-master-service", seaweedCR.Name)
 
 	masterService := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{Name: seaweedCR.Name, Namespace: seaweedCR.Namespace}, masterService)
+	err := r.Get(ctx, types.NamespacedName{Name: seaweedCR.Name + "-master", Namespace: seaweedCR.Namespace}, masterService)
 	if err != nil && errors.IsNotFound(err) {
 		// Define a new deployment
 		dep := r.createMasterService(seaweedCR)
-		log.Info("Creating a new master headless service", "Namespace", dep.Namespace, "Name", dep.Name)
+		log.Info("Creating a new master service", "Namespace", dep.Namespace, "Name", dep.Name)
 		err = r.Create(ctx, dep)
 		if err != nil {
-			log.Error(err, "Failed to creater service master", "Namespace", dep.Namespace, "Name", dep.Name)
+			log.Error(err, "Failed to create master service", "Namespace", dep.Namespace, "Name", dep.Name)
 			return true, ctrl.Result{}, err
 		}
 		// Deployment created successfully - return and requeue
 		return false, ctrl.Result{}, nil
 	} else if err != nil {
-		log.Error(err, "Failed to get service master", "Namespace", seaweedCR.Namespace, "Name", seaweedCR.Name)
+		log.Error(err, "Failed to get master service", "Namespace", seaweedCR.Namespace, "Name", seaweedCR.Name+"-master")
 		return true, ctrl.Result{}, err
 	}
 	log.Info("Get master service " + masterService.Name)

@@ -43,6 +43,8 @@ func (r *SeaweedReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
 	log := r.Log.WithValues("seaweed", req.NamespacedName)
 
+	log.Info("start Reconcile ...")
+
 	seaweedCR, done, result, err := r.findSeaweedCustomResourceInstance(ctx, log, req)
 	if done {
 		return result, err
@@ -51,8 +53,6 @@ func (r *SeaweedReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	if done, result, err = r.ensureMaster(seaweedCR); done {
 		return result, err
 	}
-
-	log.Info("start Reconcile ...")
 
 	return ctrl.Result{}, nil
 }

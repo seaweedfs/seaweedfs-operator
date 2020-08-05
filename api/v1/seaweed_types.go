@@ -30,6 +30,9 @@ type SeaweedSpec struct {
 
 	// MetricsAddress is Prometheus gateway address
 	MetricsAddress string `json:"metricsAddress,omitempty"`
+
+	// VolumeServerCount is the number of volume servers, default to 1
+	VolumeServerCount int `json:"volumeServerCount,omitempty"`
 }
 
 // SeaweedStatus defines the observed state of Seaweed

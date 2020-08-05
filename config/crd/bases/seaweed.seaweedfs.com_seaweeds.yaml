@@ -39,6 +39,10 @@ spec:
             metricsAddress:
               description: MetricsAddress is Prometheus gateway address
               type: string
+            volumeServerCount:
+              description: VolumeServerCount is the number of volume servers, default
+                to 1
+              type: integer
           type: object
         status:
           description: SeaweedStatus defines the observed state of Seaweed

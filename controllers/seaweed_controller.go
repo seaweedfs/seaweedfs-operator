@@ -50,7 +50,16 @@ func (r *SeaweedReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return result, err
 	}
 
+	// temporary
+	if seaweedCR.Spec.VolumeServerCount == 0 {
+		seaweedCR.Spec.VolumeServerCount = 1
+	}
+
 	if done, result, err = r.ensureMaster(seaweedCR); done {
+		return result, err
+	}
+
+	if done, result, err = r.ensureVolumeServers(seaweedCR); done {
 		return result, err
 	}
 

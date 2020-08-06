@@ -36,9 +36,15 @@ spec:
         spec:
           description: SeaweedSpec defines the desired state of Seaweed
           properties:
+            filerCount:
+              description: FilerCount is the number of filers, default to 1
+              type: integer
             metricsAddress:
               description: MetricsAddress is Prometheus gateway address
               type: string
+            s3Count:
+              description: S3Count is the number of s3, default to 1
+              type: integer
             volumeServerCount:
               description: VolumeServerCount is the number of volume servers, default
                 to 1

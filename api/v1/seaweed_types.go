@@ -33,6 +33,12 @@ type SeaweedSpec struct {
 
 	// VolumeServerCount is the number of volume servers, default to 1
 	VolumeServerCount int `json:"volumeServerCount,omitempty"`
+
+	// FilerCount is the number of filers, default to 1
+	FilerCount int `json:"filerCount,omitempty"`
+
+	// S3Count is the number of s3, default to 1
+	S3Count int `json:"s3Count,omitempty"`
 }
 
 // SeaweedStatus defines the observed state of Seaweed

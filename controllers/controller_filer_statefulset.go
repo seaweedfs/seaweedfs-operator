@@ -10,19 +10,19 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
-	labels := labelsForVolumeServer(m.Name)
-	replicas := int32(m.Spec.VolumeServerCount)
+func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
+	labels := labelsForFiler(m.Name)
+	replicas := int32(m.Spec.FilerCount)
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
 
 	dep := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.Name + "-volume",
+			Name:      m.Name + "-filer",
 			Namespace: m.Namespace,
 		},
 		Spec: appsv1.StatefulSetSpec{
-			ServiceName:         m.Name + "-volume",
+			ServiceName:         m.Name + "-filer",
 			PodManagementPolicy: appsv1.ParallelPodManagement,
 			Replicas:            &replicas,
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
@@ -73,19 +73,19 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 						Command: []string{
 							"/bin/sh",
 							"-ec",
-							fmt.Sprintf("weed volume -port=8444 -max=0 %s %s",
-								fmt.Sprintf("-ip=$(POD_NAME).%s-volume", m.Name),
-								fmt.Sprintf("-mserver=%s-master-0.%s-master:9333,%s-master-1.%s-master:9333,%s-master-2.%s-master:9333",
+							fmt.Sprintf("weed filer -port=8888 %s %s",
+								fmt.Sprintf("-ip=$(POD_NAME).%s-filer", m.Name),
+								fmt.Sprintf("-peers=%s-master-0.%s-master:9333,%s-master-1.%s-master:9333,%s-master-2.%s-master:9333",
 									m.Name, m.Name, m.Name, m.Name, m.Name, m.Name),
 							),
 						},
 						Ports: []corev1.ContainerPort{
 							{
-								ContainerPort: 8444,
-								Name:          "swfs-volume",
+								ContainerPort: 8888,
+								Name:          "swfs-filer",
 							},
 							{
-								ContainerPort: 18444,
+								ContainerPort: 18888,
 							},
 						},
 						/*

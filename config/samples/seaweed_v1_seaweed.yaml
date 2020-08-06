@@ -1,7 +1,7 @@
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Seaweed
 metadata:
-  name: seaweed-sample
+  name: seaweed1
 spec:
   # Add fields here
   foo: bar

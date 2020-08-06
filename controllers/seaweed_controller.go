@@ -54,12 +54,26 @@ func (r *SeaweedReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	if seaweedCR.Spec.VolumeServerCount == 0 {
 		seaweedCR.Spec.VolumeServerCount = 1
 	}
+	if seaweedCR.Spec.FilerCount == 0 {
+		seaweedCR.Spec.FilerCount = 1
+	}
+	if seaweedCR.Spec.S3Count == 0 {
+		seaweedCR.Spec.S3Count = 1
+	}
 
 	if done, result, err = r.ensureMaster(seaweedCR); done {
 		return result, err
 	}
 
 	if done, result, err = r.ensureVolumeServers(seaweedCR); done {
+		return result, err
+	}
+
+	if done, result, err = r.ensureFilerServers(seaweedCR); done {
+		return result, err
+	}
+
+	if done, result, err = r.ensureS3Servers(seaweedCR); done {
 		return result, err
 	}
 

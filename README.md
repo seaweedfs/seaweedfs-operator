@@ -4,7 +4,7 @@
 
 ## Development
 
-Follow the instructions in https://sdk.operatorframework.io/docs/golang/quickstart/
+Follow the instructions in https://sdk.operatorframework.io/docs/building-operators/golang/quickstart/
 
 ```
 $ git clone https://github.com/seaweedfs/seaweedfs-operator

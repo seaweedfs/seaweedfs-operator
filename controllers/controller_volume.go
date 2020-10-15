@@ -17,14 +17,14 @@ func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (d
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
 	if done, result, err = r.ensureVolumeServerStatefulSet(seaweedCR); done {
-		return done, result, err
+		return
 	}
 
 	if done, result, err = r.ensureVolumeServerService(seaweedCR); done {
-		return done, result, err
+		return
 	}
 
-	return false, ctrl.Result{}, nil
+	return
 }
 
 func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
@@ -40,16 +40,16 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.S
 		err = r.Create(ctx, dep)
 		if err != nil {
 			log.Error(err, "Failed to create new volume statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
-			return true, ctrl.Result{}, err
+			return ReconcileResult(err)
 		}
 		// Deployment created successfully - return and requeue
-		return false, ctrl.Result{}, nil
+		return ReconcileResult(err)
 	} else if err != nil {
 		log.Error(err, "Failed to get volume server statefulset")
-		return true, ctrl.Result{}, err
+		return ReconcileResult(err)
 	}
 	log.Info("Get volume stateful set " + volumeServerStatefulSet.Name)
-	return false, ctrl.Result{}, nil
+	return ReconcileResult(err)
 }
 
 func (r *SeaweedReconciler) ensureVolumeServerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
@@ -65,16 +65,16 @@ func (r *SeaweedReconciler) ensureVolumeServerService(seaweedCR *seaweedv1.Seawe
 		err = r.Create(ctx, dep)
 		if err != nil {
 			log.Error(err, "Failed to create new volume service", "Namespace", dep.Namespace, "Name", dep.Name)
-			return true, ctrl.Result{}, err
+			return ReconcileResult(err)
 		}
 		// Deployment created successfully - return and requeue
-		return false, ctrl.Result{}, nil
+		return ReconcileResult(err)
 	} else if err != nil {
 		log.Error(err, "Failed to get volume server service")
-		return true, ctrl.Result{}, err
+		return ReconcileResult(err)
 	}
 	log.Info("Get volume service " + volumeServerService.Name)
-	return false, ctrl.Result{}, nil
+	return ReconcileResult(err)
 }
 
 func labelsForVolumeServer(name string) map[string]string {

@@ -22,14 +22,14 @@ func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done boo
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
 	if done, result, err = r.ensureMasterService(seaweedCR); done {
-		return done, result, err
+		return
 	}
 
 	if done, result, err = r.ensureMasterStatefulSet(seaweedCR); done {
-		return done, result, err
+		return
 	}
 
-	return false, ctrl.Result{}, nil
+	return
 }
 
 func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
@@ -45,18 +45,18 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 		err = r.Create(ctx, dep)
 		if err != nil {
 			log.Error(err, "Failed to create new statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
-			return true, ctrl.Result{}, err
+			return ReconcileResult(err)
 		}
 		// sleep 60 seconds for DNS to have pod IP addresses ready
 		time.Sleep(time.Minute)
 		// Deployment created successfully - return and requeue
-		return false, ctrl.Result{}, nil
+		return ReconcileResult(err)
 	} else if err != nil {
 		log.Error(err, "Failed to get Deployment")
-		return true, ctrl.Result{}, err
+		return ReconcileResult(err)
 	}
 	log.Info("Get master stateful set " + masterStatefulSet.Name)
-	return false, ctrl.Result{}, nil
+	return ReconcileResult(err)
 }
 
 func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
@@ -72,16 +72,16 @@ func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed) (b
 		err = r.Create(ctx, dep)
 		if err != nil {
 			log.Error(err, "Failed to create master service", "Namespace", dep.Namespace, "Name", dep.Name)
-			return true, ctrl.Result{}, err
+			return ReconcileResult(err)
 		}
 		// Deployment created successfully - return and requeue
-		return false, ctrl.Result{}, nil
+		return ReconcileResult(err)
 	} else if err != nil {
 		log.Error(err, "Failed to get master service", "Namespace", seaweedCR.Namespace, "Name", seaweedCR.Name+"-master")
-		return true, ctrl.Result{}, err
+		return ReconcileResult(err)
 	}
 	log.Info("Get master service " + masterService.Name)
-	return false, ctrl.Result{}, nil
+	return ReconcileResult(err)
 
 }
 

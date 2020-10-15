@@ -17,14 +17,14 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
 	if done, result, err = r.ensureFilerStatefulSet(seaweedCR); done {
-		return done, result, err
+		return
 	}
 
 	if done, result, err = r.ensureFilerService(seaweedCR); done {
-		return done, result, err
+		return
 	}
 
-	return false, ctrl.Result{}, nil
+	return
 }
 
 func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
@@ -40,16 +40,16 @@ func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed)
 		err = r.Create(ctx, dep)
 		if err != nil {
 			log.Error(err, "Failed to create new filer statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
-			return true, ctrl.Result{}, err
+			return ReconcileResult(err)
 		}
 		// Deployment created successfully - return and requeue
-		return false, ctrl.Result{}, nil
+		return ReconcileResult(err)
 	} else if err != nil {
 		log.Error(err, "Failed to get filer statefulset")
-		return true, ctrl.Result{}, err
+		return ReconcileResult(err)
 	}
 	log.Info("Get filer stateful set " + filerStatefulSet.Name)
-	return false, ctrl.Result{}, nil
+	return ReconcileResult(err)
 }
 
 func (r *SeaweedReconciler) ensureFilerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
@@ -65,16 +65,16 @@ func (r *SeaweedReconciler) ensureFilerService(seaweedCR *seaweedv1.Seaweed) (bo
 		err = r.Create(ctx, dep)
 		if err != nil {
 			log.Error(err, "Failed to create new filer service", "Namespace", dep.Namespace, "Name", dep.Name)
-			return true, ctrl.Result{}, err
+			return ReconcileResult(err)
 		}
 		// Deployment created successfully - return and requeue
-		return false, ctrl.Result{}, nil
+		return ReconcileResult(err)
 	} else if err != nil {
 		log.Error(err, "Failed to get filer server service")
-		return true, ctrl.Result{}, err
+		return ReconcileResult(err)
 	}
 	log.Info("Get filer service " + volumeServerService.Name)
-	return false, ctrl.Result{}, nil
+	return ReconcileResult(err)
 }
 
 func labelsForFiler(name string) map[string]string {

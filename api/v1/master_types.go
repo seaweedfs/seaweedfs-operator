@@ -28,14 +28,15 @@ type MasterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of Master. Edit Master_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	// Size is the size of the master deployment
+	Size int32 `json:"size"`
 }
 
 // MasterStatus defines the observed state of Master
 type MasterStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Nodes are the names of the master pods
+	Nodes []string `json:"nodes"`
 }
 
 // +kubebuilder:object:root=true

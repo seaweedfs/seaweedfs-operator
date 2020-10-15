@@ -1,0 +1,7 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Master
+metadata:
+  name: master-sample
+spec:
+  # Add fields here
+  foo: bar

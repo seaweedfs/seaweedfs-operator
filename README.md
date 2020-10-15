@@ -21,3 +21,8 @@ $ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 
 ```
 
+## Create API and Controller
+Here are the commands used to create customer resource definition (CRD)
+```
+operator-sdk create api --group seaweed --version v1 --kind Master --resource=true --controller=true
+```

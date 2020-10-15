@@ -26,9 +26,6 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
-	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
-	"github.com/seaweedfs/seaweedfs-operator/controllers"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -40,7 +37,6 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(seaweedv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -67,14 +63,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.SeaweedReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("Seaweed"),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Seaweed")
-		os.Exit(1)
-	}
 	// +kubebuilder:scaffold:builder
 
 	setupLog.Info("starting manager")

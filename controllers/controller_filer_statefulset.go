@@ -73,7 +73,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 						Command: []string{
 							"/bin/sh",
 							"-ec",
-							fmt.Sprintf("weed filer -port=8888 %s %s",
+							fmt.Sprintf("weed filer -port=8888 %s %s -s3",
 								fmt.Sprintf("-ip=$(POD_NAME).%s-filer", m.Name),
 								fmt.Sprintf("-peers=%s-master-0.%s-master:9333,%s-master-1.%s-master:9333,%s-master-2.%s-master:9333",
 									m.Name, m.Name, m.Name, m.Name, m.Name, m.Name),
@@ -86,6 +86,13 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 							},
 							{
 								ContainerPort: 18888,
+							},
+							{
+								ContainerPort: 8333,
+								Name:          "swfs-s3",
+							},
+							{
+								ContainerPort: 18333,
 							},
 						},
 						/*

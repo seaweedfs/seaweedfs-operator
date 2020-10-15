@@ -73,10 +73,6 @@ func (r *SeaweedReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return result, err
 	}
 
-	if done, result, err = r.ensureS3Servers(seaweedCR); done {
-		return result, err
-	}
-
 	return ctrl.Result{}, nil
 }
 

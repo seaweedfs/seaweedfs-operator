@@ -34,12 +34,21 @@ func (r *SeaweedReconciler) createFilerService(m *seaweedv1.Seaweed) *corev1.Ser
 					},
 				},
 				{
-					Name:     "swfs-volume-grpc",
+					Name:     "swfs-filer-grpc",
 					Protocol: corev1.Protocol("TCP"),
 					Port:     18888,
 					TargetPort: intstr.IntOrString{
 						Type:   intstr.Int,
 						IntVal: 18888,
+					},
+				},
+				{
+					Name:     "swfs-s3",
+					Protocol: corev1.Protocol("TCP"),
+					Port:     8333,
+					TargetPort: intstr.IntOrString{
+						Type:   intstr.Int,
+						IntVal: 8333,
 					},
 				},
 			},

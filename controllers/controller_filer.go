@@ -70,11 +70,11 @@ func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed)
 }
 
 func (r *SeaweedReconciler) ensureFilerHeadlessService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	return r.ensureService(seaweedCR, "-filer-headless", r.createFilerHeadlessService)
+	return r.ensureService(seaweedCR, "filer-headless", r.createFilerHeadlessService)
 }
 
 func (r *SeaweedReconciler) ensureFilerNodePortService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	return r.ensureService(seaweedCR, "-filer", r.createFilerNodePortService)
+	return r.ensureService(seaweedCR, "filer", r.createFilerNodePortService)
 }
 
 func labelsForFiler(name string) map[string]string {
@@ -88,7 +88,7 @@ func (r *SeaweedReconciler) ensureService(seaweedCR *seaweedv1.Seaweed, nameSuff
 	log := r.Log.WithValues("sw", seaweedCR.Name, "service", nameSuffix)
 
 	aService := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{Name: seaweedCR.Name + nameSuffix, Namespace: seaweedCR.Namespace}, aService)
+	err := r.Get(ctx, types.NamespacedName{Name: seaweedCR.Name + "-" + nameSuffix, Namespace: seaweedCR.Namespace}, aService)
 	if err != nil && errors.IsNotFound(err) {
 		// Define a new deployment
 		dep := serviceFunc(seaweedCR)

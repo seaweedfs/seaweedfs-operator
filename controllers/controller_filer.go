@@ -48,6 +48,17 @@ func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed)
 		log.Error(err, "Failed to get filer statefulset")
 		return ReconcileResult(err)
 	}
+
+	if *filerStatefulSet.Spec.Replicas != seaweedCR.Spec.FilerCount {
+		filerStatefulSet.Spec.Replicas = &seaweedCR.Spec.FilerCount
+		if err = r.Update(ctx, filerStatefulSet); err != nil {
+			log.Error(err, "Failed to update filer statefulset", "Namespace", filerStatefulSet.Namespace, "Name", filerStatefulSet.Name)
+			return ReconcileResult(err)
+		}
+		// Deployment created successfully - return and requeue
+		return ReconcileResult(err)
+	}
+
 	log.Info("Get filer stateful set " + filerStatefulSet.Name)
 	return ReconcileResult(err)
 }

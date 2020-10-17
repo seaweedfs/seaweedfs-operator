@@ -57,9 +57,6 @@ func (r *SeaweedReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	if seaweedCR.Spec.FilerCount == 0 {
 		seaweedCR.Spec.FilerCount = 1
 	}
-	if seaweedCR.Spec.S3Count == 0 {
-		seaweedCR.Spec.S3Count = 1
-	}
 
 	if done, result, err = r.ensureMaster(seaweedCR); done {
 		return result, err

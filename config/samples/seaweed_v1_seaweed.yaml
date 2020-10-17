@@ -4,4 +4,5 @@ metadata:
   name: seaweed1
 spec:
   # Add fields here
-  foo: bar
+  volumeServerCount: 4
+  filerCount: 2

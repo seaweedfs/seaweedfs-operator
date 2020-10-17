@@ -48,6 +48,17 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.S
 		log.Error(err, "Failed to get volume server statefulset")
 		return ReconcileResult(err)
 	}
+
+	if *volumeServerStatefulSet.Spec.Replicas != seaweedCR.Spec.VolumeServerCount {
+		volumeServerStatefulSet.Spec.Replicas = &seaweedCR.Spec.VolumeServerCount
+		if err = r.Update(ctx, volumeServerStatefulSet); err != nil {
+			log.Error(err, "Failed to update volume statefulset", "Namespace", volumeServerStatefulSet.Namespace, "Name", volumeServerStatefulSet.Name)
+			return ReconcileResult(err)
+		}
+		// Deployment created successfully - return and requeue
+		return ReconcileResult(err)
+	}
+
 	log.Info("Get volume stateful set " + volumeServerStatefulSet.Name)
 	return ReconcileResult(err)
 }

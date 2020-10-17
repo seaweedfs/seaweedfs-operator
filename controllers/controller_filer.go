@@ -16,7 +16,11 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 	_ = context.Background()
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
-	if done, result, err = r.ensureFilerService(seaweedCR); done {
+	if done, result, err = r.ensureFilerHeadlessService(seaweedCR); done {
+		return
+	}
+
+	if done, result, err = r.ensureFilerNodePortService(seaweedCR); done {
 		return
 	}
 
@@ -65,31 +69,41 @@ func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed)
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureFilerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	ctx := context.Background()
-	log := r.Log.WithValues("sw-filer-service", seaweedCR.Name)
+func (r *SeaweedReconciler) ensureFilerHeadlessService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	return r.ensureService(seaweedCR, "-filer-headless", r.createFilerHeadlessService)
+}
 
-	volumeServerService := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{Name: seaweedCR.Name + "-filer", Namespace: seaweedCR.Namespace}, volumeServerService)
+func (r *SeaweedReconciler) ensureFilerNodePortService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	return r.ensureService(seaweedCR, "-filer", r.createFilerNodePortService)
+}
+
+func labelsForFiler(name string) map[string]string {
+	return map[string]string{"app": "seaweedfs", "role": "filer", "name": name}
+}
+
+type CreateServiceFunc func(m *seaweedv1.Seaweed) *corev1.Service
+
+func (r *SeaweedReconciler) ensureService(seaweedCR *seaweedv1.Seaweed, nameSuffix string, serviceFunc CreateServiceFunc) (bool, ctrl.Result, error) {
+	ctx := context.Background()
+	log := r.Log.WithValues("sw", seaweedCR.Name, "service", nameSuffix)
+
+	aService := &corev1.Service{}
+	err := r.Get(ctx, types.NamespacedName{Name: seaweedCR.Name + nameSuffix, Namespace: seaweedCR.Namespace}, aService)
 	if err != nil && errors.IsNotFound(err) {
 		// Define a new deployment
-		dep := r.createFilerService(seaweedCR)
-		log.Info("Creating a new filer service", "Namespace", dep.Namespace, "Name", dep.Name)
+		dep := serviceFunc(seaweedCR)
+		log.Info("Creating a new service", "Namespace", dep.Namespace, "Name", dep.Name)
 		err = r.Create(ctx, dep)
 		if err != nil {
-			log.Error(err, "Failed to create new filer service", "Namespace", dep.Namespace, "Name", dep.Name)
+			log.Error(err, "Failed to create service", "Namespace", dep.Namespace, "Name", dep.Name)
 			return ReconcileResult(err)
 		}
 		// Deployment created successfully - return and requeue
 		return ReconcileResult(err)
 	} else if err != nil {
-		log.Error(err, "Failed to get filer server service")
+		log.Error(err, "Failed to get server service")
 		return ReconcileResult(err)
 	}
-	log.Info("Get filer service " + volumeServerService.Name)
+	log.Info("Get service " + aService.Name)
 	return ReconcileResult(err)
-}
-
-func labelsForFiler(name string) map[string]string {
-	return map[string]string{"app": "seaweedfs", "role": "filer", "name": name}
 }

@@ -16,11 +16,11 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 	_ = context.Background()
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
-	if done, result, err = r.ensureFilerStatefulSet(seaweedCR); done {
+	if done, result, err = r.ensureFilerService(seaweedCR); done {
 		return
 	}
 
-	if done, result, err = r.ensureFilerService(seaweedCR); done {
+	if done, result, err = r.ensureFilerStatefulSet(seaweedCR); done {
 		return
 	}
 

@@ -56,7 +56,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 					EnableServiceLinks: &enableServiceLinks,
 					Containers: []corev1.Container{{
 						Name:            "seaweedfs",
-						Image:           "chrislusf/seaweedfs:latest",
+						Image:           m.Spec.Image,
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Env: []corev1.EnvVar{
 							{

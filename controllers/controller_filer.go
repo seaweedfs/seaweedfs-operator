@@ -49,8 +49,10 @@ func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed)
 		return ReconcileResult(err)
 	}
 
-	if *filerStatefulSet.Spec.Replicas != seaweedCR.Spec.FilerCount {
+	if *filerStatefulSet.Spec.Replicas != seaweedCR.Spec.FilerCount ||
+		filerStatefulSet.Spec.Template.Spec.Containers[0].Image != seaweedCR.Spec.Image {
 		filerStatefulSet.Spec.Replicas = &seaweedCR.Spec.FilerCount
+		filerStatefulSet.Spec.Template.Spec.Containers[0].Image = seaweedCR.Spec.Image
 		if err = r.Update(ctx, filerStatefulSet); err != nil {
 			log.Error(err, "Failed to update filer statefulset", "Namespace", filerStatefulSet.Namespace, "Name", filerStatefulSet.Name)
 			return ReconcileResult(err)

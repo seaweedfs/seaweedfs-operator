@@ -49,8 +49,10 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.S
 		return ReconcileResult(err)
 	}
 
-	if *volumeServerStatefulSet.Spec.Replicas != seaweedCR.Spec.VolumeServerCount {
+	if *volumeServerStatefulSet.Spec.Replicas != seaweedCR.Spec.VolumeServerCount ||
+		volumeServerStatefulSet.Spec.Template.Spec.Containers[0].Image != seaweedCR.Spec.Image {
 		volumeServerStatefulSet.Spec.Replicas = &seaweedCR.Spec.VolumeServerCount
+		volumeServerStatefulSet.Spec.Template.Spec.Containers[0].Image = seaweedCR.Spec.Image
 		if err = r.Update(ctx, volumeServerStatefulSet); err != nil {
 			log.Error(err, "Failed to update volume statefulset", "Namespace", volumeServerStatefulSet.Namespace, "Name", volumeServerStatefulSet.Name)
 			return ReconcileResult(err)

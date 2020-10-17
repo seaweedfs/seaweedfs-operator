@@ -40,6 +40,9 @@ spec:
               description: FilerCount is the number of filers, default to 1
               format: int32
               type: integer
+            image:
+              description: Image
+              type: string
             metricsAddress:
               description: MetricsAddress is Prometheus gateway address
               type: string

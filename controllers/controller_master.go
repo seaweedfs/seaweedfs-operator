@@ -44,7 +44,7 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 		log.Info("Creating a new master statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
 		err = r.Create(ctx, dep)
 		if err != nil {
-			log.Error(err, "Failed to create new statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
+			log.Error(err, "Failed to create master statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
 			return ReconcileResult(err)
 		}
 		// sleep 60 seconds for DNS to have pod IP addresses ready
@@ -55,6 +55,18 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 		log.Error(err, "Failed to get Deployment")
 		return ReconcileResult(err)
 	}
+
+	log.Info("master version " + masterStatefulSet.Spec.Template.Spec.Containers[0].Image + " expected " + seaweedCR.Spec.Image)
+	if masterStatefulSet.Spec.Template.Spec.Containers[0].Image != seaweedCR.Spec.Image {
+		masterStatefulSet.Spec.Template.Spec.Containers[0].Image = seaweedCR.Spec.Image
+		if err = r.Update(ctx, masterStatefulSet); err != nil {
+			log.Error(err, "Failed to update master statefulset", "Namespace", masterStatefulSet.Namespace, "Name", masterStatefulSet.Name)
+			return ReconcileResult(err)
+		}
+		// Deployment created successfully - return and requeue
+		return ReconcileResult(err)
+	}
+
 	log.Info("Get master stateful set " + masterStatefulSet.Name)
 	return ReconcileResult(err)
 }

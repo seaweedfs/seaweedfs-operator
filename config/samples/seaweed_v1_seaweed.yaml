@@ -7,3 +7,6 @@ spec:
   image: chrislusf/seaweedfs:2.05
   volumeServerCount: 4
   filerCount: 2
+  hosts:
+    - "*"
+

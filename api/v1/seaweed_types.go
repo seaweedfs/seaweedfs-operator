@@ -39,6 +39,9 @@ type SeaweedSpec struct {
 
 	// FilerCount is the number of filers, default to 1
 	FilerCount int32 `json:"filerCount,omitempty"`
+
+	// ingress
+	Hosts []string `json:"hosts"`
 }
 
 // SeaweedStatus defines the observed state of Seaweed

@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -32,40 +33,15 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 }
 
 func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	ctx := context.Background()
-	log := r.Log.WithValues("sw-filer-statefulset", seaweedCR.Name)
+	filerStatefulSet := r.createFilerStatefulSet(seaweedCR)
+	_, err := r.CreateOrUpdate(seaweedCR, filerStatefulSet, func(existing, desired runtime.Object) error {
+		existingStatefulSet := existing.(*appsv1.StatefulSet)
+		desiredStatefulSet := desired.(*appsv1.StatefulSet)
 
-	filerStatefulSet := &appsv1.StatefulSet{}
-	err := r.Get(ctx, types.NamespacedName{Name: seaweedCR.Name + "-filer", Namespace: seaweedCR.Namespace}, filerStatefulSet)
-	if err != nil && errors.IsNotFound(err) {
-		// Define a new deployment
-		dep := r.createFilerStatefulSet(seaweedCR)
-		log.Info("Creating a new filer statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
-		err = r.Create(ctx, dep)
-		if err != nil {
-			log.Error(err, "Failed to create new filer statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
-			return ReconcileResult(err)
-		}
-		// Deployment created successfully - return and requeue
-		return ReconcileResult(err)
-	} else if err != nil {
-		log.Error(err, "Failed to get filer statefulset")
-		return ReconcileResult(err)
-	}
-
-	if *filerStatefulSet.Spec.Replicas != seaweedCR.Spec.FilerCount ||
-		filerStatefulSet.Spec.Template.Spec.Containers[0].Image != seaweedCR.Spec.Image {
-		filerStatefulSet.Spec.Replicas = &seaweedCR.Spec.FilerCount
-		filerStatefulSet.Spec.Template.Spec.Containers[0].Image = seaweedCR.Spec.Image
-		if err = r.Update(ctx, filerStatefulSet); err != nil {
-			log.Error(err, "Failed to update filer statefulset", "Namespace", filerStatefulSet.Namespace, "Name", filerStatefulSet.Name)
-			return ReconcileResult(err)
-		}
-		// Deployment created successfully - return and requeue
-		return ReconcileResult(err)
-	}
-
-	log.Info("Get filer stateful set " + filerStatefulSet.Name)
+		existingStatefulSet.Spec.Replicas = desiredStatefulSet.Spec.Replicas
+		existingStatefulSet.Spec.Template.Spec.Containers[0].Image = desiredStatefulSet.Spec.Template.Spec.Containers[0].Image
+		return nil
+	})
 	return ReconcileResult(err)
 }
 

@@ -28,19 +28,13 @@ func (r *SeaweedReconciler) createVolumeServerService(m *seaweedv1.Seaweed) *cor
 					Name:     "swfs-volume",
 					Protocol: corev1.Protocol("TCP"),
 					Port:     8444,
-					TargetPort: intstr.IntOrString{
-						Type:   intstr.Int,
-						IntVal: 8444,
-					},
+					TargetPort: intstr.FromInt(8444),
 				},
 				{
 					Name:     "swfs-volume-grpc",
 					Protocol: corev1.Protocol("TCP"),
 					Port:     18444,
-					TargetPort: intstr.IntOrString{
-						Type:   intstr.Int,
-						IntVal: 18444,
-					},
+					TargetPort: intstr.FromInt(18444),
 				},
 			},
 			Selector: labels,

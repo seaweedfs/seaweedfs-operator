@@ -28,19 +28,13 @@ func (r *SeaweedReconciler) createMasterService(m *seaweedv1.Seaweed) *corev1.Se
 					Name:     "swfs-master",
 					Protocol: corev1.Protocol("TCP"),
 					Port:     9333,
-					TargetPort: intstr.IntOrString{
-						Type:   intstr.Int,
-						IntVal: 9333,
-					},
+					TargetPort: intstr.FromInt(9333),
 				},
 				{
 					Name:     "swfs-master-grpc",
 					Protocol: corev1.Protocol("TCP"),
 					Port:     19333,
-					TargetPort: intstr.IntOrString{
-						Type:   intstr.Int,
-						IntVal: 19333,
-					},
+					TargetPort: intstr.FromInt(19333),
 				},
 			},
 			Selector: labels,

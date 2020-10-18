@@ -5,9 +5,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
@@ -33,8 +30,10 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 }
 
 func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-filer-statefulset", seaweedCR.Name)
+
 	filerStatefulSet := r.createFilerStatefulSet(seaweedCR)
-	_, err := r.CreateOrUpdate(seaweedCR, filerStatefulSet, func(existing, desired runtime.Object) error {
+	_, err := r.CreateOrUpdate(filerStatefulSet, func(existing, desired runtime.Object) error {
 		existingStatefulSet := existing.(*appsv1.StatefulSet)
 		desiredStatefulSet := desired.(*appsv1.StatefulSet)
 
@@ -42,44 +41,34 @@ func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed)
 		existingStatefulSet.Spec.Template.Spec.Containers[0].Image = desiredStatefulSet.Spec.Template.Spec.Containers[0].Image
 		return nil
 	})
+	log.Info("ensure filer stateful set " + filerStatefulSet.Name)
 	return ReconcileResult(err)
 }
 
 func (r *SeaweedReconciler) ensureFilerHeadlessService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	return r.ensureService(seaweedCR, "filer-headless", r.createFilerHeadlessService)
+
+	log := r.Log.WithValues("sw-filer-headless-service", seaweedCR.Name)
+
+	filerHeadlessService := r.createFilerHeadlessService(seaweedCR)
+	_, err := r.CreateOrUpdateService(filerHeadlessService)
+
+	log.Info("ensure filer headless service " + filerHeadlessService.Name)
+
+	return ReconcileResult(err)
 }
 
 func (r *SeaweedReconciler) ensureFilerNodePortService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	return r.ensureService(seaweedCR, "filer", r.createFilerNodePortService)
+
+	log := r.Log.WithValues("sw-filer-service", seaweedCR.Name)
+
+	filerService := r.createFilerNodePortService(seaweedCR)
+	_, err := r.CreateOrUpdateService(filerService)
+
+	log.Info("ensure filer service " + filerService.Name)
+
+	return ReconcileResult(err)
 }
 
 func labelsForFiler(name string) map[string]string {
 	return map[string]string{"app": "seaweedfs", "role": "filer", "name": name}
-}
-
-type CreateServiceFunc func(m *seaweedv1.Seaweed) *corev1.Service
-
-func (r *SeaweedReconciler) ensureService(seaweedCR *seaweedv1.Seaweed, nameSuffix string, serviceFunc CreateServiceFunc) (bool, ctrl.Result, error) {
-	ctx := context.Background()
-	log := r.Log.WithValues("sw", seaweedCR.Name, "service", nameSuffix)
-
-	aService := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{Name: seaweedCR.Name + "-" + nameSuffix, Namespace: seaweedCR.Namespace}, aService)
-	if err != nil && errors.IsNotFound(err) {
-		// Define a new deployment
-		dep := serviceFunc(seaweedCR)
-		log.Info("Creating a new service", "Namespace", dep.Namespace, "Name", dep.Name)
-		err = r.Create(ctx, dep)
-		if err != nil {
-			log.Error(err, "Failed to create service", "Namespace", dep.Namespace, "Name", dep.Name)
-			return ReconcileResult(err)
-		}
-		// Deployment created successfully - return and requeue
-		return ReconcileResult(err)
-	} else if err != nil {
-		log.Error(err, "Failed to get server service")
-		return ReconcileResult(err)
-	}
-	log.Info("Get service " + aService.Name)
-	return ReconcileResult(err)
 }

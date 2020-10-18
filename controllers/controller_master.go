@@ -5,7 +5,6 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -72,26 +71,11 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 }
 
 func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	ctx := context.Background()
 	log := r.Log.WithValues("sw-master-service", seaweedCR.Name)
 
-	masterService := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{Name: seaweedCR.Name + "-master", Namespace: seaweedCR.Namespace}, masterService)
-	if err != nil && errors.IsNotFound(err) {
-		// Define a new deployment
-		dep := r.createMasterService(seaweedCR)
-		log.Info("Creating a new master service", "Namespace", dep.Namespace, "Name", dep.Name)
-		err = r.Create(ctx, dep)
-		if err != nil {
-			log.Error(err, "Failed to create master service", "Namespace", dep.Namespace, "Name", dep.Name)
-			return ReconcileResult(err)
-		}
-		// Deployment created successfully - return and requeue
-		return ReconcileResult(err)
-	} else if err != nil {
-		log.Error(err, "Failed to get master service", "Namespace", seaweedCR.Namespace, "Name", seaweedCR.Name+"-master")
-		return ReconcileResult(err)
-	}
+	masterService := r.createMasterService(seaweedCR)
+	_, err := r.CreateOrUpdateService(masterService)
+
 	log.Info("Get master service " + masterService.Name)
 	return ReconcileResult(err)
 

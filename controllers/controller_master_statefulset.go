@@ -108,7 +108,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 								HTTPGet: &corev1.HTTPGetAction{
 									Path:   "/cluster/status",
 									Port:   intstr.FromInt(9333),
-									Scheme: "http",
+									Scheme: corev1.URISchemeHTTP,
 								},
 							},
 							InitialDelaySeconds: 5,
@@ -120,9 +120,9 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 						LivenessProbe: &corev1.Probe{
 							Handler: corev1.Handler{
 								HTTPGet: &corev1.HTTPGetAction{
-									Path: "/cluster/status",
+									Path:   "/cluster/status",
 									Port:   intstr.FromInt(9333),
-									Scheme: "http",
+									Scheme: corev1.URISchemeHTTP,
 								},
 							},
 							InitialDelaySeconds: 15,

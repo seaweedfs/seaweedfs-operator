@@ -6,6 +6,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
@@ -88,43 +89,34 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 								ContainerPort: 18444,
 							},
 						},
-						/*
-							ReadinessProbe: &corev1.Probe{
-								Handler: corev1.Handler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/cluster/status",
-										Port: intstr.IntOrString{
-											Type:   0,
-											IntVal: 9333,
-										},
-										Scheme: "http",
-									},
+						ReadinessProbe: &corev1.Probe{
+							Handler: corev1.Handler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/status",
+									Port:   intstr.FromInt(8444),
+									Scheme: corev1.URISchemeHTTP,
 								},
-								InitialDelaySeconds: 5,
-								TimeoutSeconds:      0,
-								PeriodSeconds:       15,
-								SuccessThreshold:    2,
-								FailureThreshold:    100,
 							},
-							LivenessProbe: &corev1.Probe{
-								Handler: corev1.Handler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/cluster/status",
-										Port: intstr.IntOrString{
-											Type:   0,
-											IntVal: 9333,
-										},
-										Scheme: "http",
-									},
+							InitialDelaySeconds: 15,
+							TimeoutSeconds:      5,
+							PeriodSeconds:       90,
+							SuccessThreshold:    1,
+							FailureThreshold:    100,
+						},
+						LivenessProbe: &corev1.Probe{
+							Handler: corev1.Handler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path: "/status",
+									Port:   intstr.FromInt(8444),
+									Scheme: corev1.URISchemeHTTP,
 								},
-								InitialDelaySeconds: 20,
-								TimeoutSeconds:      0,
-								PeriodSeconds:       10,
-								SuccessThreshold:    1,
-								FailureThreshold:    6,
 							},
-
-						*/
+							InitialDelaySeconds: 20,
+							TimeoutSeconds:      5,
+							PeriodSeconds:       90,
+							SuccessThreshold:    1,
+							FailureThreshold:    6,
+						},
 					}},
 				},
 			},

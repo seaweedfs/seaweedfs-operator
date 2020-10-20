@@ -110,7 +110,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 						LivenessProbe: &corev1.Probe{
 							Handler: corev1.Handler{
 								HTTPGet: &corev1.HTTPGetAction{
-									Path: "/",
+									Path:   "/",
 									Port:   intstr.FromInt(8888),
 									Scheme: corev1.URISchemeHTTP,
 								},

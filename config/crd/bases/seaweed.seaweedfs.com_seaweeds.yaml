@@ -56,6 +56,12 @@ spec:
                 to 1
               format: int32
               type: integer
+            volumeServerDiskCount:
+              format: int32
+              type: integer
+            volumeServerDiskSizeInGiB:
+              format: int32
+              type: integer
           required:
           - hosts
           type: object

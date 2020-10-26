@@ -4,7 +4,7 @@ metadata:
   name: seaweed1
 spec:
   # Add fields here
-  image: chrislusf/seaweedfs:2.05
+  image: chrislusf/seaweedfs:2.07
   volumeServerCount: 4
   filerCount: 2
   hosts:

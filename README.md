@@ -1,5 +1,11 @@
 # SeaweedFS Operator
 
+Goals: 
+* Automatically deploy a SeaweedFS cluster with 3 masters, N volume servers, and M filers with replicated leveldb as filer store.
+* Auto rolling upgrade and restart.
+* Ingress for volume server, filer and S3, to support HDFS, REST filer, S3 API and cross-cluster replication.
+* Support all major cloud Kubernetes: AWS, Google, Azure.
+
 ## Installation
 
 ## Development

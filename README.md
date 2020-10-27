@@ -5,6 +5,7 @@ Goals:
 * Auto rolling upgrade and restart.
 * Ingress for volume server, filer and S3, to support HDFS, REST filer, S3 API and cross-cluster replication.
 * Support all major cloud Kubernetes: AWS, Google, Azure.
+* Scheduled backup to cloud storage: S3, Google Cloud Storage , Azure.
 * Grafana dashboard.
 
 ## Installation

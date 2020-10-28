@@ -46,13 +46,7 @@ type SeaweedSpec struct {
 	// Filer
 	Filer *FilerSpec `json:"filer,omitempty"`
 
-	// VolumeServerCount is the number of volume servers, default to 1
-	VolumeServerCount         int32 `json:"volumeServerCount,omitempty"`
-	VolumeServerDiskCount     int32 `json:"volumeServerDiskCount,omitempty"`
-	VolumeServerDiskSizeInGiB int32 `json:"volumeServerDiskSizeInGiB,omitempty"`
-
-	// FilerCount is the number of filers, default to 1
-	FilerCount int32 `json:"filerCount,omitempty"`
+	VolumeServerDiskCount int32 `json:"volumeServerDiskCount,omitempty"`
 
 	// ingress
 	Hosts []string `json:"hosts"`
@@ -90,7 +84,7 @@ type FilerSpec struct {
 	corev1.ResourceRequirements `json:",inline"`
 
 	// The desired ready replicas
-	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Minimum=1
 	Replicas int32 `json:"replicas"`
 }
 

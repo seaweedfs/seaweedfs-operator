@@ -2,12 +2,10 @@ package controllers
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -16,18 +14,14 @@ import (
 
 func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForVolumeServer(m.Name)
-	replicas := int32(m.Spec.VolumeServerCount)
+	replicas := int32(m.Spec.Volume.Replicas)
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
 
-	volumeQuantity := fmt.Sprintf("%dGi", m.Spec.VolumeServerDiskSizeInGiB)
 	volumeCount := int(m.Spec.VolumeServerDiskCount)
-	quantity, err := resource.ParseQuantity(volumeQuantity)
-	if err != nil {
-		log.Fatalf("can not parse quantity %s", volumeQuantity)
+	volumeRequests := corev1.ResourceList{
+		corev1.ResourceStorage: m.Spec.Volume.Requests[corev1.ResourceStorage],
 	}
-	volumeRequests := make(corev1.ResourceList)
-	volumeRequests[corev1.ResourceStorage] = quantity
 
 	// connect all the disks
 	var volumeMounts []corev1.VolumeMount
@@ -125,8 +119,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 							fmt.Sprintf("weed volume -port=8444 -max=0 %s %s %s",
 								fmt.Sprintf("-ip=$(POD_NAME).%s-volume", m.Name),
 								fmt.Sprintf("-dir=%s", strings.Join(dirs, ",")),
-								fmt.Sprintf("-mserver=%s-master-0.%s-master:9333,%s-master-1.%s-master:9333,%s-master-2.%s-master:9333",
-									m.Name, m.Name, m.Name, m.Name, m.Name, m.Name),
+								fmt.Sprintf("-mserver=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)),
 							),
 						},
 						Ports: []corev1.ContainerPort{

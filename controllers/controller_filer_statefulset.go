@@ -13,7 +13,7 @@ import (
 
 func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForFiler(m.Name)
-	replicas := int32(m.Spec.FilerCount)
+	replicas := int32(m.Spec.Filer.Replicas)
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
 
@@ -76,8 +76,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 							"-ec",
 							fmt.Sprintf("weed filer -port=8888 %s %s -s3",
 								fmt.Sprintf("-ip=$(POD_NAME).%s-filer", m.Name),
-								fmt.Sprintf("-master=%s-master-0.%s-master:9333,%s-master-1.%s-master:9333,%s-master-2.%s-master:9333",
-									m.Name, m.Name, m.Name, m.Name, m.Name, m.Name),
+								fmt.Sprintf("-master=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)),
 							),
 						},
 						Ports: []corev1.ContainerPort{

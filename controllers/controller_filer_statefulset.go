@@ -17,6 +17,89 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
 
+	filerPodSpec := m.BaseFilerSpec().BuildPodSpec()
+	filerPodSpec.EnableServiceLinks = &enableServiceLinks
+	filerPodSpec.Containers = []corev1.Container{{
+		Name:            "seaweedfs",
+		Image:           m.Spec.Image,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Env: []corev1.EnvVar{
+			{
+				Name: "POD_IP",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "status.podIP",
+					},
+				},
+			},
+			{
+				Name: "POD_NAME",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.name",
+					},
+				},
+			},
+			{
+				Name: "NAMESPACE",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.namespace",
+					},
+				},
+			},
+		},
+		Command: []string{
+			"/bin/sh",
+			"-ec",
+			fmt.Sprintf("weed filer -port=8888 %s %s -s3",
+				fmt.Sprintf("-ip=$(POD_NAME).%s-filer", m.Name),
+				fmt.Sprintf("-master=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)),
+			),
+		},
+		Ports: []corev1.ContainerPort{
+			{
+				ContainerPort: seaweedv1.FilerHTTPPort,
+				Name:          "swfs-filer",
+			},
+			{
+				ContainerPort: seaweedv1.FilerGRPCPort,
+			},
+			{
+				ContainerPort: seaweedv1.FilerS3Port,
+				Name:          "swfs-s3",
+			},
+		},
+		ReadinessProbe: &corev1.Probe{
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/",
+					Port:   intstr.FromInt(seaweedv1.FilerHTTPPort),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 10,
+			TimeoutSeconds:      3,
+			PeriodSeconds:       15,
+			SuccessThreshold:    1,
+			FailureThreshold:    100,
+		},
+		LivenessProbe: &corev1.Probe{
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/",
+					Port:   intstr.FromInt(seaweedv1.FilerHTTPPort),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 20,
+			TimeoutSeconds:      3,
+			PeriodSeconds:       30,
+			SuccessThreshold:    1,
+			FailureThreshold:    6,
+		},
+	}}
+
 	dep := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      m.Name + "-filer",
@@ -39,89 +122,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,
 				},
-				Spec: corev1.PodSpec{
-					EnableServiceLinks: &enableServiceLinks,
-					Containers: []corev1.Container{{
-						Name:            "seaweedfs",
-						Image:           m.Spec.Image,
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						Env: []corev1.EnvVar{
-							{
-								Name: "POD_IP",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "status.podIP",
-									},
-								},
-							},
-							{
-								Name: "POD_NAME",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.name",
-									},
-								},
-							},
-							{
-								Name: "NAMESPACE",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.namespace",
-									},
-								},
-							},
-						},
-						Command: []string{
-							"/bin/sh",
-							"-ec",
-							fmt.Sprintf("weed filer -port=8888 %s %s -s3",
-								fmt.Sprintf("-ip=$(POD_NAME).%s-filer", m.Name),
-								fmt.Sprintf("-master=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)),
-							),
-						},
-						Ports: []corev1.ContainerPort{
-							{
-								ContainerPort: 8888,
-								Name:          "swfs-filer",
-							},
-							{
-								ContainerPort: 18888,
-							},
-							{
-								ContainerPort: 8333,
-								Name:          "swfs-s3",
-							},
-						},
-						ReadinessProbe: &corev1.Probe{
-							Handler: corev1.Handler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/",
-									Port:   intstr.FromInt(8888),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 10,
-							TimeoutSeconds:      3,
-							PeriodSeconds:       15,
-							SuccessThreshold:    1,
-							FailureThreshold:    100,
-						},
-						LivenessProbe: &corev1.Probe{
-							Handler: corev1.Handler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/",
-									Port:   intstr.FromInt(8888),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 20,
-							TimeoutSeconds:      3,
-							PeriodSeconds:       30,
-							SuccessThreshold:    1,
-							FailureThreshold:    6,
-						},
-					}},
-				},
+				Spec: filerPodSpec,
 			},
 		},
 	}

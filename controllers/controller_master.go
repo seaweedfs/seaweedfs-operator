@@ -12,10 +12,6 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-const (
-	MasterClusterSize = 3
-)
-
 func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	_ = context.Background()
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)

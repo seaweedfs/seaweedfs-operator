@@ -25,6 +25,20 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// Constants
+const (
+	GRPCPortDelta = 10000
+
+	MasterHTTPPort = 9333
+	VolumeHTTPPort = 8444
+	FilerHTTPPort  = 8888
+	FilerS3Port    = 8333
+
+	MasterGRPCPort = MasterHTTPPort + GRPCPortDelta
+	VolumeGRPCPort = VolumeHTTPPort + GRPCPortDelta
+	FilerGRPCPort  = FilerHTTPPort + GRPCPortDelta
+)
+
 // SeaweedSpec defines the desired state of Seaweed
 type SeaweedSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -41,14 +55,51 @@ type SeaweedSpec struct {
 
 	// Master
 	Master *MasterSpec `json:"master,omitempty"`
+
 	// Volume
 	Volume *VolumeSpec `json:"volume,omitempty"`
+
 	// Filer
 	Filer *FilerSpec `json:"filer,omitempty"`
 
+	// SchedulerName of pods
+	SchedulerName string `json:"schedulerName,omitempty"`
+
+	// Persistent volume reclaim policy
+	PVReclaimPolicy *corev1.PersistentVolumeReclaimPolicy `json:"pvReclaimPolicy,omitempty"`
+
+	// ImagePullPolicy of pods
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+
+	// ImagePullSecrets is an optional list of references to secrets in the same namespace to use for pulling any of the images.
+	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+
+	// Whether enable PVC reclaim for orphan PVC left by statefulset scale-in
+	EnablePVReclaim *bool `json:"enablePVReclaim,omitempty"`
+
+	// Whether Hostnetwork is enabled for pods
+	HostNetwork *bool `json:"hostNetwork,omitempty"`
+
+	// Affinity of pods
+	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+
+	// Base node selectors of Pods, components may add or override selectors upon this respectively
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
+	// Base annotations of Pods, components may add or override selectors upon this respectively
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// Base tolerations of Pods, components may add more tolerations upon this respectively
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+
+	// StatefulSetUpdateStrategy indicates the StatefulSetUpdateStrategy that will be
+	// employed to update Pods in the StatefulSet when a revision is made to
+	// Template.
+	StatefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType `json:"statefulSetUpdateStrategy,omitempty"`
+
 	VolumeServerDiskCount int32 `json:"volumeServerDiskCount,omitempty"`
 
-	// ingress
+	// Ingresses
 	Hosts []string `json:"hosts"`
 }
 
@@ -65,7 +116,8 @@ type MasterSpec struct {
 
 	// The desired ready replicas
 	// +kubebuilder:validation:Minimum=1
-	Replicas int32 `json:"replicas"`
+	Replicas int32        `json:"replicas"`
+	Service  *ServiceSpec `json:"service,omitempty"`
 }
 
 // VolumeSpec is the spec for volume servers
@@ -75,7 +127,8 @@ type VolumeSpec struct {
 
 	// The desired ready replicas
 	// +kubebuilder:validation:Minimum=1
-	Replicas int32 `json:"replicas"`
+	Replicas int32        `json:"replicas"`
+	Service  *ServiceSpec `json:"service,omitempty"`
 }
 
 // FilerSpec is the spec for filers
@@ -85,7 +138,8 @@ type FilerSpec struct {
 
 	// The desired ready replicas
 	// +kubebuilder:validation:Minimum=1
-	Replicas int32 `json:"replicas"`
+	Replicas int32        `json:"replicas"`
+	Service  *ServiceSpec `json:"service,omitempty"`
 }
 
 // ComponentSpec is the base spec of each component, the fields should always accessed by the Basic<Component>Spec() method to respect the cluster-level properties
@@ -122,16 +176,9 @@ type ComponentSpec struct {
 
 	// List of environment variables to set in the container, like
 	// v1.Container.Env.
-	// Note that following env names cannot be used and may be overrided by
-	// tidb-operator built envs.
+	// Note that following env names cannot be used and may be overrided by operators
 	// - NAMESPACE
-	// - TZ
-	// - SERVICE_NAME
-	// - PEER_SERVICE_NAME
-	// - HEADLESS_SERVICE_NAME
-	// - SET_NAME
-	// - HOSTNAME
-	// - CLUSTER_NAME
+	// - POD_IP
 	// - POD_NAME
 	Env []corev1.EnvVar `json:"env,omitempty"`
 
@@ -155,6 +202,20 @@ type ComponentSpec struct {
 	// employed to update Pods in the StatefulSet when a revision is made to
 	// Template.
 	StatefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType `json:"statefulSetUpdateStrategy,omitempty"`
+}
+
+type ServiceSpec struct {
+	// Type of the real kubernetes service
+	Type corev1.ServiceType `json:"type,omitempty"`
+
+	// Additional annotations of the kubernetes service object
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// LoadBalancerIP is the loadBalancerIP of service
+	LoadBalancerIP *string `json:"loadBalancerIP,omitempty"`
+
+	// ClusterIP is the clusterIP of service
+	ClusterIP *string `json:"clusterIP,omitempty"`
 }
 
 // +kubebuilder:object:root=true

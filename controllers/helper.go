@@ -4,11 +4,41 @@ import (
 	"fmt"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const (
 	masterPeerAddressPattern = "%s-master-%d.%s-master:9333"
+)
+
+var (
+	kubernetesEnvVars = []corev1.EnvVar{
+		{
+			Name: "POD_IP",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "status.podIP",
+				},
+			},
+		},
+		{
+			Name: "POD_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.name",
+				},
+			},
+		},
+		{
+			Name: "NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.namespace",
+				},
+			},
+		},
+	}
 )
 
 func ReconcileResult(err error) (bool, ctrl.Result, error) {
@@ -28,4 +58,15 @@ func getMasterAddresses(name string, replicas int32) []string {
 
 func getMasterPeersString(name string, replicas int32) string {
 	return strings.Join(getMasterAddresses(name, replicas), ",")
+}
+
+func copyAnnotations(src map[string]string) map[string]string {
+	if src == nil {
+		return nil
+	}
+	dst := map[string]string{}
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }

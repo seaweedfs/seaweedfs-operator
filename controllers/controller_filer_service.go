@@ -27,20 +27,20 @@ func (r *SeaweedReconciler) createFilerHeadlessService(m *seaweedv1.Seaweed) *co
 				{
 					Name:       "swfs-filer",
 					Protocol:   corev1.Protocol("TCP"),
-					Port:       8888,
-					TargetPort: intstr.FromInt(8888),
+					Port:       seaweedv1.FilerHTTPPort,
+					TargetPort: intstr.FromInt(seaweedv1.FilerHTTPPort),
 				},
 				{
 					Name:       "swfs-filer-grpc",
 					Protocol:   corev1.Protocol("TCP"),
-					Port:       18888,
-					TargetPort: intstr.FromInt(18888),
+					Port:       seaweedv1.FilerGRPCPort,
+					TargetPort: intstr.FromInt(seaweedv1.FilerGRPCPort),
 				},
 				{
 					Name:       "swfs-s3",
 					Protocol:   corev1.Protocol("TCP"),
-					Port:       8333,
-					TargetPort: intstr.FromInt(8333),
+					Port:       seaweedv1.FilerS3Port,
+					TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),
 				},
 			},
 			Selector: labels,
@@ -49,7 +49,7 @@ func (r *SeaweedReconciler) createFilerHeadlessService(m *seaweedv1.Seaweed) *co
 	return dep
 }
 
-func (r *SeaweedReconciler) createFilerNodePortService(m *seaweedv1.Seaweed) *corev1.Service {
+func (r *SeaweedReconciler) createFilerService(m *seaweedv1.Seaweed) *corev1.Service {
 	labels := labelsForFiler(m.Name)
 
 	dep := &corev1.Service{
@@ -62,33 +62,47 @@ func (r *SeaweedReconciler) createFilerNodePortService(m *seaweedv1.Seaweed) *co
 			},
 		},
 		Spec: corev1.ServiceSpec{
-			Type:                     corev1.ServiceTypeNodePort,
+			Type:                     corev1.ServiceTypeClusterIP,
 			PublishNotReadyAddresses: true,
 			Ports: []corev1.ServicePort{
 				{
 					Name:       "swfs-filer",
 					Protocol:   corev1.Protocol("TCP"),
-					Port:       8888,
-					TargetPort: intstr.FromInt(8888),
-					NodePort:   30888,
+					Port:       seaweedv1.FilerHTTPPort,
+					TargetPort: intstr.FromInt(seaweedv1.FilerHTTPPort),
 				},
 				{
 					Name:       "swfs-filer-grpc",
 					Protocol:   corev1.Protocol("TCP"),
-					Port:       18888,
-					TargetPort: intstr.FromInt(18888),
-					NodePort:   31888,
+					Port:       seaweedv1.FilerGRPCPort,
+					TargetPort: intstr.FromInt(seaweedv1.FilerGRPCPort),
 				},
 				{
 					Name:       "swfs-s3",
 					Protocol:   corev1.Protocol("TCP"),
-					Port:       8333,
-					TargetPort: intstr.FromInt(8333),
-					NodePort:   30833,
+					Port:       seaweedv1.FilerS3Port,
+					TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),
 				},
 			},
 			Selector: labels,
 		},
+	}
+
+	if m.Spec.Filer.Service != nil {
+		svcSpec := m.Spec.Filer.Service
+		dep.Annotations = copyAnnotations(svcSpec.Annotations)
+
+		if svcSpec.Type != "" {
+			dep.Spec.Type = svcSpec.Type
+		}
+
+		if svcSpec.ClusterIP != nil {
+			dep.Spec.ClusterIP = *svcSpec.ClusterIP
+		}
+
+		if svcSpec.LoadBalancerIP != nil {
+			dep.Spec.LoadBalancerIP = *svcSpec.LoadBalancerIP
+		}
 	}
 	return dep
 }

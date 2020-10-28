@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+
 	"k8s.io/apimachinery/pkg/runtime"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -18,7 +19,7 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 		return
 	}
 
-	if done, result, err = r.ensureFilerNodePortService(seaweedCR); done {
+	if done, result, err = r.ensureFilerService(seaweedCR); done {
 		return
 	}
 
@@ -57,11 +58,11 @@ func (r *SeaweedReconciler) ensureFilerHeadlessService(seaweedCR *seaweedv1.Seaw
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureFilerNodePortService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+func (r *SeaweedReconciler) ensureFilerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 
 	log := r.Log.WithValues("sw-filer-service", seaweedCR.Name)
 
-	filerService := r.createFilerNodePortService(seaweedCR)
+	filerService := r.createFilerService(seaweedCR)
 	_, err := r.CreateOrUpdateService(filerService)
 
 	log.Info("ensure filer service " + filerService.Name)

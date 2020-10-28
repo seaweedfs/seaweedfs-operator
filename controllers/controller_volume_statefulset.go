@@ -59,6 +59,63 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 		dirs = append(dirs, fmt.Sprintf("/data%d", i))
 	}
 
+	volumePodSpec := m.BaseVolumeSpec().BuildPodSpec()
+	volumePodSpec.EnableServiceLinks = &enableServiceLinks
+	volumePodSpec.Containers = []corev1.Container{{
+		Name:            "seaweedfs",
+		Image:           m.Spec.Image,
+		ImagePullPolicy: m.BaseVolumeSpec().ImagePullPolicy(),
+		Env:             append(m.BaseVolumeSpec().Env(), kubernetesEnvVars...),
+		Command: []string{
+			"/bin/sh",
+			"-ec",
+			fmt.Sprintf("weed volume -port=8444 -max=0 %s %s %s",
+				fmt.Sprintf("-ip=$(POD_NAME).%s-volume", m.Name),
+				fmt.Sprintf("-dir=%s", strings.Join(dirs, ",")),
+				fmt.Sprintf("-mserver=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)),
+			),
+		},
+		Ports: []corev1.ContainerPort{
+			{
+				ContainerPort: 8444,
+				Name:          "swfs-volume",
+			},
+			{
+				ContainerPort: 18444,
+			},
+		},
+		ReadinessProbe: &corev1.Probe{
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/status",
+					Port:   intstr.FromInt(8444),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 15,
+			TimeoutSeconds:      5,
+			PeriodSeconds:       90,
+			SuccessThreshold:    1,
+			FailureThreshold:    100,
+		},
+		LivenessProbe: &corev1.Probe{
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/status",
+					Port:   intstr.FromInt(8444),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 20,
+			TimeoutSeconds:      5,
+			PeriodSeconds:       90,
+			SuccessThreshold:    1,
+			FailureThreshold:    6,
+		},
+		VolumeMounts: volumeMounts,
+	}}
+	volumePodSpec.Volumes = volumes
+
 	dep := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      m.Name + "-volume",
@@ -81,89 +138,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,
 				},
-				Spec: corev1.PodSpec{
-					EnableServiceLinks: &enableServiceLinks,
-					Containers: []corev1.Container{{
-						Name:            "seaweedfs",
-						Image:           m.Spec.Image,
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						Env: []corev1.EnvVar{
-							{
-								Name: "POD_IP",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "status.podIP",
-									},
-								},
-							},
-							{
-								Name: "POD_NAME",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.name",
-									},
-								},
-							},
-							{
-								Name: "NAMESPACE",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.namespace",
-									},
-								},
-							},
-						},
-						Command: []string{
-							"/bin/sh",
-							"-ec",
-							fmt.Sprintf("weed volume -port=8444 -max=0 %s %s %s",
-								fmt.Sprintf("-ip=$(POD_NAME).%s-volume", m.Name),
-								fmt.Sprintf("-dir=%s", strings.Join(dirs, ",")),
-								fmt.Sprintf("-mserver=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)),
-							),
-						},
-						Ports: []corev1.ContainerPort{
-							{
-								ContainerPort: 8444,
-								Name:          "swfs-volume",
-							},
-							{
-								ContainerPort: 18444,
-							},
-						},
-						ReadinessProbe: &corev1.Probe{
-							Handler: corev1.Handler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/status",
-									Port:   intstr.FromInt(8444),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 15,
-							TimeoutSeconds:      5,
-							PeriodSeconds:       90,
-							SuccessThreshold:    1,
-							FailureThreshold:    100,
-						},
-						LivenessProbe: &corev1.Probe{
-							Handler: corev1.Handler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/status",
-									Port:   intstr.FromInt(8444),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 20,
-							TimeoutSeconds:      5,
-							PeriodSeconds:       90,
-							SuccessThreshold:    1,
-							FailureThreshold:    6,
-						},
-						VolumeMounts: volumeMounts,
-					}},
-
-					Volumes: volumes,
-				},
+				Spec: volumePodSpec,
 			},
 			VolumeClaimTemplates: persistentVolumeClaims,
 		},

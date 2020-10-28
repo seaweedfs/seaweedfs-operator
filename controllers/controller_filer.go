@@ -73,6 +73,7 @@ func (r *SeaweedReconciler) ensureFilerService(seaweedCR *seaweedv1.Seaweed) (bo
 
 	return ReconcileResult(err)
 }
+
 func (r *SeaweedReconciler) ensureFilerConfigMap(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-filer-configmap", seaweedCR.Name)
 

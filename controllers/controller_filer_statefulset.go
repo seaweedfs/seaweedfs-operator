@@ -39,7 +39,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			{
 				Name:      "filer-config",
 				ReadOnly:  true,
-				MountPath: "/etc/seaweedfs/filer.toml",
+				MountPath: "/etc/seaweedfs",
 			},
 		},
 		Env: []corev1.EnvVar{

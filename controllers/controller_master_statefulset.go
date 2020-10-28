@@ -65,7 +65,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 			{
 				Name:      "master-config",
 				ReadOnly:  true,
-				MountPath: "/etc/seaweedfs/master.toml",
+				MountPath: "/etc/seaweedfs",
 			},
 		},
 		Command: []string{

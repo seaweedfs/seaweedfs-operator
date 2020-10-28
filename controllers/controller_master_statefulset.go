@@ -13,7 +13,7 @@ import (
 
 func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForMaster(m.Name)
-	replicas := int32(MasterClusterSize)
+	replicas := m.Spec.Master.Replicas
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
 
@@ -40,20 +40,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
-					/*
-						Affinity: &corev1.Affinity{
-							PodAntiAffinity: &corev1.PodAntiAffinity{
-								RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
-									{
-										LabelSelector: &metav1.LabelSelector{
-											MatchLabels: labels,
-										},
-										TopologyKey: "kubernetes.io/hostname",
-									},
-								},
-							},
-						},
-					*/
+					Affinity:           m.Spec.Master.Affinity,
 					EnableServiceLinks: &enableServiceLinks,
 					Containers: []corev1.Container{{
 						Name:            "seaweedfs",
@@ -90,8 +77,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 							"-ec",
 							fmt.Sprintf("sleep 60; weed master -volumePreallocate -volumeSizeLimitMB=1000 %s %s",
 								fmt.Sprintf("-ip=$(POD_NAME).%s-master", m.Name),
-								fmt.Sprintf("-peers=%s-master-0.%s-master:9333,%s-master-1.%s-master:9333,%s-master-2.%s-master:9333",
-									m.Name, m.Name, m.Name, m.Name, m.Name, m.Name),
+								fmt.Sprintf("-peers=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)),
 							),
 						},
 						Ports: []corev1.ContainerPort{

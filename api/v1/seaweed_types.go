@@ -138,8 +138,6 @@ type VolumeSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	Replicas int32        `json:"replicas"`
 	Service  *ServiceSpec `json:"service,omitempty"`
-	// Config in raw toml string
-	Config *string `json:"config,omitempty"`
 }
 
 // FilerSpec is the spec for filers

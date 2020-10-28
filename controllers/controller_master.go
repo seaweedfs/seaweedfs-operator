@@ -20,6 +20,10 @@ func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done boo
 		return
 	}
 
+	if done, result, err = r.ensureMasterConfigMap(seaweedCR); done {
+		return
+	}
+
 	if done, result, err = r.ensureMasterStatefulSet(seaweedCR); done {
 		return
 	}
@@ -66,6 +70,16 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 	return ReconcileResult(err)
 }
 
+func (r *SeaweedReconciler) ensureMasterConfigMap(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-master-configmap", seaweedCR.Name)
+
+	masterConfigMap := r.createMasterConfigMap(seaweedCR)
+	_, err := r.CreateOrUpdateConfigMap(masterConfigMap)
+
+	log.Info("Get master ConfigMap " + masterConfigMap.Name)
+	return ReconcileResult(err)
+}
+
 func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-master-service", seaweedCR.Name)
 
@@ -74,7 +88,6 @@ func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed) (b
 
 	log.Info("Get master service " + masterService.Name)
 	return ReconcileResult(err)
-
 }
 
 func labelsForMaster(name string) map[string]string {

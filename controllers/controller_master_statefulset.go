@@ -17,6 +17,60 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
 
+	masterPodSpec := m.BaseMasterSpec().BuildPodSpec()
+	masterPodSpec.EnableServiceLinks = &enableServiceLinks
+	masterPodSpec.Containers = []corev1.Container{{
+		Name:            "seaweedfs",
+		Image:           m.Spec.Image,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Env:             append(m.BaseMasterSpec().Env(), kubernetesEnvVars...),
+		Command: []string{
+			"/bin/sh",
+			"-ec",
+			fmt.Sprintf("sleep 60; weed master -volumePreallocate -volumeSizeLimitMB=1000 %s %s",
+				fmt.Sprintf("-ip=$(POD_NAME).%s-master", m.Name),
+				fmt.Sprintf("-peers=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)),
+			),
+		},
+		Ports: []corev1.ContainerPort{
+			{
+				ContainerPort: seaweedv1.MasterHTTPPort,
+				Name:          "swfs-master",
+			},
+			{
+				ContainerPort: seaweedv1.MasterGRPCPort,
+			},
+		},
+		ReadinessProbe: &corev1.Probe{
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/cluster/status",
+					Port:   intstr.FromInt(seaweedv1.MasterHTTPPort),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 5,
+			TimeoutSeconds:      15,
+			PeriodSeconds:       15,
+			SuccessThreshold:    2,
+			FailureThreshold:    100,
+		},
+		LivenessProbe: &corev1.Probe{
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/cluster/status",
+					Port:   intstr.FromInt(seaweedv1.MasterHTTPPort),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 15,
+			TimeoutSeconds:      15,
+			PeriodSeconds:       15,
+			SuccessThreshold:    1,
+			FailureThreshold:    6,
+		},
+	}}
+
 	dep := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      m.Name + "-master",
@@ -39,86 +93,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,
 				},
-				Spec: corev1.PodSpec{
-					Affinity:           m.Spec.Master.Affinity,
-					EnableServiceLinks: &enableServiceLinks,
-					Containers: []corev1.Container{{
-						Name:            "seaweedfs",
-						Image:           m.Spec.Image,
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						Env: []corev1.EnvVar{
-							{
-								Name: "POD_IP",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "status.podIP",
-									},
-								},
-							},
-							{
-								Name: "POD_NAME",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.name",
-									},
-								},
-							},
-							{
-								Name: "NAMESPACE",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.namespace",
-									},
-								},
-							},
-						},
-						Command: []string{
-							"/bin/sh",
-							"-ec",
-							fmt.Sprintf("sleep 60; weed master -volumePreallocate -volumeSizeLimitMB=1000 %s %s",
-								fmt.Sprintf("-ip=$(POD_NAME).%s-master", m.Name),
-								fmt.Sprintf("-peers=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)),
-							),
-						},
-						Ports: []corev1.ContainerPort{
-							{
-								ContainerPort: 9333,
-								Name:          "swfs-master",
-							},
-							{
-								ContainerPort: 19333,
-							},
-						},
-						ReadinessProbe: &corev1.Probe{
-							Handler: corev1.Handler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/cluster/status",
-									Port:   intstr.FromInt(9333),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 5,
-							TimeoutSeconds:      15,
-							PeriodSeconds:       15,
-							SuccessThreshold:    2,
-							FailureThreshold:    100,
-						},
-						LivenessProbe: &corev1.Probe{
-							Handler: corev1.Handler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/cluster/status",
-									Port:   intstr.FromInt(9333),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 15,
-							TimeoutSeconds:      15,
-							PeriodSeconds:       15,
-							SuccessThreshold:    1,
-							FailureThreshold:    6,
-						},
-					}},
-				},
+				Spec: masterPodSpec,
 			},
 		},
 	}

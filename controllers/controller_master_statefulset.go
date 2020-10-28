@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -11,6 +12,30 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
+func buildMasterStartupScript(m *seaweedv1.Seaweed) string {
+	command := []string{"weed", "master"}
+	spec := m.Spec.Master
+	if spec.VolumePreallocate != nil && *spec.VolumePreallocate {
+		command = append(command, "-volumePreallocate")
+	}
+
+	if spec.VolumeSizeLimitMB != nil {
+		command = append(command, fmt.Sprintf("-volumeSizeLimitMB=%d", *spec.VolumeSizeLimitMB))
+	}
+
+	if spec.GarbageThreshold != nil {
+		command = append(command, fmt.Sprintf("-garbageThreshold=%f", *spec.GarbageThreshold))
+	}
+
+	if spec.PulseSeconds != nil {
+		command = append(command, fmt.Sprintf("-pulseSeconds=%d", *spec.PulseSeconds))
+	}
+
+	command = append(command, fmt.Sprintf("-ip=$(POD_NAME).%s-master", m.Name))
+	command = append(command, fmt.Sprintf("-peers=%s", getMasterPeersString(m.Name, spec.Replicas)))
+	return strings.Join(command, " ")
+}
+
 func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForMaster(m.Name)
 	replicas := m.Spec.Master.Replicas
@@ -18,19 +43,35 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 	enableServiceLinks := false
 
 	masterPodSpec := m.BaseMasterSpec().BuildPodSpec()
+	masterPodSpec.Volumes = []corev1.Volume{
+		{
+			Name: "master-config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: m.Name + "-master",
+					},
+				},
+			},
+		},
+	}
 	masterPodSpec.EnableServiceLinks = &enableServiceLinks
 	masterPodSpec.Containers = []corev1.Container{{
 		Name:            "seaweedfs",
 		Image:           m.Spec.Image,
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Env:             append(m.BaseMasterSpec().Env(), kubernetesEnvVars...),
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      "master-config",
+				ReadOnly:  true,
+				MountPath: "/etc/seaweedfs/master.toml",
+			},
+		},
 		Command: []string{
 			"/bin/sh",
 			"-ec",
-			fmt.Sprintf("sleep 60; weed master -volumePreallocate -volumeSizeLimitMB=1000 %s %s",
-				fmt.Sprintf("-ip=$(POD_NAME).%s-master", m.Name),
-				fmt.Sprintf("-peers=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)),
-			),
+			buildMasterStartupScript(m),
 		},
 		Ports: []corev1.ContainerPort{
 			{

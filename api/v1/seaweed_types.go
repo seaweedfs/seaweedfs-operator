@@ -118,6 +118,15 @@ type MasterSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	Replicas int32        `json:"replicas"`
 	Service  *ServiceSpec `json:"service,omitempty"`
+
+	// Config in raw toml string
+	Config *string `json:"config,omitempty"`
+
+	VolumePreallocate  *bool    `json:"volumePreallocate,omitempty"`
+	VolumeSizeLimitMB  *int32   `json:"volumeSizeLimitMB,omitempty"`
+	GarbageThreshold   *float64 `json:"garbageThreshold,omitempty"`
+	PulseSeconds       *int32   `json:"pulseSeconds,omitempty"`
+	DefaultReplication *string  `json:"defaultReplication,omitempty"`
 }
 
 // VolumeSpec is the spec for volume servers
@@ -129,6 +138,8 @@ type VolumeSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	Replicas int32        `json:"replicas"`
 	Service  *ServiceSpec `json:"service,omitempty"`
+	// Config in raw toml string
+	Config *string `json:"config,omitempty"`
 }
 
 // FilerSpec is the spec for filers
@@ -140,6 +151,8 @@ type FilerSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	Replicas int32        `json:"replicas"`
 	Service  *ServiceSpec `json:"service,omitempty"`
+	// Config in raw toml string
+	Config *string `json:"config,omitempty"`
 }
 
 // ComponentSpec is the base spec of each component, the fields should always accessed by the Basic<Component>Spec() method to respect the cluster-level properties

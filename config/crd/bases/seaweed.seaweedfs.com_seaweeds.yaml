@@ -3698,6 +3698,7 @@ spec:
                     one if present
                   type: string
                 service:
+                  description: ServiceSpec is a subset of the original k8s spec
                   properties:
                     annotations:
                       additionalProperties:
@@ -6887,6 +6888,7 @@ spec:
                     one if present
                   type: string
                 service:
+                  description: ServiceSpec is a subset of the original k8s spec
                   properties:
                     annotations:
                       additionalProperties:
@@ -10113,6 +10115,7 @@ spec:
                     one if present
                   type: string
                 service:
+                  description: ServiceSpec is a subset of the original k8s spec
                   properties:
                     annotations:
                       additionalProperties:
@@ -10198,8 +10201,6 @@ spec:
             volumeServerDiskCount:
               format: int32
               type: integer
-          required:
-          - hosts
           type: object
         status:
           description: SeaweedStatus defines the observed state of Seaweed

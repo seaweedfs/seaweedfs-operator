@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -66,6 +67,7 @@ const (
 	LastAppliedConfigAnnotation = "seaweedfs.com/last-applied-configuration"
 )
 
+// MergeFn is to resolve conflicts
 type MergeFn func(existing, desired runtime.Object) error
 
 // CreateOrUpdate create an object to the Kubernetes cluster for controller, if the object to create is existed,

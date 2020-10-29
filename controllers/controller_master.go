@@ -16,6 +16,10 @@ func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done boo
 	_ = context.Background()
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
+	if done, result, err = r.ensureMasterPeerService(seaweedCR); done {
+		return
+	}
+
 	if done, result, err = r.ensureMasterService(seaweedCR); done {
 		return
 	}
@@ -73,6 +77,17 @@ func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed) (b
 	_, err := r.CreateOrUpdateService(masterService)
 
 	log.Info("Get master service " + masterService.Name)
+	return ReconcileResult(err)
+
+}
+
+func (r *SeaweedReconciler) ensureMasterPeerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-master-peer-service", seaweedCR.Name)
+
+	masterPeerService := r.createMasterPeerService(seaweedCR)
+	_, err := r.CreateOrUpdateService(masterPeerService)
+
+	log.Info("Get master peer service " + masterPeerService.Name)
 	return ReconcileResult(err)
 
 }

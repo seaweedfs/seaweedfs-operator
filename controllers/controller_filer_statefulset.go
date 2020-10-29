@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -10,6 +11,16 @@ import (
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
+
+func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
+	commands := []string{"weed", "filer"}
+	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.FilerHTTPPort))
+	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-filer-peer", m.Name))
+	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)))
+	commands = append(commands, "-s3")
+
+	return strings.Join(commands, " ")
+}
 
 func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForFiler(m.Name)
@@ -52,10 +63,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		Command: []string{
 			"/bin/sh",
 			"-ec",
-			fmt.Sprintf("weed filer -port=8888 %s %s -s3",
-				fmt.Sprintf("-ip=$(POD_NAME).%s-filer", m.Name),
-				fmt.Sprintf("-master=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)),
-			),
+			buildFilerStartupScript(m),
 		},
 		Ports: []corev1.ContainerPort{
 			{
@@ -64,6 +72,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			},
 			{
 				ContainerPort: seaweedv1.FilerGRPCPort,
+				Name:          "swfs-filer-grpc",
 			},
 			{
 				ContainerPort: seaweedv1.FilerS3Port,
@@ -106,7 +115,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			Namespace: m.Namespace,
 		},
 		Spec: appsv1.StatefulSetSpec{
-			ServiceName:         m.Name + "-filer",
+			ServiceName:         m.Name + "-filer-peer",
 			PodManagementPolicy: appsv1.ParallelPodManagement,
 			Replicas:            &replicas,
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{

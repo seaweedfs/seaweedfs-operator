@@ -15,7 +15,7 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 	_ = context.Background()
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
-	if done, result, err = r.ensureFilerHeadlessService(seaweedCR); done {
+	if done, result, err = r.ensureFilerPeerService(seaweedCR); done {
 		return
 	}
 
@@ -46,14 +46,14 @@ func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed)
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureFilerHeadlessService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+func (r *SeaweedReconciler) ensureFilerPeerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 
-	log := r.Log.WithValues("sw-filer-headless-service", seaweedCR.Name)
+	log := r.Log.WithValues("sw-filer-peer-service", seaweedCR.Name)
 
-	filerHeadlessService := r.createFilerHeadlessService(seaweedCR)
-	_, err := r.CreateOrUpdateService(filerHeadlessService)
+	filerPeerService := r.createFilerPeerService(seaweedCR)
+	_, err := r.CreateOrUpdateService(filerPeerService)
 
-	log.Info("ensure filer headless service " + filerHeadlessService.Name)
+	log.Info("ensure filer peer service " + filerPeerService.Name)
 
 	return ReconcileResult(err)
 }

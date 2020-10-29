@@ -8,12 +8,12 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-func (r *SeaweedReconciler) createFilerHeadlessService(m *seaweedv1.Seaweed) *corev1.Service {
+func (r *SeaweedReconciler) createFilerPeerService(m *seaweedv1.Seaweed) *corev1.Service {
 	labels := labelsForFiler(m.Name)
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.Name + "-filer-headless",
+			Name:      m.Name + "-filer-peer",
 			Namespace: m.Namespace,
 			Labels:    labels,
 			Annotations: map[string]string{

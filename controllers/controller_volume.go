@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+
 	"k8s.io/apimachinery/pkg/runtime"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -14,11 +15,15 @@ func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (d
 	_ = context.Background()
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
-	if done, result, err = r.ensureVolumeServerStatefulSet(seaweedCR); done {
+	if done, result, err = r.ensureVolumeServerPeerService(seaweedCR); done {
 		return
 	}
 
 	if done, result, err = r.ensureVolumeServerService(seaweedCR); done {
+		return
+	}
+
+	if done, result, err = r.ensureVolumeServerStatefulSet(seaweedCR); done {
 		return
 	}
 
@@ -39,6 +44,17 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.S
 	})
 
 	log.Info("ensure volume stateful set " + volumeServerStatefulSet.Name)
+	return ReconcileResult(err)
+}
+
+func (r *SeaweedReconciler) ensureVolumeServerPeerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+
+	log := r.Log.WithValues("sw-volume-peer-service", seaweedCR.Name)
+
+	volumeServerPeerService := r.createVolumeServerPeerService(seaweedCR)
+	_, err := r.CreateOrUpdateService(volumeServerPeerService)
+
+	log.Info("ensure volume peer service " + volumeServerPeerService.Name)
 	return ReconcileResult(err)
 }
 

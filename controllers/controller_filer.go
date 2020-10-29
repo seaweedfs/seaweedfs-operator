@@ -24,6 +24,10 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 		return
 	}
 
+	if done, result, err = r.ensureFilerConfigMap(seaweedCR); done {
+		return
+	}
+
 	if done, result, err = r.ensureFilerStatefulSet(seaweedCR); done {
 		return
 	}
@@ -78,6 +82,16 @@ func (r *SeaweedReconciler) ensureFilerService(seaweedCR *seaweedv1.Seaweed) (bo
 
 	log.Info("ensure filer service " + filerService.Name)
 
+	return ReconcileResult(err)
+}
+
+func (r *SeaweedReconciler) ensureFilerConfigMap(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-filer-configmap", seaweedCR.Name)
+
+	filerConfigMap := r.createFilerConfigMap(seaweedCR)
+	_, err := r.CreateOrUpdateConfigMap(filerConfigMap)
+
+	log.Info("Get filer ConfigMap " + filerConfigMap.Name)
 	return ReconcileResult(err)
 }
 

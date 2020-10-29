@@ -100,7 +100,7 @@ type SeaweedSpec struct {
 	VolumeServerDiskCount int32 `json:"volumeServerDiskCount,omitempty"`
 
 	// Ingresses
-	Hosts []string `json:"hosts"`
+	Hosts []string `json:"hosts,omitempty"`
 }
 
 // SeaweedStatus defines the observed state of Seaweed
@@ -204,6 +204,7 @@ type ComponentSpec struct {
 	StatefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType `json:"statefulSetUpdateStrategy,omitempty"`
 }
 
+// ServiceSpec is a subset of the original k8s spec
 type ServiceSpec struct {
 	// Type of the real kubernetes service
 	Type corev1.ServiceType `json:"type,omitempty"`

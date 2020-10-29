@@ -7,6 +7,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
@@ -34,6 +35,9 @@ func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed)
 	log := r.Log.WithValues("sw-filer-statefulset", seaweedCR.Name)
 
 	filerStatefulSet := r.createFilerStatefulSet(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, filerStatefulSet, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
 	_, err := r.CreateOrUpdate(filerStatefulSet, func(existing, desired runtime.Object) error {
 		existingStatefulSet := existing.(*appsv1.StatefulSet)
 		desiredStatefulSet := desired.(*appsv1.StatefulSet)
@@ -51,6 +55,10 @@ func (r *SeaweedReconciler) ensureFilerHeadlessService(seaweedCR *seaweedv1.Seaw
 	log := r.Log.WithValues("sw-filer-headless-service", seaweedCR.Name)
 
 	filerHeadlessService := r.createFilerHeadlessService(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, filerHeadlessService, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
+
 	_, err := r.CreateOrUpdateService(filerHeadlessService)
 
 	log.Info("ensure filer headless service " + filerHeadlessService.Name)
@@ -63,6 +71,9 @@ func (r *SeaweedReconciler) ensureFilerService(seaweedCR *seaweedv1.Seaweed) (bo
 	log := r.Log.WithValues("sw-filer-service", seaweedCR.Name)
 
 	filerService := r.createFilerService(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, filerService, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
 	_, err := r.CreateOrUpdateService(filerService)
 
 	log.Info("ensure filer service " + filerService.Name)

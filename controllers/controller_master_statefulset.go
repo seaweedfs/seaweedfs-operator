@@ -22,7 +22,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 	masterPodSpec.Containers = []corev1.Container{{
 		Name:            "seaweedfs",
 		Image:           m.Spec.Image,
-		ImagePullPolicy: corev1.PullIfNotPresent,
+		ImagePullPolicy: m.BaseMasterSpec().ImagePullPolicy(),
 		Env:             append(m.BaseMasterSpec().Env(), kubernetesEnvVars...),
 		Command: []string{
 			"/bin/sh",

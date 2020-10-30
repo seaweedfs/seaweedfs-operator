@@ -6832,7 +6832,8 @@ spec:
                     - name
                     type: object
                   type: array
-                garbageThreshold: {}
+                garbageThreshold:
+                  type: string
                 hostNetwork:
                   description: Whether Hostnetwork of the component is enabled. Override
                     the cluster-level setting if present

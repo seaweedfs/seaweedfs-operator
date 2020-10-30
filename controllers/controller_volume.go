@@ -56,6 +56,9 @@ func (r *SeaweedReconciler) ensureVolumeServerPeerService(seaweedCR *seaweedv1.S
 	log := r.Log.WithValues("sw-volume-peer-service", seaweedCR.Name)
 
 	volumeServerPeerService := r.createVolumeServerPeerService(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, volumeServerPeerService, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
 	_, err := r.CreateOrUpdateService(volumeServerPeerService)
 
 	log.Info("ensure volume peer service " + volumeServerPeerService.Name)

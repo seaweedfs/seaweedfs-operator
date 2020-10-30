@@ -82,6 +82,9 @@ func (r *SeaweedReconciler) ensureMasterConfigMap(seaweedCR *seaweedv1.Seaweed) 
 	log := r.Log.WithValues("sw-master-configmap", seaweedCR.Name)
 
 	masterConfigMap := r.createMasterConfigMap(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, masterConfigMap, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
 	_, err := r.CreateOrUpdateConfigMap(masterConfigMap)
 
 	log.Info("Get master ConfigMap " + masterConfigMap.Name)
@@ -105,6 +108,9 @@ func (r *SeaweedReconciler) ensureMasterPeerService(seaweedCR *seaweedv1.Seaweed
 	log := r.Log.WithValues("sw-master-peer-service", seaweedCR.Name)
 
 	masterPeerService := r.createMasterPeerService(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, masterPeerService, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
 	_, err := r.CreateOrUpdateService(masterPeerService)
 
 	log.Info("Get master peer service " + masterPeerService.Name)

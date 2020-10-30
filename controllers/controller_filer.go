@@ -88,6 +88,9 @@ func (r *SeaweedReconciler) ensureFilerConfigMap(seaweedCR *seaweedv1.Seaweed) (
 	log := r.Log.WithValues("sw-filer-configmap", seaweedCR.Name)
 
 	filerConfigMap := r.createFilerConfigMap(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, filerConfigMap, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
 	_, err := r.CreateOrUpdateConfigMap(filerConfigMap)
 
 	log.Info("Get filer ConfigMap " + filerConfigMap.Name)

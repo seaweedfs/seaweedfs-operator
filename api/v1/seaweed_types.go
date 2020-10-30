@@ -123,6 +123,7 @@ type MasterSpec struct {
 	Config *string `json:"config,omitempty"`
 
 	// Master-specific settings
+
 	VolumePreallocate  *bool   `json:"volumePreallocate,omitempty"`
 	VolumeSizeLimitMB  *int32  `json:"volumeSizeLimitMB,omitempty"`
 	GarbageThreshold   *string `json:"garbageThreshold,omitempty"`

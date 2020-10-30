@@ -6985,7 +6985,6 @@ spec:
                     version if non-empty
                   type: string
                 volumePreallocate:
-                  description: Master-specific settings
                   type: boolean
                 volumeSizeLimitMB:
                   format: int32

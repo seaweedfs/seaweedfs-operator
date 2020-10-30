@@ -3525,6 +3525,9 @@ spec:
                   description: Annotations of the component. Merged into the cluster-level
                     annotations if non-empty
                   type: object
+                config:
+                  description: Config in raw toml string
+                  type: string
                 env:
                   description: List of environment variables to set in the container,
                     like v1.Container.Env. Note that following env names cannot be
@@ -6715,6 +6718,11 @@ spec:
                   description: Annotations of the component. Merged into the cluster-level
                     annotations if non-empty
                   type: object
+                config:
+                  description: Config in raw toml string
+                  type: string
+                defaultReplication:
+                  type: string
                 env:
                   description: List of environment variables to set in the container,
                     like v1.Container.Env. Note that following env names cannot be
@@ -6824,6 +6832,8 @@ spec:
                     - name
                     type: object
                   type: array
+                garbageThreshold:
+                  type: string
                 hostNetwork:
                   description: Whether Hostnetwork of the component is enabled. Override
                     the cluster-level setting if present
@@ -6866,6 +6876,9 @@ spec:
                   description: PriorityClassName of the component. Override the cluster-level
                     one if present
                   type: string
+                pulseSeconds:
+                  format: int32
+                  type: integer
                 replicas:
                   description: The desired ready replicas
                   format: int32
@@ -6968,6 +6981,11 @@ spec:
                   description: Version of the component. Override the cluster-level
                     version if non-empty
                   type: string
+                volumePreallocate:
+                  type: boolean
+                volumeSizeLimitMB:
+                  format: int32
+                  type: integer
               required:
               - replicas
               type: object

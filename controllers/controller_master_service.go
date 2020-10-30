@@ -77,5 +77,21 @@ func (r *SeaweedReconciler) createMasterService(m *seaweedv1.Seaweed) *corev1.Se
 		},
 	}
 
+	if m.Spec.Master.Service != nil {
+		svcSpec := m.Spec.Master.Service
+		dep.Annotations = copyAnnotations(svcSpec.Annotations)
+
+		if svcSpec.Type != "" {
+			dep.Spec.Type = svcSpec.Type
+		}
+
+		if svcSpec.ClusterIP != nil {
+			dep.Spec.ClusterIP = *svcSpec.ClusterIP
+		}
+
+		if svcSpec.LoadBalancerIP != nil {
+			dep.Spec.LoadBalancerIP = *svcSpec.LoadBalancerIP
+		}
+	}
 	return dep
 }

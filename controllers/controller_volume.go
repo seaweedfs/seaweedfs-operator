@@ -20,7 +20,7 @@ func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (d
 		return
 	}
 
-	if done, result, err = r.ensureVolumeServerStatefulSet(seaweedCR); done {
+	if done, result, err = r.ensureVolumeServerService(seaweedCR); done {
 		return
 	}
 

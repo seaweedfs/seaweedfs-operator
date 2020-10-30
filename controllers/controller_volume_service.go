@@ -25,13 +25,13 @@ func (r *SeaweedReconciler) createVolumeServerPeerService(m *seaweedv1.Seaweed) 
 			PublishNotReadyAddresses: true,
 			Ports: []corev1.ServicePort{
 				{
-					Name:       "swfs-volume",
+					Name:       "volume-http",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.VolumeHTTPPort,
 					TargetPort: intstr.FromInt(seaweedv1.VolumeHTTPPort),
 				},
 				{
-					Name:       "swfs-volume-grpc",
+					Name:       "volume-grpc",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.VolumeGRPCPort,
 					TargetPort: intstr.FromInt(seaweedv1.VolumeGRPCPort),
@@ -58,7 +58,7 @@ func (r *SeaweedReconciler) createVolumeServerService(m *seaweedv1.Seaweed) *cor
 			PublishNotReadyAddresses: true,
 			Ports: []corev1.ServicePort{
 				{
-					Name:       "volume",
+					Name:       "volume-http",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.VolumeHTTPPort,
 					TargetPort: intstr.FromInt(seaweedv1.VolumeHTTPPort),
@@ -73,5 +73,23 @@ func (r *SeaweedReconciler) createVolumeServerService(m *seaweedv1.Seaweed) *cor
 			Selector: labels,
 		},
 	}
+
+	if m.Spec.Volume.Service != nil {
+		svcSpec := m.Spec.Volume.Service
+		dep.Annotations = copyAnnotations(svcSpec.Annotations)
+
+		if svcSpec.Type != "" {
+			dep.Spec.Type = svcSpec.Type
+		}
+
+		if svcSpec.ClusterIP != nil {
+			dep.Spec.ClusterIP = *svcSpec.ClusterIP
+		}
+
+		if svcSpec.LoadBalancerIP != nil {
+			dep.Spec.LoadBalancerIP = *svcSpec.LoadBalancerIP
+		}
+	}
+
 	return dep
 }

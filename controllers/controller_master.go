@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -54,9 +53,8 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 			log.Error(err, "Failed to create master statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
 			return ReconcileResult(err)
 		}
-		// sleep 60 seconds for DNS to have pod IP addresses ready
-		time.Sleep(time.Minute)
-		// Deployment created successfully - return and requeue
+
+		// StatefulSet created successfully - return and requeue
 		return ReconcileResult(err)
 	} else if err != nil {
 		log.Error(err, "Failed to get Deployment")

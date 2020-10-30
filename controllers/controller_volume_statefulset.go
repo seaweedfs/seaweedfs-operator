@@ -74,7 +74,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 	volumePodSpec := m.BaseVolumeSpec().BuildPodSpec()
 	volumePodSpec.EnableServiceLinks = &enableServiceLinks
 	volumePodSpec.Containers = []corev1.Container{{
-		Name:            "seaweedfs",
+		Name:            "volume",
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseVolumeSpec().ImagePullPolicy(),
 		Env:             append(m.BaseVolumeSpec().Env(), kubernetesEnvVars...),
@@ -86,11 +86,11 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 		Ports: []corev1.ContainerPort{
 			{
 				ContainerPort: seaweedv1.VolumeHTTPPort,
-				Name:          "swfs-volume",
+				Name:          "volume-http",
 			},
 			{
 				ContainerPort: seaweedv1.VolumeGRPCPort,
-				Name:          "swfs-volume-grpc",
+				Name:          "volume-grpc",
 			},
 		},
 		ReadinessProbe: &corev1.Probe{

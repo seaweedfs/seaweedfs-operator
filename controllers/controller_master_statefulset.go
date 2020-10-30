@@ -57,7 +57,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 	}
 	masterPodSpec.EnableServiceLinks = &enableServiceLinks
 	masterPodSpec.Containers = []corev1.Container{{
-		Name:            "seaweedfs",
+		Name:            "master",
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseMasterSpec().ImagePullPolicy(),
 		Env:             append(m.BaseMasterSpec().Env(), kubernetesEnvVars...),
@@ -76,10 +76,11 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 		Ports: []corev1.ContainerPort{
 			{
 				ContainerPort: seaweedv1.MasterHTTPPort,
-				Name:          "swfs-master",
+				Name:          "master-http",
 			},
 			{
 				ContainerPort: seaweedv1.MasterGRPCPort,
+				Name:          "master-grpc",
 			},
 		},
 		ReadinessProbe: &corev1.Probe{

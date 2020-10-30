@@ -25,13 +25,13 @@ func (r *SeaweedReconciler) createMasterPeerService(m *seaweedv1.Seaweed) *corev
 			PublishNotReadyAddresses: true,
 			Ports: []corev1.ServicePort{
 				{
-					Name:       "swfs-master",
+					Name:       "master-http",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.MasterHTTPPort,
 					TargetPort: intstr.FromInt(seaweedv1.MasterHTTPPort),
 				},
 				{
-					Name:       "swfs-master-grpc",
+					Name:       "master-grpc",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.MasterGRPCPort,
 					TargetPort: intstr.FromInt(seaweedv1.MasterGRPCPort),
@@ -61,13 +61,13 @@ func (r *SeaweedReconciler) createMasterService(m *seaweedv1.Seaweed) *corev1.Se
 			PublishNotReadyAddresses: true,
 			Ports: []corev1.ServicePort{
 				{
-					Name:       "swfs-master",
+					Name:       "master-http",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.MasterHTTPPort,
 					TargetPort: intstr.FromInt(seaweedv1.MasterHTTPPort),
 				},
 				{
-					Name:       "swfs-master-grpc",
+					Name:       "master-grpc",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.MasterGRPCPort,
 					TargetPort: intstr.FromInt(seaweedv1.MasterGRPCPort),

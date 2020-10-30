@@ -25,19 +25,19 @@ func (r *SeaweedReconciler) createFilerPeerService(m *seaweedv1.Seaweed) *corev1
 			PublishNotReadyAddresses: true,
 			Ports: []corev1.ServicePort{
 				{
-					Name:       "swfs-filer",
+					Name:       "filer-http",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.FilerHTTPPort,
 					TargetPort: intstr.FromInt(seaweedv1.FilerHTTPPort),
 				},
 				{
-					Name:       "swfs-filer-grpc",
+					Name:       "filer-grpc",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.FilerGRPCPort,
 					TargetPort: intstr.FromInt(seaweedv1.FilerGRPCPort),
 				},
 				{
-					Name:       "swfs-s3",
+					Name:       "filer-s3",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.FilerS3Port,
 					TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),
@@ -66,19 +66,19 @@ func (r *SeaweedReconciler) createFilerService(m *seaweedv1.Seaweed) *corev1.Ser
 			PublishNotReadyAddresses: true,
 			Ports: []corev1.ServicePort{
 				{
-					Name:       "swfs-filer",
+					Name:       "filer-http",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.FilerHTTPPort,
 					TargetPort: intstr.FromInt(seaweedv1.FilerHTTPPort),
 				},
 				{
-					Name:       "swfs-filer-grpc",
+					Name:       "filer-grpc",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.FilerGRPCPort,
 					TargetPort: intstr.FromInt(seaweedv1.FilerGRPCPort),
 				},
 				{
-					Name:       "swfs-s3",
+					Name:       "filer-s3",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.FilerS3Port,
 					TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),

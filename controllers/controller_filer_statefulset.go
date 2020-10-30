@@ -43,7 +43,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 	}
 	filerPodSpec.EnableServiceLinks = &enableServiceLinks
 	filerPodSpec.Containers = []corev1.Container{{
-		Name:            "seaweedfs",
+		Name:            "filer",
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseFilerSpec().ImagePullPolicy(),
 		Env:             append(m.BaseFilerSpec().Env(), kubernetesEnvVars...),
@@ -55,15 +55,15 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		Ports: []corev1.ContainerPort{
 			{
 				ContainerPort: seaweedv1.FilerHTTPPort,
-				Name:          "swfs-filer",
+				Name:          "filer-http",
 			},
 			{
 				ContainerPort: seaweedv1.FilerGRPCPort,
-				Name:          "swfs-filer-grpc",
+				Name:          "filer-grpc",
 			},
 			{
 				ContainerPort: seaweedv1.FilerS3Port,
-				Name:          "swfs-s3",
+				Name:          "filer-s3",
 			},
 		},
 		ReadinessProbe: &corev1.Probe{

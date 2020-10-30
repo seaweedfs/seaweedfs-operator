@@ -59,6 +59,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 				Name: fmt.Sprintf("mount%d", i),
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
+				StorageClassName: m.Spec.Volume.StorageClassName,
 				AccessModes: []corev1.PersistentVolumeAccessMode{
 					corev1.ReadWriteOnce,
 				},

@@ -176,7 +176,7 @@ func (in *MasterSpec) DeepCopyInto(out *MasterSpec) {
 	}
 	if in.GarbageThreshold != nil {
 		in, out := &in.GarbageThreshold, &out.GarbageThreshold
-		*out = new(float64)
+		*out = new(string)
 		**out = **in
 	}
 	if in.PulseSeconds != nil {

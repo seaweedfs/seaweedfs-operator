@@ -24,7 +24,7 @@ func buildMasterStartupScript(m *seaweedv1.Seaweed) string {
 	}
 
 	if spec.GarbageThreshold != nil {
-		command = append(command, fmt.Sprintf("-garbageThreshold=%f", *spec.GarbageThreshold))
+		command = append(command, fmt.Sprintf("-garbageThreshold=%s", *spec.GarbageThreshold))
 	}
 
 	if spec.PulseSeconds != nil {

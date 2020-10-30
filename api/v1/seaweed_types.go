@@ -122,11 +122,11 @@ type MasterSpec struct {
 	// Config in raw toml string
 	Config *string `json:"config,omitempty"`
 
-	VolumePreallocate  *bool    `json:"volumePreallocate,omitempty"`
-	VolumeSizeLimitMB  *int32   `json:"volumeSizeLimitMB,omitempty"`
-	GarbageThreshold   *float64 `json:"garbageThreshold,omitempty"`
-	PulseSeconds       *int32   `json:"pulseSeconds,omitempty"`
-	DefaultReplication *string  `json:"defaultReplication,omitempty"`
+	VolumePreallocate  *bool   `json:"volumePreallocate,omitempty"`
+	VolumeSizeLimitMB  *int32  `json:"volumeSizeLimitMB,omitempty"`
+	GarbageThreshold   *string `json:"garbageThreshold,omitempty"`
+	PulseSeconds       *int32  `json:"pulseSeconds,omitempty"`
+	DefaultReplication *string `json:"defaultReplication,omitempty"`
 }
 
 // VolumeSpec is the spec for volume servers

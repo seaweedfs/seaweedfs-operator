@@ -122,6 +122,8 @@ type MasterSpec struct {
 	// Config in raw toml string
 	Config *string `json:"config,omitempty"`
 
+	// Master-specific settings
+
 	VolumePreallocate  *bool   `json:"volumePreallocate,omitempty"`
 	VolumeSizeLimitMB  *int32  `json:"volumeSizeLimitMB,omitempty"`
 	GarbageThreshold   *string `json:"garbageThreshold,omitempty"`
@@ -138,6 +140,17 @@ type VolumeSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	Replicas int32        `json:"replicas"`
 	Service  *ServiceSpec `json:"service,omitempty"`
+
+	StorageClassName *string `json:"storageClassName,omitempty"`
+
+	// Volume-specific settings
+
+	CompactionMBps      *int32 `json:"compactionMBps,omitempty"`
+	FileSizeLimitMB     *int32 `json:"fileSizeLimitMB,omitempty"`
+	FixJpgOrientation   *bool  `json:"fixJpgOrientation,omitempty"`
+	IdleTimeout         *int32 `json:"idleTimeout,omitempty"`
+	MaxVolumeCounts     *int32 `json:"maxVolumeCounts,omitempty"`
+	MinFreeSpacePercent *int32 `json:"minFreeSpacePercent,omitempty"`
 }
 
 // FilerSpec is the spec for filers
@@ -149,8 +162,13 @@ type FilerSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	Replicas int32        `json:"replicas"`
 	Service  *ServiceSpec `json:"service,omitempty"`
+
 	// Config in raw toml string
 	Config *string `json:"config,omitempty"`
+
+	// Filer-specific settings
+
+	MaxMB *int32 `json:"maxMB,omitempty"`
 }
 
 // ComponentSpec is the base spec of each component, the fields should always accessed by the Basic<Component>Spec() method to respect the cluster-level properties

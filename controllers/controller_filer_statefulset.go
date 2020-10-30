@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -10,6 +11,16 @@ import (
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
+
+func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
+	commands := []string{"weed", "filer"}
+	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.FilerHTTPPort))
+	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-filer-peer", m.Name))
+	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)))
+	commands = append(commands, "-s3")
+
+	return strings.Join(commands, " ")
+}
 
 func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForFiler(m.Name)
@@ -32,61 +43,27 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 	}
 	filerPodSpec.EnableServiceLinks = &enableServiceLinks
 	filerPodSpec.Containers = []corev1.Container{{
-		Name:            "seaweedfs",
+		Name:            "filer",
 		Image:           m.Spec.Image,
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      "filer-config",
-				ReadOnly:  true,
-				MountPath: "/etc/seaweedfs",
-			},
-		},
-		Env: []corev1.EnvVar{
-			{
-				Name: "POD_IP",
-				ValueFrom: &corev1.EnvVarSource{
-					FieldRef: &corev1.ObjectFieldSelector{
-						FieldPath: "status.podIP",
-					},
-				},
-			},
-			{
-				Name: "POD_NAME",
-				ValueFrom: &corev1.EnvVarSource{
-					FieldRef: &corev1.ObjectFieldSelector{
-						FieldPath: "metadata.name",
-					},
-				},
-			},
-			{
-				Name: "NAMESPACE",
-				ValueFrom: &corev1.EnvVarSource{
-					FieldRef: &corev1.ObjectFieldSelector{
-						FieldPath: "metadata.namespace",
-					},
-				},
-			},
-		},
+		ImagePullPolicy: m.BaseFilerSpec().ImagePullPolicy(),
+		Env:             append(m.BaseFilerSpec().Env(), kubernetesEnvVars...),
 		Command: []string{
 			"/bin/sh",
 			"-ec",
-			fmt.Sprintf("weed filer -port=8888 %s %s -s3",
-				fmt.Sprintf("-ip=$(POD_NAME).%s-filer", m.Name),
-				fmt.Sprintf("-master=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)),
-			),
+			buildFilerStartupScript(m),
 		},
 		Ports: []corev1.ContainerPort{
 			{
 				ContainerPort: seaweedv1.FilerHTTPPort,
-				Name:          "swfs-filer",
+				Name:          "filer-http",
 			},
 			{
 				ContainerPort: seaweedv1.FilerGRPCPort,
+				Name:          "filer-grpc",
 			},
 			{
 				ContainerPort: seaweedv1.FilerS3Port,
-				Name:          "swfs-s3",
+				Name:          "filer-s3",
 			},
 		},
 		ReadinessProbe: &corev1.Probe{
@@ -125,7 +102,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			Namespace: m.Namespace,
 		},
 		Spec: appsv1.StatefulSetSpec{
-			ServiceName:         m.Name + "-filer",
+			ServiceName:         m.Name + "-filer-peer",
 			PodManagementPolicy: appsv1.ParallelPodManagement,
 			Replicas:            &replicas,
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{

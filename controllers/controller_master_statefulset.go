@@ -31,7 +31,7 @@ func buildMasterStartupScript(m *seaweedv1.Seaweed) string {
 		command = append(command, fmt.Sprintf("-pulseSeconds=%d", *spec.PulseSeconds))
 	}
 
-	command = append(command, fmt.Sprintf("-ip=$(POD_NAME).%s-master", m.Name))
+	command = append(command, fmt.Sprintf("-ip=$(POD_NAME).%s-master-peer", m.Name))
 	command = append(command, fmt.Sprintf("-peers=%s", getMasterPeersString(m.Name, spec.Replicas)))
 	return strings.Join(command, " ")
 }
@@ -57,9 +57,9 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 	}
 	masterPodSpec.EnableServiceLinks = &enableServiceLinks
 	masterPodSpec.Containers = []corev1.Container{{
-		Name:            "seaweedfs",
+		Name:            "master",
 		Image:           m.Spec.Image,
-		ImagePullPolicy: corev1.PullIfNotPresent,
+		ImagePullPolicy: m.BaseMasterSpec().ImagePullPolicy(),
 		Env:             append(m.BaseMasterSpec().Env(), kubernetesEnvVars...),
 		VolumeMounts: []corev1.VolumeMount{
 			{
@@ -76,10 +76,11 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 		Ports: []corev1.ContainerPort{
 			{
 				ContainerPort: seaweedv1.MasterHTTPPort,
-				Name:          "swfs-master",
+				Name:          "master-http",
 			},
 			{
 				ContainerPort: seaweedv1.MasterGRPCPort,
+				Name:          "master-grpc",
 			},
 		},
 		ReadinessProbe: &corev1.Probe{
@@ -118,7 +119,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 			Namespace: m.Namespace,
 		},
 		Spec: appsv1.StatefulSetSpec{
-			ServiceName:         m.Name + "-master",
+			ServiceName:         m.Name + "-master-peer",
 			PodManagementPolicy: appsv1.ParallelPodManagement,
 			Replicas:            &replicas,
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{

@@ -12,6 +12,17 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
+func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string) string {
+	commands := []string{"weed", "volume"}
+	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
+	commands = append(commands, "-max=0")
+	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-volume-peer", m.Name))
+	commands = append(commands, fmt.Sprintf("-mserver=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)))
+	commands = append(commands, fmt.Sprintf("-dir=%s", strings.Join(dirs, ",")))
+
+	return strings.Join(commands, " ")
+}
+
 func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForVolumeServer(m.Name)
 	replicas := int32(m.Spec.Volume.Replicas)
@@ -48,6 +59,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 				Name: fmt.Sprintf("mount%d", i),
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
+				StorageClassName: m.Spec.Volume.StorageClassName,
 				AccessModes: []corev1.PersistentVolumeAccessMode{
 					corev1.ReadWriteOnce,
 				},
@@ -62,33 +74,30 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 	volumePodSpec := m.BaseVolumeSpec().BuildPodSpec()
 	volumePodSpec.EnableServiceLinks = &enableServiceLinks
 	volumePodSpec.Containers = []corev1.Container{{
-		Name:            "seaweedfs",
+		Name:            "volume",
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseVolumeSpec().ImagePullPolicy(),
 		Env:             append(m.BaseVolumeSpec().Env(), kubernetesEnvVars...),
 		Command: []string{
 			"/bin/sh",
 			"-ec",
-			fmt.Sprintf("weed volume -port=8444 -max=0 %s %s %s",
-				fmt.Sprintf("-ip=$(POD_NAME).%s-volume", m.Name),
-				fmt.Sprintf("-dir=%s", strings.Join(dirs, ",")),
-				fmt.Sprintf("-mserver=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)),
-			),
+			buildVolumeServerStartupScript(m, dirs),
 		},
 		Ports: []corev1.ContainerPort{
 			{
-				ContainerPort: 8444,
-				Name:          "swfs-volume",
+				ContainerPort: seaweedv1.VolumeHTTPPort,
+				Name:          "volume-http",
 			},
 			{
-				ContainerPort: 18444,
+				ContainerPort: seaweedv1.VolumeGRPCPort,
+				Name:          "volume-grpc",
 			},
 		},
 		ReadinessProbe: &corev1.Probe{
 			Handler: corev1.Handler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Path:   "/status",
-					Port:   intstr.FromInt(8444),
+					Port:   intstr.FromInt(seaweedv1.VolumeHTTPPort),
 					Scheme: corev1.URISchemeHTTP,
 				},
 			},
@@ -102,7 +111,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 			Handler: corev1.Handler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Path:   "/status",
-					Port:   intstr.FromInt(8444),
+					Port:   intstr.FromInt(seaweedv1.VolumeHTTPPort),
 					Scheme: corev1.URISchemeHTTP,
 				},
 			},
@@ -122,7 +131,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 			Namespace: m.Namespace,
 		},
 		Spec: appsv1.StatefulSetSpec{
-			ServiceName:         m.Name + "-volume",
+			ServiceName:         m.Name + "-volume-peer",
 			PodManagementPolicy: appsv1.ParallelPodManagement,
 			Replicas:            &replicas,
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{

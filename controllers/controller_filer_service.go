@@ -8,12 +8,12 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-func (r *SeaweedReconciler) createFilerHeadlessService(m *seaweedv1.Seaweed) *corev1.Service {
+func (r *SeaweedReconciler) createFilerPeerService(m *seaweedv1.Seaweed) *corev1.Service {
 	labels := labelsForFiler(m.Name)
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.Name + "-filer-headless",
+			Name:      m.Name + "-filer-peer",
 			Namespace: m.Namespace,
 			Labels:    labels,
 			Annotations: map[string]string{
@@ -25,19 +25,19 @@ func (r *SeaweedReconciler) createFilerHeadlessService(m *seaweedv1.Seaweed) *co
 			PublishNotReadyAddresses: true,
 			Ports: []corev1.ServicePort{
 				{
-					Name:       "swfs-filer",
+					Name:       "filer-http",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.FilerHTTPPort,
 					TargetPort: intstr.FromInt(seaweedv1.FilerHTTPPort),
 				},
 				{
-					Name:       "swfs-filer-grpc",
+					Name:       "filer-grpc",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.FilerGRPCPort,
 					TargetPort: intstr.FromInt(seaweedv1.FilerGRPCPort),
 				},
 				{
-					Name:       "swfs-s3",
+					Name:       "filer-s3",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.FilerS3Port,
 					TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),
@@ -66,19 +66,19 @@ func (r *SeaweedReconciler) createFilerService(m *seaweedv1.Seaweed) *corev1.Ser
 			PublishNotReadyAddresses: true,
 			Ports: []corev1.ServicePort{
 				{
-					Name:       "swfs-filer",
+					Name:       "filer-http",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.FilerHTTPPort,
 					TargetPort: intstr.FromInt(seaweedv1.FilerHTTPPort),
 				},
 				{
-					Name:       "swfs-filer-grpc",
+					Name:       "filer-grpc",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.FilerGRPCPort,
 					TargetPort: intstr.FromInt(seaweedv1.FilerGRPCPort),
 				},
 				{
-					Name:       "swfs-s3",
+					Name:       "filer-s3",
 					Protocol:   corev1.Protocol("TCP"),
 					Port:       seaweedv1.FilerS3Port,
 					TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),

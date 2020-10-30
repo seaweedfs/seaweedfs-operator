@@ -67,6 +67,7 @@ const (
 	LastAppliedConfigAnnotation = "seaweedfs.com/last-applied-configuration"
 )
 
+// MergeFn is to resolve conflicts
 type MergeFn func(existing, desired runtime.Object) error
 
 // CreateOrUpdate create an object to the Kubernetes cluster for controller, if the object to create is existed,

@@ -9,7 +9,10 @@ import (
 )
 
 const (
-	masterPeerAddressPattern = "%s-master-%d.%s-master:9333"
+	masterPeerAddressPattern                 = "%s-master-%d.%s-master-peer:9333"
+	masterPeerAddressWithNamespacePattern    = "%s-master-%d.%s-master-peer.%s:9333"
+	filerServiceAddressWithNamespacePattern  = "%s-filer.%s:8888"
+	masterServiceAddressWithNamespacePattern = "%s-master.%s:9333"
 )
 
 var (
@@ -58,6 +61,25 @@ func getMasterAddresses(name string, replicas int32) []string {
 
 func getMasterPeersString(name string, replicas int32) string {
 	return strings.Join(getMasterAddresses(name, replicas), ",")
+}
+func getMasterAddressesWithNamespace(name, namespace string, replicas int32) []string {
+	peersAddresses := make([]string, 0, replicas)
+	for i := int32(0); i < replicas; i++ {
+		peersAddresses = append(peersAddresses, fmt.Sprintf(masterPeerAddressWithNamespacePattern, name, i, name, namespace))
+	}
+	return peersAddresses
+}
+
+func getMasterPeersStringWithNamespace(name, namespace string, replicas int32) string {
+	return strings.Join(getMasterAddressesWithNamespace(name, namespace, replicas), ",")
+}
+
+func getFilerServiceAddressWithNamespace(name, namespace string) string {
+	return fmt.Sprintf(filerServiceAddressWithNamespacePattern, name, namespace)
+}
+
+func getMasterServiceAddressWithNamespace(name, namespace string) string {
+	return fmt.Sprintf(masterServiceAddressWithNamespacePattern, name, namespace)
 }
 
 func copyAnnotations(src map[string]string) map[string]string {

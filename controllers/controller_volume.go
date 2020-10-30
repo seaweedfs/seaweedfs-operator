@@ -16,6 +16,10 @@ func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (d
 	_ = context.Background()
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
+	if done, result, err = r.ensureVolumeServerPeerService(seaweedCR); done {
+		return
+	}
+
 	if done, result, err = r.ensureVolumeServerService(seaweedCR); done {
 		return
 	}
@@ -44,6 +48,20 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.S
 	})
 
 	log.Info("ensure volume stateful set " + volumeServerStatefulSet.Name)
+	return ReconcileResult(err)
+}
+
+func (r *SeaweedReconciler) ensureVolumeServerPeerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+
+	log := r.Log.WithValues("sw-volume-peer-service", seaweedCR.Name)
+
+	volumeServerPeerService := r.createVolumeServerPeerService(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, volumeServerPeerService, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
+	_, err := r.CreateOrUpdateService(volumeServerPeerService)
+
+	log.Info("ensure volume peer service " + volumeServerPeerService.Name)
 	return ReconcileResult(err)
 }
 

@@ -3669,6 +3669,9 @@ spec:
                   description: 'Limits describes the maximum amount of compute resources
                     allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
                   type: object
+                maxMB:
+                  format: int32
+                  type: integer
                 nodeSelector:
                   additionalProperties:
                     type: string
@@ -9960,6 +9963,9 @@ spec:
                   description: Annotations of the component. Merged into the cluster-level
                     annotations if non-empty
                   type: object
+                compactionMBps:
+                  format: int32
+                  type: integer
                 env:
                   description: List of environment variables to set in the container,
                     like v1.Container.Env. Note that following env names cannot be
@@ -10069,10 +10075,18 @@ spec:
                     - name
                     type: object
                   type: array
+                fileSizeLimitMB:
+                  format: int32
+                  type: integer
+                fixJpgOrientation:
+                  type: boolean
                 hostNetwork:
                   description: Whether Hostnetwork of the component is enabled. Override
                     the cluster-level setting if present
                   type: boolean
+                idleTimeout:
+                  format: int32
+                  type: integer
                 imagePullPolicy:
                   description: ImagePullPolicy of the component. Override the cluster-level
                     imagePullPolicy if present
@@ -10101,6 +10115,12 @@ spec:
                   description: 'Limits describes the maximum amount of compute resources
                     allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
                   type: object
+                maxVolumeCounts:
+                  format: int32
+                  type: integer
+                minFreeSpacePercent:
+                  format: int32
+                  type: integer
                 nodeSelector:
                   additionalProperties:
                     type: string
@@ -10155,6 +10175,8 @@ spec:
                   description: StatefulSetUpdateStrategy indicates the StatefulSetUpdateStrategy
                     that will be employed to update Pods in the StatefulSet when a
                     revision is made to Template.
+                  type: string
+                storageClassName:
                   type: string
                 terminationGracePeriodSeconds:
                   description: Optional duration in seconds the pod needs to terminate

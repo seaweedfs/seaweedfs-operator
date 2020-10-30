@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -16,6 +15,10 @@ import (
 func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	_ = context.Background()
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
+
+	if done, result, err = r.ensureMasterPeerService(seaweedCR); done {
+		return
+	}
 
 	if done, result, err = r.ensureMasterService(seaweedCR); done {
 		return
@@ -50,9 +53,8 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 			log.Error(err, "Failed to create master statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
 			return ReconcileResult(err)
 		}
-		// sleep 60 seconds for DNS to have pod IP addresses ready
-		time.Sleep(time.Minute)
-		// Deployment created successfully - return and requeue
+
+		// StatefulSet created successfully - return and requeue
 		return ReconcileResult(err)
 	} else if err != nil {
 		log.Error(err, "Failed to get Deployment")
@@ -78,6 +80,9 @@ func (r *SeaweedReconciler) ensureMasterConfigMap(seaweedCR *seaweedv1.Seaweed) 
 	log := r.Log.WithValues("sw-master-configmap", seaweedCR.Name)
 
 	masterConfigMap := r.createMasterConfigMap(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, masterConfigMap, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
 	_, err := r.CreateOrUpdateConfigMap(masterConfigMap)
 
 	log.Info("Get master ConfigMap " + masterConfigMap.Name)
@@ -95,6 +100,20 @@ func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed) (b
 
 	log.Info("Get master service " + masterService.Name)
 	return ReconcileResult(err)
+}
+
+func (r *SeaweedReconciler) ensureMasterPeerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-master-peer-service", seaweedCR.Name)
+
+	masterPeerService := r.createMasterPeerService(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, masterPeerService, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
+	_, err := r.CreateOrUpdateService(masterPeerService)
+
+	log.Info("Get master peer service " + masterPeerService.Name)
+	return ReconcileResult(err)
+
 }
 
 func labelsForMaster(name string) map[string]string {

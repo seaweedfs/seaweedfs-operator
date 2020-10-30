@@ -7,6 +7,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
@@ -19,7 +20,7 @@ func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (d
 		return
 	}
 
-	if done, result, err = r.ensureVolumeServerService(seaweedCR); done {
+	if done, result, err = r.ensureVolumeServerStatefulSet(seaweedCR); done {
 		return
 	}
 
@@ -34,6 +35,9 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.S
 	log := r.Log.WithValues("sw-volume-statefulset", seaweedCR.Name)
 
 	volumeServerStatefulSet := r.createVolumeServerStatefulSet(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, volumeServerStatefulSet, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
 	_, err := r.CreateOrUpdate(volumeServerStatefulSet, func(existing, desired runtime.Object) error {
 		existingStatefulSet := existing.(*appsv1.StatefulSet)
 		desiredStatefulSet := desired.(*appsv1.StatefulSet)
@@ -63,6 +67,9 @@ func (r *SeaweedReconciler) ensureVolumeServerService(seaweedCR *seaweedv1.Seawe
 	log := r.Log.WithValues("sw-volume-service", seaweedCR.Name)
 
 	volumeServerService := r.createVolumeServerService(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, volumeServerService, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
 	_, err := r.CreateOrUpdateService(volumeServerService)
 
 	log.Info("ensure volume service " + volumeServerService.Name)

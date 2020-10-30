@@ -29,6 +29,18 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 	enableServiceLinks := false
 
 	filerPodSpec := m.BaseFilerSpec().BuildPodSpec()
+	filerPodSpec.Volumes = []corev1.Volume{
+		{
+			Name: "filer-config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: m.Name + "-filer",
+					},
+				},
+			},
+		},
+	}
 	filerPodSpec.EnableServiceLinks = &enableServiceLinks
 	filerPodSpec.Containers = []corev1.Container{{
 		Name:            "seaweedfs",

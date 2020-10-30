@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
@@ -21,6 +22,10 @@ func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done boo
 	}
 
 	if done, result, err = r.ensureMasterService(seaweedCR); done {
+		return
+	}
+
+	if done, result, err = r.ensureMasterConfigMap(seaweedCR); done {
 		return
 	}
 
@@ -40,6 +45,9 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 	if err != nil && errors.IsNotFound(err) {
 		// Define a new deployment
 		dep := r.createMasterStatefulSet(seaweedCR)
+		if err := controllerutil.SetControllerReference(seaweedCR, dep, r.Scheme); err != nil {
+			return ReconcileResult(err)
+		}
 		log.Info("Creating a new master statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
 		err = r.Create(ctx, dep)
 		if err != nil {
@@ -70,15 +78,27 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 	return ReconcileResult(err)
 }
 
+func (r *SeaweedReconciler) ensureMasterConfigMap(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-master-configmap", seaweedCR.Name)
+
+	masterConfigMap := r.createMasterConfigMap(seaweedCR)
+	_, err := r.CreateOrUpdateConfigMap(masterConfigMap)
+
+	log.Info("Get master ConfigMap " + masterConfigMap.Name)
+	return ReconcileResult(err)
+}
+
 func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-master-service", seaweedCR.Name)
 
 	masterService := r.createMasterService(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, masterService, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
 	_, err := r.CreateOrUpdateService(masterService)
 
 	log.Info("Get master service " + masterService.Name)
 	return ReconcileResult(err)
-
 }
 
 func (r *SeaweedReconciler) ensureMasterPeerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {

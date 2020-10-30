@@ -259,6 +259,27 @@ func (r *SeaweedReconciler) CreateOrUpdateIngress(ingress *extensionsv1beta1.Ing
 	return result.(*extensionsv1beta1.Ingress), nil
 }
 
+func (r *SeaweedReconciler) CreateOrUpdateConfigMap(configMap *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	result, err := r.CreateOrUpdate(configMap, func(existing, desired runtime.Object) error {
+		existingConfigMap := existing.(*corev1.ConfigMap)
+		desiredConfigMap := desired.(*corev1.ConfigMap)
+
+		if existingConfigMap.Annotations == nil {
+			existingConfigMap.Annotations = map[string]string{}
+		}
+		for k, v := range desiredConfigMap.Annotations {
+			existingConfigMap.Annotations[k] = v
+		}
+		existingConfigMap.Labels = desiredConfigMap.Labels
+		existingConfigMap.Data = desiredConfigMap.Data
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.(*corev1.ConfigMap), nil
+}
+
 // EmptyClone create an clone of the resource with the same name and namespace (if namespace-scoped), with other fields unset
 func EmptyClone(obj runtime.Object) (runtime.Object, error) {
 	meta, ok := obj.(metav1.Object)

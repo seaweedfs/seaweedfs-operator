@@ -19,9 +19,10 @@ package v1
 import (
 	"fmt"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -57,21 +58,22 @@ var _ webhook.Validator = &Seaweed{}
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *Seaweed) ValidateCreate() error {
 	seaweedlog.Info("validate create", "name", r.Name)
+	errs := []error{}
 
 	// TODO(user): fill in your validation logic upon object creation.
 	if r.Spec.Master == nil {
-		return fmt.Errorf("seaweed[%s/%s] must have master spec", r.Namespace, r.Name)
+		errs = append(errs, fmt.Errorf("seaweed[%s/%s] must have master spec", r.Namespace, r.Name))
 	}
 
 	if r.Spec.Volume == nil {
-		return fmt.Errorf("seaweed[%s/%s] must have volume spec", r.Namespace, r.Name)
+		errs = append(errs, fmt.Errorf("seaweed[%s/%s] must have volume spec", r.Namespace, r.Name))
+	} else {
+		if r.Spec.Volume.Requests[corev1.ResourceStorage].Equal(resource.MustParse("0")) {
+			errs = append(errs, fmt.Errorf("seaweed[%s/%s] volume storage request cannot be zero", r.Namespace, r.Name))
+		}
 	}
 
-	if r.Spec.Volume.Requests[v1.ResourceStorage].Equal(resource.MustParse("0")) {
-		return fmt.Errorf("seaweed[%s/%s] volume storage request cannot be zero", r.Namespace, r.Name)
-	}
-
-	return nil
+	return errors.NewAggregate(errs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type

@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+	label "github.com/seaweedfs/seaweedfs-operator/controllers/label"
 )
 
 func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
@@ -117,5 +118,10 @@ func (r *SeaweedReconciler) ensureMasterPeerService(seaweedCR *seaweedv1.Seaweed
 }
 
 func labelsForMaster(name string) map[string]string {
-	return map[string]string{"app": "seaweedfs", "role": "master", "name": name}
+	return map[string]string{
+		label.ManagedByLabelKey: "seaweedfs-operator",
+		label.NameLabelKey:      "seaweedfs",
+		label.ComponentLabelKey: "master",
+		label.InstanceLabelKey:  name,
+	}
 }

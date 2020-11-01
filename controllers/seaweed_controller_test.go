@@ -65,28 +65,19 @@ var _ = Describe("Seaweed Controller", func() {
 
 				Eventually(func() bool {
 					err := k8sClient.Get(ctx, masterKey, masterSts)
-					if err != nil {
-						return false
-					}
-					return true
+					return err != nil
 				}, timeout, interval).Should(BeTrue())
 				Expect(*masterSts.Spec.Replicas).Should(Equal(seaweed.Spec.Master.Replicas))
 
 				Eventually(func() bool {
 					err := k8sClient.Get(ctx, volumeKey, volumeSts)
-					if err != nil {
-						return false
-					}
-					return true
+					return err != nil
 				}, timeout, interval).Should(BeTrue())
 				Expect(*volumeSts.Spec.Replicas).Should(Equal(seaweed.Spec.Volume.Replicas))
 
 				Eventually(func() bool {
 					err := k8sClient.Get(ctx, filerKey, filerSts)
-					if err != nil {
-						return false
-					}
-					return true
+					return err != nil
 				}, timeout, interval).Should(BeTrue())
 				Expect(*filerSts.Spec.Replicas).Should(Equal(seaweed.Spec.Filer.Replicas))
 			})

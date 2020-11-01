@@ -100,6 +100,7 @@ func (r *SeaweedReconciler) ensureFilerConfigMap(seaweedCR *seaweedv1.Seaweed) (
 
 func labelsForFiler(name string) map[string]string {
 	return map[string]string{
+		label.ManagedByLabelKey: "seaweedfs-operator",
 		label.NameLabelKey:      "seaweedfs",
 		label.ComponentLabelKey: "filer",
 		label.InstanceLabelKey:  name,

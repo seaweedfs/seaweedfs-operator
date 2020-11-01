@@ -82,6 +82,7 @@ func (r *SeaweedReconciler) ensureVolumeServerService(seaweedCR *seaweedv1.Seawe
 
 func labelsForVolumeServer(name string) map[string]string {
 	return map[string]string{
+		label.ManagedByLabelKey: "seaweedfs-operator",
 		label.NameLabelKey:      "seaweedfs",
 		label.ComponentLabelKey: "volume",
 		label.InstanceLabelKey:  name,

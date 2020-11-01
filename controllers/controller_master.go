@@ -119,6 +119,7 @@ func (r *SeaweedReconciler) ensureMasterPeerService(seaweedCR *seaweedv1.Seaweed
 
 func labelsForMaster(name string) map[string]string {
 	return map[string]string{
+		label.ManagedByLabelKey: "seaweedfs-operator",
 		label.NameLabelKey:      "seaweedfs",
 		label.ComponentLabelKey: "master",
 		label.InstanceLabelKey:  name,

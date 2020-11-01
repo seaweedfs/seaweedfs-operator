@@ -91,20 +91,6 @@ func (in *ComponentSpec) DeepCopyInto(out *ComponentSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
-	if in.AdditionalContainers != nil {
-		in, out := &in.AdditionalContainers, &out.AdditionalContainers
-		*out = make([]corev1.Container, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
-	if in.AdditionalVolumes != nil {
-		in, out := &in.AdditionalVolumes, &out.AdditionalVolumes
-		*out = make([]corev1.Volume, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
 	if in.TerminationGracePeriodSeconds != nil {
 		in, out := &in.TerminationGracePeriodSeconds, &out.TerminationGracePeriodSeconds
 		*out = new(int64)

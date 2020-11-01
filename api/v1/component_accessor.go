@@ -22,8 +22,6 @@ type ComponentAccessor interface {
 	DNSPolicy() corev1.DNSPolicy
 	BuildPodSpec() corev1.PodSpec
 	Env() []corev1.EnvVar
-	AdditionalContainers() []corev1.Container
-	AdditionalVolumes() []corev1.Volume
 	TerminationGracePeriodSeconds() *int64
 	StatefulSetUpdateStrategy() appsv1.StatefulSetUpdateStrategyType
 }
@@ -170,14 +168,6 @@ func (a *componentAccessorImpl) BuildPodSpec() corev1.PodSpec {
 
 func (a *componentAccessorImpl) Env() []corev1.EnvVar {
 	return a.ComponentSpec.Env
-}
-
-func (a *componentAccessorImpl) AdditionalContainers() []corev1.Container {
-	return a.ComponentSpec.AdditionalContainers
-}
-
-func (a *componentAccessorImpl) AdditionalVolumes() []corev1.Volume {
-	return a.ComponentSpec.AdditionalVolumes
 }
 
 func (a *componentAccessorImpl) TerminationGracePeriodSeconds() *int64 {

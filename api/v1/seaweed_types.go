@@ -211,13 +211,6 @@ type ComponentSpec struct {
 	// - POD_NAME
 	Env []corev1.EnvVar `json:"env,omitempty"`
 
-	// Additional containers of the component.
-	AdditionalContainers []corev1.Container `json:"additionalContainers,omitempty"`
-
-	// Additional volumes of component pod. Currently this only
-	// supports additional volume mounts for sidecar containers.
-	AdditionalVolumes []corev1.Volume `json:"additionalVolumes,omitempty"`
-
 	// Optional duration in seconds the pod needs to terminate gracefully. May be decreased in delete request.
 	// Value must be non-negative integer. The value zero indicates delete immediately.
 	// If this value is nil, the default grace period will be used instead.

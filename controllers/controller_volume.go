@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+	label "github.com/seaweedfs/seaweedfs-operator/controllers/label"
 )
 
 func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
@@ -80,5 +81,9 @@ func (r *SeaweedReconciler) ensureVolumeServerService(seaweedCR *seaweedv1.Seawe
 }
 
 func labelsForVolumeServer(name string) map[string]string {
-	return map[string]string{"app": "seaweedfs", "role": "volume", "name": name}
+	return map[string]string{
+		label.NameLabelKey:      "seaweedfs",
+		label.ComponentLabelKey: "volume",
+		label.InstanceLabelKey:  name,
+	}
 }

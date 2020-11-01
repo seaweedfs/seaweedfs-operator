@@ -23,8 +23,7 @@ var _ = Describe("Seaweed Controller", func() {
 					namespace = "default"
 					name      = "test-seaweed"
 
-					timeout  = time.Second * 10
-					duration = time.Second * 10
+					timeout  = time.Second * 30
 					interval = time.Millisecond * 250
 				)
 
@@ -67,18 +66,21 @@ var _ = Describe("Seaweed Controller", func() {
 					err := k8sClient.Get(ctx, masterKey, masterSts)
 					return err != nil
 				}, timeout, interval).Should(BeTrue())
+				Expect(masterSts.Spec.Replicas).ShouldNot(BeNil())
 				Expect(*masterSts.Spec.Replicas).Should(Equal(seaweed.Spec.Master.Replicas))
 
 				Eventually(func() bool {
 					err := k8sClient.Get(ctx, volumeKey, volumeSts)
 					return err != nil
 				}, timeout, interval).Should(BeTrue())
+				Expect(volumeSts.Spec.Replicas).ShouldNot(BeNil())
 				Expect(*volumeSts.Spec.Replicas).Should(Equal(seaweed.Spec.Volume.Replicas))
 
 				Eventually(func() bool {
 					err := k8sClient.Get(ctx, filerKey, filerSts)
 					return err != nil
 				}, timeout, interval).Should(BeTrue())
+				Expect(filerSts.Spec.Replicas).ShouldNot(BeNil())
 				Expect(*filerSts.Spec.Replicas).Should(Equal(seaweed.Spec.Filer.Replicas))
 			})
 		})

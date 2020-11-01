@@ -17,12 +17,12 @@ limitations under the License.
 package v1
 
 import (
-	"fmt"
+	"errors"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/errors"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -62,18 +62,18 @@ func (r *Seaweed) ValidateCreate() error {
 
 	// TODO(user): fill in your validation logic upon object creation.
 	if r.Spec.Master == nil {
-		errs = append(errs, fmt.Errorf("seaweed[%s/%s] must have master spec", r.Namespace, r.Name))
+		errs = append(errs, errors.New("missing master spec"))
 	}
 
 	if r.Spec.Volume == nil {
-		errs = append(errs, fmt.Errorf("seaweed[%s/%s] must have volume spec", r.Namespace, r.Name))
+		errs = append(errs, errors.New("missing volume spec"))
 	} else {
 		if r.Spec.Volume.Requests[corev1.ResourceStorage].Equal(resource.MustParse("0")) {
-			errs = append(errs, fmt.Errorf("seaweed[%s/%s] volume storage request cannot be zero", r.Namespace, r.Name))
+			errs = append(errs, errors.New("volume storage request cannot be zero"))
 		}
 	}
 
-	return errors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type

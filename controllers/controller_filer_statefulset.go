@@ -16,6 +16,7 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 	commands := []string{"weed", "filer"}
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.FilerHTTPPort))
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-filer-peer", m.Name))
+	commands = append(commands, fmt.Sprintf("-peers=%s", getFilerPeersString(m.Name, m.Spec.Volume.Replicas)))
 	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m.Name, m.Spec.Master.Replicas)))
 	commands = append(commands, "-s3")
 

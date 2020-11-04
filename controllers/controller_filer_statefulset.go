@@ -48,6 +48,13 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseFilerSpec().ImagePullPolicy(),
 		Env:             append(m.BaseFilerSpec().Env(), kubernetesEnvVars...),
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      "filer-config",
+				ReadOnly:  true,
+				MountPath: "/etc/seaweedfs",
+			},
+		},
 		Command: []string{
 			"/bin/sh",
 			"-ec",

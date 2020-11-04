@@ -42,7 +42,7 @@ run: generate fmt vet manifests
 
 debug: generate fmt vet manifests
 	go build -gcflags="all=-N -l" ./main.go
-	 ENABLE_WEBHOOKS=false dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec main
+	ENABLE_WEBHOOKS=false dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec main
 
 # Install CRDs into a cluster
 install: manifests kustomize

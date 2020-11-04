@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
@@ -14,48 +13,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-// svcName is the backend service name
-func createIngress(seaweedCR *seaweedv1.Seaweed, svcName string, port int) *extensionsv1beta1.Ingress {
-	ingressLabel := map[string]string{"app": "seaweedfs", "role": "ingress", "name": svcName}
-
-	ingress := &extensionsv1beta1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      svcName + "-ingress",
-			Namespace: seaweedCR.Namespace,
-			Labels:    ingressLabel,
-		},
-		Spec: extensionsv1beta1.IngressSpec{
-			Rules: []extensionsv1beta1.IngressRule{},
-		},
-	}
-
-	for _, host := range seaweedCR.Spec.Hosts {
-		rule := extensionsv1beta1.IngressRule{
-			Host: host,
-			IngressRuleValue: extensionsv1beta1.IngressRuleValue{
-				HTTP: &extensionsv1beta1.HTTPIngressRuleValue{
-					Paths: []extensionsv1beta1.HTTPIngressPath{
-						{
-							Path: "/",
-							Backend: extensionsv1beta1.IngressBackend{
-								ServiceName: svcName,
-								ServicePort: intstr.FromInt(port),
-							},
-						},
-					},
-				},
-			},
-		}
-		ingress.Spec.Rules = append(ingress.Spec.Rules, rule)
-	}
-	return ingress
-}
 
 // the following is adapted from tidb-operator/pkg/controller/generic_control.go
 

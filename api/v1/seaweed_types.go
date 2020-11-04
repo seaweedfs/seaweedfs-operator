@@ -98,9 +98,6 @@ type SeaweedSpec struct {
 	StatefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType `json:"statefulSetUpdateStrategy,omitempty"`
 
 	VolumeServerDiskCount int32 `json:"volumeServerDiskCount,omitempty"`
-
-	// Ingresses
-	Hosts []string `json:"hosts,omitempty"`
 }
 
 // SeaweedStatus defines the observed state of Seaweed
@@ -151,6 +148,9 @@ type VolumeSpec struct {
 	IdleTimeout         *int32 `json:"idleTimeout,omitempty"`
 	MaxVolumeCounts     *int32 `json:"maxVolumeCounts,omitempty"`
 	MinFreeSpacePercent *int32 `json:"minFreeSpacePercent,omitempty"`
+
+	// Ingresses
+	HostSuffix *string `json:"hostSuffix,omitempty"`
 }
 
 // FilerSpec is the spec for filers
@@ -169,6 +169,9 @@ type FilerSpec struct {
 	// Filer-specific settings
 
 	MaxMB *int32 `json:"maxMB,omitempty"`
+
+	// Ingresses
+	HostSuffix *string `json:"hostSuffix,omitempty"`
 }
 
 // ComponentSpec is the base spec of each component, the fields should always accessed by the Basic<Component>Spec() method to respect the cluster-level properties

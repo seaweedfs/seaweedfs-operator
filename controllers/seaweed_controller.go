@@ -68,6 +68,10 @@ func (r *SeaweedReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return result, err
 	}
 
+	if done, result, err = r.ensureSeaweedIngress(seaweedCR); done {
+		return result, err
+	}
+
 	return ctrl.Result{}, nil
 }
 

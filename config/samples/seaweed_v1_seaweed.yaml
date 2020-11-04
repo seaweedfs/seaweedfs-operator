@@ -8,6 +8,7 @@ spec:
   volumeServerDiskCount: 1
   master:
     replicas: 3
+    volumeSizeLimitMB: 1024
   volume:
     replicas: 1
     requests:

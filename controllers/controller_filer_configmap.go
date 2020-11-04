@@ -11,7 +11,7 @@ func (r *SeaweedReconciler) createFilerConfigMap(m *seaweedv1.Seaweed) *corev1.C
 	labels := labelsForFiler(m.Name)
 
 	toml := ""
-	if m.Spec.Master.Config != nil {
+	if m.Spec.Filer.Config != nil {
 		toml = *m.Spec.Filer.Config
 	}
 

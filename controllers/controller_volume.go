@@ -44,7 +44,7 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.S
 		desiredStatefulSet := desired.(*appsv1.StatefulSet)
 
 		existingStatefulSet.Spec.Replicas = desiredStatefulSet.Spec.Replicas
-		existingStatefulSet.Spec.Template.Spec.Containers[0].Image = desiredStatefulSet.Spec.Template.Spec.Containers[0].Image
+		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 		return nil
 	})
 

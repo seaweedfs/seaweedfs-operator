@@ -4,8 +4,7 @@ import (
 	"context"
 
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -37,43 +36,20 @@ func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done boo
 }
 
 func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	ctx := context.Background()
 	log := r.Log.WithValues("sw-master-statefulset", seaweedCR.Name)
 
-	masterStatefulSet := &appsv1.StatefulSet{}
-	err := r.Get(ctx, types.NamespacedName{Name: seaweedCR.Name + "-master", Namespace: seaweedCR.Namespace}, masterStatefulSet)
-	if err != nil && errors.IsNotFound(err) {
-		// Define a new deployment
-		dep := r.createMasterStatefulSet(seaweedCR)
-		if err := controllerutil.SetControllerReference(seaweedCR, dep, r.Scheme); err != nil {
-			return ReconcileResult(err)
-		}
-		log.Info("Creating a new master statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
-		err = r.Create(ctx, dep)
-		if err != nil {
-			log.Error(err, "Failed to create master statefulset", "Namespace", dep.Namespace, "Name", dep.Name)
-			return ReconcileResult(err)
-		}
-
-		// StatefulSet created successfully - return and requeue
-		return ReconcileResult(err)
-	} else if err != nil {
-		log.Error(err, "Failed to get Deployment")
+	masterStatefulSet := r.createMasterStatefulSet(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, masterStatefulSet, r.Scheme); err != nil {
 		return ReconcileResult(err)
 	}
+	_, err := r.CreateOrUpdate(masterStatefulSet, func(existing, desired runtime.Object) error {
+		existingStatefulSet := existing.(*appsv1.StatefulSet)
+		desiredStatefulSet := desired.(*appsv1.StatefulSet)
 
-	log.Info("master version " + masterStatefulSet.Spec.Template.Spec.Containers[0].Image + " expected " + seaweedCR.Spec.Image)
-	if masterStatefulSet.Spec.Template.Spec.Containers[0].Image != seaweedCR.Spec.Image {
-		masterStatefulSet.Spec.Template.Spec.Containers[0].Image = seaweedCR.Spec.Image
-		if err = r.Update(ctx, masterStatefulSet); err != nil {
-			log.Error(err, "Failed to update master statefulset", "Namespace", masterStatefulSet.Namespace, "Name", masterStatefulSet.Name)
-			return ReconcileResult(err)
-		}
-		// Deployment created successfully - return and requeue
-		return ReconcileResult(err)
-	}
-
-	log.Info("Get master stateful set " + masterStatefulSet.Name)
+		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
+		return nil
+	})
+	log.Info("ensure master stateful set " + masterStatefulSet.Name)
 	return ReconcileResult(err)
 }
 

@@ -70,8 +70,8 @@ func (r *SeaweedReconciler) waitForMasterStatefulSet(seaweedCR *seaweedv1.Seawee
 		}
 	}
 
-	if runningCounter < len(podList.Items)/2+1 {
-		log.Info("some masters are not ready", "missing", len(podList.Items)-runningCounter)
+	if runningCounter < int(seaweedCR.Spec.Master.Replicas)/2+1 {
+		log.Info("some masters are not ready", "missing", int(seaweedCR.Spec.Master.Replicas)-runningCounter)
 		return true, ctrl.Result{RequeueAfter: 3 * time.Second}, nil
 	}
 

@@ -12,9 +12,6 @@ import (
 const (
 	masterPeerAddressPattern                 = "%s-master-%d.%s-master-peer.%s:9333"
 	filerPeerAddressPattern                  = "%s-filer-%d.%s-filer-peer:8888"
-	masterPeerAddressWithNamespacePattern    = "%s-master-%d.%s-master-peer.%s:9333"
-	filerServiceAddressWithNamespacePattern  = "%s-filer.%s:8888"
-	masterServiceAddressWithNamespacePattern = "%s-master.%s:9333"
 )
 
 var (
@@ -75,26 +72,6 @@ func getMasterAddresses(namespace string, name string, replicas int32) []string 
 
 func getMasterPeersString(m *seaweedv1.Seaweed) string {
 	return strings.Join(getMasterAddresses(m.Namespace, m.Name, m.Spec.Master.Replicas), ",")
-}
-
-func getMasterAddressesWithNamespace(name, namespace string, replicas int32) []string {
-	peersAddresses := make([]string, 0, replicas)
-	for i := int32(0); i < replicas; i++ {
-		peersAddresses = append(peersAddresses, fmt.Sprintf(masterPeerAddressWithNamespacePattern, name, i, name, namespace))
-	}
-	return peersAddresses
-}
-
-func getMasterPeersStringWithNamespace(name, namespace string, replicas int32) string {
-	return strings.Join(getMasterAddressesWithNamespace(name, namespace, replicas), ",")
-}
-
-func getFilerServiceAddressWithNamespace(name, namespace string) string {
-	return fmt.Sprintf(filerServiceAddressWithNamespacePattern, name, namespace)
-}
-
-func getMasterServiceAddressWithNamespace(name, namespace string) string {
-	return fmt.Sprintf(masterServiceAddressWithNamespacePattern, name, namespace)
 }
 
 func copyAnnotations(src map[string]string) map[string]string {

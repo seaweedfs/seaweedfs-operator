@@ -59,7 +59,12 @@ func (r *SeaweedReconciler) waitForMasterStatefulSet(seaweedCR *seaweedv1.Seawee
 	runningCounter := 0
 	for _, pod := range podList.Items {
 		if pod.Status.Phase == corev1.PodRunning {
-			runningCounter++
+			for _, containerStatus := range pod.Status.ContainerStatuses {
+				if containerStatus.Image == seaweedCR.Spec.Image {
+					runningCounter++
+					break
+				}
+			}
 		} else {
 			log.Info("pod", "name", pod.Name, "status", pod.Status)
 		}

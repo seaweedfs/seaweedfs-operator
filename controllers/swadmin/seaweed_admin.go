@@ -57,7 +57,7 @@ func (sa *SeaweedAdmin) ProcessCommand(cmd string) error {
 	}
 
 	for _, c := range shell.Commands {
-		if c.Name() == cmd || c.Name() == "fs."+cmd {
+		if c.Name() == cmds[0] || c.Name() == "fs."+cmds[0] {
 			return c.Do(args, sa.commandEnv, sa.Output)
 		}
 	}

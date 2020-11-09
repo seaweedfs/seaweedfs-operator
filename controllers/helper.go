@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	masterPeerAddressPattern                 = "%s-master-%d.%s-master-peer.%s:9333"
-	filerPeerAddressPattern                  = "%s-filer-%d.%s-filer-peer:8888"
+	masterPeerAddressPattern = "%s-master-%d.%s-master-peer.%s:9333"
+	filerPeerAddressPattern  = "%s-filer-%d.%s-filer-peer:8888"
 )
 
 var (

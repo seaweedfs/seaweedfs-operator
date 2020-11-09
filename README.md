@@ -32,3 +32,19 @@ $ kind load docker-image seaweedfs/operator:v0.0.1
 $ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 
 ```
+
+Update the operator
+```
+# delete the existing operator
+$ kubectl delete namespace seaweedfs-operator-system
+
+# rebuild the operator image
+$ make docker-build
+
+# load the image into Kind cluster
+$ kind load docker-image seaweedfs/operator:v0.0.1
+
+# register the CRD with the Kubernetes
+$ make deploy
+
+```

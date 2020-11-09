@@ -2,14 +2,17 @@ package controllers
 
 import (
 	"context"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
-	label "github.com/seaweedfs/seaweedfs-operator/controllers/label"
+	"github.com/seaweedfs/seaweedfs-operator/controllers/label"
 )
 
 func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
@@ -32,7 +35,44 @@ func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done boo
 		return
 	}
 
+	if done, result, err = r.waitForMasterStatefulSet(seaweedCR); done {
+		return
+	}
+
 	return
+}
+
+func (r *SeaweedReconciler) waitForMasterStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-master-statefulset", seaweedCR.Name)
+
+	podList := &corev1.PodList{}
+	listOpts := []client.ListOption{
+		client.InNamespace(seaweedCR.Namespace),
+		client.MatchingLabels(labelsForMaster(seaweedCR.Name)),
+	}
+	if err := r.List(context.Background(), podList, listOpts...); err != nil {
+		log.Error(err, "Failed to list master pods", "namespace", seaweedCR.Namespace, "name", seaweedCR.Name)
+		return true, ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+	}
+
+	log.Info("pods", "count", len(podList.Items))
+	runningCounter := 0
+	for _, pod := range podList.Items {
+		if pod.Status.Phase == corev1.PodRunning {
+			runningCounter++
+		} else {
+			log.Info("pod", "name", pod.Name, "status", pod.Status)
+		}
+	}
+
+	if runningCounter < len(podList.Items) {
+		log.Info("some masters are not ready", "missing", len(podList.Items)-runningCounter)
+		return true, ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+	}
+
+	log.Info("masters are ready")
+	return ReconcileResult(nil)
+
 }
 
 func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {

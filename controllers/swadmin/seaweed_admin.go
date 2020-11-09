@@ -25,7 +25,6 @@ func NewSeaweedAdmin(masters string, output io.Writer) *SeaweedAdmin {
 	reg, _ := regexp.Compile(`'.*?'|".*?"|\S+`)
 
 	go commandEnv.MasterClient.KeepConnectedToMaster()
-	commandEnv.MasterClient.WaitUntilConnected()
 
 	return &SeaweedAdmin{
 		commandEnv: commandEnv,
@@ -45,6 +44,7 @@ func (sa *SeaweedAdmin) ProcessCommands(cmds string) error {
 }
 
 func (sa *SeaweedAdmin) ProcessCommand(cmd string) error {
+	sa.commandEnv.MasterClient.WaitUntilConnected()
 	cmds := sa.commandReg.FindAllString(cmd, -1)
 	if len(cmds) == 0 {
 		return nil

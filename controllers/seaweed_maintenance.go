@@ -11,11 +11,9 @@ import (
 
 func (r *SeaweedReconciler) maintenance(m *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 
-	masters := getMasterPeersString(m.Name, m.Spec.Master.Replicas)
+	masters := getMasterPeersString(m)
 
 	r.Log.V(0).Info("wait to connect to masters", "masters", masters)
-
-	return ReconcileResult(nil)
 
 	// this step blocks since the operator can not access the masters when running from outside of the k8s cluster
 	sa := swadmin.NewSeaweedAdmin(masters, ioutil.Discard)

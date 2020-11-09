@@ -20,10 +20,13 @@ $ git clone https://github.com/seaweedfs/seaweedfs-operator
 $ cd seaweedfs-operator
 
 # register the CRD with the Kubernetes
-$ make install
+$ make deploy
 
-# run the operator locally outside the Kubernetes cluster
-$ make run ENABLE_WEBHOOKS=false 
+# build the operator image
+$ make docker-build
+
+# load the image into Kind cluster
+$ kind load docker-image seaweedfs/operator:v0.0.1
 
 # From another terminal in the same directory
 $ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml

@@ -126,6 +126,8 @@ type MasterSpec struct {
 	GarbageThreshold   *string `json:"garbageThreshold,omitempty"`
 	PulseSeconds       *int32  `json:"pulseSeconds,omitempty"`
 	DefaultReplication *string `json:"defaultReplication,omitempty"`
+	// only for testing
+	ConcurrentStart *bool `json:"concurrentStart,omitempty"`
 }
 
 // VolumeSpec is the spec for volume servers

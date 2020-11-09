@@ -2123,6 +2123,9 @@ spec:
                   description: Annotations of the component. Merged into the cluster-level
                     annotations if non-empty
                   type: object
+                concurrentStart:
+                  description: only for testing
+                  type: boolean
                 config:
                   description: Config in raw toml string
                   type: string

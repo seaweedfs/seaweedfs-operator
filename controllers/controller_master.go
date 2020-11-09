@@ -35,8 +35,10 @@ func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done boo
 		return
 	}
 
-	if done, result, err = r.waitForMasterStatefulSet(seaweedCR); done {
-		return
+	if !*seaweedCR.Spec.Master.ConcurrentStart {
+		if done, result, err = r.waitForMasterStatefulSet(seaweedCR); done {
+			return
+		}
 	}
 
 	return

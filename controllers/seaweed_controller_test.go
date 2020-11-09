@@ -15,6 +15,11 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
+var (
+	TrueValue   = true
+	FalseVallue = false
+)
+
 var _ = Describe("Seaweed Controller", func() {
 	Context("Basic Functionality", func() {
 		It("Should create StatefulSets", func() {
@@ -34,10 +39,11 @@ var _ = Describe("Seaweed Controller", func() {
 						Name:      name,
 					},
 					Spec: seaweedv1.SeaweedSpec{
-						Image:                 "chrislusf/seaweedfs:2.07",
+						Image:                 "chrislusf/seaweedfs:2.09",
 						VolumeServerDiskCount: 1,
 						Master: &seaweedv1.MasterSpec{
-							Replicas: 3,
+							Replicas:        3,
+							ConcurrentStart: &TrueValue,
 						},
 						Volume: &seaweedv1.VolumeSpec{
 							Replicas: 1,

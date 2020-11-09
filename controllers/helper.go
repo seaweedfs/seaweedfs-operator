@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"strings"
 
+	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const (
-	masterPeerAddressPattern                 = "%s-master-%d.%s-master-peer:9333"
+	masterPeerAddressPattern                 = "%s-master-%d.%s-master-peer.%s:9333"
 	filerPeerAddressPattern                  = "%s-filer-%d.%s-filer-peer:8888"
 	masterPeerAddressWithNamespacePattern    = "%s-master-%d.%s-master-peer.%s:9333"
 	filerServiceAddressWithNamespacePattern  = "%s-filer.%s:8888"
@@ -64,16 +65,16 @@ func getFilerPeersString(name string, replicas int32) string {
 	return strings.Join(getFilerAddresses(name, replicas), ",")
 }
 
-func getMasterAddresses(name string, replicas int32) []string {
+func getMasterAddresses(namespace string, name string, replicas int32) []string {
 	peersAddresses := make([]string, 0, replicas)
 	for i := int32(0); i < replicas; i++ {
-		peersAddresses = append(peersAddresses, fmt.Sprintf(masterPeerAddressPattern, name, i, name))
+		peersAddresses = append(peersAddresses, fmt.Sprintf(masterPeerAddressPattern, name, i, name, namespace))
 	}
 	return peersAddresses
 }
 
-func getMasterPeersString(name string, replicas int32) string {
-	return strings.Join(getMasterAddresses(name, replicas), ",")
+func getMasterPeersString(m *seaweedv1.Seaweed) string {
+	return strings.Join(getMasterAddresses(m.Namespace, m.Name, m.Spec.Master.Replicas), ",")
 }
 
 func getMasterAddressesWithNamespace(name, namespace string, replicas int32) []string {

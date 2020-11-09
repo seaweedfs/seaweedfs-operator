@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: seaweedfs/operator
-  newTag: latest
+  newTag: v0.0.1

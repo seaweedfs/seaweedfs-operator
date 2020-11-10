@@ -7,6 +7,7 @@ spec:
   # Add fields here
   image: chrislusf/seaweedfs:2.09
   volumeServerDiskCount: 1
+  hostSuffix: seaweed.abcdefg.com
   master:
     replicas: 3
     volumeSizeLimitMB: 1024

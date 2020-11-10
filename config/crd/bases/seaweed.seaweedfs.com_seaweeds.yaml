@@ -1343,9 +1343,6 @@ spec:
                   description: Whether Hostnetwork of the component is enabled. Override
                     the cluster-level setting if present
                   type: boolean
-                hostSuffix:
-                  description: Ingresses
-                  type: string
                 imagePullPolicy:
                   description: ImagePullPolicy of the component. Override the cluster-level
                     imagePullPolicy if present
@@ -1495,6 +1492,9 @@ spec:
             hostNetwork:
               description: Whether Hostnetwork is enabled for pods
               type: boolean
+            hostSuffix:
+              description: Ingresses
+              type: string
             image:
               description: Image
               type: string
@@ -3191,9 +3191,6 @@ spec:
                   description: Whether Hostnetwork of the component is enabled. Override
                     the cluster-level setting if present
                   type: boolean
-                hostSuffix:
-                  description: Ingresses
-                  type: string
                 idleTimeout:
                   format: int32
                   type: integer

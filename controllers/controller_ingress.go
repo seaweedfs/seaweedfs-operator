@@ -1,8 +1,6 @@
 package controllers
 
 import (
-	"context"
-
 	"github.com/seaweedfs/seaweedfs-operator/controllers/label"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -11,11 +9,9 @@ import (
 )
 
 func (r *SeaweedReconciler) ensureSeaweedIngress(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
-	_ = context.Background()
-	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
-	if seaweedCR.Spec.Filer.HostSuffix != nil && len(*seaweedCR.Spec.Filer.HostSuffix) != 0 {
-		if done, result, err = r.ensureFilerIngress(seaweedCR); done {
+	if seaweedCR.Spec.HostSuffix != nil && len(*seaweedCR.Spec.HostSuffix) != 0 {
+		if done, result, err = r.ensureAllIngress(seaweedCR); done {
 			return
 		}
 	}
@@ -23,16 +19,16 @@ func (r *SeaweedReconciler) ensureSeaweedIngress(seaweedCR *seaweedv1.Seaweed) (
 	return
 }
 
-func (r *SeaweedReconciler) ensureFilerIngress(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-master-service", seaweedCR.Name)
+func (r *SeaweedReconciler) ensureAllIngress(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-ingress", seaweedCR.Name)
 
-	ingressService := r.createFilerIngress(seaweedCR)
+	ingressService := r.createAllIngress(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, ingressService, r.Scheme); err != nil {
 		return ReconcileResult(err)
 	}
 	_, err := r.CreateOrUpdateIngress(ingressService)
 
-	log.Info("Get master service " + ingressService.Name)
+	log.Info("ensure ingress " + ingressService.Name)
 	return ReconcileResult(err)
 }
 

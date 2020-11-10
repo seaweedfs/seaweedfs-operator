@@ -72,8 +72,10 @@ func (r *SeaweedReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return result, err
 	}
 
-	if done, result, err = r.maintenance(seaweedCR); done {
-		return result, err
+	if false {
+		if done, result, err = r.maintenance(seaweedCR); done {
+			return result, err
+		}
 	}
 
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil

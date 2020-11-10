@@ -33,7 +33,7 @@ $ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 
 ```
 
-Update the operator
+### Update the operator
 ```
 # delete the existing operator
 $ kubectl delete namespace seaweedfs-operator-system
@@ -47,4 +47,20 @@ $ kind load docker-image seaweedfs/operator:v0.0.1
 # register the CRD with the Kubernetes
 $ make deploy
 
+```
+
+### develop outside of k8s
+
+```
+$ git clone https://github.com/seaweedfs/seaweedfs-operator
+$ cd seaweedfs-operator
+
+# register the CRD with the Kubernetes
+$ make install
+
+# run the operator locally outside the Kubernetes cluster
+$ make run ENABLE_WEBHOOKS=false 
+
+# From another terminal in the same directory
+$ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 ```

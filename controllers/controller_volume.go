@@ -21,7 +21,7 @@ func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (d
 		return
 	}
 
-	if done, result, err = r.ensureVolumeServerService(seaweedCR); done {
+	if done, result, err = r.ensureVolumeServerServices(seaweedCR); done {
 		return
 	}
 
@@ -66,17 +66,29 @@ func (r *SeaweedReconciler) ensureVolumeServerPeerService(seaweedCR *seaweedv1.S
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureVolumeServerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+func (r *SeaweedReconciler) ensureVolumeServerServices(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 
-	log := r.Log.WithValues("sw-volume-service", seaweedCR.Name)
+	for i := 0; i < int(seaweedCR.Spec.Volume.Replicas); i++ {
+		done, result, err := r.ensureVolumeServerService(seaweedCR, i)
+		if done {
+			return done, result, err
+		}
+	}
 
-	volumeServerService := r.createVolumeServerService(seaweedCR)
+	return ReconcileResult(nil)
+}
+
+func (r *SeaweedReconciler) ensureVolumeServerService(seaweedCR *seaweedv1.Seaweed, i int) (bool, ctrl.Result, error) {
+
+	log := r.Log.WithValues("sw-volume-service", seaweedCR.Name, "index", i)
+
+	volumeServerService := r.createVolumeServerService(seaweedCR, i)
 	if err := controllerutil.SetControllerReference(seaweedCR, volumeServerService, r.Scheme); err != nil {
 		return ReconcileResult(err)
 	}
 	_, err := r.CreateOrUpdateService(volumeServerService)
 
-	log.Info("ensure volume service " + volumeServerService.Name)
+	log.Info("ensure volume service "+volumeServerService.Name, "index", i)
 	return ReconcileResult(err)
 }
 

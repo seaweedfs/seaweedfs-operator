@@ -15,4 +15,8 @@ const (
 	InstanceLabelKey string = "app.kubernetes.io/instance"
 	// VersionLabelKey is Kubernetes recommended label key, it represents the version of the app
 	VersionLabelKey string = "app.kubernetes.io/version"
+
+	// PodName is to select pod by name
+	// https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#pod-selector
+	PodName string = "statefulset.kubernetes.io/pod-name"
 )

@@ -1,6 +1,9 @@
 package controllers
 
 import (
+	"fmt"
+
+	"github.com/seaweedfs/seaweedfs-operator/controllers/label"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -42,12 +45,14 @@ func (r *SeaweedReconciler) createVolumeServerPeerService(m *seaweedv1.Seaweed) 
 	}
 	return dep
 }
-func (r *SeaweedReconciler) createVolumeServerService(m *seaweedv1.Seaweed) *corev1.Service {
+func (r *SeaweedReconciler) createVolumeServerService(m *seaweedv1.Seaweed, i int) *corev1.Service {
 	labels := labelsForVolumeServer(m.Name)
+	serviceName := fmt.Sprintf("%s-volume-%d", m.Name, i)
+	labels[label.PodName] = serviceName
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.Name + "-volume",
+			Name:      serviceName,
 			Namespace: m.Namespace,
 			Labels:    labels,
 			Annotations: map[string]string{

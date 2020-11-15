@@ -1,6 +1,7 @@
 domain: seaweedfs.com
 layout: go.kubebuilder.io/v2
 repo: github.com/seaweedfs/seaweedfs-operator
+projectName: seaweedfs-operator
 resources:
 - group: seaweed
   kind: Seaweed

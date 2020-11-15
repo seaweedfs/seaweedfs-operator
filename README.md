@@ -11,6 +11,24 @@ Goals:
 
 ## Installation
 
+This operator uses `kustomize` to deploy. The installation process will install one for you if you do not have one.
+
+By default, the defaulting and validation webhooks are disabled. We strongly recommend that the webhooks be enabled.
+
+First clone the repository:
+
+```bash
+$ git clone https://github.com/seaweedfs/seaweedfs-operator --depth=1
+```
+
+To deploy the operator with webhooks enabled, follow the instructions in the `config/default/kustomization.yaml` file to uncomment the components you need.
+
+Then run the command to deploy the operator into your cluster:
+
+```
+$ make deploy
+```
+
 ## Development
 
 Follow the instructions in https://sdk.operatorframework.io/docs/building-operators/golang/quickstart/

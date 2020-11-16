@@ -5,7 +5,7 @@ metadata:
   namespace: default
 spec:
   # Add fields here
-  image: chrislusf/seaweedfs:2.10
+  image: chrislusf/seaweedfs:2.11
   volumeServerDiskCount: 1
   hostSuffix: seaweed.abcdefg.com
   master:

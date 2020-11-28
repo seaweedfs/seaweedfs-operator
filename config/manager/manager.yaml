@@ -28,6 +28,9 @@ spec:
         args:
         - --enable-leader-election
         image: controller:latest
+        env:
+        - name: ENABLE_WEBHOOKS
+          value: "false"
         name: manager
         resources:
           limits:

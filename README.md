@@ -23,6 +23,8 @@ $ git clone https://github.com/seaweedfs/seaweedfs-operator --depth=1
 
 To deploy the operator with webhooks enabled, make sure you have installed the `cert-manager`(Installation docs: https://cert-manager.io/docs/installation/) in your cluster, then follow the instructions in the `config/default/kustomization.yaml` file to uncomment the components you need.
 
+Lastly, change the value of `ENABLE_WEBHOOKS` to `"true"` in `seaweedfs-operator/config/manager/manager.yaml`
+
 Then run the command to deploy the operator into your cluster:
 
 ```

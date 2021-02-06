@@ -46,7 +46,7 @@ $ make deploy
 $ make docker-build
 
 # load the image into Kind cluster
-$ kind load docker-image seaweedfs/operator:v0.0.1
+$ kind load docker-image chrislusf/seaweedfs-operator:v0.0.1
 
 # From another terminal in the same directory
 $ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
@@ -62,7 +62,7 @@ $ kubectl delete namespace seaweedfs-operator-system
 $ make docker-build
 
 # load the image into Kind cluster
-$ kind load docker-image seaweedfs/operator:v0.0.1
+$ kind load docker-image chrislusf/seaweedfs-operator:v0.0.1
 
 # register the CRD with the Kubernetes
 $ make deploy

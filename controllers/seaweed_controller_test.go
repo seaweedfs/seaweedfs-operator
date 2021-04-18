@@ -39,7 +39,7 @@ var _ = Describe("Seaweed Controller", func() {
 						Name:      name,
 					},
 					Spec: seaweedv1.SeaweedSpec{
-						Image:                 "chrislusf/seaweedfs:2.39",
+						Image:                 "chrislusf/seaweedfs:2.40",
 						VolumeServerDiskCount: 1,
 						Master: &seaweedv1.MasterSpec{
 							Replicas:        3,

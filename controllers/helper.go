@@ -11,7 +11,7 @@ import (
 
 const (
 	masterPeerAddressPattern = "%s-master-%d.%s-master-peer.%s:9333"
-	filerPeerAddressPattern  = "%s-filer-%d.%s-filer-peer:8888"
+	filerPeerAddressPattern  = "%s-filer-%d.%s-filer-peer.%s:8888"
 )
 
 var (
@@ -50,16 +50,16 @@ func ReconcileResult(err error) (bool, ctrl.Result, error) {
 	return false, ctrl.Result{}, nil
 }
 
-func getFilerAddresses(name string, replicas int32) []string {
+func getFilerAddresses(name string, namespace string, replicas int32) []string {
 	peersAddresses := make([]string, 0, replicas)
 	for i := int32(0); i < replicas; i++ {
-		peersAddresses = append(peersAddresses, fmt.Sprintf(filerPeerAddressPattern, name, i, name))
+		peersAddresses = append(peersAddresses, fmt.Sprintf(filerPeerAddressPattern, name, i, name, namespace))
 	}
 	return peersAddresses
 }
 
-func getFilerPeersString(name string, replicas int32) string {
-	return strings.Join(getFilerAddresses(name, replicas), ",")
+func getFilerPeersString(name string, namespace string, replicas int32) string {
+	return strings.Join(getFilerAddresses(name, namespace, replicas), ",")
 }
 
 func getMasterAddresses(namespace string, name string, replicas int32) []string {

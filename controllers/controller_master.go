@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -63,9 +62,8 @@ func (r *SeaweedReconciler) waitForMasterStatefulSet(seaweedCR *seaweedv1.Seawee
 	for _, pod := range podList.Items {
 		if pod.Status.Phase == corev1.PodRunning {
 			for _, containerStatus := range pod.Status.ContainerStatuses {
-				if strings.Contains(containerStatus.Image, seaweedCR.Spec.Image) {
+				if containerStatus.Ready {
 					runningCounter++
-					break
 				}
 				log.Info("pod", "name", pod.Name, "containerStatus", containerStatus)
 			}

@@ -47,7 +47,7 @@ func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *extensionsv1
 								{
 									Path: "/",
 									Backend: extensionsv1beta1.IngressBackend{
-										ServiceName: m.Name + "-s3",
+										ServiceName: m.Name + "-filer",
 										ServicePort: intstr.FromInt(seaweedv1.FilerS3Port),
 									},
 								},

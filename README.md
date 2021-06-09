@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/seaweedfs/seaweedfs-operator.svg?branch=master)](https://travis-ci.org/seaweedfs/seaweedfs-operator)
+
 # SeaweedFS Operator
 
 Goals: 

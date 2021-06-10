@@ -2,14 +2,20 @@
 
 # SeaweedFS Operator
 
+This [Kubernetes Operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) is made to easily deploy SeaweedFS onto your Kubernetes-Cluster.
+
+The difference to [seaweedfs-csi-driver](https://github.com/seaweedfs/seaweedfs-csi-driver) is that the infrastructure (SeaweedFS) itself runs on Kubernetes as well (Master, Filer, Volume-Servers) and can as such easily scale with it as you need. It is also by far more resilent to failures then a simple systemD service in regards to handling crashing services or accidental deletes.
+
+By using `make deploy` it will deploy a Resource of type 'Seaweed' onto your current kubectl $KUBECONFIG target (the operator itself) which by default will do nothing unless you configurate it (see .
+
 Goals: 
-* Automatically deploy a SeaweedFS cluster with 3 masters, N volume servers, and M filers with customizable filer store managed by other operators.
-* Auto rolling upgrade and restart.
-* Ingress for volume server, filer and S3, to support HDFS, REST filer, S3 API and cross-cluster replication.
-* Support all major cloud Kubernetes: AWS, Google, Azure.
-* Scheduled backup to cloud storage: S3, Google Cloud Storage , Azure.
-* Put warm data to cloud storage tier: S3, Google Cloud Storage , Azure.
-* Grafana dashboard.
+- [x] Automatically deploy a SeaweedFS cluster with 3 masters, N volume servers, and M filers with customizable filer store managed by other operators.
+- [x] Auto rolling upgrade and restart.
+- [x] Ingress for volume server, filer and S3, to support HDFS, REST filer, S3 API and cross-cluster replication.
+- [ ] Support all major cloud Kubernetes: AWS, Google, Azure.
+- [ ] Scheduled backup to cloud storage: S3, Google Cloud Storage , Azure.
+- [ ] Put warm data to cloud storage tier: S3, Google Cloud Storage , Azure.
+- [ ] Grafana dashboard.
 
 ## Installation
 
@@ -27,10 +33,26 @@ To deploy the operator with webhooks enabled, make sure you have installed the `
 
 Lastly, change the value of `ENABLE_WEBHOOKS` to `"true"` in `config/manager/manager.yaml`
 
+Afterwards fire up:
+```bash
+$ make install
+```
+
 Then run the command to deploy the operator into your cluster:
 
-```
+```bash
 $ make deploy
+```
+
+Verify if it was correctly deployed with:
+```bash
+$ kubectl get Seaweed --all-namespaces
+```
+
+Which should return:
+```bash
+NAMESPACE   NAME      AGE
+seaweed     seaweed   1h
 ```
 
 ## Development

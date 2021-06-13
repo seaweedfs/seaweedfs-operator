@@ -9,7 +9,9 @@ The difference to [seaweedfs-csi-driver](https://github.com/seaweedfs/seaweedfs-
 By using `make deploy` it will deploy a Resource of type 'Seaweed' onto your current kubectl $KUBECONFIG target (the operator itself) which by default will do nothing unless you configurate it (see examples in config/samples/).
 
 Goals: 
-- [x] Automatically deploy a SeaweedFS cluster with 3 masters, N volume servers, and M filers with customizable filer store managed by other operators.
+- [x] Automatically deploy and manage a SeaweedFS cluster.
+- [x] Ability to be managed by other Operators.
+- [ ] Compability with [seaweedfs-csi-driver](https://github.com/seaweedfs/seaweedfs-csi-driver)
 - [x] Auto rolling upgrade and restart.
 - [x] Ingress for volume server, filer and S3, to support HDFS, REST filer, S3 API and cross-cluster replication.
 - [ ] Support all major cloud Kubernetes: AWS, Google, Azure.
@@ -54,6 +56,15 @@ Which should return:
 NAMESPACE   NAME      AGE
 seaweed     seaweed   1h
 ```
+
+See the next section for example usage
+
+
+## Configuration Examples 
+
+
+## Maintenance and Uninstallation
+
 
 ## Development
 

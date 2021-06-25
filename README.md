@@ -57,13 +57,15 @@ NAMESPACE   NAME      AGE
 seaweed     seaweed   1h
 ```
 
-See the next section for example usage
+See the next section for example usage - **__at this point you only deployed the Operator itself!__**
+
+### You need to also deploy an configuration to get it running (see next section)!
 
 
 ## Configuration Examples 
 
 - Please send us your use-cases / example configs ... this is currently empty (needs to be written)
-- For now see: https://github.com/seaweedfs/seaweedfs-operator/blob/readme_adjustments/config/samples/seaweed_v1_seaweed.yaml
+- For now see: https://github.com/seaweedfs/seaweedfs-operator/config/samples/seaweed_v1_seaweed.yaml
 
 
 ## Maintenance and Uninstallation

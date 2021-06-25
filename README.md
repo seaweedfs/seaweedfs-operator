@@ -66,6 +66,31 @@ See the next section for example usage - **__at this point you only deployed the
 
 - Please send us your use-cases / example configs ... this is currently empty (needs to be written)
 - For now see: https://github.com/seaweedfs/seaweedfs-operator/blob/master/config/samples/seaweed_v1_seaweed.yaml
+````
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed1
+  namespace: default
+spec:
+  # Add fields here
+  image: chrislusf/seaweedfs:2.54
+  volumeServerDiskCount: 1
+  hostSuffix: seaweed.abcdefg.com
+  master:
+    replicas: 3
+    volumeSizeLimitMB: 1024
+  volume:
+    replicas: 1
+    requests:
+      storage: 2Gi
+  filer:
+    replicas: 2
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"
+  ````
 
 
 ## Maintenance and Uninstallation

@@ -62,9 +62,12 @@ See the next section for example usage
 
 ## Configuration Examples 
 
+- Please send us your use-cases / example configs ... this is currently empty (needs to be written)
+- For now see: https://github.com/seaweedfs/seaweedfs-operator/blob/readme_adjustments/config/samples/seaweed_v1_seaweed.yaml
+
 
 ## Maintenance and Uninstallation
-
+- TBD
 
 ## Development
 

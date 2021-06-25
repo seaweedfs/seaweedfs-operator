@@ -65,7 +65,7 @@ See the next section for example usage - **__at this point you only deployed the
 ## Configuration Examples 
 
 - Please send us your use-cases / example configs ... this is currently empty (needs to be written)
-- For now see: https://github.com/seaweedfs/seaweedfs-operator/blob/config/samples/seaweed_v1_seaweed.yaml
+- For now see: https://github.com/seaweedfs/seaweedfs-operator/blob/master/config/samples/seaweed_v1_seaweed.yaml
 
 
 ## Maintenance and Uninstallation

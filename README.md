@@ -48,13 +48,22 @@ $ make deploy
 
 Verify if it was correctly deployed with:
 ```bash
-$ kubectl get Seaweed --all-namespaces
+$ kubectl get pods --all-namespaces
 ```
 
 Which should return:
 ```bash
-NAMESPACE   NAME      AGE
-seaweed     seaweed   1h
+NAMESPACE                   NAME                                                     READY   STATUS    RESTARTS   AGE
+kube-system                 coredns-f9fd979d6-68p4c                                  1/1     Running   0          34m
+kube-system                 coredns-f9fd979d6-x992t                                  1/1     Running   0          34m
+kube-system                 etcd-kind-control-plane                                  1/1     Running   0          34m
+kube-system                 kindnet-rp7wr                                            1/1     Running   0          34m
+kube-system                 kube-apiserver-kind-control-plane                        1/1     Running   0          34m
+kube-system                 kube-controller-manager-kind-control-plane               1/1     Running   0          34m
+kube-system                 kube-proxy-dqfg2                                         1/1     Running   0          34m
+kube-system                 kube-scheduler-kind-control-plane                        1/1     Running   0          34m
+local-path-storage          local-path-provisioner-78776bfc44-7zvxx                  1/1     Running   0          34m
+seaweedfs-operator-system   seaweedfs-operator-controller-manager-54cc768f4c-cwz2k   2/2     Running   0          34m
 ```
 
 See the next section for example usage - **__at this point you only deployed the Operator itself!__**

@@ -51,7 +51,7 @@ Verify if it was correctly deployed with:
 $ kubectl get pods --all-namespaces
 ```
 
-Which should return:
+Which may return:
 ```bash
 NAMESPACE                   NAME                                                     READY   STATUS    RESTARTS   AGE
 kube-system                 coredns-f9fd979d6-68p4c                                  1/1     Running   0          34m

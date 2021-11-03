@@ -24,7 +24,7 @@ func NewSeaweedAdmin(masters string, output io.Writer) *SeaweedAdmin {
 	commandEnv := shell.NewCommandEnv(shellOptions)
 	reg, _ := regexp.Compile(`'.*?'|".*?"|\S+`)
 
-	go commandEnv.MasterClient.KeepConnectedToMaster()
+	go commandEnv.MasterClient.SubscribeVolumeLocationUpdatesToMaster()
 
 	return &SeaweedAdmin{
 		commandEnv: commandEnv,

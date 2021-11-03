@@ -3,7 +3,7 @@ module github.com/seaweedfs/seaweedfs-operator
 go 1.17
 
 require (
-	github.com/chrislusf/seaweedfs v0.0.0-20211103064547-ab97b17e6250
+	github.com/chrislusf/seaweedfs v0.0.0-20211103083639-3c245c69d369
 	github.com/go-logr/logr v0.1.0
 	github.com/onsi/ginkgo v1.14.2
 	github.com/onsi/gomega v1.10.4
@@ -88,6 +88,7 @@ require (
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20210921142501-181ce0d877f6 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
+	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect

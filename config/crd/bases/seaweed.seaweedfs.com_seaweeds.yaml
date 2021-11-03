@@ -14,6 +14,7 @@ spec:
     listKind: SeaweedList
     plural: seaweeds
     singular: seaweed
+  preserveUnknownFields: false
   scope: Namespaced
   subresources:
     status: {}

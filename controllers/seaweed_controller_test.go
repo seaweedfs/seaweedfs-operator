@@ -4,8 +4,6 @@ import (
 	"context"
 	"time"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -39,7 +37,7 @@ var _ = Describe("Seaweed Controller", func() {
 						Name:      name,
 					},
 					Spec: seaweedv1.SeaweedSpec{
-						Image:                 "chrislusf/seaweedfs:2.80",
+						Image:                 "chrislusf/seaweedfs:2.81",
 						VolumeServerDiskCount: 1,
 						Master: &seaweedv1.MasterSpec{
 							Replicas:        3,

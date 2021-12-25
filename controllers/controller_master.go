@@ -93,6 +93,7 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 		existingStatefulSet := existing.(*appsv1.StatefulSet)
 		desiredStatefulSet := desired.(*appsv1.StatefulSet)
 
+		existingStatefulSet.Spec.Replicas = desiredStatefulSet.Spec.Replicas
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 		return nil
 	})

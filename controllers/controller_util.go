@@ -90,7 +90,7 @@ func (r *SeaweedReconciler) addSpecToAnnotation(d *appsv1.Deployment) error {
 }
 
 func (r *SeaweedReconciler) CreateOrUpdateDeployment(deploy *appsv1.Deployment) (*appsv1.Deployment, error) {
-	r.addSpecToAnnotation(deploy)
+	_ = r.addSpecToAnnotation(deploy)
 	result, err := r.CreateOrUpdate(deploy, func(existing, desired runtime.Object) error {
 		existingDep := existing.(*appsv1.Deployment)
 		desiredDep := desired.(*appsv1.Deployment)

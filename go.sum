@@ -153,8 +153,6 @@ github.com/cespare/xxhash v1.1.0/go.mod h1:XrSqR1VqqWfGrhpAt58auRo0WTKS1nRRg3ghf
 github.com/cespare/xxhash/v2 v2.1.1 h1:6MnRN8NT7+YBpUIWxHtefFZOKTAPgGjpQSxqLNn0+qY=
 github.com/cespare/xxhash/v2 v2.1.1/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/chrislusf/raft v1.0.7/go.mod h1:Ep5DP+mJSosjfKiix1uU7Lc2Df/SX4oGJEpZlXH5l68=
-github.com/chrislusf/seaweedfs v0.0.0-20211103064547-ab97b17e6250 h1:7yeczxzeuXNW140HCYfbvtptNokyXsDMIT6Q1634yb8=
-github.com/chrislusf/seaweedfs v0.0.0-20211103064547-ab97b17e6250/go.mod h1:8zovCx9OYusQAK7lHAcVFtQsKO2XVQHHvPdlWbK1VRQ=
 github.com/chrislusf/seaweedfs v0.0.0-20211103083639-3c245c69d369 h1:BYmfLrY7o3sTP2yQ8uW9cA0rCFuDLPRlr5mkM+nAlDc=
 github.com/chrislusf/seaweedfs v0.0.0-20211103083639-3c245c69d369/go.mod h1:8zovCx9OYusQAK7lHAcVFtQsKO2XVQHHvPdlWbK1VRQ=
 github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWRnGsAI=

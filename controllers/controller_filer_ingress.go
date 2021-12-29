@@ -80,6 +80,6 @@ func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *extensionsv1
 	}
 
 	// Set master instance as the owner and controller
-	ctrl.SetControllerReference(m, dep, r.Scheme)
+	_ = ctrl.SetControllerReference(m, dep, r.Scheme)
 	return dep
 }

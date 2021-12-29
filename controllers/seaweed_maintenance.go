@@ -26,11 +26,11 @@ func (r *SeaweedReconciler) maintenance(m *seaweedv1.Seaweed) (done bool, result
 		r.Log.V(0).Info("volume.list", "error", err)
 	}
 
-	sa.ProcessCommand("lock")
+	_ = sa.ProcessCommand("lock")
 	if err := sa.ProcessCommand("volume.balance -force"); err != nil {
 		r.Log.V(0).Info("volume.balance", "error", err)
 	}
-	sa.ProcessCommand("unlock")
+	_ = sa.ProcessCommand("unlock")
 
 	return ReconcileResult(nil)
 

@@ -31,6 +31,10 @@ func buildMasterStartupScript(m *seaweedv1.Seaweed) string {
 		command = append(command, fmt.Sprintf("-pulseSeconds=%d", *spec.PulseSeconds))
 	}
 
+	if spec.DefaultReplication != nil {
+		command = append(command, fmt.Sprintf("-defaultReplication=%s", *spec.DefaultReplication))
+	}
+
 	command = append(command, fmt.Sprintf("-ip=$(POD_NAME).%s-master-peer.%s", m.Name, m.Namespace))
 	command = append(command, fmt.Sprintf("-peers=%s", getMasterPeersString(m)))
 	return strings.Join(command, " ")

@@ -13,7 +13,7 @@ import (
 )
 
 func buildMasterStartupScript(m *seaweedv1.Seaweed) string {
-	command := []string{"weed", "master"}
+	command := []string{"weed", "-logtostderr=true", "master"}
 	spec := m.Spec.Master
 	if spec.VolumePreallocate != nil && *spec.VolumePreallocate {
 		command = append(command, "-volumePreallocate")

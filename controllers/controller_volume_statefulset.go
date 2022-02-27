@@ -13,7 +13,7 @@ import (
 )
 
 func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string) string {
-	commands := []string{"weed", "volume"}
+	commands := []string{"weed", "-logtostderr=true", "volume"}
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
 	commands = append(commands, "-max=0")
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-volume-peer.%s", m.Name, m.Namespace))

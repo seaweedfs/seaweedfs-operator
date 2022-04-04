@@ -171,6 +171,8 @@ type FilerSpec struct {
 	// Filer-specific settings
 
 	MaxMB *int32 `json:"maxMB,omitempty"`
+	// +kubebuilder:default:=true
+	S3 bool `json:"s3,omitempty"`
 }
 
 // ComponentSpec is the base spec of each component, the fields should always accessed by the Basic<Component>Spec() method to respect the cluster-level properties

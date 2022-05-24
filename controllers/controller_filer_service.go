@@ -10,6 +10,28 @@ import (
 
 func (r *SeaweedReconciler) createFilerPeerService(m *seaweedv1.Seaweed) *corev1.Service {
 	labels := labelsForFiler(m.Name)
+	ports := []corev1.ServicePort{
+		{
+			Name:       "filer-http",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.FilerHTTPPort,
+			TargetPort: intstr.FromInt(seaweedv1.FilerHTTPPort),
+		},
+		{
+			Name:       "filer-grpc",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.FilerGRPCPort,
+			TargetPort: intstr.FromInt(seaweedv1.FilerGRPCPort),
+		},
+	}
+	if m.Spec.Filer.S3 {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "filer-s3",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.FilerS3Port,
+			TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),
+		})
+	}
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -23,27 +45,8 @@ func (r *SeaweedReconciler) createFilerPeerService(m *seaweedv1.Seaweed) *corev1
 		Spec: corev1.ServiceSpec{
 			ClusterIP:                "None",
 			PublishNotReadyAddresses: true,
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "filer-http",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.FilerHTTPPort,
-					TargetPort: intstr.FromInt(seaweedv1.FilerHTTPPort),
-				},
-				{
-					Name:       "filer-grpc",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.FilerGRPCPort,
-					TargetPort: intstr.FromInt(seaweedv1.FilerGRPCPort),
-				},
-				{
-					Name:       "filer-s3",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.FilerS3Port,
-					TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),
-				},
-			},
-			Selector: labels,
+			Ports:                    ports,
+			Selector:                 labels,
 		},
 	}
 	return dep
@@ -51,6 +54,28 @@ func (r *SeaweedReconciler) createFilerPeerService(m *seaweedv1.Seaweed) *corev1
 
 func (r *SeaweedReconciler) createFilerService(m *seaweedv1.Seaweed) *corev1.Service {
 	labels := labelsForFiler(m.Name)
+	ports := []corev1.ServicePort{
+		{
+			Name:       "filer-http",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.FilerHTTPPort,
+			TargetPort: intstr.FromInt(seaweedv1.FilerHTTPPort),
+		},
+		{
+			Name:       "filer-grpc",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.FilerGRPCPort,
+			TargetPort: intstr.FromInt(seaweedv1.FilerGRPCPort),
+		},
+	}
+	if m.Spec.Filer.S3 {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "filer-s3",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.FilerS3Port,
+			TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),
+		})
+	}
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -64,27 +89,8 @@ func (r *SeaweedReconciler) createFilerService(m *seaweedv1.Seaweed) *corev1.Ser
 		Spec: corev1.ServiceSpec{
 			Type:                     corev1.ServiceTypeClusterIP,
 			PublishNotReadyAddresses: true,
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "filer-http",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.FilerHTTPPort,
-					TargetPort: intstr.FromInt(seaweedv1.FilerHTTPPort),
-				},
-				{
-					Name:       "filer-grpc",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.FilerGRPCPort,
-					TargetPort: intstr.FromInt(seaweedv1.FilerGRPCPort),
-				},
-				{
-					Name:       "filer-s3",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.FilerS3Port,
-					TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),
-				},
-			},
-			Selector: labels,
+			Ports:                    ports,
+			Selector:                 labels,
 		},
 	}
 

@@ -39,7 +39,7 @@ func (r *SeaweedReconciler) CreateOrUpdate(obj runtime.Object, mergeFn MergeFn) 
 	// controller-runtime/client will mutate the object pointer in-place,
 	// to be consistent with other methods in our controller, we copy the object
 	// to avoid the in-place mutation here and hereafter.
-	desired := obj.DeepCopyObject()
+	desired := obj.DeepCopyObject().(client.Object)
 
 	// 1. try to create and see if there is any conflicts
 	err := r.Create(context.TODO(), desired)
@@ -50,16 +50,12 @@ func (r *SeaweedReconciler) CreateOrUpdate(obj runtime.Object, mergeFn MergeFn) 
 		if err != nil {
 			return nil, err
 		}
-		key, err := client.ObjectKeyFromObject(existing)
-		if err != nil {
-			return nil, err
-		}
-		err = r.Get(context.TODO(), key, existing)
+		err = r.Get(context.TODO(), client.ObjectKeyFromObject(desired), existing.(client.Object))
 		if err != nil {
 			return nil, err
 		}
 
-		mutated := existing.DeepCopyObject()
+		mutated := existing.DeepCopyObject().(client.Object)
 		// 4. invoke mergeFn to mutate a copy of the existing object
 		if err := mergeFn(mutated, desired); err != nil {
 			return nil, err

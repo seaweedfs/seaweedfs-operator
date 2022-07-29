@@ -46,8 +46,7 @@ type SeaweedReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;
 
 // Reconcile implements the reconcilation logic
-func (r *SeaweedReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	ctx := context.Background()
+func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("seaweed", req.NamespacedName)
 
 	log.Info("start Reconcile ...")

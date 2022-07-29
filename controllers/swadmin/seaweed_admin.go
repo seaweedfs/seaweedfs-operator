@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/chrislusf/seaweedfs/weed/shell"
+	"github.com/seaweedfs/seaweedfs/weed/shell"
 	"google.golang.org/grpc"
 )
 
@@ -21,10 +21,10 @@ func NewSeaweedAdmin(masters string, output io.Writer) *SeaweedAdmin {
 	shellOptions.GrpcDialOption = grpc.WithInsecure()
 	shellOptions.Masters = &masters
 
-	commandEnv := shell.NewCommandEnv(shellOptions)
+	commandEnv := shell.NewCommandEnv(&shellOptions)
 	reg, _ := regexp.Compile(`'.*?'|".*?"|\S+`)
 
-	go commandEnv.MasterClient.LoopConnectToMaster()
+	go commandEnv.MasterClient.KeepConnectedToMaster()
 
 	return &SeaweedAdmin{
 		commandEnv: commandEnv,

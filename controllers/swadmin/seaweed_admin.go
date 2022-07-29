@@ -2,6 +2,7 @@ package swadmin
 
 import (
 	"fmt"
+	"google.golang.org/grpc/credentials/insecure"
 	"io"
 	"regexp"
 	"strings"
@@ -18,7 +19,7 @@ type SeaweedAdmin struct {
 
 func NewSeaweedAdmin(masters string, output io.Writer) *SeaweedAdmin {
 	var shellOptions shell.ShellOptions
-	shellOptions.GrpcDialOption = grpc.WithInsecure()
+	shellOptions.GrpcDialOption = grpc.WithTransportCredentials(insecure.NewCredentials())
 	shellOptions.Masters = &masters
 
 	commandEnv := shell.NewCommandEnv(&shellOptions)

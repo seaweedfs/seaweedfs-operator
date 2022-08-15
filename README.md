@@ -88,7 +88,7 @@ metadata:
   namespace: default
 spec:
   # Add fields here
-  image: chrislusf/seaweedfs:3.21
+  image: chrislusf/seaweedfs:3.22
   volumeServerDiskCount: 1
   hostSuffix: seaweed.abcdefg.com
   master:

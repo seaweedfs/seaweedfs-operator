@@ -21,7 +21,7 @@ Goals:
 
 ## Installation
 
-This operator uses `kustomize` to deploy. The installation process will install one for you if you do not have one.
+This operator uses `kustomize` to deploy. Please [install kustomize](https://kubectl.docs.kubernetes.io/installation/kustomize/) if you do not have one.
 
 By default, the defaulting and validation webhooks are disabled. We strongly recommend that the webhooks be enabled.
 

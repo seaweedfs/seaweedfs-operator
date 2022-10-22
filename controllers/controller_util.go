@@ -7,7 +7,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -183,10 +183,10 @@ func (r *SeaweedReconciler) CreateOrUpdateService(svc *corev1.Service) (*corev1.
 	return result.(*corev1.Service), nil
 }
 
-func (r *SeaweedReconciler) CreateOrUpdateIngress(ingress *extensionsv1beta1.Ingress) (*extensionsv1beta1.Ingress, error) {
+func (r *SeaweedReconciler) CreateOrUpdateIngress(ingress *networkingv1.Ingress) (*networkingv1.Ingress, error) {
 	result, err := r.CreateOrUpdate(ingress, func(existing, desired runtime.Object) error {
-		existingIngress := existing.(*extensionsv1beta1.Ingress)
-		desiredIngress := desired.(*extensionsv1beta1.Ingress)
+		existingIngress := existing.(*networkingv1.Ingress)
+		desiredIngress := desired.(*networkingv1.Ingress)
 
 		if existingIngress.Annotations == nil {
 			existingIngress.Annotations = map[string]string{}
@@ -213,7 +213,7 @@ func (r *SeaweedReconciler) CreateOrUpdateIngress(ingress *extensionsv1beta1.Ing
 	if err != nil {
 		return nil, err
 	}
-	return result.(*extensionsv1beta1.Ingress), nil
+	return result.(*networkingv1.Ingress), nil
 }
 
 func (r *SeaweedReconciler) CreateOrUpdateConfigMap(configMap *corev1.ConfigMap) (*corev1.ConfigMap, error) {
@@ -310,8 +310,8 @@ func ServiceEqual(newSvc, oldSvc *corev1.Service) (bool, error) {
 	return false, nil
 }
 
-func IngressEqual(newIngress, oldIngres *extensionsv1beta1.Ingress) (bool, error) {
-	oldIngressSpec := extensionsv1beta1.IngressSpec{}
+func IngressEqual(newIngress, oldIngres *networkingv1.Ingress) (bool, error) {
+	oldIngressSpec := networkingv1.IngressSpec{}
 	if lastAppliedConfig, ok := oldIngres.Annotations[LastAppliedConfigAnnotation]; ok {
 		err := json.Unmarshal([]byte(lastAppliedConfig), &oldIngressSpec)
 		if err != nil {

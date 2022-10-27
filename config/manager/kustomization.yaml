@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: ghcr.io/seaweedfs/seaweedfs-operator
-  newTag: master
+  newTag: latest

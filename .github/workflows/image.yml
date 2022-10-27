@@ -2,11 +2,11 @@ name: Create and publish Docker image
 
 on:
   push:
-    branches: [ master ]
+    branches:
+    - master
+    tags:
+    - v*
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: seaweedfs/seaweedfs-operator
 
 jobs:
   build-and-push-image:
@@ -15,24 +15,36 @@ jobs:
       contents: read
       packages: write
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
 
-    - name: Log in to the Container registry
-      uses: docker/login-action@v1.12.0
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Login into GitHub Container Registry
+      uses: docker/login-action@v2
       with:
-        registry: ${{ env.REGISTRY }}
+        registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Login into Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
     - name: Extract metadata (tags, labels) for Docker
       id: meta
-      uses: docker/metadata-action@v3.6.2
+      uses: docker/metadata-action@v4
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        images: |
+          chrislusf/seaweedfs-operator
+          ghcr.io/seaweedfs/seaweedfs-operator
+        tags: |
+          type=ref,event=branch
+          type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'master') }}
 
     - name: Build and push Docker image
-      uses: docker/build-push-action@v2.7.0
+      uses: docker/build-push-action@v3
       with:
         context: .
         push: true

@@ -20,12 +20,37 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 	if m.Spec.Filer.S3 {
 		commands = append(commands, "-s3")
 	}
+	if m.Spec.Filer.MetricsPort != nil {
+		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Filer.MetricsPort))
+	}
 
 	return strings.Join(commands, " ")
 }
 
 func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForFiler(m.Name)
+	ports := []corev1.ContainerPort{
+		{
+			ContainerPort: seaweedv1.FilerHTTPPort,
+			Name:          "filer-http",
+		},
+		{
+			ContainerPort: seaweedv1.FilerGRPCPort,
+			Name:          "filer-grpc",
+		},
+	}
+	if m.Spec.Filer.S3 {
+		ports = append(ports, corev1.ContainerPort{
+			ContainerPort: seaweedv1.FilerS3Port,
+			Name:          "filer-s3",
+		})
+	}
+	if m.Spec.Filer.MetricsPort != nil {
+		ports = append(ports, corev1.ContainerPort{
+			ContainerPort: *m.Spec.Filer.MetricsPort,
+			Name:          "filer-metrics",
+		})
+	}
 	replicas := int32(m.Spec.Filer.Replicas)
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
@@ -61,20 +86,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			"-ec",
 			buildFilerStartupScript(m),
 		},
-		Ports: []corev1.ContainerPort{
-			{
-				ContainerPort: seaweedv1.FilerHTTPPort,
-				Name:          "filer-http",
-			},
-			{
-				ContainerPort: seaweedv1.FilerGRPCPort,
-				Name:          "filer-grpc",
-			},
-			{
-				ContainerPort: seaweedv1.FilerS3Port,
-				Name:          "filer-s3",
-			},
-		},
+		Ports: ports,
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{

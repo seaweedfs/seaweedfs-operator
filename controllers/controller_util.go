@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -235,6 +236,27 @@ func (r *SeaweedReconciler) CreateOrUpdateConfigMap(configMap *corev1.ConfigMap)
 		return nil, err
 	}
 	return result.(*corev1.ConfigMap), nil
+}
+
+func (r *SeaweedReconciler) CreateOrUpdateServiceMonitor(serviceMonitor *monitorv1.ServiceMonitor) (*monitorv1.ServiceMonitor, error) {
+	result, err := r.CreateOrUpdate(serviceMonitor, func(existing, desired runtime.Object) error {
+		existingServiceMonitor := existing.(*monitorv1.ServiceMonitor)
+		desiredServiceMonitor := desired.(*monitorv1.ServiceMonitor)
+
+		if existingServiceMonitor.Annotations == nil {
+			existingServiceMonitor.Annotations = map[string]string{}
+		}
+		for k, v := range desiredServiceMonitor.Annotations {
+			existingServiceMonitor.Annotations[k] = v
+		}
+		existingServiceMonitor.Labels = desiredServiceMonitor.Labels
+		existingServiceMonitor.Spec = desiredServiceMonitor.Spec
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.(*monitorv1.ServiceMonitor), nil
 }
 
 // EmptyClone create an clone of the resource with the same name and namespace (if namespace-scoped), with other fields unset

@@ -22,12 +22,31 @@ func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string) string 
 	}
 	commands = append(commands, fmt.Sprintf("-mserver=%s", getMasterPeersString(m)))
 	commands = append(commands, fmt.Sprintf("-dir=%s", strings.Join(dirs, ",")))
+	if m.Spec.Volume.MetricsPort != nil {
+		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Volume.MetricsPort))
+	}
 
 	return strings.Join(commands, " ")
 }
 
 func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForVolumeServer(m.Name)
+	ports := []corev1.ContainerPort{
+		{
+			ContainerPort: seaweedv1.VolumeHTTPPort,
+			Name:          "volume-http",
+		},
+		{
+			ContainerPort: seaweedv1.VolumeGRPCPort,
+			Name:          "volume-grpc",
+		},
+	}
+	if m.Spec.Volume.MetricsPort != nil {
+		ports = append(ports, corev1.ContainerPort{
+			ContainerPort: *m.Spec.Volume.MetricsPort,
+			Name:          "volume-metrics",
+		})
+	}
 	replicas := int32(m.Spec.Volume.Replicas)
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
@@ -86,16 +105,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 			"-ec",
 			buildVolumeServerStartupScript(m, dirs),
 		},
-		Ports: []corev1.ContainerPort{
-			{
-				ContainerPort: seaweedv1.VolumeHTTPPort,
-				Name:          "volume-http",
-			},
-			{
-				ContainerPort: seaweedv1.VolumeGRPCPort,
-				Name:          "volume-grpc",
-			},
-		},
+		Ports: ports,
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{

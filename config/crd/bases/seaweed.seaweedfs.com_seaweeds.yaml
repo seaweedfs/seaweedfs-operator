@@ -1413,6 +1413,9 @@ spec:
                   maxMB:
                     format: int32
                     type: integer
+                  metricsPort:
+                    format: int32
+                    type: integer
                   nodeSelector:
                     additionalProperties:
                       type: string
@@ -2337,6 +2340,9 @@ spec:
                     description: 'Limits describes the maximum amount of compute resources
                       allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
                     type: object
+                  metricsPort:
+                    format: int32
+                    type: integer
                   nodeSelector:
                     additionalProperties:
                       type: string
@@ -3307,6 +3313,9 @@ spec:
                       allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
                     type: object
                   maxVolumeCounts:
+                    format: int32
+                    type: integer
+                  metricsPort:
                     format: int32
                     type: integer
                   minFreeSpacePercent:

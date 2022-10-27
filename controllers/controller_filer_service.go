@@ -32,6 +32,14 @@ func (r *SeaweedReconciler) createFilerPeerService(m *seaweedv1.Seaweed) *corev1
 			TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),
 		})
 	}
+	if m.Spec.Filer.MetricsPort != nil {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "filer-metrics",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       *m.Spec.Filer.MetricsPort,
+			TargetPort: intstr.FromInt(int(*m.Spec.Filer.MetricsPort)),
+		})
+	}
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -74,6 +82,14 @@ func (r *SeaweedReconciler) createFilerService(m *seaweedv1.Seaweed) *corev1.Ser
 			Protocol:   corev1.Protocol("TCP"),
 			Port:       seaweedv1.FilerS3Port,
 			TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),
+		})
+	}
+	if m.Spec.Filer.MetricsPort != nil {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "filer-metrics",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       *m.Spec.Filer.MetricsPort,
+			TargetPort: intstr.FromInt(int(*m.Spec.Filer.MetricsPort)),
 		})
 	}
 

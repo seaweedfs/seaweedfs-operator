@@ -41,6 +41,12 @@ func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done boo
 		}
 	}
 
+	if seaweedCR.Spec.Master.MetricsPort != nil {
+		if done, result, err = r.ensureMasterServiceMonitor(seaweedCR); done {
+			return
+		}
+	}
+
 	return
 }
 
@@ -138,7 +144,19 @@ func (r *SeaweedReconciler) ensureMasterPeerService(seaweedCR *seaweedv1.Seaweed
 
 	log.Info("Get master peer service " + masterPeerService.Name)
 	return ReconcileResult(err)
+}
 
+func (r *SeaweedReconciler) ensureMasterServiceMonitor(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-master-servicemonitor", seaweedCR.Name)
+
+	masterServiceMonitor := r.createMasterServiceMonitor(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, masterServiceMonitor, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
+	_, err := r.CreateOrUpdateServiceMonitor(masterServiceMonitor)
+
+	log.Info("Get master service monitor " + masterServiceMonitor.Name)
+	return ReconcileResult(err)
 }
 
 func labelsForMaster(name string) map[string]string {

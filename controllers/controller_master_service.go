@@ -10,6 +10,28 @@ import (
 
 func (r *SeaweedReconciler) createMasterPeerService(m *seaweedv1.Seaweed) *corev1.Service {
 	labels := labelsForMaster(m.Name)
+	ports := []corev1.ServicePort{
+		{
+			Name:       "master-http",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.MasterHTTPPort,
+			TargetPort: intstr.FromInt(seaweedv1.MasterHTTPPort),
+		},
+		{
+			Name:       "master-grpc",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.MasterGRPCPort,
+			TargetPort: intstr.FromInt(seaweedv1.MasterGRPCPort),
+		},
+	}
+	if m.Spec.Master.MetricsPort != nil {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "master-metrics",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       *m.Spec.Master.MetricsPort,
+			TargetPort: intstr.FromInt(int(*m.Spec.Master.MetricsPort)),
+		})
+	}
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -23,21 +45,8 @@ func (r *SeaweedReconciler) createMasterPeerService(m *seaweedv1.Seaweed) *corev
 		Spec: corev1.ServiceSpec{
 			ClusterIP:                "None",
 			PublishNotReadyAddresses: true,
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "master-http",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.MasterHTTPPort,
-					TargetPort: intstr.FromInt(seaweedv1.MasterHTTPPort),
-				},
-				{
-					Name:       "master-grpc",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.MasterGRPCPort,
-					TargetPort: intstr.FromInt(seaweedv1.MasterGRPCPort),
-				},
-			},
-			Selector: labels,
+			Ports:                    ports,
+			Selector:                 labels,
 		},
 	}
 	// Set master instance as the owner and controller
@@ -47,6 +56,28 @@ func (r *SeaweedReconciler) createMasterPeerService(m *seaweedv1.Seaweed) *corev
 
 func (r *SeaweedReconciler) createMasterService(m *seaweedv1.Seaweed) *corev1.Service {
 	labels := labelsForMaster(m.Name)
+	ports := []corev1.ServicePort{
+		{
+			Name:       "master-http",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.MasterHTTPPort,
+			TargetPort: intstr.FromInt(seaweedv1.MasterHTTPPort),
+		},
+		{
+			Name:       "master-grpc",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.MasterGRPCPort,
+			TargetPort: intstr.FromInt(seaweedv1.MasterGRPCPort),
+		},
+	}
+	if m.Spec.Master.MetricsPort != nil {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "master-metrics",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       *m.Spec.Master.MetricsPort,
+			TargetPort: intstr.FromInt(int(*m.Spec.Master.MetricsPort)),
+		})
+	}
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -59,21 +90,8 @@ func (r *SeaweedReconciler) createMasterService(m *seaweedv1.Seaweed) *corev1.Se
 		},
 		Spec: corev1.ServiceSpec{
 			PublishNotReadyAddresses: true,
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "master-http",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.MasterHTTPPort,
-					TargetPort: intstr.FromInt(seaweedv1.MasterHTTPPort),
-				},
-				{
-					Name:       "master-grpc",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.MasterGRPCPort,
-					TargetPort: intstr.FromInt(seaweedv1.MasterGRPCPort),
-				},
-			},
-			Selector: labels,
+			Ports:                    ports,
+			Selector:                 labels,
 		},
 	}
 

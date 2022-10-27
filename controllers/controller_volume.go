@@ -29,6 +29,12 @@ func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (d
 		return
 	}
 
+	if seaweedCR.Spec.Volume.MetricsPort != nil {
+		if done, result, err = r.ensureVolumeServerServiceMonitor(seaweedCR); done {
+			return
+		}
+	}
+
 	return
 }
 
@@ -89,6 +95,19 @@ func (r *SeaweedReconciler) ensureVolumeServerService(seaweedCR *seaweedv1.Seawe
 	_, err := r.CreateOrUpdateService(volumeServerService)
 
 	log.Info("ensure volume service "+volumeServerService.Name, "index", i)
+	return ReconcileResult(err)
+}
+
+func (r *SeaweedReconciler) ensureVolumeServerServiceMonitor(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-volume-servicemonitor", seaweedCR.Name)
+
+	volumeServiceMonitor := r.createVolumeServerServiceMonitor(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, volumeServiceMonitor, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
+	_, err := r.CreateOrUpdateServiceMonitor(volumeServiceMonitor)
+
+	log.Info("Get volume service monitor " + volumeServiceMonitor.Name)
 	return ReconcileResult(err)
 }
 

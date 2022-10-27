@@ -13,6 +13,28 @@ import (
 
 func (r *SeaweedReconciler) createVolumeServerPeerService(m *seaweedv1.Seaweed) *corev1.Service {
 	labels := labelsForVolumeServer(m.Name)
+	ports := []corev1.ServicePort{
+		{
+			Name:       "volume-http",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.VolumeHTTPPort,
+			TargetPort: intstr.FromInt(seaweedv1.VolumeHTTPPort),
+		},
+		{
+			Name:       "volume-grpc",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.VolumeGRPCPort,
+			TargetPort: intstr.FromInt(seaweedv1.VolumeGRPCPort),
+		},
+	}
+	if m.Spec.Volume.MetricsPort != nil {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "volume-metrics",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       *m.Spec.Volume.MetricsPort,
+			TargetPort: intstr.FromInt(int(*m.Spec.Volume.MetricsPort)),
+		})
+	}
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -26,21 +48,8 @@ func (r *SeaweedReconciler) createVolumeServerPeerService(m *seaweedv1.Seaweed) 
 		Spec: corev1.ServiceSpec{
 			ClusterIP:                "None",
 			PublishNotReadyAddresses: true,
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "volume-http",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.VolumeHTTPPort,
-					TargetPort: intstr.FromInt(seaweedv1.VolumeHTTPPort),
-				},
-				{
-					Name:       "volume-grpc",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.VolumeGRPCPort,
-					TargetPort: intstr.FromInt(seaweedv1.VolumeGRPCPort),
-				},
-			},
-			Selector: labels,
+			Ports:                    ports,
+			Selector:                 labels,
 		},
 	}
 	return dep
@@ -49,6 +58,28 @@ func (r *SeaweedReconciler) createVolumeServerService(m *seaweedv1.Seaweed, i in
 	labels := labelsForVolumeServer(m.Name)
 	serviceName := fmt.Sprintf("%s-volume-%d", m.Name, i)
 	labels[label.PodName] = serviceName
+	ports := []corev1.ServicePort{
+		{
+			Name:       "volume-http",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.VolumeHTTPPort,
+			TargetPort: intstr.FromInt(seaweedv1.VolumeHTTPPort),
+		},
+		{
+			Name:       "volume-grpc",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       seaweedv1.VolumeGRPCPort,
+			TargetPort: intstr.FromInt(seaweedv1.VolumeGRPCPort),
+		},
+	}
+	if m.Spec.Volume.MetricsPort != nil {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "volume-metrics",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       *m.Spec.Volume.MetricsPort,
+			TargetPort: intstr.FromInt(int(*m.Spec.Volume.MetricsPort)),
+		})
+	}
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -61,21 +92,8 @@ func (r *SeaweedReconciler) createVolumeServerService(m *seaweedv1.Seaweed, i in
 		},
 		Spec: corev1.ServiceSpec{
 			PublishNotReadyAddresses: true,
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "volume-http",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.VolumeHTTPPort,
-					TargetPort: intstr.FromInt(seaweedv1.VolumeHTTPPort),
-				},
-				{
-					Name:       "volume-grpc",
-					Protocol:   corev1.Protocol("TCP"),
-					Port:       seaweedv1.VolumeGRPCPort,
-					TargetPort: intstr.FromInt(seaweedv1.VolumeGRPCPort),
-				},
-			},
-			Selector: labels,
+			Ports:                    ports,
+			Selector:                 labels,
 		},
 	}
 

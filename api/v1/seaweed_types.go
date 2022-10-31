@@ -122,6 +122,9 @@ type MasterSpec struct {
 	// Config in raw toml string
 	Config *string `json:"config,omitempty"`
 
+	// MetricsPort is the port that the prometheus metrics export listens on
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
+
 	// Master-specific settings
 
 	VolumePreallocate  *bool   `json:"volumePreallocate,omitempty"`
@@ -145,6 +148,9 @@ type VolumeSpec struct {
 
 	StorageClassName *string `json:"storageClassName,omitempty"`
 
+	// MetricsPort is the port that the prometheus metrics export listens on
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
+
 	// Volume-specific settings
 
 	CompactionMBps      *int32 `json:"compactionMBps,omitempty"`
@@ -167,6 +173,9 @@ type FilerSpec struct {
 
 	// Config in raw toml string
 	Config *string `json:"config,omitempty"`
+
+	// MetricsPort is the port that the prometheus metrics export listens on
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
 	// Filer-specific settings
 

@@ -35,6 +35,10 @@ func buildMasterStartupScript(m *seaweedv1.Seaweed) string {
 		command = append(command, fmt.Sprintf("-defaultReplication=%s", *spec.DefaultReplication))
 	}
 
+	if m.Spec.Master.MetricsPort != nil {
+		command = append(command, fmt.Sprintf("-metricsPort=%d", *m.Spec.Master.MetricsPort))
+	}
+
 	command = append(command, fmt.Sprintf("-ip=$(POD_NAME).%s-master-peer.%s", m.Name, m.Namespace))
 	command = append(command, fmt.Sprintf("-peers=%s", getMasterPeersString(m)))
 	return strings.Join(command, " ")
@@ -42,6 +46,22 @@ func buildMasterStartupScript(m *seaweedv1.Seaweed) string {
 
 func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForMaster(m.Name)
+	ports := []corev1.ContainerPort{
+		{
+			ContainerPort: seaweedv1.MasterHTTPPort,
+			Name:          "master-http",
+		},
+		{
+			ContainerPort: seaweedv1.MasterGRPCPort,
+			Name:          "master-grpc",
+		},
+	}
+	if m.Spec.Master.MetricsPort != nil {
+		ports = append(ports, corev1.ContainerPort{
+			ContainerPort: *m.Spec.Master.MetricsPort,
+			Name:          "master-metrics",
+		})
+	}
 	replicas := m.Spec.Master.Replicas
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
@@ -77,16 +97,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 			"-ec",
 			buildMasterStartupScript(m),
 		},
-		Ports: []corev1.ContainerPort{
-			{
-				ContainerPort: seaweedv1.MasterHTTPPort,
-				Name:          "master-http",
-			},
-			{
-				ContainerPort: seaweedv1.MasterGRPCPort,
-				Name:          "master-grpc",
-			},
-		},
+		Ports: ports,
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{

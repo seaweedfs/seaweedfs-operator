@@ -33,6 +33,12 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 		return
 	}
 
+	if seaweedCR.Spec.Filer.MetricsPort != nil {
+		if done, result, err = r.ensureFilerServiceMonitor(seaweedCR); done {
+			return
+		}
+	}
+
 	return
 }
 
@@ -95,6 +101,19 @@ func (r *SeaweedReconciler) ensureFilerConfigMap(seaweedCR *seaweedv1.Seaweed) (
 	_, err := r.CreateOrUpdateConfigMap(filerConfigMap)
 
 	log.Info("Get filer ConfigMap " + filerConfigMap.Name)
+	return ReconcileResult(err)
+}
+
+func (r *SeaweedReconciler) ensureFilerServiceMonitor(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-filer-servicemonitor", seaweedCR.Name)
+
+	filerServiceMonitor := r.createFilerServiceMonitor(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, filerServiceMonitor, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
+	_, err := r.CreateOrUpdateServiceMonitor(filerServiceMonitor)
+
+	log.Info("Get filer service monitor " + filerServiceMonitor.Name)
 	return ReconcileResult(err)
 }
 

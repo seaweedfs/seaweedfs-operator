@@ -12,7 +12,7 @@ func (r *SeaweedReconciler) createVolumeServerServiceMonitor(m *seaweedv1.Seawee
 
 	dep := &monitorv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.Name + "-volume-metrics-monitor",
+			Name:      m.Name + "-volume",
 			Namespace: m.Namespace,
 			Labels:    labels,
 		},

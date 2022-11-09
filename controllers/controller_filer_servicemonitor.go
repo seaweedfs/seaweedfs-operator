@@ -12,7 +12,7 @@ func (r *SeaweedReconciler) createFilerServiceMonitor(m *seaweedv1.Seaweed) *mon
 
 	dep := &monitorv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.Name + "-filer-metrics-monitor",
+			Name:      m.Name + "-filer",
 			Namespace: m.Namespace,
 			Labels:    labels,
 		},

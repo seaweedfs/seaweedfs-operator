@@ -11,7 +11,7 @@ func (r *SeaweedReconciler) createMasterServiceMonitor(m *seaweedv1.Seaweed) *mo
 
 	dep := &monitorv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.Name + "-master-metrics-monitor",
+			Name:      m.Name + "-master",
 			Namespace: m.Namespace,
 			Labels:    labels,
 		},

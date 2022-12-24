@@ -1,0 +1,15 @@
+{{- if .Values.serviceMonitor.enabled }}
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "seaweedfs-operator.fullname" . }}-metrics-monitor
+spec:
+  endpoints:
+    - path: /metrics
+      port: http
+  selector:
+    matchLabels:
+      app: {{ include "seaweedfs-operator.fullname" . }}
+
+{{- end }}

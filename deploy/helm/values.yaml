@@ -1,0 +1,73 @@
+## Global Docker image parameters
+## Please, note that this will override the image parameters, including dependencies, configured to use the global value
+## Current available global Docker image parameters: imageRegistry
+##
+# global:
+#   imageRegistry: myRegistryName
+
+## String to partially override common.names.fullname template (will maintain the release name)
+##
+# nameOverride:
+
+## String to fully override common.names.fullname template
+##
+# fullnameOverride:
+
+## Annotations for all the deployed objects
+##
+# commonAnnotations: {}
+
+## Labels for all the deployed objects
+##
+# commonLabels: {}
+
+## Configure rbac parameters
+##
+rbac:
+  serviceAccount:
+    name: default
+    namespace: operators
+
+image:
+  registry: chrislusf
+  repository: seaweedfs-operator
+  ## tag value taken from appVersion of Chart.yaml
+  ## tag: 3.0.0.
+  ## Specify a imagePullPolicy
+  ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
+  ## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
+  ##
+  pullPolicy: Always
+
+  ## Specify credentials to authorize in docker registry or set existing secrets in pullSecrets
+  credentials:
+    registry: private-registry
+    username: username
+    password: password
+
+  ## Optionally specify imagePullSecret.
+  ## Secrets must be manually created in the namespace.
+  ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+  ##
+  # pullSecrets: myRegistryKeySecretName
+
+## Set number of replicas
+##
+replicaCount: 1
+
+## Configure container port
+##
+port:
+  name: http
+  number: 8080
+
+## Configure Service
+##
+service:
+  portName: http
+  port: 8080
+
+## Enable or disable ServiceMonitor
+##
+serviceMonitor:
+  enabled: true

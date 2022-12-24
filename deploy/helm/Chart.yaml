@@ -1,0 +1,6 @@
+apiVersion: v2
+name: seaweedfs-operator
+description: A Helm chart for seaweedfs-operator
+type: application
+version: 0.0.1
+appVersion: "0.0.1"

@@ -1,3 +1,5 @@
+{{- if .Values.webhook.enabled }}
+
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
@@ -26,3 +28,5 @@ webhooks:
     - UPDATE
     resources:
     - seaweeds
+
+{{- end }}

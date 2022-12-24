@@ -76,3 +76,8 @@ grafanaDashboard:
 ##
 serviceMonitor:
   enabled: true
+
+## Enable or disable webhooks
+##
+webhook:
+  enabled: true

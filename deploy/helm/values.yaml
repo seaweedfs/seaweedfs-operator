@@ -67,6 +67,11 @@ service:
   portName: http
   port: 8080
 
+## Enable or disable Grafana Dashboard configmap
+##
+grafanaDashboard:
+  enabled: true
+
 ## Enable or disable ServiceMonitor
 ##
 serviceMonitor:

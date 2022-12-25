@@ -81,3 +81,14 @@ serviceMonitor:
 ##
 webhook:
   enabled: true
+
+## seaweedfs-operators containers' resource requests and limits.
+## ref: http://kubernetes.io/docs/user-guide/compute-resources/
+##
+resources:
+  limits:
+    cpu: 500m
+    memory: 500Mi
+  requests:
+    cpu: 100m
+    memory: 50Mi

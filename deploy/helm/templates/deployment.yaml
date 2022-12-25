@@ -35,11 +35,7 @@ spec:
         - name: {{ .Values.port.name }}
           containerPort: {{ .Values.port.number }}
           protocol: TCP
-        resources:
-          limits:
-            cpu: 500m
-            memory: 500Mi
-          requests:
-            cpu: 100m
-            memory: 50Mi
+        {{- if .Values.resources }}
+        resources: {{- toYaml .Values.resources | nindent 12 }}
+        {{- end }}
       terminationGracePeriodSeconds: 10

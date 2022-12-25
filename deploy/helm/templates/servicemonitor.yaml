@@ -6,8 +6,17 @@ metadata:
   name: {{ include "seaweedfs-operator.fullname" . }}-metrics-monitor
 spec:
   endpoints:
-    - path: /metrics
-      port: http
+    - port: {{ .Values.service.portName }}
+      {{- if .Values.serviceMonitor.interval }}
+      interval: {{ .Values.serviceMonitor.interval }}
+      {{- end }}
+      {{- if .Values.serviceMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+      {{- end }}
+      {{- if .Values.serviceMonitor.honorLabels }}
+      honorLabels: {{ .Values.serviceMonitor.honorLabels }}
+      {{- end }}
+      path: /metrics
   selector:
     matchLabels:
       app: {{ include "seaweedfs-operator.fullname" . }}

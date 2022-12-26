@@ -40,10 +40,10 @@ image:
   pullPolicy: Always
 
   ## Specify credentials to authorize in docker registry or set existing secrets in pullSecrets
-  credentials:
-    registry: private-registry
-    username: username
-    password: password
+  # credentials:
+  #  registry: private-registry
+  #  username: username
+  #  password: password
 
   ## Optionally specify imagePullSecret.
   ## Secrets must be manually created in the namespace.

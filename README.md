@@ -86,7 +86,7 @@ See the next section for example usage - **__at this point you only deployed the
 - Please send us your use-cases / example configs ... this is currently empty (needs to be written)
 - For now see: https://github.com/seaweedfs/seaweedfs-operator/blob/master/config/samples/seaweed_v1_seaweed.yaml
 
-````
+```
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Seaweed
 metadata:
@@ -111,8 +111,6 @@ spec:
       enabled = true
       dir = "/data/filerldb2"
 ```
-
-
 
 ## Maintenance and Uninstallation
 - TBD

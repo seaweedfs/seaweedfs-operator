@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "seaweedfs-operator.fullname" . }}
+  labels:
+    app: {{ include "seaweedfs-operator.fullname" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "seaweedfs-operator.fullname" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "seaweedfs-operator.fullname" . }}
+    spec:
+      {{ if or .Values.image.credentials .Values.image.pullSecrets }}
+      imagePullSecrets:
+        - name: {{ include "seaweedfs-operator.pullSecretName" . }}
+      {{ end }}
+      containers:
+      - name: seaweedfs-operator
+        image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+        - /manager
+        args:
+        - --enable-leader-election
+        env:
+        {{- if .Values.webhook.enabled }}
+        - name: ENABLE_WEBHOOKS
+          value: "true"
+        {{- end }}
+        ports:
+        - name: {{ .Values.port.name }}
+          containerPort: {{ .Values.port.number }}
+          protocol: TCP
+        {{- if .Values.resources }}
+        resources: {{- toYaml .Values.resources | nindent 12 }}
+        {{- end }}
+      terminationGracePeriodSeconds: 10

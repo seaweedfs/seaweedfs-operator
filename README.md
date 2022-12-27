@@ -1,3 +1,4 @@
+
 [![Build Status](https://travis-ci.com/seaweedfs/seaweedfs-operator.svg?branch=master)](https://travis-ci.com/github/seaweedfs/seaweedfs-operator)
 
 # SeaweedFS Operator
@@ -27,36 +28,55 @@ By default, the defaulting and validation webhooks are disabled. We strongly rec
 
 First clone the repository:
 
+---
 ```bash
 $ git clone https://github.com/seaweedfs/seaweedfs-operator --depth=1
 ```
+---
 
 To deploy the operator with webhooks enabled, make sure you have installed the `cert-manager`(Installation docs: https://cert-manager.io/docs/installation/) in your cluster, then follow the instructions in the `config/default/kustomization.yaml` file to uncomment the components you need.  
 Lastly, change the value of `ENABLE_WEBHOOKS` to `"true"` in `config/manager/manager.yaml`
 
 Manager image must be locally built and published into a registry accessible from your k8s cluster:
+---
 ```bash
 $ export IMG=<registry/image>
 $ make docker-build
 $ make docker-push
 ```
+---
 
 Afterwards fire up to install CRDs:
+---
 ```bash
 $ make install
 ```
+---
 
-Then run the command to deploy the operator into your cluster:
+Then run the command to deploy the operator into your cluster using Kustomize:
+---
 ```bash
 $ make deploy
 ```
+---
+
+Then run the command to deploy the operator into your cluster using Helm:
+
+---
+```go
+helm install seaweedfs-operator ./deploy/helm
+```
+---
 
 Verify if it was correctly deployed with:
+---
 ```bash
 $ kubectl get pods --all-namespaces
 ```
+---
 
 Which may return:
+---
 ```bash
 NAMESPACE                   NAME                                                     READY   STATUS    RESTARTS   AGE
 kube-system                 coredns-f9fd979d6-68p4c                                  1/1     Running   0          34m
@@ -70,6 +90,7 @@ kube-system                 kube-scheduler-kind-control-plane                   
 local-path-storage          local-path-provisioner-78776bfc44-7zvxx                  1/1     Running   0          34m
 seaweedfs-operator-system   seaweedfs-operator-controller-manager-54cc768f4c-cwz2k   2/2     Running   0          34m
 ```
+---
 
 See the next section for example usage - **__at this point you only deployed the Operator itself!__**
 
@@ -80,6 +101,7 @@ See the next section for example usage - **__at this point you only deployed the
 
 - Please send us your use-cases / example configs ... this is currently empty (needs to be written)
 - For now see: https://github.com/seaweedfs/seaweedfs-operator/blob/master/config/samples/seaweed_v1_seaweed.yaml
+---
 ````
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Seaweed
@@ -104,7 +126,8 @@ spec:
       [leveldb2]
       enabled = true
       dir = "/data/filerldb2"
-  ````
+```
+---
 
 
 ## Maintenance and Uninstallation
@@ -114,6 +137,7 @@ spec:
 
 Follow the instructions in https://sdk.operatorframework.io/docs/building-operators/golang/quickstart/
 
+---
 ```
 $ git clone https://github.com/seaweedfs/seaweedfs-operator
 $ cd seaweedfs-operator
@@ -131,8 +155,10 @@ $ kind load docker-image chrislusf/seaweedfs-operator:v0.0.1
 $ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 
 ```
+---
 
 ### Update the operator
+---
 ```
 # delete the existing operator
 $ kubectl delete namespace seaweedfs-operator-system
@@ -147,9 +173,11 @@ $ kind load docker-image chrislusf/seaweedfs-operator:v0.0.1
 $ make deploy
 
 ```
+---
 
 ### develop outside of k8s
 
+---
 ```
 $ git clone https://github.com/seaweedfs/seaweedfs-operator
 $ cd seaweedfs-operator
@@ -163,3 +191,4 @@ $ make run ENABLE_WEBHOOKS=false
 # From another terminal in the same directory
 $ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 ```
+---

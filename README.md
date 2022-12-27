@@ -53,18 +53,13 @@ $ make install
 ```
 ---
 
-Then run the command to deploy the operator into your cluster using Kustomize:
+Then run the command to deploy the operator into your cluster using Kustomize or Helm:
 ---
 ```bash
+# if using Kustomize
 $ make deploy
-```
----
-
-Then run the command to deploy the operator into your cluster using Helm:
-
----
-```go
-helm install seaweedfs-operator ./deploy/helm
+# if using Helm
+$ helm install seaweedfs-operator ./deploy/helm
 ```
 ---
 

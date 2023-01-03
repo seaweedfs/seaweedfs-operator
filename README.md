@@ -94,7 +94,7 @@ metadata:
   namespace: default
 spec:
   # Add fields here
-  image: chrislusf/seaweedfs:3.38
+  image: chrislusf/seaweedfs:latest
   volumeServerDiskCount: 1
   hostSuffix: seaweed.abcdefg.com
   master:
@@ -172,4 +172,3 @@ $ make run ENABLE_WEBHOOKS=false
 # From another terminal in the same directory
 $ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 ```
-

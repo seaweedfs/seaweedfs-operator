@@ -1,3 +1,4 @@
+
 [![Build Status](https://travis-ci.com/seaweedfs/seaweedfs-operator.svg?branch=master)](https://travis-ci.com/github/seaweedfs/seaweedfs-operator)
 
 # SeaweedFS Operator
@@ -31,6 +32,7 @@ First clone the repository:
 $ git clone https://github.com/seaweedfs/seaweedfs-operator --depth=1
 ```
 
+
 To deploy the operator with webhooks enabled, make sure you have installed the `cert-manager`(Installation docs: https://cert-manager.io/docs/installation/) in your cluster, then follow the instructions in the `config/default/kustomization.yaml` file to uncomment the components you need.  
 Lastly, change the value of `ENABLE_WEBHOOKS` to `"true"` in `config/manager/manager.yaml`
 
@@ -46,9 +48,12 @@ Afterwards fire up to install CRDs:
 $ make install
 ```
 
-Then run the command to deploy the operator into your cluster:
+Then run the command to deploy the operator into your cluster using Kustomize or Helm:
 ```bash
+# if using Kustomize
 $ make deploy
+# if using Helm
+$ helm install seaweedfs-operator ./deploy/helm
 ```
 
 Verify if it was correctly deployed with:
@@ -80,7 +85,8 @@ See the next section for example usage - **__at this point you only deployed the
 
 - Please send us your use-cases / example configs ... this is currently empty (needs to be written)
 - For now see: https://github.com/seaweedfs/seaweedfs-operator/blob/master/config/samples/seaweed_v1_seaweed.yaml
-````
+
+```
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Seaweed
 metadata:
@@ -104,8 +110,7 @@ spec:
       [leveldb2]
       enabled = true
       dir = "/data/filerldb2"
-  ````
-
+```
 
 ## Maintenance and Uninstallation
 - TBD
@@ -113,6 +118,7 @@ spec:
 ## Development
 
 Follow the instructions in https://sdk.operatorframework.io/docs/building-operators/golang/quickstart/
+
 
 ```
 $ git clone https://github.com/seaweedfs/seaweedfs-operator
@@ -132,7 +138,9 @@ $ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 
 ```
 
+
 ### Update the operator
+
 ```
 # delete the existing operator
 $ kubectl delete namespace seaweedfs-operator-system
@@ -147,6 +155,7 @@ $ kind load docker-image chrislusf/seaweedfs-operator:v0.0.1
 $ make deploy
 
 ```
+
 
 ### develop outside of k8s
 
@@ -163,3 +172,4 @@ $ make run ENABLE_WEBHOOKS=false
 # From another terminal in the same directory
 $ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 ```
+

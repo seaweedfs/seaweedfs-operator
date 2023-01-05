@@ -18,7 +18,7 @@ Goals:
 - [ ] Support all major cloud Kubernetes: AWS, Google, Azure.
 - [ ] Scheduled backup to cloud storage: S3, Google Cloud Storage , Azure.
 - [ ] Put warm data to cloud storage tier: S3, Google Cloud Storage , Azure.
-- [ ] Grafana dashboard.
+- [x] Grafana dashboard.
 
 ## Installation
 

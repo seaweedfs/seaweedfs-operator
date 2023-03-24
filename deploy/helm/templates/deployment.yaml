@@ -27,9 +27,9 @@ spec:
         args:
         - --enable-leader-election
         env:
-        {{- if .Values.webhook.enabled }}
+        {{- if eq .Values.webhook.enabled false }}
         - name: ENABLE_WEBHOOKS
-          value: "true"
+          value: "false"
         {{- end }}
         ports:
         - name: {{ .Values.port.name }}

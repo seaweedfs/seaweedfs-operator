@@ -31,6 +31,7 @@ func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string) string 
 
 func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForVolumeServer(m.Name)
+	annotations := m.Spec.Volume.Annotations
 	ports := []corev1.ContainerPort{
 		{
 			ContainerPort: seaweedv1.VolumeHTTPPort,
@@ -158,7 +159,8 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
+					Labels:      labels,
+					Annotations: annotations,
 				},
 				Spec: volumePodSpec,
 			},

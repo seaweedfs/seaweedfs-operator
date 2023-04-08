@@ -46,6 +46,7 @@ func buildMasterStartupScript(m *seaweedv1.Seaweed) string {
 
 func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForMaster(m.Name)
+	annotations := m.Spec.Master.Annotations
 	ports := []corev1.ContainerPort{
 		{
 			ContainerPort: seaweedv1.MasterHTTPPort,
@@ -148,7 +149,8 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
+					Labels:      labels,
+					Annotations: annotations,
 				},
 				Spec: masterPodSpec,
 			},

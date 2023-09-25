@@ -50,7 +50,7 @@ jobs:
         fi
 
     - name: Build
-      run: go build -v .
+      run: go build -ldflags="-s -w" -v .
 
   test:
     name: Test
@@ -67,4 +67,3 @@ jobs:
 
     - name: Test
       run: make test SHELL=/bin/bash
-

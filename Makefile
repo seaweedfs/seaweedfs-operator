@@ -34,14 +34,14 @@ test: generate fmt vet manifests
 
 # Build manager binary
 manager: generate fmt vet
-	go build -o bin/manager main.go
+	go build -ldflags="-s -w" -o bin/manager main.go
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run: generate fmt vet manifests
 	go run ./main.go
 
 debug: generate fmt vet manifests
-	go build -gcflags="all=-N -l" ./main.go
+	go build -ldflags="-s -w" -gcflags="all=-N -l" ./main.go
 	ENABLE_WEBHOOKS=false dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec main
 
 # Install CRDs into a cluster

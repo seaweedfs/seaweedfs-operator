@@ -177,8 +177,7 @@ type FilerSpec struct {
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
-	// Persistence mounts a volume for local filer data,
-	// recommended only when replicas is set to 1
+	// Persistence mounts a volume for local filer data
 	Persistence *PersistenceSpec `json:"persistence,omitempty"`
 
 	// Filer-specific settings

@@ -263,14 +263,14 @@ type PersistenceSpec struct {
     Enabled bool `json:"enabled,omitempty"`
 
     // ExistingClaim is the name of an existing pvc to use
-    ExistingClaim *string `json:"existingClaim:omitempty"`
+    ExistingClaim *string `json:"existingClaim,omitempty"`
 
     // The path the volume will be mounted at
     // +kubebuilder:default:="/data"
-    MountPath *string `json:"mountPath:omitempty"`
+    MountPath *string `json:"mountPath,omitempty"`
 
     // The subdirectory of the volume to mount to
-    SubPath *string `json:"subPath:omitempty"`
+    SubPath *string `json:"subPath,omitempty"`
 
     corev1.PersistentVolumeClaimSpec `json:",inline"`
 }

@@ -177,9 +177,9 @@ type FilerSpec struct {
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
-    // Persistence mounts a volume for local filer data,
-    // recommended only when replicas is set to 1
-    Persistence *PersistenceSpec `json:"persistence,omitempty"`
+	// Persistence mounts a volume for local filer data,
+	// recommended only when replicas is set to 1
+	Persistence *PersistenceSpec `json:"persistence,omitempty"`
 
 	// Filer-specific settings
 
@@ -259,20 +259,20 @@ type ServiceSpec struct {
 }
 
 type PersistenceSpec struct {
-    // +kubebuilder:default:=false
-    Enabled bool `json:"enabled,omitempty"`
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
 
-    // ExistingClaim is the name of an existing pvc to use
-    ExistingClaim *string `json:"existingClaim,omitempty"`
+	// ExistingClaim is the name of an existing pvc to use
+	ExistingClaim *string `json:"existingClaim,omitempty"`
 
-    // The path the volume will be mounted at
-    // +kubebuilder:default:="/data"
-    MountPath *string `json:"mountPath,omitempty"`
+	// The path the volume will be mounted at
+	// +kubebuilder:default:="/data"
+	MountPath *string `json:"mountPath,omitempty"`
 
-    // The subdirectory of the volume to mount to
-    SubPath *string `json:"subPath,omitempty"`
+	// The subdirectory of the volume to mount to
+	SubPath *string `json:"subPath,omitempty"`
 
-    corev1.PersistentVolumeClaimSpec `json:",inline"`
+	corev1.PersistentVolumeClaimSpec `json:",inline"`
 }
 
 // +kubebuilder:object:root=true

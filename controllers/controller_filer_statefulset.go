@@ -69,35 +69,35 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			},
 		},
 	}
-    volumeMounts := []corev1.VolumeMount{
-        {
-            Name:      "filer-config",
-            ReadOnly:  true,
-            MountPath: "/etc/seaweedfs",
-        },
-    }
+	volumeMounts := []corev1.VolumeMount{
+		{
+			Name:      "filer-config",
+			ReadOnly:  true,
+			MountPath: "/etc/seaweedfs",
+		},
+	}
 
-    if m.Spec.Filer.Persistence.Enabled {
-        claimName := m.Name + "-filer"
-        if m.Spec.Filer.Persistence.ExistingClaim != nil {
-            claimName = *m.Spec.Filer.Persistence.ExistingClaim
-        }
-        filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
-            Name: "filer-persistence",
-            VolumeSource: corev1.VolumeSource{
-                PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-                    ClaimName: claimName,
-                    ReadOnly: false,
-                },
-            },
-        })
-        volumeMounts = append(volumeMounts, corev1.VolumeMount{
-            Name: "filer-persistence",
-            ReadOnly: false,
-            MountPath: *m.Spec.Filer.Persistence.MountPath,
-            SubPath: *m.Spec.Filer.Persistence.SubPath,
-        })
-    }
+	if m.Spec.Filer.Persistence.Enabled {
+		claimName := m.Name + "-filer"
+		if m.Spec.Filer.Persistence.ExistingClaim != nil {
+			claimName = *m.Spec.Filer.Persistence.ExistingClaim
+		}
+		filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
+			Name: "filer-persistence",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+					ReadOnly:  false,
+				},
+			},
+		})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "filer-persistence",
+			ReadOnly:  false,
+			MountPath: *m.Spec.Filer.Persistence.MountPath,
+			SubPath:   *m.Spec.Filer.Persistence.SubPath,
+		})
+	}
 	filerPodSpec.EnableServiceLinks = &enableServiceLinks
 	filerPodSpec.Containers = []corev1.Container{{
 		Name:            "filer",

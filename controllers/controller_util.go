@@ -250,11 +250,11 @@ func (r *SeaweedReconciler) CreateOrUpdatePersistentVolumeClaim(persistentVolume
 			existingPersistentVolumeClaim.Annotations[k] = v
 		}
 		existingPersistentVolumeClaim.Labels = desiredPersistentVolumeClaim.Labels
-        equal, err := PersistentVolumeClaimEqual(desiredPersistentVolumeClaim, existingPersistentVolumeClaim)
-        if err != nil {
-            return err
-        }
-        if !equal {
+		equal, err := PersistentVolumeClaimEqual(desiredPersistentVolumeClaim, existingPersistentVolumeClaim)
+		if err != nil {
+			return err
+		}
+		if !equal {
 			// record desiredPersistentVolumeClaim Spec in annotations in favor of future equality checks
 			b, err := json.Marshal(desiredPersistentVolumeClaim.Spec)
 			if err != nil {
@@ -262,7 +262,7 @@ func (r *SeaweedReconciler) CreateOrUpdatePersistentVolumeClaim(persistentVolume
 			}
 			existingPersistentVolumeClaim.Annotations[LastAppliedConfigAnnotation] = string(b)
 			existingPersistentVolumeClaim.Spec = desiredPersistentVolumeClaim.Spec
-        }
+		}
 		return nil
 	})
 	if err != nil {
@@ -272,11 +272,11 @@ func (r *SeaweedReconciler) CreateOrUpdatePersistentVolumeClaim(persistentVolume
 }
 
 func (r *SeaweedReconciler) DeletePersistentVolumeClaim(persistentVolumeClaim *corev1.PersistentVolumeClaim) error {
-    err := r.Delete(context.TODO(), persistentVolumeClaim)
-    if errors.IsNotFound(err) {
-        return nil
-    }
-    return err
+	err := r.Delete(context.TODO(), persistentVolumeClaim)
+	if errors.IsNotFound(err) {
+		return nil
+	}
+	return err
 }
 
 func (r *SeaweedReconciler) CreateOrUpdateServiceMonitor(serviceMonitor *monitorv1.ServiceMonitor) (*monitorv1.ServiceMonitor, error) {
@@ -387,7 +387,7 @@ func IngressEqual(newIngress, oldIngres *networkingv1.Ingress) (bool, error) {
 }
 
 func PersistentVolumeClaimEqual(newPersistentVolumeClaim, oldPersistentVolumeClaim *corev1.PersistentVolumeClaim) (bool, error) {
-    oldSpec := corev1.PersistentVolumeClaimSpec{}
+	oldSpec := corev1.PersistentVolumeClaimSpec{}
 	if lastAppliedConfig, ok := oldPersistentVolumeClaim.Annotations[LastAppliedConfigAnnotation]; ok {
 		err := json.Unmarshal([]byte(lastAppliedConfig), &oldSpec)
 		if err != nil {

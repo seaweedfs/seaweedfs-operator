@@ -1969,11 +1969,11 @@ spec:
                       enabled:
                         default: false
                         type: boolean
-                      existingClaim:omitempty:
+                      existingClaim:
                         description: ExistingClaim is the name of an existing pvc
                           to use
                         type: string
-                      mountPath:omitempty:
+                      mountPath:
                         default: /data
                         description: The path the volume will be mounted at
                         type: string
@@ -2059,7 +2059,8 @@ spec:
                         description: 'storageClassName is the name of the StorageClass
                           required by the claim. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1'
                         type: string
-                      subPath:omitempty:
+                      subPath:
+                        default: ""
                         description: The subdirectory of the volume to mount to
                         type: string
                       volumeMode:
@@ -2071,10 +2072,6 @@ spec:
                         description: volumeName is the binding reference to the PersistentVolume
                           backing this claim.
                         type: string
-                    required:
-                    - existingClaim:omitempty
-                    - mountPath:omitempty
-                    - subPath:omitempty
                     type: object
                   priorityClassName:
                     description: PriorityClassName of the component. Override the

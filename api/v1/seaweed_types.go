@@ -270,6 +270,7 @@ type PersistenceSpec struct {
 	MountPath *string `json:"mountPath,omitempty"`
 
 	// The subdirectory of the volume to mount to
+	// +kubebuilder:default:=""
 	SubPath *string `json:"subPath,omitempty"`
 
 	corev1.PersistentVolumeClaimSpec `json:",inline"`

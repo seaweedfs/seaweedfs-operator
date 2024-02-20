@@ -238,6 +238,47 @@ func (r *SeaweedReconciler) CreateOrUpdateConfigMap(configMap *corev1.ConfigMap)
 	return result.(*corev1.ConfigMap), nil
 }
 
+func (r *SeaweedReconciler) CreateOrUpdatePersistentVolumeClaim(persistentVolumeClaim *corev1.PersistentVolumeClaim) (*corev1.PersistentVolumeClaim, error) {
+	result, err := r.CreateOrUpdate(persistentVolumeClaim, func(existing, desired runtime.Object) error {
+		existingPersistentVolumeClaim := existing.(*corev1.PersistentVolumeClaim)
+		desiredPersistentVolumeClaim := desired.(*corev1.PersistentVolumeClaim)
+
+		if existingPersistentVolumeClaim.Annotations == nil {
+			existingPersistentVolumeClaim.Annotations = map[string]string{}
+		}
+		for k, v := range desiredPersistentVolumeClaim.Annotations {
+			existingPersistentVolumeClaim.Annotations[k] = v
+		}
+		existingPersistentVolumeClaim.Labels = desiredPersistentVolumeClaim.Labels
+        equal, err := PersistentVolumeClaimEqual(desiredPersistentVolumeClaim, existingPersistentVolumeClaim)
+        if err != nil {
+            return err
+        }
+        if !equal {
+			// record desiredPersistentVolumeClaim Spec in annotations in favor of future equality checks
+			b, err := json.Marshal(desiredPersistentVolumeClaim.Spec)
+			if err != nil {
+				return err
+			}
+			existingPersistentVolumeClaim.Annotations[LastAppliedConfigAnnotation] = string(b)
+			existingPersistentVolumeClaim.Spec = desiredPersistentVolumeClaim.Spec
+        }
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.(*corev1.PersistentVolumeClaim), nil
+}
+
+func (r *SeaweedReconciler) DeletePersistentVolumeClaim(persistentVolumeClaim *corev1.PersistentVolumeClaim) error {
+    err := r.Delete(context.TODO(), persistentVolumeClaim)
+    if errors.IsNotFound(err) {
+        return nil
+    }
+    return err
+}
+
 func (r *SeaweedReconciler) CreateOrUpdateServiceMonitor(serviceMonitor *monitorv1.ServiceMonitor) (*monitorv1.ServiceMonitor, error) {
 	result, err := r.CreateOrUpdate(serviceMonitor, func(existing, desired runtime.Object) error {
 		existingServiceMonitor := existing.(*monitorv1.ServiceMonitor)
@@ -341,6 +382,19 @@ func IngressEqual(newIngress, oldIngres *networkingv1.Ingress) (bool, error) {
 			return false, err
 		}
 		return apiequality.Semantic.DeepEqual(oldIngressSpec, newIngress.Spec), nil
+	}
+	return false, nil
+}
+
+func PersistentVolumeClaimEqual(newPersistentVolumeClaim, oldPersistentVolumeClaim *corev1.PersistentVolumeClaim) (bool, error) {
+    oldSpec := corev1.PersistentVolumeClaimSpec{}
+	if lastAppliedConfig, ok := oldPersistentVolumeClaim.Annotations[LastAppliedConfigAnnotation]; ok {
+		err := json.Unmarshal([]byte(lastAppliedConfig), &oldSpec)
+		if err != nil {
+			klog.Errorf("unmarshal PersistentVolumeClaimSpec: [%s/%s]'s applied config failed,error: %v", oldPersistentVolumeClaim.GetNamespace(), oldPersistentVolumeClaim.GetName(), err)
+			return false, err
+		}
+		return apiequality.Semantic.DeepEqual(oldSpec, newPersistentVolumeClaim.Spec), nil
 	}
 	return false, nil
 }

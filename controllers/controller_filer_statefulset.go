@@ -99,7 +99,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			})
 		}
 		filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
-			Name: "filer-persistence",
+			Name: claimName,
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: claimName,
@@ -108,7 +108,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			},
 		})
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "filer-persistence",
+			Name:      claimName,
 			ReadOnly:  false,
 			MountPath: *m.Spec.Filer.Persistence.MountPath,
 			SubPath:   *m.Spec.Filer.Persistence.SubPath,

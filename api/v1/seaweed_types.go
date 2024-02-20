@@ -273,13 +273,46 @@ type PersistenceSpec struct {
 	// +kubebuilder:default:=""
 	SubPath *string `json:"subPath,omitempty"`
 
-	corev1.PersistentVolumeClaimSpec `json:",inline"`
-
+	// accessModes contains the desired access modes the volume should have.
+	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#access-modes-1
 	// +kubebuilder:default:={"ReadWriteOnce"}
 	AccessModes []corev1.PersistentVolumeAccessMode `json:"accessModes,omitempty"`
 
+	// selector is a label query over volumes to consider for binding.
+	// +optional
+	Selector *metav1.LabelSelector `json:"selector,omitempty"`
+
+	// resources represents the minimum resources the volume should have.
+	// If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
+	// that are lower than previous value but must still be higher than capacity recorded in the
+	// status field of the claim.
+	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
 	// +kubebuilder:default:={requests:{storage:"4Gi"}}
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// volumeName is the binding reference to the PersistentVolume backing this claim.
+	// +optional
+	VolumeName string `json:"volumeName,omitempty"`
+
+	// storageClassName is the name of the StorageClass required by the claim.
+	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1
+	// +optional
+	StorageClassName *string `json:"storageClassName,omitempty"`
+
+	// volumeMode defines what type of volume is required by the claim.
+	// Value of Filesystem is implied when not included in claim spec.
+	// +optional
+	VolumeMode *corev1.PersistentVolumeMode `json:"volumeMode,omitempty"`
+
+	// dataSource field can be used to specify either:
+	// * An existing VolumeSnapshot object (snapshot.storage.k8s.io/VolumeSnapshot)
+	// * An existing PVC (PersistentVolumeClaim)
+	// If the provisioner or an external controller can support the specified data source,
+	// it will create a new volume based on the contents of the specified data source.
+	// If the AnyVolumeDataSource feature gate is enabled, this field will always have
+	// the same contents as the DataSourceRef field.
+	// +optional
+	DataSource *corev1.TypedLocalObjectReference `json:"dataSource,omitempty"`
 }
 
 // +kubebuilder:object:root=true

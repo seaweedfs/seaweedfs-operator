@@ -92,6 +92,8 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 					Resources:        m.Spec.Filer.Persistence.Resources,
 					StorageClassName: m.Spec.Filer.Persistence.StorageClassName,
 					Selector:         m.Spec.Filer.Persistence.Selector,
+					VolumeName:       m.Spec.Filer.Persistence.VolumeName,
+					VolumeMode:       m.Spec.Filer.Persistence.VolumeMode,
 					DataSource:       m.Spec.Filer.Persistence.DataSource,
 				},
 			})

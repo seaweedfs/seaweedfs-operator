@@ -274,6 +274,12 @@ type PersistenceSpec struct {
 	SubPath *string `json:"subPath,omitempty"`
 
 	corev1.PersistentVolumeClaimSpec `json:",inline"`
+
+	// +kubebuilder:default:={"ReadWriteOnce"}
+	AccessModes []corev1.PersistentVolumeAccessMode `json:"accessModes,omitempty"`
+
+	// +kubebuilder:default:={requests:{storage:"4Gi"}}
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // +kubebuilder:object:root=true

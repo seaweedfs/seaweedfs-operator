@@ -33,10 +33,6 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 		return
 	}
 
-	if done, result, err = r.ensureFilerPersistentVolumeClaim(seaweedCR); done {
-		return
-	}
-
 	if seaweedCR.Spec.Filer.MetricsPort != nil {
 		if done, result, err = r.ensureFilerServiceMonitor(seaweedCR); done {
 			return
@@ -107,27 +103,6 @@ func (r *SeaweedReconciler) ensureFilerConfigMap(seaweedCR *seaweedv1.Seaweed) (
 
 	log.Info("Get filer ConfigMap " + filerConfigMap.Name)
 	return ReconcileResult(err)
-}
-
-func (r *SeaweedReconciler) ensureFilerPersistentVolumeClaim(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-filer-persistentvolumeclaim", seaweedCR.Name)
-
-	filerPersistentVolumeClaim := r.createFilerPersistentVolumeClaim(seaweedCR)
-	if err := controllerutil.SetControllerReference(seaweedCR, filerPersistentVolumeClaim, r.Scheme); err != nil {
-		return ReconcileResult(err)
-	}
-
-	if seaweedCR.Spec.Filer.Persistence.Enabled {
-		_, err := r.CreateOrUpdatePersistentVolumeClaim(filerPersistentVolumeClaim)
-
-		log.Info("Get filer PersistentVolumeClaim " + filerPersistentVolumeClaim.Name)
-		return ReconcileResult(err)
-	} else {
-		err := r.DeletePersistentVolumeClaim(filerPersistentVolumeClaim)
-
-		log.Info("Delete filer PersistentVolumeClaim " + filerPersistentVolumeClaim.Name)
-		return ReconcileResult(err)
-	}
 }
 
 func (r *SeaweedReconciler) ensureFilerServiceMonitor(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {

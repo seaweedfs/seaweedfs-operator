@@ -1897,10 +1897,15 @@ spec:
                       recommended only when replicas is set to 1
                     properties:
                       accessModes:
+                        allOf:
+                        - items:
+                            type: string
+                        - items:
+                            type: string
+                        default:
+                        - ReadWriteOnce
                         description: 'accessModes contains the desired access modes
                           the volume should have. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#access-modes-1'
-                        items:
-                          type: string
                         type: array
                       dataSource:
                         description: 'dataSource field can be used to specify either:
@@ -1978,6 +1983,9 @@ spec:
                         description: The path the volume will be mounted at
                         type: string
                       resources:
+                        default:
+                          requests:
+                            storage: 4Gi
                         description: 'resources represents the minimum resources the
                           volume should have. If RecoverVolumeExpansionFailure feature
                           is enabled users are allowed to specify resource requirements
@@ -1987,9 +1995,13 @@ spec:
                         properties:
                           limits:
                             additionalProperties:
-                              anyOf:
-                              - type: integer
-                              - type: string
+                              allOf:
+                              - anyOf:
+                                - type: integer
+                                - type: string
+                              - anyOf:
+                                - type: integer
+                                - type: string
                               pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                               x-kubernetes-int-or-string: true
                             description: 'Limits describes the maximum amount of compute
@@ -1997,9 +2009,13 @@ spec:
                             type: object
                           requests:
                             additionalProperties:
-                              anyOf:
-                              - type: integer
-                              - type: string
+                              allOf:
+                              - anyOf:
+                                - type: integer
+                                - type: string
+                              - anyOf:
+                                - type: integer
+                                - type: string
                               pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                               x-kubernetes-int-or-string: true
                             description: 'Requests describes the minimum amount of

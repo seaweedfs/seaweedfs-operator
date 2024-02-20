@@ -76,11 +76,25 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			MountPath: "/etc/seaweedfs",
 		},
 	}
-
+	var persistentVolumeClaims []corev1.PersistentVolumeClaim
 	if m.Spec.Filer.Persistence.Enabled {
 		claimName := m.Name + "-filer"
 		if m.Spec.Filer.Persistence.ExistingClaim != nil {
 			claimName = *m.Spec.Filer.Persistence.ExistingClaim
+		}
+		if m.Spec.Filer.Persistence.ExistingClaim == nil {
+			persistentVolumeClaims = append(persistentVolumeClaims, corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: claimName,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes:      m.Spec.Filer.Persistence.AccessModes,
+					Resources:        m.Spec.Filer.Persistence.Resources,
+					StorageClassName: m.Spec.Filer.Persistence.StorageClassName,
+					Selector:         m.Spec.Filer.Persistence.Selector,
+					DataSource:       m.Spec.Filer.Persistence.DataSource,
+				},
+			})
 		}
 		filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
 			Name: "filer-persistence",
@@ -166,6 +180,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 				},
 				Spec: filerPodSpec,
 			},
+			VolumeClaimTemplates: persistentVolumeClaims,
 		},
 	}
 	return dep

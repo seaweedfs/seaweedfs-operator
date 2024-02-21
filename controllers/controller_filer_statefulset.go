@@ -69,19 +69,58 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			},
 		},
 	}
+	volumeMounts := []corev1.VolumeMount{
+		{
+			Name:      "filer-config",
+			ReadOnly:  true,
+			MountPath: "/etc/seaweedfs",
+		},
+	}
+	var persistentVolumeClaims []corev1.PersistentVolumeClaim
+	if m.Spec.Filer.Persistence.Enabled {
+		claimName := m.Name + "-filer"
+		if m.Spec.Filer.Persistence.ExistingClaim != nil {
+			claimName = *m.Spec.Filer.Persistence.ExistingClaim
+		}
+		if m.Spec.Filer.Persistence.ExistingClaim == nil {
+			persistentVolumeClaims = append(persistentVolumeClaims, corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: claimName,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes:      m.Spec.Filer.Persistence.AccessModes,
+					Resources:        m.Spec.Filer.Persistence.Resources,
+					StorageClassName: m.Spec.Filer.Persistence.StorageClassName,
+					Selector:         m.Spec.Filer.Persistence.Selector,
+					VolumeName:       m.Spec.Filer.Persistence.VolumeName,
+					VolumeMode:       m.Spec.Filer.Persistence.VolumeMode,
+					DataSource:       m.Spec.Filer.Persistence.DataSource,
+				},
+			})
+		}
+		filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
+			Name: claimName,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+					ReadOnly:  false,
+				},
+			},
+		})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      claimName,
+			ReadOnly:  false,
+			MountPath: *m.Spec.Filer.Persistence.MountPath,
+			SubPath:   *m.Spec.Filer.Persistence.SubPath,
+		})
+	}
 	filerPodSpec.EnableServiceLinks = &enableServiceLinks
 	filerPodSpec.Containers = []corev1.Container{{
 		Name:            "filer",
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseFilerSpec().ImagePullPolicy(),
 		Env:             append(m.BaseFilerSpec().Env(), kubernetesEnvVars...),
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      "filer-config",
-				ReadOnly:  true,
-				MountPath: "/etc/seaweedfs",
-			},
-		},
+		VolumeMounts:    volumeMounts,
 		Command: []string{
 			"/bin/sh",
 			"-ec",
@@ -143,6 +182,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 				},
 				Spec: filerPodSpec,
 			},
+			VolumeClaimTemplates: persistentVolumeClaims,
 		},
 	}
 	return dep

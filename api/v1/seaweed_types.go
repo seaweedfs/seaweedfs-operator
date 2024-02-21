@@ -177,6 +177,9 @@ type FilerSpec struct {
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
+	// Persistence mounts a volume for local filer data
+	Persistence *PersistenceSpec `json:"persistence,omitempty"`
+
 	// Filer-specific settings
 
 	MaxMB *int32 `json:"maxMB,omitempty"`
@@ -252,6 +255,63 @@ type ServiceSpec struct {
 
 	// ClusterIP is the clusterIP of service
 	ClusterIP *string `json:"clusterIP,omitempty"`
+}
+
+type PersistenceSpec struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// ExistingClaim is the name of an existing pvc to use
+	ExistingClaim *string `json:"existingClaim,omitempty"`
+
+	// The path the volume will be mounted at
+	// +kubebuilder:default:="/data"
+	MountPath *string `json:"mountPath,omitempty"`
+
+	// The subdirectory of the volume to mount to
+	// +kubebuilder:default:=""
+	SubPath *string `json:"subPath,omitempty"`
+
+	// accessModes contains the desired access modes the volume should have.
+	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#access-modes-1
+	// +kubebuilder:default:={"ReadWriteOnce"}
+	AccessModes []corev1.PersistentVolumeAccessMode `json:"accessModes,omitempty"`
+
+	// selector is a label query over volumes to consider for binding.
+	// +optional
+	Selector *metav1.LabelSelector `json:"selector,omitempty"`
+
+	// resources represents the minimum resources the volume should have.
+	// If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
+	// that are lower than previous value but must still be higher than capacity recorded in the
+	// status field of the claim.
+	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
+	// +kubebuilder:default:={requests:{storage:"4Gi"}}
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// volumeName is the binding reference to the PersistentVolume backing this claim.
+	// +optional
+	VolumeName string `json:"volumeName,omitempty"`
+
+	// storageClassName is the name of the StorageClass required by the claim.
+	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1
+	// +optional
+	StorageClassName *string `json:"storageClassName,omitempty"`
+
+	// volumeMode defines what type of volume is required by the claim.
+	// Value of Filesystem is implied when not included in claim spec.
+	// +optional
+	VolumeMode *corev1.PersistentVolumeMode `json:"volumeMode,omitempty"`
+
+	// dataSource field can be used to specify either:
+	// * An existing VolumeSnapshot object (snapshot.storage.k8s.io/VolumeSnapshot)
+	// * An existing PVC (PersistentVolumeClaim)
+	// If the provisioner or an external controller can support the specified data source,
+	// it will create a new volume based on the contents of the specified data source.
+	// If the AnyVolumeDataSource feature gate is enabled, this field will always have
+	// the same contents as the DataSourceRef field.
+	// +optional
+	DataSource *corev1.TypedLocalObjectReference `json:"dataSource,omitempty"`
 }
 
 // +kubebuilder:object:root=true

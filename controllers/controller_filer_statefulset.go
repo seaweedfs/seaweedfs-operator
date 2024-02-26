@@ -77,7 +77,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		},
 	}
 	var persistentVolumeClaims []corev1.PersistentVolumeClaim
-	if m.Spec.Filer.Persistence.Enabled {
+	if m.Spec.Filer.Persistence != nil && m.Spec.Filer.Persistence.Enabled {
 		claimName := m.Name + "-filer"
 		if m.Spec.Filer.Persistence.ExistingClaim != nil {
 			claimName = *m.Spec.Filer.Persistence.ExistingClaim

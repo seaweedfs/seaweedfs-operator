@@ -21,8 +21,6 @@ rbac:
   serviceAccount:
     # -- name of the Kubernetes service account to create
     name: default
-    # -- Kubernetes namespace to create the Kubernetes service account in
-    namespace: operators
 
 image:
   registry: chrislusf
@@ -70,8 +68,6 @@ grafanaDashboard:
 serviceMonitor:
   # -- Enable or disable ServiceMonitor for prometheus metrics
   enabled: true
-  # -- Specify the namespace in which the serviceMonitor resource will be created
-  namespace: ""
   # -- Specify the interval at which metrics should be scraped
   interval: 10s
   # -- Specify the timeout after which the scrape is ended

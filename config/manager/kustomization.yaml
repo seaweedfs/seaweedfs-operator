@@ -3,6 +3,6 @@ resources:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
-- name: controller
-  newName: chrislusf/seaweedfs-operator
+- name: controller:latest
+  newName: ghcr.io/seaweedfs/seaweedfs-operator
   newTag: v0.0.1

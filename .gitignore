@@ -78,4 +78,7 @@ tags
 
 ### GoLand ###
 .idea
-bin/*
+
+testbin
+bin
+dist

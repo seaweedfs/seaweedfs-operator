@@ -30,7 +30,7 @@ By default, the defaulting and validation webhooks are disabled. We strongly rec
 First clone the repository:
 
 ```bash
-$ git clone https://github.com/seaweedfs/seaweedfs-operator --depth=1
+git clone https://github.com/seaweedfs/seaweedfs-operator --depth=1
 ```
 
 To deploy the operator with webhooks enabled, make sure you have installed the `cert-manager`(Installation docs: <https://cert-manager.io/docs/installation/>) in your cluster, then follow the instructions in the `config/default/kustomization.yaml` file to uncomment the components you need.  
@@ -39,30 +39,30 @@ Lastly, change the value of `ENABLE_WEBHOOKS` to `"true"` in `config/manager/man
 Manager image must be locally built and published into a registry accessible from your k8s cluster:
 
 ```bash
-$ export IMG=<registry/image>
-$ make docker-build
-$ make docker-push
+export IMG=<registry/image>
+make docker-build
+make docker-push
 ```
 
 Afterwards fire up to install CRDs:
 
 ```bash
-$ make install
+make install
 ```
 
 Then run the command to deploy the operator into your cluster using Kustomize or Helm:
 
 ```bash
 # if using Kustomize
-$ make deploy
+make deploy
 # if using Helm
-$ helm install seaweedfs-operator ./deploy/helm
+helm install seaweedfs-operator ./deploy/helm
 ```
 
 Verify it was correctly deployed:
 
 ```bash
-$ kubectl get pods --all-namespaces
+kubectl get pods --all-namespaces
 ```
 
 Which may return:
@@ -125,50 +125,38 @@ spec:
 Follow the instructions in <https://sdk.operatorframework.io/docs/building-operators/golang/quickstart/>
 
 ```bash
-$ git clone https://github.com/seaweedfs/seaweedfs-operator
-$ cd seaweedfs-operator
+# install and prepare kind-cluster for development
+make kind-prepare
 
-# register the CRD with the Kubernetes cluster
-$ make deploy
+# build the operator image and load the image into Kind cluster
+make kind-load
 
-# build the operator image
-$ make docker-build
+# deploy operator and CRDs
+make deploy
 
-# load the image into Kind cluster
-$ kind load docker-image chrislusf/seaweedfs-operator:v0.0.1
-
-# From another terminal in the same directory
-$ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
+# install example of CR
+kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 ```
 
 ### Update the Operator
 
 ```bash
-# delete the existing operator
-$ kubectl delete namespace seaweedfs-operator-system
+# rebuild and re-upload image to the kind
+make kind-load
 
-# rebuild the operator image
-$ make docker-build
-
-# load the image into Kind cluster
-$ kind load docker-image chrislusf/seaweedfs-operator:v0.0.1
-
-# register the CRD with the Kubernetes cluster
-$ make deploy
+# redeploy operator and CRDs
+make redeploy
 ```
 
 ### Develop outside of k8s
 
 ```bash
-$ git clone https://github.com/seaweedfs/seaweedfs-operator
-$ cd seaweedfs-operator
-
 # register the CRD with the Kubernetes cluster
-$ make install
+make install
 
 # run the operator locally outside the Kubernetes cluster
-$ make run ENABLE_WEBHOOKS=false 
+make run ENABLE_WEBHOOKS=false 
 
 # From another terminal in the same directory
-$ kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
+kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 ```

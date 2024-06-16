@@ -33,7 +33,7 @@ First clone the repository:
 git clone https://github.com/seaweedfs/seaweedfs-operator --depth=1
 ```
 
-To deploy the operator with webhooks enabled, make sure you have installed the `cert-manager`(Installation docs: <https://cert-manager.io/docs/installation/>) in your cluster, then follow the instructions in the `config/default/kustomization.yaml` file to uncomment the components you need.  
+To deploy the operator with webhooks enabled, make sure you have installed the `cert-manager`(Installation docs: <https://cert-manager.io/docs/installation/>) in your cluster, then follow the instructions in the `config/default/kustomization.yaml` file to uncomment the components you need.
 Lastly, change the value of `ENABLE_WEBHOOKS` to `"true"` in `config/manager/manager.yaml`
 
 Manager image must be locally built and published into a registry accessible from your k8s cluster:
@@ -155,7 +155,7 @@ make redeploy
 make install
 
 # run the operator locally outside the Kubernetes cluster
-make run ENABLE_WEBHOOKS=false 
+make run ENABLE_WEBHOOKS=false
 
 # From another terminal in the same directory
 kubectl apply -f config/samples/seaweed_v1_seaweed.yaml

@@ -2,10 +2,11 @@ package swadmin
 
 import (
 	"fmt"
-	"google.golang.org/grpc/credentials/insecure"
 	"io"
 	"regexp"
 	"strings"
+
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/seaweedfs/seaweedfs/weed/shell"
 	"google.golang.org/grpc"

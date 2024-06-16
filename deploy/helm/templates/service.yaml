@@ -13,5 +13,3 @@ spec:
       targetPort: {{ .Values.port.number }}
   selector:
     app: {{ include "seaweedfs-operator.fullname" . }}
-
-

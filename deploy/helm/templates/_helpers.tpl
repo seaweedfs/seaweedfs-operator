@@ -72,4 +72,3 @@ Docker registry image pull secret
   {{- printf "%s-container-registry" (include "seaweedfs-operator.fullname" .) -}}
 {{- end -}}
 {{- end -}}
-

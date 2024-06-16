@@ -23,12 +23,16 @@ endif
 
 all: manager
 
-# Run tests
-ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
-test: generate fmt vet manifests
-	mkdir -p ${ENVTEST_ASSETS_DIR}
-	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/master/hack/setup-envtest.sh
-	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./... -coverprofile cover.out
+.PHONY: test
+test: manifests generate fmt vet envtest ## Run tests.
+	@echo "Check for kubernetes version $(K8S_VERSION_TRIMMED_V) in $(ENVTEST)"
+	@$(ENVTEST) list | grep -q $(K8S_VERSION_TRIMMED_V)
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(K8S_VERSION_TRIMMED_V) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+
+# Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
+.PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
+test-e2e:
+	go test ./test/e2e/ -v -ginkgo.v
 
 # Build manager binary
 manager: generate fmt vet
@@ -53,6 +57,22 @@ fmt:
 # Run go vet against code
 vet:
 	go vet ./...
+
+.PHONY: mod-tidy
+mod-tidy: ## Run go mod tidy against code.
+	go mod tidy
+
+.PHONY: lint
+lint: golangci-lint ## Run golangci-lint linter & yamllint
+	$(GOLANGCI_LINT) run
+
+.PHONY: lint-fix
+lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
+	$(GOLANGCI_LINT) run --fix
+
+.PHONY: nilaway-lint
+nilaway-lint: nilaway
+	$(NILAWAY_LINT) -include-pkgs=github.com/seaweedfs/seweedfs-operator/api,github.com/seaweedfs/seweedfs-operator/internal,github.com/seaweedfs/seweedfs-operator/test ./...
 
 # Generate code
 generate: controller-gen

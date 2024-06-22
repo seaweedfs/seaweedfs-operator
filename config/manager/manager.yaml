@@ -26,17 +26,33 @@ spec:
       - command:
         - /manager
         args:
-        - --enable-leader-election
+          - --leader-elect
+          - --health-probe-bind-address=:8081
         image: controller:latest
+        imagePullPolicy: IfNotPresent
         env:
         - name: ENABLE_WEBHOOKS
           value: "false"
         name: manager
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        # TODO(user): Configure the resources accordingly based on the project requirements.
+        # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
         resources:
           limits:
-            cpu: 100m
-            memory: 100Mi
+            cpu: 500m
+            memory: 128Mi
           requests:
-            cpu: 100m
-            memory: 50Mi
+            cpu: 10m
+            memory: 64Mi
       terminationGracePeriodSeconds: 10

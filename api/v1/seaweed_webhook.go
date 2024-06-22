@@ -18,6 +18,7 @@ package v1
 
 import (
 	"errors"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -56,7 +57,7 @@ func (r *Seaweed) Default() {
 var _ webhook.Validator = &Seaweed{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *Seaweed) ValidateCreate() error {
+func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
 	seaweedlog.Info("validate create", "name", r.Name)
 	errs := []error{}
 
@@ -73,21 +74,21 @@ func (r *Seaweed) ValidateCreate() error {
 		}
 	}
 
-	return utilerrors.NewAggregate(errs)
+	return nil, utilerrors.NewAggregate(errs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *Seaweed) ValidateUpdate(old runtime.Object) error {
+func (r *Seaweed) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
 	seaweedlog.Info("validate update", "name", r.Name)
 
 	// TODO(user): fill in your validation logic upon object update.
-	return nil
+	return nil, nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *Seaweed) ValidateDelete() error {
+func (r *Seaweed) ValidateDelete() (admission.Warnings, error) {
 	seaweedlog.Info("validate delete", "name", r.Name)
 
 	// TODO(user): fill in your validation logic upon object deletion.
-	return nil
+	return nil, nil
 }

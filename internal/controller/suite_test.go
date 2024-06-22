@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controllers
+package controller
 
 import (
 	"path/filepath"
@@ -76,7 +76,7 @@ var _ = BeforeSuite(func(done Done) {
 
 	err = (&SeaweedReconciler{
 		Client: k8sManager.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("Seaweed"),
+		Log:    ctrl.Log.WithName("controller").WithName("Seaweed"),
 		Scheme: k8sManager.GetScheme(),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())

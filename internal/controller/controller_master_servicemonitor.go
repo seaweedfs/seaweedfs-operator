@@ -1,18 +1,17 @@
-package controllers
+package controller
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func (r *SeaweedReconciler) createVolumeServerServiceMonitor(m *seaweedv1.Seaweed) *monitorv1.ServiceMonitor {
-	labels := labelsForVolumeServer(m.Name)
+func (r *SeaweedReconciler) createMasterServiceMonitor(m *seaweedv1.Seaweed) *monitorv1.ServiceMonitor {
+	labels := labelsForMaster(m.Name)
 
 	dep := &monitorv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.Name + "-volume",
+			Name:      m.Name + "-master",
 			Namespace: m.Namespace,
 			Labels:    labels,
 		},
@@ -20,7 +19,7 @@ func (r *SeaweedReconciler) createVolumeServerServiceMonitor(m *seaweedv1.Seawee
 			Endpoints: []monitorv1.Endpoint{
 				{
 					Path: "/metrics",
-					Port: "volume-metrics",
+					Port: "master-metrics",
 				},
 			},
 			Selector: metav1.LabelSelector{

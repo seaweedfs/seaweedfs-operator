@@ -30,7 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
-	"github.com/seaweedfs/seaweedfs-operator/controllers"
+	"github.com/seaweedfs/seaweedfs-operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -71,9 +71,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.SeaweedReconciler{
+	if err = (&controller.SeaweedReconciler{
 		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("Seaweed"),
+		Log:    ctrl.Log.WithName("controller").WithName("Seaweed"),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Seaweed")

@@ -1,11 +1,11 @@
-package controllers
+package controller
 
 import (
 	"io/ioutil"
 	"os"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
-	"github.com/seaweedfs/seaweedfs-operator/controllers/swadmin"
+	"github.com/seaweedfs/seaweedfs-operator/internal/controller/swadmin"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 

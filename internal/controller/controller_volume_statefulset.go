@@ -1,4 +1,4 @@
-package controllers
+package controller
 
 import (
 	"fmt"
@@ -86,7 +86,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 				AccessModes: []corev1.PersistentVolumeAccessMode{
 					corev1.ReadWriteOnce,
 				},
-				Resources: corev1.ResourceRequirements{
+				Resources: corev1.VolumeResourceRequirements{
 					Requests: volumeRequests,
 				},
 			},

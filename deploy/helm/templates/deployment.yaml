@@ -25,7 +25,7 @@ spec:
         command:
         - /manager
         args:
-        - --enable-leader-election
+        - --leader-elect
         env:
         {{- if eq .Values.webhook.enabled false }}
         - name: ENABLE_WEBHOOKS

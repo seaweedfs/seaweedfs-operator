@@ -21,7 +21,17 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+# CONTAINER_TOOL defines the container tool to be used for building images.
+# Be aware that the target commands are only tested with Docker which is
+# scaffolded by default. However, you might want to replace it to use other
+# tools. (i.e. podman)
+CONTAINER_TOOL ?= docker
+
 all: manager
+
+.PHONY: build
+build: manifests generate fmt vet ## Build manager binary.
+	go build -o bin/manager cmd/main.go
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
@@ -106,6 +116,7 @@ K8S_VERSION_TRIMMED_V = $(subst v,,$(K8S_VERSION))
 
 KIND_CLUSTER_NAME ?= seaweedfs-operator-kind
 NAMESPACE ?= seaweedfs-operator-system
+KIND_IMAGE ?= kindest/node:$(K8S_VERSION)
 
 # renovate: datasource=github-tags depName=prometheus-operator/prometheus-operator
 PROMETHEUS_OPERATOR_VERSION ?= v0.74.0
@@ -136,7 +147,6 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.
 
 .PHONY: redeploy
 redeploy: deploy ## Redeploy controller with new docker image.
-	# force recreate pods
 	$(KUBECTL) rollout restart -n $(NAMESPACE) deploy/seaweedfs-operator-controller-manager
 
 .PHONY: kind-load
@@ -146,11 +156,11 @@ kind-load: docker-build kind ## Build and upload docker image to the local Kind 
 .PHONY: kind-create
 kind-create: kind yq ## Create kubernetes cluster using Kind.
 	@if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image $(KIND_IMAGE); \
 	fi
-	@if ! $(CONTAINER_TOOL) container inspect $$($(KIND) get nodes) | $(YQ) e '.[0].Config.Image' | grep -q $(K8S_VERSION); then \
+	@if ! $(CONTAINER_TOOL) ps --format json | $(YQ) -P -pj e 'select(.Names == "$(KIND_CLUSTER_NAME)-control-plane") | .Image' | grep -q $(KIND_IMAGE); then \
   		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image $(KIND_IMAGE); \
 	fi
 
 .PHONY: kind-delete

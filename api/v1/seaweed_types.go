@@ -287,7 +287,7 @@ type PersistenceSpec struct {
 	// status field of the claim.
 	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
 	// +kubebuilder:default:={requests:{storage:"4Gi"}}
-	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	Resources corev1.VolumeResourceRequirements `json:"resources,omitempty"`
 
 	// volumeName is the binding reference to the PersistentVolume backing this claim.
 	// +optional

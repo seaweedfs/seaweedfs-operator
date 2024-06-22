@@ -1,4 +1,4 @@
-package controllers
+package controller
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
-	label "github.com/seaweedfs/seaweedfs-operator/controllers/label"
+	label "github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
 )
 
 func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {

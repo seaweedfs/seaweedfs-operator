@@ -1,6 +1,9 @@
-package controllers
+package controller
 
 import (
+	"fmt"
+
+	"github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -8,34 +11,34 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-func (r *SeaweedReconciler) createMasterPeerService(m *seaweedv1.Seaweed) *corev1.Service {
-	labels := labelsForMaster(m.Name)
+func (r *SeaweedReconciler) createVolumeServerPeerService(m *seaweedv1.Seaweed) *corev1.Service {
+	labels := labelsForVolumeServer(m.Name)
 	ports := []corev1.ServicePort{
 		{
-			Name:       "master-http",
+			Name:       "volume-http",
 			Protocol:   corev1.Protocol("TCP"),
-			Port:       seaweedv1.MasterHTTPPort,
-			TargetPort: intstr.FromInt(seaweedv1.MasterHTTPPort),
+			Port:       seaweedv1.VolumeHTTPPort,
+			TargetPort: intstr.FromInt(seaweedv1.VolumeHTTPPort),
 		},
 		{
-			Name:       "master-grpc",
+			Name:       "volume-grpc",
 			Protocol:   corev1.Protocol("TCP"),
-			Port:       seaweedv1.MasterGRPCPort,
-			TargetPort: intstr.FromInt(seaweedv1.MasterGRPCPort),
+			Port:       seaweedv1.VolumeGRPCPort,
+			TargetPort: intstr.FromInt(seaweedv1.VolumeGRPCPort),
 		},
 	}
-	if m.Spec.Master.MetricsPort != nil {
+	if m.Spec.Volume.MetricsPort != nil {
 		ports = append(ports, corev1.ServicePort{
-			Name:       "master-metrics",
+			Name:       "volume-metrics",
 			Protocol:   corev1.Protocol("TCP"),
-			Port:       *m.Spec.Master.MetricsPort,
-			TargetPort: intstr.FromInt(int(*m.Spec.Master.MetricsPort)),
+			Port:       *m.Spec.Volume.MetricsPort,
+			TargetPort: intstr.FromInt(int(*m.Spec.Volume.MetricsPort)),
 		})
 	}
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.Name + "-master-peer",
+			Name:      m.Name + "-volume-peer",
 			Namespace: m.Namespace,
 			Labels:    labels,
 			Annotations: map[string]string{
@@ -49,39 +52,38 @@ func (r *SeaweedReconciler) createMasterPeerService(m *seaweedv1.Seaweed) *corev
 			Selector:                 labels,
 		},
 	}
-	// Set master instance as the owner and controller
-	// ctrl.SetControllerReference(m, dep, r.Scheme)
 	return dep
 }
-
-func (r *SeaweedReconciler) createMasterService(m *seaweedv1.Seaweed) *corev1.Service {
-	labels := labelsForMaster(m.Name)
+func (r *SeaweedReconciler) createVolumeServerService(m *seaweedv1.Seaweed, i int) *corev1.Service {
+	labels := labelsForVolumeServer(m.Name)
+	serviceName := fmt.Sprintf("%s-volume-%d", m.Name, i)
+	labels[label.PodName] = serviceName
 	ports := []corev1.ServicePort{
 		{
-			Name:       "master-http",
+			Name:       "volume-http",
 			Protocol:   corev1.Protocol("TCP"),
-			Port:       seaweedv1.MasterHTTPPort,
-			TargetPort: intstr.FromInt(seaweedv1.MasterHTTPPort),
+			Port:       seaweedv1.VolumeHTTPPort,
+			TargetPort: intstr.FromInt(seaweedv1.VolumeHTTPPort),
 		},
 		{
-			Name:       "master-grpc",
+			Name:       "volume-grpc",
 			Protocol:   corev1.Protocol("TCP"),
-			Port:       seaweedv1.MasterGRPCPort,
-			TargetPort: intstr.FromInt(seaweedv1.MasterGRPCPort),
+			Port:       seaweedv1.VolumeGRPCPort,
+			TargetPort: intstr.FromInt(seaweedv1.VolumeGRPCPort),
 		},
 	}
-	if m.Spec.Master.MetricsPort != nil {
+	if m.Spec.Volume.MetricsPort != nil {
 		ports = append(ports, corev1.ServicePort{
-			Name:       "master-metrics",
+			Name:       "volume-metrics",
 			Protocol:   corev1.Protocol("TCP"),
-			Port:       *m.Spec.Master.MetricsPort,
-			TargetPort: intstr.FromInt(int(*m.Spec.Master.MetricsPort)),
+			Port:       *m.Spec.Volume.MetricsPort,
+			TargetPort: intstr.FromInt(int(*m.Spec.Volume.MetricsPort)),
 		})
 	}
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.Name + "-master",
+			Name:      serviceName,
 			Namespace: m.Namespace,
 			Labels:    labels,
 			Annotations: map[string]string{
@@ -95,8 +97,8 @@ func (r *SeaweedReconciler) createMasterService(m *seaweedv1.Seaweed) *corev1.Se
 		},
 	}
 
-	if m.Spec.Master.Service != nil {
-		svcSpec := m.Spec.Master.Service
+	if m.Spec.Volume.Service != nil {
+		svcSpec := m.Spec.Volume.Service
 		dep.Annotations = copyAnnotations(svcSpec.Annotations)
 
 		if svcSpec.Type != "" {
@@ -111,5 +113,6 @@ func (r *SeaweedReconciler) createMasterService(m *seaweedv1.Seaweed) *corev1.Se
 			dep.Spec.LoadBalancerIP = *svcSpec.LoadBalancerIP
 		}
 	}
+
 	return dep
 }

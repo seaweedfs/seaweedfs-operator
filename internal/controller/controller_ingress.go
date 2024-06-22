@@ -1,7 +1,7 @@
-package controllers
+package controller
 
 import (
-	"github.com/seaweedfs/seaweedfs-operator/controllers/label"
+	"github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 

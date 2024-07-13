@@ -24,6 +24,8 @@ import (
 	"strconv"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
+
 	"github.com/go-resty/resty/v2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -69,8 +71,8 @@ var _ = Describe("controller", Ordered, func() {
 
 	Context("Operator", func() {
 		It("should run successfully", func() {
-			config, err := utils.GetConfig()
-			clientset, err := utils.GetClientset(config)
+			kubeconfig := config.GetConfigOrDie()
+			clientset, err := utils.GetClientset(kubeconfig)
 
 			deployment, err := clientset.AppsV1().Deployments(namespace).Get(context.TODO(), deploymentName, metav1.GetOptions{})
 			if err != nil {
@@ -95,7 +97,7 @@ var _ = Describe("controller", Ordered, func() {
 			localPortStr := strconv.Itoa(localPort)
 
 			// Call the function to run port forward
-			err = utils.RunPortForward(config, namespace, pods.Items[0].Name, []string{fmt.Sprintf("%s:8081", localPortStr)}, stopCh, readyCh)
+			err = utils.RunPortForward(kubeconfig, namespace, pods.Items[0].Name, []string{fmt.Sprintf("%s:8081", localPortStr)}, stopCh, readyCh)
 			if err != nil {
 				panic(err.Error())
 			}

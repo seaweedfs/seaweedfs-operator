@@ -11,6 +11,7 @@ import (
 )
 
 func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1.Ingress {
+	log := r.Log.WithValues("sw-create-ingress", m.Name)
 	labels := labelsForIngress(m.Name)
 	pathType := networkingv1.PathTypePrefix
 
@@ -95,6 +96,8 @@ func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1
 	}
 
 	// Set master instance as the owner and controller
-	ctrl.SetControllerReference(m, dep, r.Scheme)
+	if err := ctrl.SetControllerReference(m, dep, r.Scheme); err != nil {
+		log.Error(err, "set controller reference for Ingress failed")
+	}
 	return dep
 }

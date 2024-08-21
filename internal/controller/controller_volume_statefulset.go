@@ -110,7 +110,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/status",
+					Path:   "/healthz",
 					Port:   intstr.FromInt(seaweedv1.VolumeHTTPPort),
 					Scheme: corev1.URISchemeHTTP,
 				},
@@ -124,7 +124,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/status",
+					Path:   "/healthz",
 					Port:   intstr.FromInt(seaweedv1.VolumeHTTPPort),
 					Scheme: corev1.URISchemeHTTP,
 				},

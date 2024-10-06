@@ -93,3 +93,15 @@ rules:
   - get
   - patch
   - update
+{{- if .Values.serviceMonitor.enabled }}
+- apiGroups:
+    - monitoring.coreos.com
+  resources:
+    - servicemonitors
+  verbs:
+    - get
+    - patch
+    - update
+    - create
+    - delete
+{{- end }}

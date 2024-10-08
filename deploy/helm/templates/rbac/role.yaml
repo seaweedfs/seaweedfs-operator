@@ -36,6 +36,7 @@ rules:
   - pods
   verbs:
   - get
+  - watch
   - list
 - apiGroups:
   - ""
@@ -100,6 +101,8 @@ rules:
     - servicemonitors
   verbs:
     - get
+    - list
+    - watch
     - patch
     - update
     - create

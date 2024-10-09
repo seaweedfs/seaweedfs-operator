@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,7 +13,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -45,9 +43,9 @@ func (r *SeaweedReconciler) CreateOrUpdate(obj runtime.Object, mergeFn MergeFn) 
 	// 1. try to create and see if there is any conflicts
 	err := r.Create(context.TODO(), desired)
 	if errors.IsAlreadyExists(err) {
-
 		// 2. object has already existed, merge our desired changes to it
-		existing, err := EmptyClone(obj)
+		existing, err := r.EmptyClone(obj)
+
 		if err != nil {
 			return nil, err
 		}
@@ -239,6 +237,7 @@ func (r *SeaweedReconciler) CreateOrUpdateConfigMap(configMap *corev1.ConfigMap)
 }
 
 func (r *SeaweedReconciler) CreateOrUpdateServiceMonitor(serviceMonitor *monitorv1.ServiceMonitor) (*monitorv1.ServiceMonitor, error) {
+
 	result, err := r.CreateOrUpdate(serviceMonitor, func(existing, desired runtime.Object) error {
 		existingServiceMonitor := existing.(*monitorv1.ServiceMonitor)
 		desiredServiceMonitor := desired.(*monitorv1.ServiceMonitor)
@@ -260,16 +259,18 @@ func (r *SeaweedReconciler) CreateOrUpdateServiceMonitor(serviceMonitor *monitor
 }
 
 // EmptyClone create an clone of the resource with the same name and namespace (if namespace-scoped), with other fields unset
-func EmptyClone(obj runtime.Object) (runtime.Object, error) {
+func (r *SeaweedReconciler) EmptyClone(obj runtime.Object) (runtime.Object, error) {
+
 	meta, ok := obj.(metav1.Object)
 	if !ok {
 		return nil, fmt.Errorf("Obj %v is not a metav1.Object, cannot call EmptyClone", obj)
 	}
-	gvk, err := InferObjectKind(obj)
+
+	gvk, err := r.InferObjectKind(obj)
 	if err != nil {
 		return nil, err
 	}
-	inst, err := scheme.Scheme.New(gvk)
+	inst, err := r.Scheme.New(gvk)
 	if err != nil {
 		return nil, err
 	}
@@ -277,14 +278,15 @@ func EmptyClone(obj runtime.Object) (runtime.Object, error) {
 	if !ok {
 		return nil, fmt.Errorf("New instatnce %v created from scheme is not a metav1.Object, EmptyClone failed", inst)
 	}
+
 	instMeta.SetName(meta.GetName())
 	instMeta.SetNamespace(meta.GetNamespace())
 	return inst, nil
 }
 
 // InferObjectKind infers the object kind
-func InferObjectKind(obj runtime.Object) (schema.GroupVersionKind, error) {
-	gvks, _, err := scheme.Scheme.ObjectKinds(obj)
+func (r *SeaweedReconciler) InferObjectKind(obj runtime.Object) (schema.GroupVersionKind, error) {
+	gvks, _, err := r.Scheme.ObjectKinds(obj)
 	if err != nil {
 		return schema.GroupVersionKind{}, err
 	}

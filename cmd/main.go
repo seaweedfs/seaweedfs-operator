@@ -19,6 +19,7 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -48,6 +49,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(seaweedv1.AddToScheme(scheme))
+	utilruntime.Must(monitorv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 

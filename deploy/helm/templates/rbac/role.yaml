@@ -36,6 +36,7 @@ rules:
   - pods
   verbs:
   - get
+  - watch
   - list
 - apiGroups:
   - ""
@@ -93,3 +94,17 @@ rules:
   - get
   - patch
   - update
+{{- if .Values.serviceMonitor.enabled }}
+- apiGroups:
+    - monitoring.coreos.com
+  resources:
+    - servicemonitors
+  verbs:
+    - get
+    - list
+    - watch
+    - patch
+    - update
+    - create
+    - delete
+{{- end }}

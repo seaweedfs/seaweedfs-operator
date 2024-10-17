@@ -17,6 +17,6 @@ jobs:
         uses: stefanprodan/helm-gh-pages@master
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          charts_dir: deploy/helm
+          charts_dir: deploy
           target_dir: helm
           branch: gh-pages

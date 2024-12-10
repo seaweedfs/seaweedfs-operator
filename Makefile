@@ -91,11 +91,11 @@ generate: controller-gen
 # Build the docker image
 docker-build: # test
 	echo ${IMG}
-	docker build . -t ${IMG}
+	${CONTAINER_TOOL} build . -t ${IMG}
 
 # Push the docker image
 docker-push:
-	docker push ${IMG}
+	${CONTAINER_TOOL} push ${IMG}
 
 # Generate bundle manifests and metadata, then validate generated files.
 bundle: manifests

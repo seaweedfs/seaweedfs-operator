@@ -64,8 +64,10 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return result, err
 	}
 
-	if done, result, err = r.ensureFilerServers(seaweedCR); done {
-		return result, err
+	if seaweedCR.Spec.Filer != nil {
+		if done, result, err = r.ensureFilerServers(seaweedCR); done {
+			return result, err
+		}
 	}
 
 	if done, result, err = r.ensureSeaweedIngress(seaweedCR); done {

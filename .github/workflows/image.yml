@@ -42,6 +42,7 @@ jobs:
         tags: |
           type=ref,event=branch
           type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'master') }}
+          type=ref,event=tag,prefix=v
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v3

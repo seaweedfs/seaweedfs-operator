@@ -14,6 +14,12 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/seaweedfs/seaweedfs-operator:$(VERSION)
 
+# Default target operating system.
+TARGETOS ?= linux
+
+# Default target architecture.
+TARGETARCH ?= $(shell go env GOARCH)
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -89,9 +95,13 @@ generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 # Build the docker image
-docker-build: # test
+.PHONY: docker-build
+docker-build:
 	echo ${IMG}
-	${CONTAINER_TOOL} build . -t ${IMG}
+	${CONTAINER_TOOL} build . -t ${IMG} \
+	  --platform ${TARGETOS}/${TARGETARCH} \
+	  --build-arg TARGETARCH=${TARGETARCH} \
+	  --build-arg TARGETOS=${TARGETOS}
 
 # Push the docker image
 docker-push:

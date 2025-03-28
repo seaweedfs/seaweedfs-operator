@@ -39,9 +39,19 @@ Lastly, change the value of `ENABLE_WEBHOOKS` to `"true"` in `config/manager/man
 Manager image must be locally built and published into a registry accessible from your k8s cluster:
 
 ```bash
-export IMG=<registry/image>
+export IMG=<registry/image:tag>
+
+# Build and push for amd64
+export TARGETARCH=amd64
+
+# Optional if you want to change TARGETOS
+# export TARGETOS=linux
+
 make docker-build
-make docker-push
+
+# Build and push for arm64
+export TARGETARCH=arm64
+make docker-build
 ```
 
 Afterwards fire up to install CRDs:

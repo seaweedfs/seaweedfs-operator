@@ -23,6 +23,72 @@ Goals:
 
 ## Installation
 
+### Helm
+
+```bash
+helm repo add seaweedfs-operator https://seaweedfs.github.io/seaweedfs-operator/helm
+helm template seaweedfs-operator seaweedfs-operator/seaweedfs-operator
+```
+
+### FluxCD
+
+Add the following files to a new directory called `seaweedfs-operator` under your FluxCD GitRepository (publishing) directory.
+
+kustomization.yaml
+```yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - seaweedfs-operator-namespace.yaml
+  - seaweedfs-operator-helmrepository.yaml
+  - seaweedfs-operator-helmrelease.yaml
+```
+
+seaweedfs-operator-namespace.yaml
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: seaweedfs-operator
+```
+
+seaweedfs-operator-helmrepository.yaml
+```yaml
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: seaweedfs-operator
+  namespace: seaweedfs-operator
+spec:
+  interval: 1h
+  url: https://seaweedfs.github.io/seaweedfs-operator/helm
+```
+
+seaweedfs-operator-helmrelease.yaml
+```yaml
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: seaweedfs-operator
+  namespace: seaweedfs-operator
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: seaweedfs-operator
+      sourceRef:
+        kind: HelmRepository
+        name: seaweedfs-operator
+        namespace: seaweedfs-operator
+  values:
+    webhook:
+      enabled: false
+```
+
+NOTE: Due to an issue with the way the `seaweedfs-operator-webhook-server-cert` is created, `.Values.webhook.enabled` should be set to `false` initially, and then `true` later on. After the deployment is created, modify the `seaweedfs-operator-helmrelease.yaml` file to remove the `values` directive and everything underneath it.
+
+### Manual
+
 This operator uses `kustomize` for deployment. Please [install kustomize](https://kubectl.docs.kubernetes.io/installation/kustomize/) if you do not have it.
 
 By default, the defaulting and validation webhooks are disabled. We strongly recommend to enable the webhooks.

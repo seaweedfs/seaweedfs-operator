@@ -67,7 +67,7 @@ grafanaDashboard:
 
 serviceMonitor:
   # -- Enable or disable ServiceMonitor for prometheus metrics
-  enabled: true
+  enabled: false
   # -- Specify the interval at which metrics should be scraped
   interval: 10s
   # -- Specify the timeout after which the scrape is ended

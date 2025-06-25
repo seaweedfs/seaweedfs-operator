@@ -62,6 +62,9 @@ type SeaweedSpec struct {
 	// Filer
 	Filer *FilerSpec `json:"filer,omitempty"`
 
+	// FilerBackup
+	FilerBackup *FilerBackupSpec `json:"filerBackup,omitempty"`
+
 	// SchedulerName of pods
 	SchedulerName string `json:"schedulerName,omitempty"`
 
@@ -163,6 +166,32 @@ type VolumeSpec struct {
 
 // FilerSpec is the spec for filers
 type FilerSpec struct {
+	ComponentSpec               `json:",inline"`
+	corev1.ResourceRequirements `json:",inline"`
+
+	// The desired ready replicas
+	// +kubebuilder:validation:Minimum=1
+	Replicas int32        `json:"replicas"`
+	Service  *ServiceSpec `json:"service,omitempty"`
+
+	// Config in raw toml string
+	Config *string `json:"config,omitempty"`
+
+	// MetricsPort is the port that the prometheus metrics export listens on
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
+
+	// Persistence mounts a volume for local filer data
+	Persistence *PersistenceSpec `json:"persistence,omitempty"`
+
+	// Filer-specific settings
+
+	MaxMB *int32 `json:"maxMB,omitempty"`
+	// +kubebuilder:default:=true
+	S3 bool `json:"s3,omitempty"`
+}
+
+// FilerBackupSpec is the spec for filer backups
+type FilerBackupSpec struct {
 	ComponentSpec               `json:",inline"`
 	corev1.ResourceRequirements `json:",inline"`
 

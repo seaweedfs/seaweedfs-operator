@@ -101,6 +101,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseVolumeSpec().ImagePullPolicy(),
 		Env:             append(m.BaseVolumeSpec().Env(), kubernetesEnvVars...),
+		Resources:       m.Spec.Volume.ResourceRequirements,
 		Command: []string{
 			"/bin/sh",
 			"-ec",

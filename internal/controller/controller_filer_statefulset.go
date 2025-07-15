@@ -120,6 +120,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseFilerSpec().ImagePullPolicy(),
 		Env:             append(m.BaseFilerSpec().Env(), kubernetesEnvVars...),
+		Resources:       m.Spec.Filer.ResourceRequirements,
 		VolumeMounts:    volumeMounts,
 		Command: []string{
 			"/bin/sh",

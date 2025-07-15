@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
 const (
@@ -70,4 +71,32 @@ func copyAnnotations(src map[string]string) map[string]string {
 		dst[k] = v
 	}
 	return dst
+}
+
+// filterContainerResources removes storage resources that are not valid for container specifications
+// while keeping resources like ephemeral-storage that are valid for containers
+func filterContainerResources(resources corev1.ResourceRequirements) corev1.ResourceRequirements {
+	filtered := corev1.ResourceRequirements{}
+
+	if resources.Requests != nil {
+		filtered.Requests = corev1.ResourceList{}
+		for resource, quantity := range resources.Requests {
+			// Exclude storage resources that are only valid for PVCs
+			if resource != corev1.ResourceStorage {
+				filtered.Requests[resource] = quantity
+			}
+		}
+	}
+
+	if resources.Limits != nil {
+		filtered.Limits = corev1.ResourceList{}
+		for resource, quantity := range resources.Limits {
+			// Exclude storage resources that are only valid for PVCs
+			if resource != corev1.ResourceStorage {
+				filtered.Limits[resource] = quantity
+			}
+		}
+	}
+
+	return filtered
 }

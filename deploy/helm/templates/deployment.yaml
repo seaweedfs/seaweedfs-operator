@@ -18,6 +18,7 @@ spec:
       imagePullSecrets:
         - name: {{ include "seaweedfs-operator.pullSecretName" . }}
       {{ end }}
+      serviceAccountName: {{ include "seaweedfs-operator.serviceAccountName" . }}
       containers:
       - name: seaweedfs-operator
         image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"

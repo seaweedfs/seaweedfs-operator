@@ -72,3 +72,14 @@ Docker registry image pull secret
   {{- printf "%s-container-registry" (include "seaweedfs-operator.fullname" .) -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Create the name of the service account to use
+*/}}
+{{- define "seaweedfs-operator.serviceAccountName" -}}
+{{- if .Values.rbac.serviceAccount.create -}}
+  {{- default (include "seaweedfs-operator.fullname" .) .Values.rbac.serviceAccount.name -}}
+{{- else -}}
+  {{- default "default" .Values.rbac.serviceAccount.name -}}
+{{- end -}}
+{{- end -}}

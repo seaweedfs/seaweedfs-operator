@@ -21,7 +21,7 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           echo "Detected tag: $TAG"
-          yq -i ".appVersion = \"$TAG\"" deploy/Chart.yaml
+          yq -i ".appVersion = \"$TAG\"" deploy/helm/Chart.yaml
 
       - name: Publish Helm charts
         uses: stefanprodan/helm-gh-pages@master

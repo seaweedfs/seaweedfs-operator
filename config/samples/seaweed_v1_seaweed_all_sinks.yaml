@@ -30,7 +30,6 @@ spec:
           storage: "10Gi"
     service:
       type: ClusterIP
-    metricsPort: 9090
     requests:
       memory: "512Mi"
       cpu: "250m"

@@ -116,7 +116,7 @@ func (r *SeaweedReconciler) createFilerBackupStatefulSet(m *seaweedv1.Seaweed) *
 			TimeoutSeconds:      3,
 			PeriodSeconds:       15,
 			SuccessThreshold:    1,
-			FailureThreshold:    100,
+			FailureThreshold:    20,
 		},
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler:        buildStubProbeHandler(),

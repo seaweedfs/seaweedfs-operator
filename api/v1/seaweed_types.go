@@ -203,17 +203,186 @@ type FilerBackupSpec struct {
 	// Config in raw toml string
 	Config *string `json:"config,omitempty"`
 
-	// MetricsPort is the port that the prometheus metrics export listens on
-	MetricsPort *int32 `json:"metricsPort,omitempty"`
-
 	// Persistence mounts a volume for local filer data
 	Persistence *PersistenceSpec `json:"persistence,omitempty"`
 
 	// Filer-specific settings
 
 	MaxMB *int32 `json:"maxMB,omitempty"`
-	// +kubebuilder:default:=true
-	S3 bool `json:"s3,omitempty"`
+
+	// Backup-specific settings
+
+	// Sink configuration for backup destinations
+	Sink *SinkConfig `json:"sink,omitempty"`
+}
+
+// SinkConfig defines the backup sink configuration
+type SinkConfig struct {
+	// Local sink configuration
+	Local *LocalSinkConfig `json:"local,omitempty"`
+
+	// Filer sink configuration
+	Filer *FilerSinkConfig `json:"filer,omitempty"`
+
+	// S3 sink configuration
+	S3 *S3SinkConfig `json:"s3,omitempty"`
+
+	// Google Cloud Storage sink configuration
+	GoogleCloudStorage *GoogleCloudStorageSinkConfig `json:"googleCloudStorage,omitempty"`
+
+	// Azure sink configuration
+	Azure *AzureSinkConfig `json:"azure,omitempty"`
+
+	// Backblaze sink configuration
+	Backblaze *BackblazeSinkConfig `json:"backblaze,omitempty"`
+}
+
+// LocalSinkConfig defines local file system sink configuration
+type LocalSinkConfig struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Directory where backups will be stored
+	Directory string `json:"directory,omitempty"`
+
+	// Whether to use incremental backup mode
+	// +kubebuilder:default:=false
+	IsIncremental bool `json:"isIncremental,omitempty"`
+}
+
+// FilerSinkConfig defines filer sink configuration
+type FilerSinkConfig struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// gRPC address of the target filer
+	GRPCAddress string `json:"grpcAddress,omitempty"`
+
+	// Directory where backups will be stored
+	Directory string `json:"directory,omitempty"`
+
+	// Replication setting
+	Replication string `json:"replication,omitempty"`
+
+	// Collection setting
+	Collection string `json:"collection,omitempty"`
+
+	// TTL in seconds
+	TTLSec int32 `json:"ttlSec,omitempty"`
+
+	// Whether to use incremental backup mode
+	// +kubebuilder:default:=false
+	IsIncremental bool `json:"isIncremental,omitempty"`
+}
+
+// S3SinkConfig defines S3 sink configuration
+type S3SinkConfig struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// AWS access key ID (if empty, loads from shared credentials file)
+	AWSAccessKeyID string `json:"awsAccessKeyID,omitempty"`
+
+	// AWS secret access key (if empty, loads from shared credentials file)
+	AWSSecretAccessKey string `json:"awsSecretAccessKey,omitempty"`
+
+	// AWS credentials secret reference
+	AWSCredentialsSecretRef *AWSCredentialsSecretRef `json:"awsCredentialsSecretRef,omitempty"`
+
+	// AWS region
+	Region string `json:"region,omitempty"`
+
+	// S3 bucket name
+	Bucket string `json:"bucket,omitempty"`
+
+	// Destination directory in the bucket
+	Directory string `json:"directory,omitempty"`
+
+	// Custom S3 endpoint
+	Endpoint string `json:"endpoint,omitempty"`
+
+	// Whether to use incremental backup mode
+	// +kubebuilder:default:=false
+	IsIncremental bool `json:"isIncremental,omitempty"`
+}
+
+type AWSCredentialsSecretRef struct {
+	// Name of the secret
+	Name string `json:"name,omitempty"`
+
+	// Mapping of the configuration key to the secret key
+	Mapping AWSCredentialsSecretRefMapping `json:"mapping,omitempty"`
+}
+
+type AWSCredentialsSecretRefMapping struct {
+	AWSAccessKeyID     string `json:"awsAccessKeyID,omitempty"`
+	AWSSecretAccessKey string `json:"awsSecretAccessKey,omitempty"`
+}
+
+// GoogleCloudStorageSinkConfig defines Google Cloud Storage sink configuration
+type GoogleCloudStorageSinkConfig struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Path to Google application credentials JSON file
+	GoogleApplicationCredentials string `json:"googleApplicationCredentials,omitempty"`
+
+	// GCS bucket name
+	Bucket string `json:"bucket,omitempty"`
+
+	// Destination directory in the bucket
+	Directory string `json:"directory,omitempty"`
+
+	// Whether to use incremental backup mode
+	// +kubebuilder:default:=false
+	IsIncremental bool `json:"isIncremental,omitempty"`
+}
+
+// AzureSinkConfig defines Azure Blob Storage sink configuration
+type AzureSinkConfig struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Azure storage account name
+	AccountName string `json:"accountName,omitempty"`
+
+	// Azure storage account key
+	AccountKey string `json:"accountKey,omitempty"`
+
+	// Azure container name
+	Container string `json:"container,omitempty"`
+
+	// Destination directory in the container
+	Directory string `json:"directory,omitempty"`
+
+	// Whether to use incremental backup mode
+	// +kubebuilder:default:=false
+	IsIncremental bool `json:"isIncremental,omitempty"`
+}
+
+// BackblazeSinkConfig defines Backblaze B2 sink configuration
+type BackblazeSinkConfig struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// B2 account ID
+	B2AccountID string `json:"b2AccountID,omitempty"`
+
+	// B2 master application key
+	B2MasterApplicationKey string `json:"b2MasterApplicationKey,omitempty"`
+
+	// B2 region
+	B2Region string `json:"b2Region,omitempty"`
+
+	// B2 bucket name
+	Bucket string `json:"bucket,omitempty"`
+
+	// Destination directory in the bucket
+	Directory string `json:"directory,omitempty"`
+
+	// Whether to use incremental backup mode
+	// +kubebuilder:default:=false
+	IsIncremental bool `json:"isIncremental,omitempty"`
 }
 
 // ComponentSpec is the base spec of each component, the fields should always accessed by the Basic<Component>Spec() method to respect the cluster-level properties

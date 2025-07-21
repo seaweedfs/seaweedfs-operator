@@ -3528,11 +3528,6 @@ spec:
                   maxMB:
                     format: int32
                     type: integer
-                  metricsPort:
-                    description: MetricsPort is the port that the prometheus metrics
-                      export listens on
-                    format: int32
-                    type: integer
                   nodeSelector:
                     additionalProperties:
                       type: string
@@ -3713,9 +3708,6 @@ spec:
                       otherwise to an implementation-defined value. Requests cannot exceed Limits.
                       More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                     type: object
-                  s3:
-                    default: true
-                    type: boolean
                   schedulerName:
                     description: SchedulerName of the component. Override the cluster-level
                       one if present
@@ -3738,6 +3730,168 @@ spec:
                       type:
                         description: Type of the real kubernetes service
                         type: string
+                    type: object
+                  sink:
+                    description: Sink configuration for backup destinations
+                    properties:
+                      azure:
+                        description: Azure sink configuration
+                        properties:
+                          accountKey:
+                            description: Azure storage account key
+                            type: string
+                          accountName:
+                            description: Azure storage account name
+                            type: string
+                          container:
+                            description: Azure container name
+                            type: string
+                          directory:
+                            description: Destination directory in the container
+                            type: string
+                          enabled:
+                            default: false
+                            type: boolean
+                          isIncremental:
+                            default: false
+                            description: Whether to use incremental backup mode
+                            type: boolean
+                        type: object
+                      backblaze:
+                        description: Backblaze sink configuration
+                        properties:
+                          b2AccountID:
+                            description: B2 account ID
+                            type: string
+                          b2MasterApplicationKey:
+                            description: B2 master application key
+                            type: string
+                          b2Region:
+                            description: B2 region
+                            type: string
+                          bucket:
+                            description: B2 bucket name
+                            type: string
+                          directory:
+                            description: Destination directory in the bucket
+                            type: string
+                          enabled:
+                            default: false
+                            type: boolean
+                          isIncremental:
+                            default: false
+                            description: Whether to use incremental backup mode
+                            type: boolean
+                        type: object
+                      filer:
+                        description: Filer sink configuration
+                        properties:
+                          collection:
+                            description: Collection setting
+                            type: string
+                          directory:
+                            description: Directory where backups will be stored
+                            type: string
+                          enabled:
+                            default: false
+                            type: boolean
+                          grpcAddress:
+                            description: gRPC address of the target filer
+                            type: string
+                          isIncremental:
+                            default: false
+                            description: Whether to use incremental backup mode
+                            type: boolean
+                          replication:
+                            description: Replication setting
+                            type: string
+                          ttlSec:
+                            description: TTL in seconds
+                            format: int32
+                            type: integer
+                        type: object
+                      googleCloudStorage:
+                        description: Google Cloud Storage sink configuration
+                        properties:
+                          bucket:
+                            description: GCS bucket name
+                            type: string
+                          directory:
+                            description: Destination directory in the bucket
+                            type: string
+                          enabled:
+                            default: false
+                            type: boolean
+                          googleApplicationCredentials:
+                            description: Path to Google application credentials JSON
+                              file
+                            type: string
+                          isIncremental:
+                            default: false
+                            description: Whether to use incremental backup mode
+                            type: boolean
+                        type: object
+                      local:
+                        description: Local sink configuration
+                        properties:
+                          directory:
+                            description: Directory where backups will be stored
+                            type: string
+                          enabled:
+                            default: false
+                            type: boolean
+                          isIncremental:
+                            default: false
+                            description: Whether to use incremental backup mode
+                            type: boolean
+                        type: object
+                      s3:
+                        description: S3 sink configuration
+                        properties:
+                          awsAccessKeyID:
+                            description: AWS access key ID (if empty, loads from shared
+                              credentials file)
+                            type: string
+                          awsCredentialsSecretRef:
+                            description: AWS credentials secret reference
+                            properties:
+                              mapping:
+                                description: Mapping of the configuration key to the
+                                  secret key
+                                properties:
+                                  awsAccessKeyID:
+                                    type: string
+                                  awsSecretAccessKey:
+                                    type: string
+                                type: object
+                              name:
+                                description: Name of the secret
+                                type: string
+                            type: object
+                          awsSecretAccessKey:
+                            description: AWS secret access key (if empty, loads from
+                              shared credentials file)
+                            type: string
+                          bucket:
+                            description: S3 bucket name
+                            type: string
+                          directory:
+                            description: Destination directory in the bucket
+                            type: string
+                          enabled:
+                            default: false
+                            type: boolean
+                          endpoint:
+                            description: Custom S3 endpoint
+                            type: string
+                          isIncremental:
+                            default: false
+                            description: Whether to use incremental backup mode
+                            type: boolean
+                          region:
+                            description: AWS region
+                            type: string
+                        type: object
                     type: object
                   statefulSetUpdateStrategy:
                     description: |-

@@ -23,8 +23,6 @@ spec:
       dir = "/data/filerldb2"
   filerBackup:
     replicas: 1
-    # Enable S3 for backup filer
-    s3: true
     # Persistence for backup filer data
     persistence:
       enabled: true
@@ -32,11 +30,6 @@ spec:
       resources:
         requests:
           storage: "10Gi"
-    # Service configuration
-    service:
-      type: ClusterIP
-    # Metrics configuration
-    metricsPort: 9090
     # Resource requirements
     requests:
       memory: "512Mi"

@@ -11,14 +11,14 @@ import (
 	"github.com/seaweedfs/seaweedfs-operator/internal/controller/backup"
 )
 
-func (r *SeaweedReconciler) createFilerBackupConfigMap(m *seaweedv1.Seaweed) *corev1.ConfigMap {
+func (r *SeaweedReconciler) createFilerBackupConfigMap(ctx context.Context, m *seaweedv1.Seaweed) *corev1.ConfigMap {
 	labels := labelsForFilerBackup(m.Name)
 
 	config := ""
 	if m.Spec.FilerBackup.Config != nil {
 		config = *m.Spec.FilerBackup.Config
 	} else {
-		config = r.generateBackupConfig(m)
+		config = r.generateBackupConfig(ctx, m)
 	}
 
 	dep := &corev1.ConfigMap{
@@ -34,9 +34,8 @@ func (r *SeaweedReconciler) createFilerBackupConfigMap(m *seaweedv1.Seaweed) *co
 	return dep
 }
 
-func (r *SeaweedReconciler) generateBackupConfig(m *seaweedv1.Seaweed) string {
+func (r *SeaweedReconciler) generateBackupConfig(ctx context.Context, m *seaweedv1.Seaweed) string {
 	var config strings.Builder
-	ctx := context.Background()
 	log := r.Log.WithValues("generateBackupConfig", m.Name)
 
 	// Create a secret getter that wraps the controller's getSecret method

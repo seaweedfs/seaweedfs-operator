@@ -13,11 +13,10 @@ import (
 	label "github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
 )
 
-func (r *SeaweedReconciler) ensureFilerBackupServers(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
-	_ = context.Background()
+func (r *SeaweedReconciler) ensureFilerBackupServers(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
-	if done, result, err = r.ensureFilerBackupConfigMap(seaweedCR); done {
+	if done, result, err = r.ensureFilerBackupConfigMap(ctx, seaweedCR); done {
 		return
 	}
 
@@ -48,10 +47,10 @@ func (r *SeaweedReconciler) ensureFilerBackupStatefulSet(seaweedCR *seaweedv1.Se
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureFilerBackupConfigMap(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+func (r *SeaweedReconciler) ensureFilerBackupConfigMap(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-filer-backup-configmap", seaweedCR.Name)
 
-	filerBackupConfigMap := r.createFilerBackupConfigMap(seaweedCR)
+	filerBackupConfigMap := r.createFilerBackupConfigMap(ctx, seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, filerBackupConfigMap, r.Scheme); err != nil {
 		return ReconcileResult(err)
 	}

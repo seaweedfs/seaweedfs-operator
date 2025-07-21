@@ -74,7 +74,7 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	if seaweedCR.Spec.FilerBackup != nil {
-		if done, result, err = r.ensureFilerBackupServers(seaweedCR); done {
+		if done, result, err = r.ensureFilerBackupServers(ctx, seaweedCR); done {
 			return result, err
 		}
 	}

@@ -319,6 +319,47 @@ type AWSCredentialsSecretRefMapping struct {
 	AWSSecretAccessKey string `json:"awsSecretAccessKey,omitempty"`
 }
 
+// AzureCredentialsSecretRef defines Azure credentials secret reference
+type AzureCredentialsSecretRef struct {
+	// Name of the secret
+	Name string `json:"name,omitempty"`
+
+	// Mapping of the configuration key to the secret key
+	Mapping AzureCredentialsSecretRefMapping `json:"mapping,omitempty"`
+}
+
+type AzureCredentialsSecretRefMapping struct {
+	AccountName string `json:"accountName,omitempty"`
+	AccountKey  string `json:"accountKey,omitempty"`
+}
+
+// GoogleCloudStorageCredentialsSecretRef defines Google Cloud Storage credentials secret reference
+type GoogleCloudStorageCredentialsSecretRef struct {
+	// Name of the secret
+	Name string `json:"name,omitempty"`
+
+	// Mapping of the configuration key to the secret key
+	Mapping GoogleCloudStorageCredentialsSecretRefMapping `json:"mapping,omitempty"`
+}
+
+type GoogleCloudStorageCredentialsSecretRefMapping struct {
+	GoogleApplicationCredentials string `json:"googleApplicationCredentials,omitempty"`
+}
+
+// BackblazeCredentialsSecretRef defines Backblaze B2 credentials secret reference
+type BackblazeCredentialsSecretRef struct {
+	// Name of the secret
+	Name string `json:"name,omitempty"`
+
+	// Mapping of the configuration key to the secret key
+	Mapping BackblazeCredentialsSecretRefMapping `json:"mapping,omitempty"`
+}
+
+type BackblazeCredentialsSecretRefMapping struct {
+	B2AccountID            string `json:"b2AccountID,omitempty"`
+	B2MasterApplicationKey string `json:"b2MasterApplicationKey,omitempty"`
+}
+
 // GoogleCloudStorageSinkConfig defines Google Cloud Storage sink configuration
 type GoogleCloudStorageSinkConfig struct {
 	// +kubebuilder:default:=false
@@ -326,6 +367,9 @@ type GoogleCloudStorageSinkConfig struct {
 
 	// Path to Google application credentials JSON file
 	GoogleApplicationCredentials string `json:"googleApplicationCredentials,omitempty"`
+
+	// Google Cloud Storage credentials secret reference
+	GoogleCloudStorageCredentialsSecretRef *GoogleCloudStorageCredentialsSecretRef `json:"googleCloudStorageCredentialsSecretRef,omitempty"`
 
 	// GCS bucket name
 	Bucket string `json:"bucket,omitempty"`
@@ -349,6 +393,9 @@ type AzureSinkConfig struct {
 	// Azure storage account key
 	AccountKey string `json:"accountKey,omitempty"`
 
+	// Azure credentials secret reference
+	AzureCredentialsSecretRef *AzureCredentialsSecretRef `json:"azureCredentialsSecretRef,omitempty"`
+
 	// Azure container name
 	Container string `json:"container,omitempty"`
 
@@ -370,6 +417,9 @@ type BackblazeSinkConfig struct {
 
 	// B2 master application key
 	B2MasterApplicationKey string `json:"b2MasterApplicationKey,omitempty"`
+
+	// Backblaze B2 credentials secret reference
+	BackblazeCredentialsSecretRef *BackblazeCredentialsSecretRef `json:"backblazeCredentialsSecretRef,omitempty"`
 
 	// B2 region
 	B2Region string `json:"b2Region,omitempty"`

@@ -3743,6 +3743,22 @@ spec:
                           accountName:
                             description: Azure storage account name
                             type: string
+                          azureCredentialsSecretRef:
+                            description: Azure credentials secret reference
+                            properties:
+                              mapping:
+                                description: Mapping of the configuration key to the
+                                  secret key
+                                properties:
+                                  accountKey:
+                                    type: string
+                                  accountName:
+                                    type: string
+                                type: object
+                              name:
+                                description: Name of the secret
+                                type: string
+                            type: object
                           container:
                             description: Azure container name
                             type: string
@@ -3769,6 +3785,22 @@ spec:
                           b2Region:
                             description: B2 region
                             type: string
+                          backblazeCredentialsSecretRef:
+                            description: Backblaze B2 credentials secret reference
+                            properties:
+                              mapping:
+                                description: Mapping of the configuration key to the
+                                  secret key
+                                properties:
+                                  b2AccountID:
+                                    type: string
+                                  b2MasterApplicationKey:
+                                    type: string
+                                type: object
+                              name:
+                                description: Name of the secret
+                                type: string
+                            type: object
                           bucket:
                             description: B2 bucket name
                             type: string
@@ -3826,6 +3858,20 @@ spec:
                             description: Path to Google application credentials JSON
                               file
                             type: string
+                          googleCloudStorageCredentialsSecretRef:
+                            description: Google Cloud Storage credentials secret reference
+                            properties:
+                              mapping:
+                                description: Mapping of the configuration key to the
+                                  secret key
+                                properties:
+                                  googleApplicationCredentials:
+                                    type: string
+                                type: object
+                              name:
+                                description: Name of the secret
+                                type: string
+                            type: object
                           isIncremental:
                             default: false
                             description: Whether to use incremental backup mode

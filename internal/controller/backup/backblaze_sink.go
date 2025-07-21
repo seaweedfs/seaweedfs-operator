@@ -44,15 +44,22 @@ func ExtractBackblazeCredentials(ctx context.Context, backblazeConfig *seaweedv1
 			if b2AccountIDKey == "" {
 				b2AccountIDKey = "b2AccountID"
 			}
-			
+
 			if accountID, exists := secret[b2AccountIDKey]; exists {
 				b2AccountID = accountID
 			} else {
 				log.Info("Secret key not found in secret", "secret", backblazeConfig.BackblazeCredentialsSecretRef.Name, "mapping", b2AccountIDKey)
 			}
 
-			if masterKey, exists := secret[mapping.B2MasterApplicationKey]; exists {
+			b2MasterApplicationKeyKey := mapping.B2MasterApplicationKey
+			if b2MasterApplicationKeyKey == "" {
+				b2MasterApplicationKeyKey = "b2MasterApplicationKey"
+			}
+
+			if masterKey, exists := secret[b2MasterApplicationKeyKey]; exists {
 				b2MasterApplicationKey = masterKey
+			} else {
+				log.Info("Secret key not found in secret", "secret", backblazeConfig.BackblazeCredentialsSecretRef.Name, "mapping", b2MasterApplicationKeyKey)
 			}
 		}
 	}

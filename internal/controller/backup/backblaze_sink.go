@@ -43,7 +43,9 @@ func ExtractBackblazeCredentials(ctx context.Context, backblazeConfig *seaweedv1
 
 			if b2AccountIDKey == "" {
 				b2AccountIDKey = "b2AccountID"
-			} else if accountID, exists := secret[b2AccountIDKey]; exists {
+			}
+			
+			if accountID, exists := secret[b2AccountIDKey]; exists {
 				b2AccountID = accountID
 			} else {
 				log.Info("Secret key not found in secret", "secret", backblazeConfig.BackblazeCredentialsSecretRef.Name, "mapping", b2AccountIDKey)

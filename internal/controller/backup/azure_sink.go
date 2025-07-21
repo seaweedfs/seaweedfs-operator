@@ -43,7 +43,9 @@ func ExtractAzureCredentials(ctx context.Context, azureConfig *seaweedv1.AzureSi
 
 			if accountNameKey == "" {
 				accountNameKey = "accountName"
-			} else if name, exists := secret[accountNameKey]; exists {
+			}
+
+			if name, exists := secret[accountNameKey]; exists {
 				accountName = name
 			} else {
 				log.Info("Secret key not found in secret", "secret", azureConfig.AzureCredentialsSecretRef.Name, "mapping", accountNameKey)
@@ -53,7 +55,9 @@ func ExtractAzureCredentials(ctx context.Context, azureConfig *seaweedv1.AzureSi
 
 			if accountKeyKey == "" {
 				accountKeyKey = "accountKey"
-			} else if key, exists := secret[accountKeyKey]; exists {
+			}
+
+			if key, exists := secret[accountKeyKey]; exists {
 				accountKey = key
 			} else {
 				log.Info("Secret key not found in secret", "secret", azureConfig.AzureCredentialsSecretRef.Name, "mapping", accountKeyKey)

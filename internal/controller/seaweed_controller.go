@@ -84,7 +84,7 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	if false {
-		if done, result, err = r.maintenance(seaweedCR); done {
+		if done, result, err = r.maintenance(ctx, seaweedCR); done {
 			return result, err
 		}
 	}

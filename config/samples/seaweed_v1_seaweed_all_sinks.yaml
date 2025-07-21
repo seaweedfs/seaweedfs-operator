@@ -22,7 +22,6 @@ spec:
       dir = "/data/filerldb2"
   filerBackup:
     replicas: 1
-    s3: true
     persistence:
       enabled: true
       mountPath: "/data/backup"

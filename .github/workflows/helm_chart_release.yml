@@ -13,6 +13,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
+
+      - name: Install yq
+        run: sudo snap install yq
+
+      - name: Set appVersion in Chart.yaml to match tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "Detected tag: $TAG"
+          yq -i ".appVersion = \"$TAG\"" deploy/helm/Chart.yaml
+
       - name: Publish Helm charts
         uses: stefanprodan/helm-gh-pages@master
         with:

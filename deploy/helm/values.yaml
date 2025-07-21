@@ -19,8 +19,16 @@ commonLabels: {}
 ## Configure Kubernetes Rbac parameters
 rbac:
   serviceAccount:
-    # -- name of the Kubernetes service account to create
-    name: default
+    # -- Specifies whether a service account should be created
+    create: true
+    # -- Annotations to add to the service account
+    annotations: {}
+    # -- The name of the service account to use.
+    # If not set and create is true, a name is generated using the fullname template
+    # If set to "default", no ServiceAccount will be created and the default one will be used
+    name: ""
+    # -- Automount service account token for the server service account
+    automount: true
 
 image:
   registry: chrislusf

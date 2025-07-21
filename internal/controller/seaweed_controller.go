@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -44,6 +45,8 @@ type SeaweedReconciler struct {
 // +kubebuilder:rbac:groups=extensions,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;
+// +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile implements the reconciliation logic
 func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -107,6 +110,29 @@ func (r *SeaweedReconciler) findSeaweedCustomResourceInstance(ctx context.Contex
 	}
 	log.Info("Get master " + seaweedCR.Name)
 	return seaweedCR, false, ctrl.Result{}, nil
+}
+
+func (r *SeaweedReconciler) getSecret(ctx context.Context, secretName string, namespace string) (map[string]string, error) {
+	log := r.Log.WithValues("getSecret", secretName)
+
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, client.ObjectKey{
+		Namespace: namespace,
+		Name:      secretName,
+	}, secret)
+
+	if err != nil {
+		log.Error(err, "Failed to get secret", "secret", secretName)
+		return nil, err
+	}
+
+	decodedData := make(map[string]string)
+
+	for key, value := range secret.Data {
+		decodedData[key] = string(value)
+	}
+
+	return decodedData, nil
 }
 
 func (r *SeaweedReconciler) SetupWithManager(mgr ctrl.Manager) error {

@@ -7,7 +7,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
@@ -38,6 +37,8 @@ func (r *SeaweedReconciler) createFilerBackupConfigMap(m *seaweedv1.Seaweed) *co
 func (r *SeaweedReconciler) generateBackupConfig(m *seaweedv1.Seaweed) string {
 	var config strings.Builder
 
+	log := r.Log.WithValues("generateBackupConfig", m.Name)
+
 	// Sink configurations
 	if m.Spec.FilerBackup.Sink != nil {
 		if m.Spec.FilerBackup.Sink.Local != nil && m.Spec.FilerBackup.Sink.Local.Enabled {
@@ -64,19 +65,26 @@ func (r *SeaweedReconciler) generateBackupConfig(m *seaweedv1.Seaweed) string {
 
 			// Get credentials from secret if specified
 			if m.Spec.FilerBackup.Sink.S3.AWSCredentialsSecretRef != nil && m.Spec.FilerBackup.Sink.S3.AWSCredentialsSecretRef.Name != "" {
-				secret := &corev1.Secret{}
-				err := r.Get(context.Background(), client.ObjectKey{
-					Namespace: m.Namespace,
-					Name:      m.Spec.FilerBackup.Sink.S3.AWSCredentialsSecretRef.Name,
-				}, secret)
+				log.Info("Getting credentials from secret", "secret", m.Spec.FilerBackup.Sink.S3.AWSCredentialsSecretRef.Name)
+
+				secret, err := r.getSecret(context.Background(), m.Spec.FilerBackup.Sink.S3.AWSCredentialsSecretRef.Name, m.Namespace)
+
 				if err == nil {
 					mapping := m.Spec.FilerBackup.Sink.S3.AWSCredentialsSecretRef.Mapping
-					if accessKey, exists := secret.Data[mapping.AWSAccessKeyID]; exists {
-						awsAccessKeyID = string(accessKey)
+
+					if accessKey, exists := secret[mapping.AWSAccessKeyID]; exists {
+						awsAccessKeyID = accessKey
+					} else {
+						log.Info("Access key not found in secret", "secret", m.Spec.FilerBackup.Sink.S3.AWSCredentialsSecretRef.Name, "mapping", mapping.AWSAccessKeyID)
 					}
-					if secretKey, exists := secret.Data[mapping.AWSSecretAccessKey]; exists {
-						awsSecretAccessKey = string(secretKey)
+
+					if secretKey, exists := secret[mapping.AWSSecretAccessKey]; exists {
+						awsSecretAccessKey = secretKey
+					} else {
+						log.Info("Secret key not found in secret", "secret", m.Spec.FilerBackup.Sink.S3.AWSCredentialsSecretRef.Name, "mapping", mapping.AWSSecretAccessKey)
 					}
+				} else {
+					log.Error(err, "Error getting credentials from secret", "secret", m.Spec.FilerBackup.Sink.S3.AWSCredentialsSecretRef.Name)
 				}
 			}
 
@@ -96,16 +104,14 @@ func (r *SeaweedReconciler) generateBackupConfig(m *seaweedv1.Seaweed) string {
 
 			// Get credentials from secret if specified
 			if m.Spec.FilerBackup.Sink.GoogleCloudStorage.GoogleCloudStorageCredentialsSecretRef != nil && m.Spec.FilerBackup.Sink.GoogleCloudStorage.GoogleCloudStorageCredentialsSecretRef.Name != "" {
-				secret := &corev1.Secret{}
-				err := r.Get(context.Background(), client.ObjectKey{
-					Namespace: m.Namespace,
-					Name:      m.Spec.FilerBackup.Sink.GoogleCloudStorage.GoogleCloudStorageCredentialsSecretRef.Name,
-				}, secret)
+				secret, err := r.getSecret(context.Background(), m.Spec.FilerBackup.Sink.GoogleCloudStorage.GoogleCloudStorageCredentialsSecretRef.Name, m.Namespace)
 				if err == nil {
 					mapping := m.Spec.FilerBackup.Sink.GoogleCloudStorage.GoogleCloudStorageCredentialsSecretRef.Mapping
-					if creds, exists := secret.Data[mapping.GoogleApplicationCredentials]; exists {
-						googleApplicationCredentials = string(creds)
+					if creds, exists := secret[mapping.GoogleApplicationCredentials]; exists {
+						googleApplicationCredentials = creds
 					}
+				} else {
+					log.Error(err, "Error getting credentials from secret", "secret", m.Spec.FilerBackup.Sink.GoogleCloudStorage.GoogleCloudStorageCredentialsSecretRef.Name)
 				}
 			}
 
@@ -123,19 +129,17 @@ func (r *SeaweedReconciler) generateBackupConfig(m *seaweedv1.Seaweed) string {
 
 			// Get credentials from secret if specified
 			if m.Spec.FilerBackup.Sink.Azure.AzureCredentialsSecretRef != nil && m.Spec.FilerBackup.Sink.Azure.AzureCredentialsSecretRef.Name != "" {
-				secret := &corev1.Secret{}
-				err := r.Get(context.Background(), client.ObjectKey{
-					Namespace: m.Namespace,
-					Name:      m.Spec.FilerBackup.Sink.Azure.AzureCredentialsSecretRef.Name,
-				}, secret)
+				secret, err := r.getSecret(context.Background(), m.Spec.FilerBackup.Sink.Azure.AzureCredentialsSecretRef.Name, m.Namespace)
 				if err == nil {
 					mapping := m.Spec.FilerBackup.Sink.Azure.AzureCredentialsSecretRef.Mapping
-					if name, exists := secret.Data[mapping.AccountName]; exists {
-						accountName = string(name)
+					if name, exists := secret[mapping.AccountName]; exists {
+						accountName = name
 					}
-					if key, exists := secret.Data[mapping.AccountKey]; exists {
-						accountKey = string(key)
+					if key, exists := secret[mapping.AccountKey]; exists {
+						accountKey = key
 					}
+				} else {
+					log.Error(err, "Error getting credentials from secret", "secret", m.Spec.FilerBackup.Sink.Azure.AzureCredentialsSecretRef.Name)
 				}
 			}
 
@@ -154,19 +158,19 @@ func (r *SeaweedReconciler) generateBackupConfig(m *seaweedv1.Seaweed) string {
 
 			// Get credentials from secret if specified
 			if m.Spec.FilerBackup.Sink.Backblaze.BackblazeCredentialsSecretRef != nil && m.Spec.FilerBackup.Sink.Backblaze.BackblazeCredentialsSecretRef.Name != "" {
-				secret := &corev1.Secret{}
-				err := r.Get(context.Background(), client.ObjectKey{
-					Namespace: m.Namespace,
-					Name:      m.Spec.FilerBackup.Sink.Backblaze.BackblazeCredentialsSecretRef.Name,
-				}, secret)
+				secret, err := r.getSecret(context.Background(), m.Spec.FilerBackup.Sink.Backblaze.BackblazeCredentialsSecretRef.Name, m.Namespace)
 				if err == nil {
 					mapping := m.Spec.FilerBackup.Sink.Backblaze.BackblazeCredentialsSecretRef.Mapping
-					if accountID, exists := secret.Data[mapping.B2AccountID]; exists {
-						b2AccountID = string(accountID)
+
+					if accountID, exists := secret[mapping.B2AccountID]; exists {
+						b2AccountID = accountID
 					}
-					if masterKey, exists := secret.Data[mapping.B2MasterApplicationKey]; exists {
-						b2MasterApplicationKey = string(masterKey)
+
+					if masterKey, exists := secret[mapping.B2MasterApplicationKey]; exists {
+						b2MasterApplicationKey = masterKey
 					}
+				} else {
+					log.Error(err, "Error getting credentials from secret", "secret", m.Spec.FilerBackup.Sink.Backblaze.BackblazeCredentialsSecretRef.Name)
 				}
 			}
 

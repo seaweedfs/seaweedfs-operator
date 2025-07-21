@@ -37,8 +37,15 @@ func ExtractGCSCredentials(ctx context.Context, gcsConfig *seaweedv1.GoogleCloud
 		secret, err := extractCredentialsFromSecret(ctx, extractor, namespace, log, secretGetter)
 		if err == nil && secret != nil {
 			mapping := gcsConfig.GoogleCloudStorageCredentialsSecretRef.Mapping
-			if creds, exists := secret[mapping.GoogleApplicationCredentials]; exists {
+			
+			googleApplicationCredentialsKey := mapping.GoogleApplicationCredentials
+			
+			if googleApplicationCredentialsKey == "" {
+				googleApplicationCredentialsKey = "googleApplicationCredentials"
+			} else if creds, exists := secret[googleApplicationCredentialsKey]; exists {
 				googleApplicationCredentials = creds
+			} else {
+				log.Info("Secret key not found in secret", "secret", gcsConfig.GoogleCloudStorageCredentialsSecretRef.Name, "mapping", googleApplicationCredentialsKey)
 			}
 		}
 	}

@@ -38,9 +38,17 @@ func ExtractBackblazeCredentials(ctx context.Context, backblazeConfig *seaweedv1
 		secret, err := extractCredentialsFromSecret(ctx, extractor, namespace, log, secretGetter)
 		if err == nil && secret != nil {
 			mapping := backblazeConfig.BackblazeCredentialsSecretRef.Mapping
-			if accountID, exists := secret[mapping.B2AccountID]; exists {
+
+			b2AccountIDKey := mapping.B2AccountID
+
+			if b2AccountIDKey == "" {
+				b2AccountIDKey = "b2AccountID"
+			} else if accountID, exists := secret[b2AccountIDKey]; exists {
 				b2AccountID = accountID
+			} else {
+				log.Info("Secret key not found in secret", "secret", backblazeConfig.BackblazeCredentialsSecretRef.Name, "mapping", b2AccountIDKey)
 			}
+
 			if masterKey, exists := secret[mapping.B2MasterApplicationKey]; exists {
 				b2MasterApplicationKey = masterKey
 			}

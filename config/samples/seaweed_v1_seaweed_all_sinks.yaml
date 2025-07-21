@@ -91,4 +91,4 @@ spec:
         b2Region: "us-west-002"
         bucket: "my-backup-bucket"
         directory: "/backups"
-        isIncremental: false 
+        isIncremental: false

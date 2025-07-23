@@ -171,7 +171,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: Release ${{ steps.tag.outputs.tag }}
+          name: seaweedfs-operator-binaries ${{ steps.tag.outputs.tag }}
           draft: false
           prerelease: false
           generate_release_notes: true

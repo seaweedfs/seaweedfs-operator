@@ -81,7 +81,7 @@ debug: generate fmt vet manifests
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:maxDescLen=0 webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 # Run go fmt against code
 fmt:
@@ -110,6 +110,7 @@ nilaway-lint: nilaway
 # Generate code
 generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	yq '... comments=""' config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml > charts/operator/crds/seaweed.seaweedfs.com_seaweeds.yaml
 
 # Build the docker image
 .PHONY: docker-build

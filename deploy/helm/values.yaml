@@ -2,7 +2,7 @@
 # Please, note that this will override the image parameters, including dependencies, configured to use the global value
 # Current available global Docker image parameters: imageRegistry
 global:
-  imageRegistry: "chrislusf"
+  imageRegistry: "nnstd"
 
 # -- String to partially override common.names.fullname template (will maintain the release name)
 nameOverride: ""
@@ -31,7 +31,7 @@ rbac:
     automount: true
 
 image:
-  registry: chrislusf
+  registry: nnstd
   repository: seaweedfs-operator
   # -- tag of image to use. Defaults to appVersion in Chart.yaml
   tag: ""

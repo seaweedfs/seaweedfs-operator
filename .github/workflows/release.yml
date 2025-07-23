@@ -2,8 +2,8 @@ name: Release Charts
 
 on:
   push:
-    tags:
-      - "*"
+    branches:
+      - master
 
 permissions:
   contents: write
@@ -19,30 +19,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install yq
-        run: sudo snap install yq
-
-      - name: Set appVersion and version in Chart.yaml to match tag
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          echo "Detected tag: $TAG"
-          # Remove 'v' prefix if present for appVersion
-          APP_VERSION="${TAG#v}"
-          # Extract version components for chart version
-          if [[ $TAG =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
-            MAJOR="${BASH_REMATCH[1]}"
-            MINOR="${BASH_REMATCH[2]}"
-            PATCH="${BASH_REMATCH[3]}"
-            CHART_VERSION="$MAJOR.$MINOR.$PATCH"
-          else
-            # Fallback: use the tag as-is, removing 'v' prefix
-            CHART_VERSION="${TAG#v}"
-          fi
-          echo "Setting appVersion to: $APP_VERSION"
-          echo "Setting chart version to: $CHART_VERSION"
-          yq -i ".appVersion = \"$APP_VERSION\"" deploy/helm/Chart.yaml
-          yq -i ".version = \"$CHART_VERSION\"" deploy/helm/Chart.yaml
-
       - name: Configure Git
         run: |
           git config user.name "$GITHUB_ACTOR"
@@ -50,11 +26,6 @@ jobs:
 
       - name: Copy README to charts
         run: cp README.md deploy/helm
-
-      - name: Commit Chart.yaml changes
-        run: |
-          git add deploy/helm/Chart.yaml
-          git commit -m "Update chart version to match release tag ${GITHUB_REF#refs/tags/}" || echo "No changes to commit"
 
       - name: Run chart-releaser
         uses: helm/chart-releaser-action@v1.7.0

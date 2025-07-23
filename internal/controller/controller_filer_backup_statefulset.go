@@ -66,6 +66,7 @@ func (r *SeaweedReconciler) createFilerBackupStatefulSet(m *seaweedv1.Seaweed) *
 		if m.Spec.FilerBackup.Persistence.ExistingClaim != nil {
 			claimName = *m.Spec.FilerBackup.Persistence.ExistingClaim
 		}
+
 		if m.Spec.FilerBackup.Persistence.ExistingClaim == nil {
 			persistentVolumeClaims = append(persistentVolumeClaims, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{

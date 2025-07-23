@@ -79,6 +79,12 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
+	if seaweedCR.Spec.Admin != nil {
+		if done, result, err = r.ensureAdminServers(seaweedCR); done {
+			return result, err
+		}
+	}
+
 	if done, result, err = r.ensureSeaweedIngress(seaweedCR); done {
 		return result, err
 	}

@@ -33,6 +33,7 @@ const (
 	VolumeHTTPPort = 8444
 	FilerHTTPPort  = 8888
 	FilerS3Port    = 8333
+	AdminHTTPPort  = 23646
 
 	MasterGRPCPort = MasterHTTPPort + GRPCPortDelta
 	VolumeGRPCPort = VolumeHTTPPort + GRPCPortDelta
@@ -64,6 +65,9 @@ type SeaweedSpec struct {
 
 	// FilerBackup
 	FilerBackup *FilerBackupSpec `json:"filerBackup,omitempty"`
+
+	// Admin UI
+	Admin *AdminSpec `json:"admin,omitempty"`
 
 	// SchedulerName of pods
 	SchedulerName string `json:"schedulerName,omitempty"`
@@ -222,6 +226,85 @@ type FilerBackupSpec struct {
 
 	// Sink configuration for backup destinations
 	Sink *SinkConfig `json:"sink,omitempty"`
+}
+
+// AdminSpec is the spec for admin UI
+type AdminSpec struct {
+	ComponentSpec               `json:",inline"`
+	corev1.ResourceRequirements `json:",inline"`
+
+	// The desired ready replicas
+	// +kubebuilder:validation:Minimum=1
+	Replicas int32        `json:"replicas"`
+	Service  *ServiceSpec `json:"service,omitempty"`
+
+	// Admin server port
+	// +kubebuilder:default:=23646
+	Port *int32 `json:"port,omitempty"`
+
+	// Comma-separated master servers (if empty, will be auto-discovered from cluster)
+	Masters string `json:"masters,omitempty"`
+
+	// Directory to store admin configuration and data files
+	DataDir string `json:"dataDir,omitempty"`
+
+	// Admin interface username
+	// +kubebuilder:default:="admin"
+	AdminUser string `json:"adminUser,omitempty"`
+
+	// Admin interface password (if empty, auth is disabled)
+	AdminPassword string `json:"adminPassword,omitempty"`
+
+	// Admin password secret reference (alternative to AdminPassword)
+	AdminPasswordSecretRef *AdminPasswordSecretRef `json:"adminPasswordSecretRef,omitempty"`
+
+	// Persistence mounts a volume for admin data
+	Persistence *PersistenceSpec `json:"persistence,omitempty"`
+
+	// TLS configuration for HTTPS
+	TLS *AdminTLSSpec `json:"tls,omitempty"`
+}
+
+// AdminPasswordSecretRef defines admin password secret reference
+type AdminPasswordSecretRef struct {
+	// Name of the secret
+	Name string `json:"name,omitempty"`
+
+	// Key in the secret containing the password
+	Key string `json:"key,omitempty"`
+}
+
+// AdminTLSSpec defines TLS configuration for admin UI
+type AdminTLSSpec struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Certificate secret reference
+	CertificateSecretRef *AdminCertificateSecretRef `json:"certificateSecretRef,omitempty"`
+
+	// Certificate file path (if not using secret)
+	CertFile string `json:"certFile,omitempty"`
+
+	// Key file path (if not using secret)
+	KeyFile string `json:"keyFile,omitempty"`
+
+	// CA certificate file path (optional, for mutual TLS)
+	CAFile string `json:"caFile,omitempty"`
+}
+
+// AdminCertificateSecretRef defines certificate secret reference
+type AdminCertificateSecretRef struct {
+	// Name of the secret
+	Name string `json:"name,omitempty"`
+
+	// Mapping of the configuration key to the secret key
+	Mapping AdminCertificateSecretRefMapping `json:"mapping,omitempty"`
+}
+
+type AdminCertificateSecretRefMapping struct {
+	Cert string `json:"cert,omitempty"`
+	Key  string `json:"key,omitempty"`
+	CA   string `json:"ca,omitempty"`
 }
 
 // SinkConfig defines the backup sink configuration

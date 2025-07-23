@@ -17,6 +17,7 @@ Goals:
 - [x] Scheduled backup to cloud storage: S3, Google Cloud Storage, Azure
 - [ ] Put warm data to cloud storage tier: S3, Google Cloud Storage, Azure
 - [x] Grafana dashboard
+- [x] Admin UI for cluster management and monitoring
 
 ## Installation
 
@@ -157,6 +158,115 @@ seaweedfs-operator-system   seaweedfs-operator-controller-manager-54cc768f4c-cwz
 See the next section for example usage - **at this point you only deployed the Operator itself!**
 
 ### You need to also deploy a configuration to get it running (see next section)!
+
+## Admin UI
+
+The SeaweedFS Operator supports deploying the SeaweedFS Admin UI, which provides a comprehensive web-based administration interface for managing SeaweedFS clusters. The Admin UI includes:
+
+- **Cluster topology visualization and monitoring**
+- **Volume management and operations**
+- **File browser and management**
+- **System metrics and performance monitoring**
+- **Configuration management**
+
+### Basic Admin UI Configuration
+
+```yaml
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-with-admin
+spec:
+  image: chrislusf/seaweedfs:latest
+  
+  master:
+    replicas: 3
+  
+  volume:
+    replicas: 3
+  
+  filer:
+    replicas: 1
+    s3: true
+  
+  # Admin UI configuration
+  admin:
+    replicas: 1
+    port: 23646  # Default admin port
+    adminUser: "admin"
+    adminPassword: "admin123"
+    service:
+      type: LoadBalancer  # Or ClusterIP for internal access
+    persistence:
+      enabled: true
+      mountPath: "/data"
+      resources:
+        requests:
+          storage: 1Gi
+```
+
+### Secure Admin UI Configuration
+
+For production deployments, use secret references for passwords and TLS certificates:
+
+```yaml
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-secure-admin
+spec:
+  # ... other components ...
+  
+  admin:
+    replicas: 1
+    adminUser: "admin"
+    # Use secret reference for password
+    adminPasswordSecretRef:
+      name: "admin-password-secret"
+      key: "password"
+    
+    # TLS configuration
+    tls:
+      enabled: true
+      certificateSecretRef:
+        name: "admin-tls-secret"
+        mapping:
+          cert: "tls.crt"
+          key: "tls.key"
+    
+    service:
+      type: LoadBalancer
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-ssl-cert: "arn:aws:acm:region:account:certificate/certificate-id"
+```
+
+### Admin UI Features
+
+- **Authentication**: Basic authentication with username/password
+- **TLS/HTTPS**: Secure communication with TLS certificates
+- **Persistence**: Configurable data persistence for admin configuration
+- **Auto-discovery**: Automatically discovers masters and filers from the cluster
+- **gRPC Support**: Runs both HTTP and gRPC servers for worker connections
+- **Resource Management**: Configurable resource limits and requests
+- **Service Types**: Support for ClusterIP, LoadBalancer, and NodePort services
+
+### Accessing the Admin UI
+
+Once deployed, you can access the Admin UI through:
+
+1. **LoadBalancer**: If using LoadBalancer service type, get the external IP:
+   ```bash
+   kubectl get svc seaweed-with-admin-admin
+   ```
+
+2. **Port Forward**: For internal access:
+   ```bash
+   kubectl port-forward svc/seaweed-with-admin-admin 23646:23646
+   ```
+
+3. **Ingress**: Configure ingress rules for custom domain access
+
+The Admin UI will be available at `http://<service-ip>:23646` (or `https://` if TLS is enabled).
 
 ## Configuration Examples
 

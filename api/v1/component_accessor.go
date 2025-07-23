@@ -209,3 +209,7 @@ func (s *Seaweed) BaseFilerBackupSpec() ComponentAccessor {
 func (s *Seaweed) BaseVolumeSpec() ComponentAccessor {
 	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Volume.ComponentSpec)
 }
+
+func (s *Seaweed) BaseAdminSpec() ComponentAccessor {
+	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Admin.ComponentSpec)
+}

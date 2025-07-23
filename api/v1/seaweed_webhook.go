@@ -18,6 +18,7 @@ package v1
 
 import (
 	"errors"
+
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	corev1 "k8s.io/api/core/v1"
@@ -26,7 +27,6 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 // log is for logging in this package.
@@ -42,8 +42,6 @@ func (r *Seaweed) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 // +kubebuilder:webhook:path=/mutate-seaweed-seaweedfs-com-v1-seaweed,mutating=true,failurePolicy=fail,sideEffects=None,groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=create;update,versions=v1,name=mseaweed.kb.io,admissionReviewVersions=v1
 
-var _ webhook.Defaulter = &Seaweed{}
-
 // Default implements webhook.Defaulter so a webhook will be registered for the type
 func (r *Seaweed) Default() {
 	seaweedlog.Info("default", "name", r.Name)
@@ -53,8 +51,6 @@ func (r *Seaweed) Default() {
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
 // +kubebuilder:webhook:verbs=create;update,path=/validate-seaweed-seaweedfs-com-v1-seaweed,mutating=false,failurePolicy=fail,sideEffects=None,groups=seaweed.seaweedfs.com,resources=seaweeds,versions=v1,name=vseaweed.kb.io,admissionReviewVersions=v1
-
-var _ webhook.Validator = &Seaweed{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {

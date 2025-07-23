@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -263,7 +264,7 @@ func (r *SeaweedReconciler) EmptyClone(obj runtime.Object) (runtime.Object, erro
 
 	meta, ok := obj.(metav1.Object)
 	if !ok {
-		return nil, fmt.Errorf("Obj %v is not a metav1.Object, cannot call EmptyClone", obj)
+		return nil, fmt.Errorf("object %v is not a metav1.Object, cannot call EmptyClone", obj)
 	}
 
 	gvk, err := r.InferObjectKind(obj)
@@ -276,7 +277,7 @@ func (r *SeaweedReconciler) EmptyClone(obj runtime.Object) (runtime.Object, erro
 	}
 	instMeta, ok := inst.(metav1.Object)
 	if !ok {
-		return nil, fmt.Errorf("New instatnce %v created from scheme is not a metav1.Object, EmptyClone failed", inst)
+		return nil, fmt.Errorf("new instance %v created from scheme is not a metav1.Object, emptyClone failed", inst)
 	}
 
 	instMeta.SetName(meta.GetName())
@@ -291,7 +292,7 @@ func (r *SeaweedReconciler) InferObjectKind(obj runtime.Object) (schema.GroupVer
 		return schema.GroupVersionKind{}, err
 	}
 	if len(gvks) != 1 {
-		return schema.GroupVersionKind{}, fmt.Errorf("Object %v has ambigious GVK", obj)
+		return schema.GroupVersionKind{}, fmt.Errorf("object %v has ambigious GVK", obj)
 	}
 	return gvks[0], nil
 }

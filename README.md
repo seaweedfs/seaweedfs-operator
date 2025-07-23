@@ -189,6 +189,11 @@ spec:
     replicas: 1
     s3: true
   
+  # Global metrics configuration
+  metrics:
+    enabled: true
+    metricsPort: 5555
+  
   # Admin UI configuration
   admin:
     replicas: 1

@@ -6,6 +6,11 @@ spec:
   image: chrislusf/seaweedfs:latest
   version: "3.0"
   
+  # Global metrics configuration
+  metrics:
+    enabled: true
+    metricsPort: 5555
+  
   master:
     replicas: 3
     service:

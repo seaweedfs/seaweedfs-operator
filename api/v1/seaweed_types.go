@@ -45,14 +45,14 @@ type SeaweedSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// MetricsAddress is Prometheus gateway address
-	MetricsAddress string `json:"metricsAddress,omitempty"`
-
 	// Image
 	Image string `json:"image,omitempty"`
 
 	// Version
 	Version string `json:"version,omitempty"`
+
+	// Metrics configuration for all components
+	Metrics *MetricsSpec `json:"metrics,omitempty"`
 
 	// Master
 	Master *MasterSpec `json:"master,omitempty"`
@@ -104,10 +104,20 @@ type SeaweedSpec struct {
 	// Template.
 	StatefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType `json:"statefulSetUpdateStrategy,omitempty"`
 
+	// Storage configuration for all components
 	Storage *StorageSpec `json:"storage,omitempty"`
 
-	// Ingresses
+	// Host suffix (base domain) for ingresses of components
 	HostSuffix *string `json:"hostSuffix,omitempty"`
+}
+
+type MetricsSpec struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// MetricsPort is the port that the prometheus metrics export listens on
+	// +kubebuilder:default:=5555
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
 }
 
 type StorageSpec struct {

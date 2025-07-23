@@ -5474,7 +5474,7 @@ spec:
                 description: Whether Hostnetwork is enabled for pods
                 type: boolean
               hostSuffix:
-                description: Ingresses
+                description: Host suffix (base domain) for ingresses of components
                 type: string
               image:
                 description: Image
@@ -6778,9 +6778,19 @@ spec:
                 required:
                 - replicas
                 type: object
-              metricsAddress:
-                description: MetricsAddress is Prometheus gateway address
-                type: string
+              metrics:
+                description: Metrics configuration for all components
+                properties:
+                  enabled:
+                    default: false
+                    type: boolean
+                  metricsPort:
+                    default: 5555
+                    description: MetricsPort is the port that the prometheus metrics
+                      export listens on
+                    format: int32
+                    type: integer
+                type: object
               nodeSelector:
                 additionalProperties:
                   type: string
@@ -6800,6 +6810,7 @@ spec:
                   Template.
                 type: string
               storage:
+                description: Storage configuration for all components
                 properties:
                   storageClassName:
                     description: StorageClassName is the name of the StorageClass

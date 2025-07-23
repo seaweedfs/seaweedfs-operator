@@ -17,13 +17,18 @@ func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string) string 
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
 	commands = append(commands, "-max=0")
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-volume-peer.%s", m.Name, m.Namespace))
+
 	if m.Spec.HostSuffix != nil && *m.Spec.HostSuffix != "" {
 		commands = append(commands, fmt.Sprintf("-publicUrl=$(POD_NAME).%s", *m.Spec.HostSuffix))
 	}
+
 	commands = append(commands, fmt.Sprintf("-mserver=%s", getMasterPeersString(m)))
 	commands = append(commands, fmt.Sprintf("-dir=%s", strings.Join(dirs, ",")))
-	if m.Spec.Volume.MetricsPort != nil {
-		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Volume.MetricsPort))
+
+	metricsPort := resolveMetricsPort(m, m.Spec.Volume.MetricsPort)
+
+	if metricsPort != nil {
+		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *metricsPort))
 	}
 
 	return strings.Join(commands, " ")
@@ -42,9 +47,12 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 			Name:          "volume-grpc",
 		},
 	}
-	if m.Spec.Volume.MetricsPort != nil {
+
+	metricsPort := resolveMetricsPort(m, m.Spec.Volume.MetricsPort)
+
+	if metricsPort != nil {
 		ports = append(ports, corev1.ContainerPort{
-			ContainerPort: *m.Spec.Volume.MetricsPort,
+			ContainerPort: *metricsPort,
 			Name:          "volume-metrics",
 		})
 	}

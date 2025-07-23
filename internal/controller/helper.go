@@ -109,3 +109,22 @@ func resolveStorageClassName(globalStorageClassName, componentStorageClassName *
 	}
 	return globalStorageClassName
 }
+
+// resolveMetricsPort returns the metrics port for a component
+// if the global metrics is enabled, it returns the global metrics port
+// otherwise it returns the component-specific metrics port
+func resolveMetricsPort(m *seaweedv1.Seaweed, componentMetricsPort *int32) *int32 {
+	if m.Spec.Metrics != nil && m.Spec.Metrics.Enabled {
+		if m.Spec.Metrics.MetricsPort != nil {
+			return m.Spec.Metrics.MetricsPort
+		}
+
+		var defaultMetricsPort int32 = 5555
+
+		return &defaultMetricsPort
+	} else if componentMetricsPort != nil {
+		return componentMetricsPort
+	}
+
+	return nil
+}

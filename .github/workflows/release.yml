@@ -2,7 +2,7 @@ name: Release Charts
 
 on:
   push:
-    tags:
+    branches:
       - master
 
 permissions:
@@ -32,4 +32,4 @@ jobs:
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
         with:
-          charts_dir: deploy/helm
+          charts_dir: charts

@@ -21,6 +21,12 @@ func (r *SeaweedReconciler) createAdminService(m *seaweedv1.Seaweed) *corev1.Ser
 			Port:       int32(port),
 			TargetPort: intstr.FromInt(port),
 		},
+		{
+			Name:       "admin-grpc",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       int32(port + seaweedv1.GRPCPortDelta),
+			TargetPort: intstr.FromInt(port + seaweedv1.GRPCPortDelta),
+		},
 	}
 
 	service := &corev1.Service{

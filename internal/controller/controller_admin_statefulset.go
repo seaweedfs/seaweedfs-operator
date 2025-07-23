@@ -53,6 +53,11 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 				ContainerPort: int32(port),
 				Protocol:      corev1.ProtocolTCP,
 			},
+			{
+				Name:          "admin-grpc",
+				ContainerPort: int32(port + seaweedv1.GRPCPortDelta),
+				Protocol:      corev1.ProtocolTCP,
+			},
 		},
 		Env: append(kubernetesEnvVars, m.BaseAdminSpec().Env()...),
 	}

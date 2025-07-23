@@ -23,7 +23,7 @@ Goals:
 ### Helm
 
 ```bash
-helm repo add seaweedfs-operator https://seaweedfs.github.io/seaweedfs-operator/helm
+helm repo add seaweedfs-operator https://nnstd.github.io/seaweedfs-operator
 helm template seaweedfs-operator seaweedfs-operator/seaweedfs-operator
 ```
 

@@ -20,11 +20,11 @@ The difference to [seaweedfs-csi-driver](https://github.com/seaweedfs/seaweedfs-
 
 ## Quick Start
 
-For a quick start guide, see [Quick Start Guide](https://github.com/nnstd/seaweedfs-operator/wiki/Quick-Start.md).
+For a quick start guide, see [Quick Start Guide](https://github.com/nnstd/seaweedfs-operator/wiki/Quick-Start).
 
 ## Installation
 
-For detailed installation instructions, see [Installation Guide](https://github.com/nnstd/seaweedfs-operator/wiki/Installation-Guide.md).
+For detailed installation instructions, see [Installation Guide](https://github.com/nnstd/seaweedfs-operator/wiki/Installation-Guide).
 
 ### Quick Installation with Helm
 
@@ -35,19 +35,19 @@ helm install seaweedfs-operator seaweedfs-operator/seaweedfs-operator
 
 ## Documentation
 
-- **[Home](https://github.com/nnstd/seaweedfs-operator/wiki/Home.md)** - Overview and getting started
-- **[Quick Start Guide](https://github.com/nnstd/seaweedfs-operator/wiki/Quick-Start.md)** - Get up and running quickly
-- **[Installation Guide](https://github.com/nnstd/seaweedfs-operator/wiki/Installation-Guide.md)** - Detailed installation instructions
-- **[Configuration Reference](https://github.com/nnstd/seaweedfs-operator/wiki/Configuration-Reference.md)** - Complete configuration options
-- **[Seaweed Resource](https://github.com/nnstd/seaweedfs-operator/wiki/Seaweed-Resource.md)** - SeaweedFS cluster configuration
-- **[BucketClaim Resource](https://github.com/nnstd/seaweedfs-operator/wiki/BucketClaim-Resource.md)** - Bucket management
+- **[Home](https://github.com/nnstd/seaweedfs-operator/wiki/Home)** - Overview and getting started
+- **[Quick Start Guide](https://github.com/nnstd/seaweedfs-operator/wiki/Quick-Start)** - Get up and running quickly
+- **[Installation Guide](https://github.com/nnstd/seaweedfs-operator/wiki/Installation-Guide)** - Detailed installation instructions
+- **[Configuration Reference](https://github.com/nnstd/seaweedfs-operator/wiki/Configuration-Reference)** - Complete configuration options
+- **[Seaweed Resource](https://github.com/nnstd/seaweedfs-operator/wiki/Seaweed-Resource)** - SeaweedFS cluster configuration
+- **[BucketClaim Resource](https://github.com/nnstd/seaweedfs-operator/wiki/BucketClaim-Resource)** - Bucket management
 
 ### Examples
 
-- **[Basic Cluster](https://github.com/nnstd/seaweedfs-operator/wiki/examples/Basic-Cluster.md)** - Simple SeaweedFS cluster setup
-- **[Admin UI](https://github.com/nnstd/seaweedfs-operator/wiki/examples/Admin-UI.md)** - Deploy with Admin UI for management
-- **[Backup Configuration](https://github.com/nnstd/seaweedfs-operator/wiki/examples/Backup-Configuration.md)** - Configure cloud backups
-- **[Bucket Management](https://github.com/nnstd/seaweedfs-operator/wiki/examples/Bucket-Management.md)** - Manage buckets and credentials
+- **[Basic Cluster](https://github.com/nnstd/seaweedfs-operator/wiki/Basic-Cluster)** - Simple SeaweedFS cluster setup
+- **[Admin UI](https://github.com/nnstd/seaweedfs-operator/wiki/Admin-UI)** - Deploy with Admin UI for management
+- **[Backup Configuration](https://github.com/nnstd/seaweedfs-operator/wiki/Backup-Configuration)** - Configure cloud backups
+- **[Bucket Management](https://github.com/nnstd/seaweedfs-operator/wiki/Bucket-Management)** - Manage buckets and credentials
 
 ## Basic Example
 
@@ -77,7 +77,7 @@ spec:
       dir = "/data/filerldb2"
 ```
 
-For more examples, see the [examples directory](https://github.com/nnstd/seaweedfs-operator/wiki).
+For more examples, see the [wiki](https://github.com/nnstd/seaweedfs-operator/wiki).
 
 ## Development
 

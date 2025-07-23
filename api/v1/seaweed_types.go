@@ -100,10 +100,18 @@ type SeaweedSpec struct {
 	// Template.
 	StatefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType `json:"statefulSetUpdateStrategy,omitempty"`
 
-	VolumeServerDiskCount int32 `json:"volumeServerDiskCount,omitempty"`
+	Storage *StorageSpec `json:"storage,omitempty"`
 
 	// Ingresses
 	HostSuffix *string `json:"hostSuffix,omitempty"`
+}
+
+type StorageSpec struct {
+	// StorageClassName is the name of the StorageClass to use for all components
+	StorageClassName *string `json:"storageClassName,omitempty"`
+
+	// VolumeServerDiskCount is the number of disks to use for volume servers
+	VolumeServerDiskCount int32 `json:"volumeServerDiskCount,omitempty"`
 }
 
 // SeaweedStatus defines the observed state of Seaweed

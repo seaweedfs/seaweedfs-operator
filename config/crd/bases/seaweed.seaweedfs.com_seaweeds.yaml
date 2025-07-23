@@ -5332,6 +5332,18 @@ spec:
                   employed to update Pods in the StatefulSet when a revision is made to
                   Template.
                 type: string
+              storage:
+                properties:
+                  storageClassName:
+                    description: StorageClassName is the name of the StorageClass
+                      to use for all components
+                    type: string
+                  volumeServerDiskCount:
+                    description: VolumeServerDiskCount is the number of disks to use
+                      for volume servers
+                    format: int32
+                    type: integer
+                type: object
               tolerations:
                 description: Base tolerations of Pods, components may add more tolerations
                   upon this respectively
@@ -6650,9 +6662,6 @@ spec:
                 required:
                 - replicas
                 type: object
-              volumeServerDiskCount:
-                format: int32
-                type: integer
             type: object
           status:
             description: SeaweedStatus defines the observed state of Seaweed

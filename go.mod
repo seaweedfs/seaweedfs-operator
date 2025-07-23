@@ -2,8 +2,6 @@ module github.com/seaweedfs/seaweedfs-operator
 
 go 1.24
 
-toolchain go1.24.4
-
 require (
 	github.com/go-logr/logr v1.4.3
 	github.com/onsi/ginkgo/v2 v2.23.3

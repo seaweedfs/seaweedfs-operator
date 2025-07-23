@@ -48,11 +48,11 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 			Name:          "volume-metrics",
 		})
 	}
-	replicas := int32(m.Spec.Volume.Replicas)
+	replicas := m.Spec.Volume.Replicas
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
 
-	volumeCount := int(m.Spec.VolumeServerDiskCount)
+	volumeCount := int(m.Spec.Storage.VolumeServerDiskCount)
 	volumeRequests := corev1.ResourceList{
 		corev1.ResourceStorage: m.Spec.Volume.Requests[corev1.ResourceStorage],
 	}
@@ -62,6 +62,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 	var volumes []corev1.Volume
 	var persistentVolumeClaims []corev1.PersistentVolumeClaim
 	var dirs []string
+
 	for i := 0; i < volumeCount; i++ {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      fmt.Sprintf("mount%d", i),
@@ -82,7 +83,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 				Name: fmt.Sprintf("mount%d", i),
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
-				StorageClassName: m.Spec.Volume.StorageClassName,
+				StorageClassName: resolveStorageClassName(m.Spec.Storage.StorageClassName, m.Spec.Volume.StorageClassName),
 				AccessModes: []corev1.PersistentVolumeAccessMode{
 					corev1.ReadWriteOnce,
 				},

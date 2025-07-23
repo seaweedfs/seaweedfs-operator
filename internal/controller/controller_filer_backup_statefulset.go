@@ -74,7 +74,7 @@ func (r *SeaweedReconciler) createFilerBackupStatefulSet(m *seaweedv1.Seaweed) *
 				Spec: corev1.PersistentVolumeClaimSpec{
 					AccessModes:      m.Spec.FilerBackup.Persistence.AccessModes,
 					Resources:        m.Spec.FilerBackup.Persistence.Resources,
-					StorageClassName: m.Spec.FilerBackup.Persistence.StorageClassName,
+					StorageClassName: resolveStorageClassName(m.Spec.Storage.StorageClassName, m.Spec.FilerBackup.Persistence.StorageClassName),
 					Selector:         m.Spec.FilerBackup.Persistence.Selector,
 					VolumeName:       m.Spec.FilerBackup.Persistence.VolumeName,
 					VolumeMode:       m.Spec.FilerBackup.Persistence.VolumeMode,

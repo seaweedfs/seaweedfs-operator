@@ -90,7 +90,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 				Spec: corev1.PersistentVolumeClaimSpec{
 					AccessModes:      m.Spec.Filer.Persistence.AccessModes,
 					Resources:        m.Spec.Filer.Persistence.Resources,
-					StorageClassName: m.Spec.Filer.Persistence.StorageClassName,
+					StorageClassName: resolveStorageClassName(m.Spec.Storage.StorageClassName, m.Spec.Filer.Persistence.StorageClassName),
 					Selector:         m.Spec.Filer.Persistence.Selector,
 					VolumeName:       m.Spec.Filer.Persistence.VolumeName,
 					VolumeMode:       m.Spec.Filer.Persistence.VolumeMode,

@@ -172,7 +172,8 @@ metadata:
 spec:
   # Add fields here
   image: chrislusf/seaweedfs:latest
-  volumeServerDiskCount: 1
+  storage:
+    volumeServerDiskCount: 1
   hostSuffix: seaweed.abcdefg.com
   master:
     replicas: 3

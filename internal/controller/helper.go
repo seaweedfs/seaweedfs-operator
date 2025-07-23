@@ -100,3 +100,12 @@ func filterContainerResources(resources corev1.ResourceRequirements) corev1.Reso
 
 	return filtered
 }
+
+// resolveStorageClassName returns the component-specific storage class name if set,
+// otherwise falls back to the global storage class name
+func resolveStorageClassName(globalStorageClassName, componentStorageClassName *string) *string {
+	if componentStorageClassName != nil {
+		return componentStorageClassName
+	}
+	return globalStorageClassName
+}

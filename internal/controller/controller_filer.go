@@ -33,7 +33,9 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 		return
 	}
 
-	if seaweedCR.Spec.Filer.MetricsPort != nil {
+	metricsPort := resolveMetricsPort(seaweedCR, seaweedCR.Spec.Filer.MetricsPort)
+
+	if metricsPort != nil {
 		if done, result, err = r.ensureFilerServiceMonitor(seaweedCR); done {
 			return
 		}

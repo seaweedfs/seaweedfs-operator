@@ -41,7 +41,9 @@ func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done boo
 		}
 	}
 
-	if seaweedCR.Spec.Master.MetricsPort != nil {
+	metricsPort := resolveMetricsPort(seaweedCR, seaweedCR.Spec.Master.MetricsPort)
+
+	if metricsPort != nil {
 		if done, result, err = r.ensureMasterServiceMonitor(seaweedCR); done {
 			return
 		}

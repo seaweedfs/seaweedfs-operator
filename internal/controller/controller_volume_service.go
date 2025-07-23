@@ -27,12 +27,15 @@ func (r *SeaweedReconciler) createVolumeServerPeerService(m *seaweedv1.Seaweed) 
 			TargetPort: intstr.FromInt(seaweedv1.VolumeGRPCPort),
 		},
 	}
-	if m.Spec.Volume.MetricsPort != nil {
+
+	metricsPort := resolveMetricsPort(m, m.Spec.Volume.MetricsPort)
+
+	if metricsPort != nil {
 		ports = append(ports, corev1.ServicePort{
 			Name:       "volume-metrics",
 			Protocol:   corev1.Protocol("TCP"),
-			Port:       *m.Spec.Volume.MetricsPort,
-			TargetPort: intstr.FromInt(int(*m.Spec.Volume.MetricsPort)),
+			Port:       *metricsPort,
+			TargetPort: intstr.FromInt(int(*metricsPort)),
 		})
 	}
 
@@ -72,12 +75,15 @@ func (r *SeaweedReconciler) createVolumeServerService(m *seaweedv1.Seaweed, i in
 			TargetPort: intstr.FromInt(seaweedv1.VolumeGRPCPort),
 		},
 	}
-	if m.Spec.Volume.MetricsPort != nil {
+
+	metricsPort := resolveMetricsPort(m, m.Spec.Volume.MetricsPort)
+
+	if metricsPort != nil {
 		ports = append(ports, corev1.ServicePort{
 			Name:       "volume-metrics",
 			Protocol:   corev1.Protocol("TCP"),
-			Port:       *m.Spec.Volume.MetricsPort,
-			TargetPort: intstr.FromInt(int(*m.Spec.Volume.MetricsPort)),
+			Port:       *metricsPort,
+			TargetPort: intstr.FromInt(int(*metricsPort)),
 		})
 	}
 

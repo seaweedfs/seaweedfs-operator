@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Development files
+*.iml
+.vscode/
+.idea/
+
+# Build artifacts (except the ones we need)
+bin/
+!bin/seaweedfs-operator-*
+
+# Test files
+test/
+*_test.go
+
+# CI/CD
+.github/
+.github/workflows/
+
+# Other
+Makefile
+PROJECT
+LICENSE 

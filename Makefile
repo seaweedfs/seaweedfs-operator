@@ -52,7 +52,26 @@ test-e2e:
 
 # Build manager binary
 manager: generate fmt vet
-	go build -ldflags="-s -w" -o bin/manager main.go
+	go build -ldflags="-s -w" -o bin/manager cmd/main.go
+
+# Build cross-platform binaries for release
+.PHONY: build-cross
+build-cross: generate fmt vet
+	@echo "Building cross-platform binaries..."
+	@mkdir -p bin
+	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/seaweedfs-operator-linux-amd64 cmd/main.go
+	GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o bin/seaweedfs-operator-linux-arm64 cmd/main.go
+	GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o bin/seaweedfs-operator-linux-arm-7 cmd/main.go
+	GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/seaweedfs-operator-darwin-amd64 cmd/main.go
+	GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/seaweedfs-operator-darwin-arm64 cmd/main.go
+	GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o bin/seaweedfs-operator-windows-amd64.exe cmd/main.go
+	GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o bin/seaweedfs-operator-windows-386.exe cmd/main.go
+	@echo "Creating SHA256 checksums..."
+	@cd bin && for binary in seaweedfs-operator-*; do \
+		if [[ -f "$$binary" ]]; then \
+			sha256sum "$$binary" > "$$binary.sha256"; \
+		fi; \
+	done
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run: generate fmt vet manifests
@@ -102,6 +121,18 @@ docker-build:
 	  --platform ${TARGETOS}/${TARGETARCH} \
 	  --build-arg TARGETARCH=${TARGETARCH} \
 	  --build-arg TARGETOS=${TARGETOS}
+
+# Build multi-platform docker image for release
+.PHONY: docker-build-release
+docker-build-release: build-cross
+	@echo "Preparing Docker assets..."
+	@mkdir -p docker/assets/linux/amd64 docker/assets/linux/arm64 docker/assets/linux/arm/v7
+	@cp bin/seaweedfs-operator-linux-amd64 docker/assets/linux/amd64/manager
+	@cp bin/seaweedfs-operator-linux-arm64 docker/assets/linux/arm64/manager
+	@cp bin/seaweedfs-operator-linux-arm-7 docker/assets/linux/arm/v7/manager
+	@chmod +x docker/assets/linux/amd64/manager docker/assets/linux/arm64/manager docker/assets/linux/arm/v7/manager
+	@echo "Building multi-platform Docker image..."
+	${CONTAINER_TOOL} buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t ${IMG} ./docker --push
 
 # Push the docker image
 docker-push:

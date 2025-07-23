@@ -64,8 +64,6 @@ build-cross: generate fmt vet
 	GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o bin/seaweedfs-operator-linux-arm-7 cmd/main.go
 	GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/seaweedfs-operator-darwin-amd64 cmd/main.go
 	GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/seaweedfs-operator-darwin-arm64 cmd/main.go
-	GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o bin/seaweedfs-operator-windows-amd64.exe cmd/main.go
-	GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o bin/seaweedfs-operator-windows-386.exe cmd/main.go
 	@echo "Creating SHA256 checksums..."
 	@cd bin && for binary in seaweedfs-operator-*; do \
 		if [[ -f "$$binary" ]]; then \

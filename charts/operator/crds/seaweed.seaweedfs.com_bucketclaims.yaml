@@ -50,9 +50,45 @@ spec:
                 required:
                 - name
                 type: object
+              objectLock:
+                properties:
+                  duration:
+                    format: int32
+                    type: integer
+                  enabled:
+                    type: boolean
+                  mode:
+                    type: string
+                required:
+                - duration
+                - enabled
+                - mode
+                type: object
+              quotas:
+                properties:
+                  enabled:
+                    type: boolean
+                  size:
+                    format: int64
+                    type: integer
+                  unit:
+                    type: string
+                required:
+                - enabled
+                - size
+                - unit
+                type: object
+              region:
+                type: string
+              versioningEnabled:
+                type: boolean
             required:
             - bucketName
             - clusterRef
+            - objectLock
+            - quotas
+            - region
+            - versioningEnabled
             type: object
           status:
             properties:

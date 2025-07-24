@@ -2,7 +2,7 @@
 # Please, note that this will override the image parameters, including dependencies, configured to use the global value
 # Current available global Docker image parameters: imageRegistry
 global:
-  imageRegistry: ""
+  imageRegistry: "docker.io/testing"
 
 # -- String to partially override common.names.fullname template (will maintain the release name)
 nameOverride: ""
@@ -19,22 +19,14 @@ commonLabels: {}
 ## Configure Kubernetes Rbac parameters
 rbac:
   serviceAccount:
-    # -- Specifies whether a service account should be created
-    create: true
-    # -- Annotations to add to the service account
-    annotations: {}
-    # -- The name of the service account to use.
-    # If not set and create is true, a name is generated using the fullname template
-    # If set to "default", no ServiceAccount will be created and the default one will be used
-    name: ""
-    # -- Automount service account token for the server service account
-    automount: true
+    # -- name of the Kubernetes service account to create
+    name: default
 
 image:
-  registry: ghcr.io/nnstd
+  registry: testing
   repository: seaweedfs-operator
   # -- tag of image to use. Defaults to appVersion in Chart.yaml
-  tag: ""
+  tag: "0.0.1"
   # -- Specify a imagePullPolicy
   ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
   ## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
@@ -71,7 +63,7 @@ service:
 
 grafanaDashboard:
   # -- Enable or disable Grafana Dashboard configmap
-  enabled: true
+  enabled: false
 
 serviceMonitor:
   # -- Enable or disable ServiceMonitor for prometheus metrics
@@ -91,7 +83,7 @@ serviceMonitor:
 
 webhook:
   # -- Enable or disable webhooks
-  enabled: true
+  enabled: false
 
 ## seaweedfs-operator containers' resource requests and limits.
 ## ref: http://kubernetes.io/docs/user-guide/compute-resources/

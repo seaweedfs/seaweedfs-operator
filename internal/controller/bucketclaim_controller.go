@@ -17,6 +17,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,12 +29,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
-	"github.com/seaweedfs/seaweedfs/weed/admin/dash"
+	"github.com/seaweedfs/seaweedfs-operator/internal/admin"
 )
 
 // adminServerEntry tracks an admin server with its last access time
 type adminServerEntry struct {
-	server     *dash.AdminServer
+	server     *admin.AdminServer
 	lastAccess time.Time
 }
 
@@ -86,14 +87,21 @@ func (r *BucketClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return r.handleReconciliation(ctx, bucketClaim)
 }
 
-func (r *BucketClaimReconciler) getAdminServer(adminService string) (*dash.AdminServer, error) {
+func (r *BucketClaimReconciler) getAdminServer(adminService string) (*admin.AdminServer, error) {
 	r.adminMutex.Lock()
 	defer r.adminMutex.Unlock()
 
 	entry, ok := r.adminServers[adminService]
+
 	if !ok {
+		// Get the master addresses for this admin service
+		masterAddresses, err := r.getMasterAddressesForAdminService(adminService)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get master addresses: %w", err)
+		}
+
 		entry = &adminServerEntry{
-			server:     dash.NewAdminServer(adminService, nil, ""),
+			server:     admin.NewAdminServer(masterAddresses, r.Log),
 			lastAccess: time.Now(),
 		}
 		r.adminServers[adminService] = entry
@@ -101,6 +109,49 @@ func (r *BucketClaimReconciler) getAdminServer(adminService string) (*dash.Admin
 		entry.lastAccess = time.Now()
 	}
 	return entry.server, nil
+}
+
+// getMasterAddressesForAdminService extracts master addresses from the admin service URL
+func (r *BucketClaimReconciler) getMasterAddressesForAdminService(adminServiceURL string) (string, error) {
+	// Extract cluster name and namespace from admin service URL
+	// Format: http://{cluster-name}-admin.{namespace}.svc.cluster.local:{port}
+	// We need to construct master addresses like: {cluster-name}-master.{namespace}.svc.cluster.local:9333
+
+	// Parse the admin service URL to extract cluster name and namespace
+	// Remove http:// prefix
+	serviceName := adminServiceURL
+	if strings.HasPrefix(serviceName, "http://") {
+		serviceName = serviceName[7:] // Remove "http://"
+	}
+
+	// Split by first dot to get cluster-admin part
+	parts := strings.SplitN(serviceName, ".", 2)
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid admin service URL format: %s", adminServiceURL)
+	}
+
+	clusterAdminPart := parts[0] // e.g., "seaweed-sample-admin"
+	rest := parts[1]             // e.g., "default.svc.cluster.local:23646"
+
+	// Extract cluster name by removing "-admin" suffix
+	if !strings.HasSuffix(clusterAdminPart, "-admin") {
+		return "", fmt.Errorf("invalid admin service name format: %s", clusterAdminPart)
+	}
+	clusterName := clusterAdminPart[:len(clusterAdminPart)-6] // Remove "-admin"
+
+	// Extract namespace by taking the first part before "svc.cluster.local"
+	namespaceParts := strings.SplitN(rest, ".", 2)
+	if len(namespaceParts) < 2 {
+		return "", fmt.Errorf("invalid service URL format: %s", rest)
+	}
+	namespace := namespaceParts[0]
+
+	// Construct master service address
+	masterAddress := fmt.Sprintf("%s-master.%s.svc.cluster.local:9333", clusterName, namespace)
+
+	r.Log.V(1).Info("Constructed master address", "adminService", adminServiceURL, "masterAddress", masterAddress)
+
+	return masterAddress, nil
 }
 
 // handleReconciliation handles the main reconciliation logic for bucket creation/update
@@ -130,6 +181,8 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 			return ctrl.Result{}, err
 		}
 	}
+
+	log.Info("Preparing to check if bucket exists", "adminService", adminService)
 
 	// Check if bucket already exists
 	exists, err := r.bucketExists(adminService, bucketClaim.Spec.BucketName)
@@ -242,21 +295,37 @@ func (r *BucketClaimReconciler) getAdminService(seaweedCluster *seaweedv1.Seawee
 
 // bucketExists checks if a bucket exists in the SeaweedFS cluster
 func (r *BucketClaimReconciler) bucketExists(adminServiceURL, bucketName string) (bool, error) {
+	log := r.Log.WithValues("bucketclaim-bucketExists", bucketName)
+
+	log.Info("Checking if bucket exists", "adminServiceURL", adminServiceURL)
+
 	adminServer, err := r.getAdminServer(adminServiceURL)
+
+	log.Info("Got admin server", "adminServer", adminServer, "err", err)
+
 	if err != nil {
 		return false, fmt.Errorf("failed to get admin server: %w", err)
 	}
 
+	log.Info("Getting S3 buckets")
+
 	list, err := adminServer.GetS3Buckets()
+
+	log.Info("Got S3 buckets", "list", list, "err", err)
 	if err != nil {
 		return false, fmt.Errorf("failed to check bucket existence: %w", err)
 	}
 
 	for _, bucket := range list {
+		log.Info("Checking if bucket exists", "bucketName", bucketName)
+
 		if bucket.Name == bucketName {
+			log.Info("Bucket exists", "bucketName", bucketName)
 			return true, nil
 		}
 	}
+
+	log.Info("Bucket does not exist", "bucketName", bucketName)
 
 	return false, nil
 }
@@ -295,7 +364,15 @@ func (r *BucketClaimReconciler) createBucket(adminServiceURL string, bucketClaim
 		return fmt.Errorf("failed to get admin server: %w", err)
 	}
 
-	err = adminServer.CreateS3Bucket(bucketClaim.Spec.BucketName)
+	quota := bucketClaim.Spec.Quota
+
+	versioningEnabled := bucketClaim.Spec.VersioningEnabled
+
+	objectLockEnabled := bucketClaim.Spec.ObjectLock.Enabled
+	objectLockMode := bucketClaim.Spec.ObjectLock.Mode
+	objectLockDuration := bucketClaim.Spec.ObjectLock.Duration
+
+	err = adminServer.CreateS3BucketWithObjectLock(bucketClaim.Spec.BucketName, quota.Size, quota.Enabled, versioningEnabled, objectLockEnabled, objectLockMode, objectLockDuration)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket: %w", err)
 	}

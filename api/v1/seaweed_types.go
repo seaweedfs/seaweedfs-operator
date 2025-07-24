@@ -690,9 +690,47 @@ type BucketClaimSpec struct {
 	// +kubebuilder:validation:Required
 	BucketName string `json:"bucketName"`
 
+	// Region is the region of the bucket to be created
+	Region string `json:"region,omitempty"`
+
+	// Quota of the bucket to be created
+	Quota BucketQuota `json:"quota,omitempty"`
+
+	// Whether versioning is enabled
+	// +kubebuilder:default:=false
+	VersioningEnabled bool `json:"versioningEnabled,omitempty"`
+
+	// ObjectLock is the object lock configuration of the bucket to be created
+	ObjectLock BucketObjectLock `json:"objectLock,omitempty"`
+
 	// ClusterRef is a reference to the Seaweed cluster where the bucket should be created
 	// +kubebuilder:validation:Required
 	ClusterRef ClusterReference `json:"clusterRef"`
+}
+
+type BucketObjectLock struct {
+	// Enabled is whether object lock is enabled
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Mode is the mode of the object lock
+	// +kubebuilder:default:="GOVERNANCE"
+	Mode string `json:"mode,omitempty"`
+
+	// Duration is the duration of the object lock
+	Duration int32 `json:"duration,omitempty"`
+}
+
+// BucketQuota defines a quota for a bucket
+type BucketQuota struct {
+	// Size is the size of the quota
+	Size int64 `json:"size"`
+
+	// Unit is the unit of the quota
+	Unit string `json:"unit"`
+
+	// Enabled is whether the quota is enabled
+	Enabled bool `json:"enabled"`
 }
 
 // ClusterReference defines a reference to a Seaweed cluster

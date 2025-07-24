@@ -42,7 +42,7 @@ jobs:
           
           # Build operator binaries using xgo
           xgo -image techknowlogick/xgo:latest -v -ldflags="-s -w" -go $GO_RELEASE_V -out seaweedfs-operator -dest bin \
-            -targets="linux/amd64,linux/arm64,linux/arm-7,darwin/amd64,darwin/arm64" \
+            -targets="linux/amd64,linux/arm64,linux/arm-7" \
             -env="GO111MODULE=on,GOPROXY=https://proxy.golang.org,direct" ./cmd/main.go
           
           # Fix ownership and permissions for files created by xgo (which runs as root in docker)

@@ -65,7 +65,10 @@ func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
 	if r.Spec.Volume == nil {
 		errs = append(errs, errors.New("missing volume spec"))
 	} else {
-		if r.Spec.Volume.Requests[corev1.ResourceStorage].Equal(resource.MustParse("0")) {
+		// Check if Requests is nil or if storage request is zero
+		if r.Spec.Volume.Requests == nil {
+			// Requests is nil, which is fine - it will use defaults
+		} else if storageReq, exists := r.Spec.Volume.Requests[corev1.ResourceStorage]; exists && storageReq.Equal(resource.MustParse("0")) {
 			errs = append(errs, errors.New("volume storage request cannot be zero"))
 		}
 	}

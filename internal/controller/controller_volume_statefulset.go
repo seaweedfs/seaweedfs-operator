@@ -6,6 +6,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -34,6 +35,14 @@ func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string) string 
 	return strings.Join(commands, " ")
 }
 
+// getStorageClassName safely gets the storage class name from the storage spec
+func getStorageClassName(storage *seaweedv1.StorageSpec) *string {
+	if storage != nil {
+		return storage.StorageClassName
+	}
+	return nil
+}
+
 func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForVolumeServer(m.Name)
 	annotations := m.Spec.Volume.Annotations
@@ -60,9 +69,24 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
 
-	volumeCount := int(m.Spec.Storage.VolumeServerDiskCount)
-	volumeRequests := corev1.ResourceList{
-		corev1.ResourceStorage: m.Spec.Volume.Requests[corev1.ResourceStorage],
+	// Set default storage configuration if not specified
+	var volumeCount int
+	if m.Spec.Storage != nil {
+		volumeCount = int(m.Spec.Storage.VolumeServerDiskCount)
+	} else {
+		// Default to 1 disk if storage spec is not provided
+		volumeCount = 1
+	}
+
+	// Set default storage request if not specified
+	var volumeRequests corev1.ResourceList
+	if m.Spec.Volume.Requests != nil {
+		volumeRequests = m.Spec.Volume.Requests
+	} else {
+		// Default to 4Gi if no requests specified
+		volumeRequests = corev1.ResourceList{
+			corev1.ResourceStorage: resource.MustParse("4Gi"),
+		}
 	}
 
 	// connect all the disks
@@ -91,7 +115,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 				Name: fmt.Sprintf("mount%d", i),
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
-				StorageClassName: resolveStorageClassName(m.Spec.Storage.StorageClassName, m.Spec.Volume.StorageClassName),
+				StorageClassName: resolveStorageClassName(getStorageClassName(m.Spec.Storage), m.Spec.Volume.StorageClassName),
 				AccessModes: []corev1.PersistentVolumeAccessMode{
 					corev1.ReadWriteOnce,
 				},

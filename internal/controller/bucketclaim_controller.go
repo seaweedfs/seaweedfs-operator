@@ -58,7 +58,7 @@ type BucketClaimReconciler struct {
 func (r *BucketClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("bucketclaim", req.NamespacedName)
 
-	log.Info("Starting BucketClaim reconciliation")
+	log.Info("Starting BucketClaim Reconcile")
 
 	// Fetch the BucketClaim instance
 	bucketClaim := &seaweedv1.BucketClaim{}
@@ -107,6 +107,8 @@ func (r *BucketClaimReconciler) getAdminServer(adminService string) (*dash.Admin
 func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucketClaim *seaweedv1.BucketClaim) (ctrl.Result, error) {
 	log := r.Log.WithValues("bucketclaim", bucketClaim.Name)
 
+	log.Info("Starting BucketClaim handleReconciliation")
+
 	// Get the referenced Seaweed cluster
 	seaweedCluster, err := r.getSeaweedCluster(ctx, bucketClaim)
 	if err != nil {
@@ -124,6 +126,7 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 	// Update status to Creating if not already set
 	if bucketClaim.Status.Phase == "" || bucketClaim.Status.Phase == seaweedv1.BucketClaimPhasePending {
 		if _, err := r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseCreating, "Creating bucket"); err != nil {
+			log.Error(err, "Failed to update status to Creating", "error", err)
 			return ctrl.Result{}, err
 		}
 	}
@@ -347,6 +350,7 @@ func (r *BucketClaimReconciler) updateStatus(ctx context.Context, bucketClaim *s
 			break
 		}
 	}
+
 	if !found {
 		bucketClaim.Status.Conditions = append(bucketClaim.Status.Conditions, condition)
 	}

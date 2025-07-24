@@ -135,9 +135,11 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 		return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to check bucket existence: %v", err))
 	}
 
+	log.Info("Bucket existing state", "exists", exists)
+
 	if exists {
 		// Bucket exists, update status to Ready
-		bucketInfo, err := r.getBucketInfo(ctx, adminService, bucketClaim.Spec.BucketName)
+		bucketInfo, err := r.getBucketInfo(adminService, bucketClaim.Spec.BucketName)
 		if err != nil {
 			log.Error(err, "Failed to get bucket info")
 			return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to get bucket info: %v", err))
@@ -147,18 +149,22 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 	}
 
 	// Create the bucket
-	err = r.createBucket(ctx, adminService, bucketClaim)
+	err = r.createBucket(adminService, bucketClaim)
 	if err != nil {
 		log.Error(err, "Failed to create bucket")
 		return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to create bucket: %v", err))
 	}
 
+	log.Info("Bucket created state")
+
 	// Get bucket info after creation
-	bucketInfo, err := r.getBucketInfo(ctx, adminService, bucketClaim.Spec.BucketName)
+	bucketInfo, err := r.getBucketInfo(adminService, bucketClaim.Spec.BucketName)
 	if err != nil {
 		log.Error(err, "Failed to get bucket info after creation")
 		return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to get bucket info: %v", err))
 	}
+
+	log.Info("Bucket info", "bucketInfo", bucketInfo)
 
 	return r.updateStatusWithBucketInfo(ctx, bucketClaim, seaweedv1.BucketClaimPhaseReady, "Bucket created successfully", bucketInfo)
 }
@@ -253,7 +259,7 @@ func (r *BucketClaimReconciler) bucketExists(adminServiceURL, bucketName string)
 }
 
 // getBucketInfo retrieves information about a bucket
-func (r *BucketClaimReconciler) getBucketInfo(ctx context.Context, adminServiceURL, bucketName string) (*seaweedv1.BucketInfo, error) {
+func (r *BucketClaimReconciler) getBucketInfo(adminServiceURL, bucketName string) (*seaweedv1.BucketInfo, error) {
 	adminServer, err := r.getAdminServer(adminServiceURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get admin server: %w", err)
@@ -280,7 +286,7 @@ func (r *BucketClaimReconciler) getBucketInfo(ctx context.Context, adminServiceU
 }
 
 // createBucket creates a new bucket in the SeaweedFS cluster
-func (r *BucketClaimReconciler) createBucket(ctx context.Context, adminServiceURL string, bucketClaim *seaweedv1.BucketClaim) error {
+func (r *BucketClaimReconciler) createBucket(adminServiceURL string, bucketClaim *seaweedv1.BucketClaim) error {
 	adminServer, err := r.getAdminServer(adminServiceURL)
 	if err != nil {
 		return fmt.Errorf("failed to get admin server: %w", err)
@@ -311,6 +317,10 @@ func (r *BucketClaimReconciler) deleteBucket(adminServiceURL, bucketName string)
 
 // updateStatus updates the BucketClaim status
 func (r *BucketClaimReconciler) updateStatus(ctx context.Context, bucketClaim *seaweedv1.BucketClaim, phase seaweedv1.BucketClaimPhase, message string) (ctrl.Result, error) {
+	log := r.Log.WithValues("bucketclaim-update-status", bucketClaim.Name)
+
+	log.Info("Updating status", "phase", phase, "message", message)
+
 	bucketClaim.Status.Phase = phase
 	bucketClaim.Status.Message = message
 	bucketClaim.Status.LastUpdateTime = &metav1.Time{Time: time.Now()}

@@ -235,20 +235,20 @@ func TestBucketClaimReconciler_AdminServerCleanup(t *testing.T) {
 	// Test cleanup functionality
 	// Set the first entry to be old (more than 5 minutes)
 	entry1.lastAccess = time.Now().Add(-6 * time.Minute)
-	
+
 	// Run cleanup
 	reconciler.cleanupInactiveAdminServers()
-	
+
 	// Check that only the old entry was removed
 	if len(reconciler.adminServers) != 1 {
 		t.Fatalf("Expected 1 admin server entry after cleanup, got %d", len(reconciler.adminServers))
 	}
-	
+
 	// Check that the second entry still exists
 	if _, exists := reconciler.adminServers[adminService2]; !exists {
 		t.Fatal("Expected second admin server entry to still exist after cleanup")
 	}
-	
+
 	// Check that the first entry was removed
 	if _, exists := reconciler.adminServers[adminService1]; exists {
 		t.Fatal("Expected first admin server entry to be removed after cleanup")

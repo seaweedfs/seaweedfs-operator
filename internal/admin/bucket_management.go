@@ -24,7 +24,7 @@ func (s *AdminServer) GetS3Buckets() ([]S3Bucket, error) {
 		FileCount int64
 	})
 
-	s.log.Info("getting volume information")
+	s.log.Debug("getting volume information")
 
 	// Collect volume information by collection
 	err := s.WithMasterClient(func(client master_pb.SeaweedClient) error {
@@ -199,7 +199,7 @@ func (s *AdminServer) GetS3Buckets() ([]S3Bucket, error) {
 		return nil, fmt.Errorf("failed to list Object Store buckets: %w", err)
 	}
 
-	s.log.Debugw("Successfully retrieved S3 buckets", "count", len(buckets))
+	s.log.Debugw("successfully retrieved S3 buckets", "count", len(buckets))
 	return buckets, nil
 }
 

@@ -25,6 +25,11 @@ rules:
   verbs:
   - get
   - list
+  - create
+  - update
+  - patch
+  - delete
+  - watch
 - apiGroups:
   - ""
   resources:

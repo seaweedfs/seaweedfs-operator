@@ -16,12 +16,15 @@ package controller
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -54,6 +57,7 @@ type BucketClaimReconciler struct {
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=bucketclaims/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile implements the reconciliation logic for BucketClaim
 func (r *BucketClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -200,7 +204,17 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 			return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to get bucket info: %v", err))
 		}
 
-		return r.updateStatusWithBucketInfo(ctx, bucketClaim, seaweedv1.BucketClaimPhaseReady, "Bucket is ready", bucketInfo)
+		// Create or update S3 credentials secret if enabled
+		var secretInfo *seaweedv1.BucketSecretInfo
+		if bucketClaim.Spec.Secret != nil && bucketClaim.Spec.Secret.Enabled {
+			secretInfo, err = r.createS3CredentialsSecret(ctx, bucketClaim, seaweedCluster)
+			if err != nil {
+				log.Errorw("failed to create S3 credentials secret", "error", err)
+				return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to create S3 credentials secret: %v", err))
+			}
+		}
+
+		return r.updateStatusWithBucketAndSecretInfo(ctx, bucketClaim, seaweedv1.BucketClaimPhaseReady, "Bucket is ready", bucketInfo, secretInfo)
 	}
 
 	// Create the bucket
@@ -221,7 +235,18 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 
 	log.Info("bucket info", "bucketInfo", bucketInfo)
 
-	return r.updateStatusWithBucketInfo(ctx, bucketClaim, seaweedv1.BucketClaimPhaseReady, "Bucket created successfully", bucketInfo)
+	// Create S3 credentials secret if enabled
+	var secretInfo *seaweedv1.BucketSecretInfo
+	if bucketClaim.Spec.Secret != nil && bucketClaim.Spec.Secret.Enabled {
+		secretInfo, err = r.createS3CredentialsSecret(ctx, bucketClaim, seaweedCluster)
+		if err != nil {
+			log.Errorw("failed to create S3 credentials secret", "error", err)
+			return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to create S3 credentials secret: %v", err))
+		}
+	}
+
+	// Update status with both bucket and secret info
+	return r.updateStatusWithBucketAndSecretInfo(ctx, bucketClaim, seaweedv1.BucketClaimPhaseReady, "Bucket created successfully", bucketInfo, secretInfo)
 }
 
 // handleDeletion handles bucket deletion when BucketClaim is being deleted
@@ -249,8 +274,43 @@ func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim 
 		// Don't return error to avoid blocking deletion
 	}
 
+	// Delete the S3 credentials secret if enabled
+	if bucketClaim.Spec.Secret != nil && bucketClaim.Spec.Secret.Enabled {
+		err = r.deleteS3CredentialsSecret(ctx, bucketClaim)
+		if err != nil {
+			log.Errorw("failed to delete S3 credentials secret", "error", err)
+		}
+	}
+
 	log.Debug("bucket deletion completed")
 	return ctrl.Result{}, nil
+}
+
+func (r *BucketClaimReconciler) deleteS3CredentialsSecret(ctx context.Context, bucketClaim *seaweedv1.BucketClaim) error {
+	log := r.Log.With("bucketclaim", bucketClaim.Name)
+
+	if bucketClaim.Spec.Secret == nil || !bucketClaim.Spec.Secret.Enabled {
+		log.Debug("credentials secret is not enabled, skipping deletion")
+		return nil
+	}
+
+	secretName := bucketClaim.Spec.Secret.Name
+	if secretName == "" {
+		secretName = bucketClaim.Spec.BucketName
+	}
+
+	err := r.Delete(ctx, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: bucketClaim.Namespace,
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to delete S3 credentials secret: %w", err)
+	}
+
+	return nil
 }
 
 // getSeaweedCluster retrieves the referenced Seaweed cluster
@@ -372,6 +432,139 @@ func convertQuotaToBytes(size int64, unit string) int64 {
 	}
 }
 
+// generateS3Credentials generates random S3 access key and secret key
+func generateS3Credentials() (string, string, error) {
+	// Generate access key (32 characters)
+	accessKeyBytes := make([]byte, 24) // 24 bytes = 32 base64 characters
+	if _, err := rand.Read(accessKeyBytes); err != nil {
+		return "", "", fmt.Errorf("failed to generate access key: %w", err)
+	}
+	accessKey := base64.URLEncoding.EncodeToString(accessKeyBytes)
+
+	// Generate secret key (64 characters)
+	secretKeyBytes := make([]byte, 48) // 48 bytes = 64 base64 characters
+	if _, err := rand.Read(secretKeyBytes); err != nil {
+		return "", "", fmt.Errorf("failed to generate secret key: %w", err)
+	}
+	secretKey := base64.URLEncoding.EncodeToString(secretKeyBytes)
+
+	return accessKey, secretKey, nil
+}
+
+// createS3CredentialsSecret creates a Kubernetes secret with S3 credentials
+func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, bucketClaim *seaweedv1.BucketClaim, seaweedCluster *seaweedv1.Seaweed) (*seaweedv1.BucketSecretInfo, error) {
+	log := r.Log.With("bucketclaim", bucketClaim.Name)
+
+	if bucketClaim.Spec.Secret == nil || !bucketClaim.Spec.Secret.Enabled {
+		return nil, nil
+	}
+
+	// Generate S3 credentials
+	accessKey, secretKey, err := generateS3Credentials()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate S3 credentials: %w", err)
+	}
+
+	// Determine secret name
+	secretName := bucketClaim.Spec.Secret.Name
+	if secretName == "" {
+		secretName = bucketClaim.Spec.BucketName
+	}
+
+	// Determine S3 endpoint
+	s3Endpoint := fmt.Sprintf("http://%s-filer.%s.svc.cluster.local:8333", seaweedCluster.Name, seaweedCluster.Namespace)
+
+	// Determine S3 region
+	s3Region := bucketClaim.Spec.Region
+	if s3Region == "" {
+		s3Region = "us-east-1" // Default region
+	}
+
+	// Create secret data
+	secretData := map[string][]byte{
+		"access-key-id":         []byte(accessKey),
+		"secret-access-key":     []byte(secretKey),
+		"endpoint":              []byte(s3Endpoint),
+		"region":                []byte(s3Region),
+		"bucket":                []byte(bucketClaim.Spec.BucketName),
+		"S3_ACCESS_KEY_ID":      []byte(accessKey),
+		"S3_SECRET_ACCESS_KEY":  []byte(secretKey),
+		"S3_REGION":             []byte(s3Region),
+		"S3_BUCKET":             []byte(bucketClaim.Spec.BucketName),
+		"AWS_ACCESS_KEY_ID":     []byte(accessKey),
+		"AWS_SECRET_ACCESS_KEY": []byte(secretKey),
+		"AWS_REGION":            []byte(s3Region),
+		"AWS_BUCKET":            []byte(bucketClaim.Spec.BucketName),
+	}
+
+	// Create secret object
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: bucketClaim.Namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/name":       "seaweedfs-operator",
+				"app.kubernetes.io/component":  "bucket-credentials",
+				"seaweed.seaweedfs.com/bucket": bucketClaim.Spec.BucketName,
+			},
+			Annotations: map[string]string{
+				"seaweed.seaweedfs.com/created-by": "bucketclaim-controller",
+				"seaweed.seaweedfs.com/bucket":     bucketClaim.Spec.BucketName,
+			},
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: secretData,
+	}
+
+	// Add custom labels and annotations if specified
+	if bucketClaim.Spec.Secret.Labels != nil {
+		for k, v := range bucketClaim.Spec.Secret.Labels {
+			secret.Labels[k] = v
+		}
+	}
+	if bucketClaim.Spec.Secret.Annotations != nil {
+		for k, v := range bucketClaim.Spec.Secret.Annotations {
+			secret.Annotations[k] = v
+		}
+	}
+
+	// Set owner reference to the BucketClaim
+	if err := ctrl.SetControllerReference(bucketClaim, secret, r.Scheme); err != nil {
+		return nil, fmt.Errorf("failed to set controller reference: %w", err)
+	}
+
+	// Create or update the secret
+	err = r.Create(ctx, secret)
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			// Update existing secret
+			existingSecret := &corev1.Secret{}
+			err = r.Get(ctx, client.ObjectKey{Name: secretName, Namespace: bucketClaim.Namespace}, existingSecret)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get existing secret: %w", err)
+			}
+
+			existingSecret.Data = secretData
+			existingSecret.Labels = secret.Labels
+			existingSecret.Annotations = secret.Annotations
+
+			err = r.Update(ctx, existingSecret)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update secret: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to create secret: %w", err)
+		}
+	}
+
+	log.Info("created S3 credentials secret", "secretName", secretName, "bucketName", bucketClaim.Spec.BucketName)
+
+	return &seaweedv1.BucketSecretInfo{
+		Name:      secretName,
+		Namespace: bucketClaim.Namespace,
+	}, nil
+}
+
 // createBucket creates a new bucket in the SeaweedFS cluster
 func (r *BucketClaimReconciler) createBucket(adminServiceURL string, bucketClaim *seaweedv1.BucketClaim) error {
 	adminServer, err := r.getAdminServer(adminServiceURL)
@@ -466,9 +659,10 @@ func (r *BucketClaimReconciler) updateStatus(ctx context.Context, bucketClaim *s
 	}
 }
 
-// updateStatusWithBucketInfo updates the BucketClaim status with bucket information
-func (r *BucketClaimReconciler) updateStatusWithBucketInfo(ctx context.Context, bucketClaim *seaweedv1.BucketClaim, phase seaweedv1.BucketClaimPhase, message string, bucketInfo *seaweedv1.BucketInfo) (ctrl.Result, error) {
+// updateStatusWithBucketAndSecretInfo updates the BucketClaim status with both bucket and secret information
+func (r *BucketClaimReconciler) updateStatusWithBucketAndSecretInfo(ctx context.Context, bucketClaim *seaweedv1.BucketClaim, phase seaweedv1.BucketClaimPhase, message string, bucketInfo *seaweedv1.BucketInfo, secretInfo *seaweedv1.BucketSecretInfo) (ctrl.Result, error) {
 	bucketClaim.Status.BucketInfo = bucketInfo
+	bucketClaim.Status.SecretInfo = secretInfo
 	return r.updateStatus(ctx, bucketClaim, phase, message)
 }
 

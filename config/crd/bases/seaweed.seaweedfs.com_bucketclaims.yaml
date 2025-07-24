@@ -78,6 +78,25 @@ spec:
                 type: object
               region:
                 type: string
+              secret:
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  enabled:
+                    default: true
+                    type: boolean
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  name:
+                    type: string
+                  type:
+                    default: Opaque
+                    type: string
+                type: object
               versioningEnabled:
                 default: false
                 type: boolean
@@ -143,6 +162,13 @@ spec:
                 - Ready
                 - Failed
                 type: string
+              secretInfo:
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                type: object
             type: object
         type: object
     served: true

@@ -706,6 +706,9 @@ type BucketClaimSpec struct {
 	// ClusterRef is a reference to the Seaweed cluster where the bucket should be created
 	// +kubebuilder:validation:Required
 	ClusterRef ClusterReference `json:"clusterRef"`
+
+	// Secret configuration for S3 credentials
+	Secret *BucketSecretSpec `json:"secret,omitempty"`
 }
 
 type BucketObjectLock struct {
@@ -733,6 +736,26 @@ type BucketQuota struct {
 	Enabled bool `json:"enabled"`
 }
 
+// BucketSecretSpec defines the configuration for creating a secret with S3 credentials
+type BucketSecretSpec struct {
+	// Whether to create a secret with S3 credentials
+	// +kubebuilder:default:=true
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Name of the secret to create (if empty, will use bucket name)
+	Name string `json:"name,omitempty"`
+
+	// Secret type to create
+	// +kubebuilder:default:="Opaque"
+	Type corev1.SecretType `json:"type,omitempty"`
+
+	// Additional labels to add to the secret
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// Additional annotations to add to the secret
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
 // ClusterReference defines a reference to a Seaweed cluster
 type ClusterReference struct {
 	// Name of the Seaweed cluster
@@ -758,8 +781,19 @@ type BucketClaimStatus struct {
 	// BucketInfo contains information about the created bucket
 	BucketInfo *BucketInfo `json:"bucketInfo,omitempty"`
 
+	// SecretInfo contains information about the created secret
+	SecretInfo *BucketSecretInfo `json:"secretInfo,omitempty"`
+
 	// LastUpdateTime is the timestamp of the last status update
 	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`
+}
+
+type BucketSecretInfo struct {
+	// Name of the created secret
+	Name string `json:"name,omitempty"`
+
+	// Namespace of the created secret
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // BucketClaimPhase represents the phase of a bucket claim

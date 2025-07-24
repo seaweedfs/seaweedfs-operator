@@ -19,13 +19,180 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
+
+func TestGenerateS3Credentials(t *testing.T) {
+	accessKey1, secretKey1, err := generateS3Credentials()
+	require.NoError(t, err)
+	assert.NotEmpty(t, accessKey1)
+	assert.NotEmpty(t, secretKey1)
+	assert.Len(t, accessKey1, 32)
+	assert.Len(t, secretKey1, 64)
+
+	// Generate another set to ensure they're different
+	accessKey2, secretKey2, err := generateS3Credentials()
+	require.NoError(t, err)
+	assert.NotEqual(t, accessKey1, accessKey2)
+	assert.NotEqual(t, secretKey1, secretKey2)
+}
+
+func TestBucketClaimReconciler_CreateS3CredentialsSecret(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, seaweedv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+
+	// Create a test BucketClaim with secret enabled
+	bucketClaim := &seaweedv1.BucketClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-bucket",
+			Namespace: "default",
+		},
+		Spec: seaweedv1.BucketClaimSpec{
+			BucketName: "test-bucket",
+			Region:     "us-east-1",
+			ClusterRef: seaweedv1.ClusterReference{
+				Name:      "test-cluster",
+				Namespace: "default",
+			},
+			Secret: &seaweedv1.BucketSecretSpec{
+				Enabled: true,
+				Name:    "test-bucket-credentials",
+				Labels: map[string]string{
+					"test-label": "test-value",
+				},
+				Annotations: map[string]string{
+					"test-annotation": "test-value",
+				},
+			},
+		},
+	}
+
+	// Create a test Seaweed cluster
+	seaweedCluster := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "default",
+		},
+		Spec: seaweedv1.SeaweedSpec{
+			Filer: &seaweedv1.FilerSpec{
+				S3: true,
+			},
+		},
+	}
+
+	// Create fake client
+	client := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(bucketClaim, seaweedCluster).
+		Build()
+
+	// Create reconciler
+	reconciler := &BucketClaimReconciler{
+		Client: client,
+		Scheme: scheme,
+		Log:    zap.NewNop().Sugar(),
+	}
+
+	// Test secret creation
+	secretInfo, err := reconciler.createS3CredentialsSecret(context.Background(), bucketClaim, seaweedCluster)
+	require.NoError(t, err)
+	assert.NotNil(t, secretInfo)
+	assert.Equal(t, "test-bucket-credentials", secretInfo.Name)
+	assert.Equal(t, "default", secretInfo.Namespace)
+
+	// Verify secret was created
+	secret := &corev1.Secret{}
+	err = client.Get(context.Background(), types.NamespacedName{
+		Name:      "test-bucket-credentials",
+		Namespace: "default",
+	}, secret)
+	require.NoError(t, err)
+
+	// Verify secret data
+	assert.Contains(t, secret.Data, "access-key-id")
+	assert.Contains(t, secret.Data, "secret-access-key")
+	assert.Contains(t, secret.Data, "endpoint")
+	assert.Contains(t, secret.Data, "region")
+	assert.Contains(t, secret.Data, "bucket")
+
+	// Verify labels and annotations
+	assert.Equal(t, "test-value", secret.Labels["test-label"])
+	assert.Equal(t, "test-value", secret.Annotations["test-annotation"])
+	assert.Equal(t, "test-bucket", secret.Labels["seaweed.seaweedfs.com/bucket"])
+	assert.Equal(t, "bucketclaim-controller", secret.Annotations["seaweed.seaweedfs.com/created-by"])
+
+	// Verify owner reference
+	assert.Len(t, secret.OwnerReferences, 1)
+	assert.Equal(t, "BucketClaim", secret.OwnerReferences[0].Kind)
+	assert.Equal(t, "test-bucket", secret.OwnerReferences[0].Name)
+}
+
+func TestBucketClaimReconciler_CreateS3CredentialsSecret_Disabled(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, seaweedv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+
+	// Create a test BucketClaim with secret disabled
+	bucketClaim := &seaweedv1.BucketClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-bucket",
+			Namespace: "default",
+		},
+		Spec: seaweedv1.BucketClaimSpec{
+			BucketName: "test-bucket",
+			Region:     "us-east-1",
+			ClusterRef: seaweedv1.ClusterReference{
+				Name:      "test-cluster",
+				Namespace: "default",
+			},
+			Secret: &seaweedv1.BucketSecretSpec{
+				Enabled: false,
+			},
+		},
+	}
+
+	// Create a test Seaweed cluster
+	seaweedCluster := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "default",
+		},
+		Spec: seaweedv1.SeaweedSpec{
+			Filer: &seaweedv1.FilerSpec{
+				S3: true,
+			},
+		},
+	}
+
+	// Create fake client
+	client := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(bucketClaim, seaweedCluster).
+		Build()
+
+	// Create reconciler
+	reconciler := &BucketClaimReconciler{
+		Client: client,
+		Scheme: scheme,
+		Log:    zap.NewNop().Sugar(),
+	}
+
+	// Test secret creation (should return nil when disabled)
+	secretInfo, err := reconciler.createS3CredentialsSecret(context.Background(), bucketClaim, seaweedCluster)
+	require.NoError(t, err)
+	assert.Nil(t, secretInfo)
+}
 
 func TestBucketClaimReconciler_SetupWithManager(t *testing.T) {
 	// Create a fake client

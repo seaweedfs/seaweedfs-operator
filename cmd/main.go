@@ -134,6 +134,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controller.BucketClaimReconciler{
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("controller").WithName("BucketClaim"),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "BucketClaim")
+		os.Exit(1)
+	}
+
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err = (&seaweedv1.Seaweed{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "Seaweed")

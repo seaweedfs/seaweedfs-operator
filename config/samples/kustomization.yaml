@@ -2,4 +2,4 @@
 resources:
 - seaweed_v1_seaweed.yaml
 - seaweed_v1_seaweed_with_admin.yaml
-- seaweed_v1_seaweed_with_admin_secure.yaml
+- seaweed_v1_bucketclaim.yaml

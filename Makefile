@@ -110,7 +110,8 @@ nilaway-lint: nilaway
 # Generate code
 generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
-	yq '... comments=""' config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml > charts/operator/crds/seaweed.seaweedfs.com_seaweeds.yaml
+	cp config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml charts/operator/crds/seaweed.seaweedfs.com_seaweeds.yaml
+	cp config/crd/bases/seaweed.seaweedfs.com_bucketclaims.yaml charts/operator/crds/seaweed.seaweedfs.com_bucketclaims.yaml
 
 # Build the docker image
 .PHONY: docker-build

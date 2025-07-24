@@ -684,6 +684,95 @@ type SeaweedList struct {
 	Items           []Seaweed `json:"items"`
 }
 
+// BucketClaimSpec defines the desired state of BucketClaim
+type BucketClaimSpec struct {
+	// BucketName is the name of the bucket to be created
+	// +kubebuilder:validation:Required
+	BucketName string `json:"bucketName"`
+
+	// ClusterRef is a reference to the Seaweed cluster where the bucket should be created
+	// +kubebuilder:validation:Required
+	ClusterRef ClusterReference `json:"clusterRef"`
+}
+
+// ClusterReference defines a reference to a Seaweed cluster
+type ClusterReference struct {
+	// Name of the Seaweed cluster
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace of the Seaweed cluster (if empty, uses the same namespace as BucketClaim)
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// BucketClaimStatus defines the observed state of BucketClaim
+type BucketClaimStatus struct {
+	// Phase represents the current phase of the bucket claim
+	// +kubebuilder:validation:Enum=Pending;Creating;Ready;Failed
+	Phase BucketClaimPhase `json:"phase,omitempty"`
+
+	// Message provides additional information about the current phase
+	Message string `json:"message,omitempty"`
+
+	// Conditions represent the latest available observations of a bucket claim's current state
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// BucketInfo contains information about the created bucket
+	BucketInfo *BucketInfo `json:"bucketInfo,omitempty"`
+
+	// LastUpdateTime is the timestamp of the last status update
+	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`
+}
+
+// BucketClaimPhase represents the phase of a bucket claim
+type BucketClaimPhase string
+
+const (
+	// BucketClaimPhasePending indicates the bucket claim is pending
+	BucketClaimPhasePending BucketClaimPhase = "Pending"
+	// BucketClaimPhaseCreating indicates the bucket is being created
+	BucketClaimPhaseCreating BucketClaimPhase = "Creating"
+	// BucketClaimPhaseReady indicates the bucket is ready
+	BucketClaimPhaseReady BucketClaimPhase = "Ready"
+	// BucketClaimPhaseFailed indicates the bucket creation failed
+	BucketClaimPhaseFailed BucketClaimPhase = "Failed"
+)
+
+// BucketInfo contains information about a bucket
+type BucketInfo struct {
+	// Name of the bucket
+	Name string `json:"name,omitempty"`
+
+	// Creation timestamp
+	CreatedAt *metav1.Time `json:"createdAt,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Bucket",type="string",JSONPath=".spec.bucketName"
+// +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".spec.clusterRef.name"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+
+// BucketClaim is the Schema for the bucketclaims API
+type BucketClaim struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   BucketClaimSpec   `json:"spec,omitempty"`
+	Status BucketClaimStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+
+// BucketClaimList contains a list of BucketClaim
+type BucketClaimList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []BucketClaim `json:"items"`
+}
+
 func init() {
 	SchemeBuilder.Register(&Seaweed{}, &SeaweedList{})
+	SchemeBuilder.Register(&BucketClaim{}, &BucketClaimList{})
 }

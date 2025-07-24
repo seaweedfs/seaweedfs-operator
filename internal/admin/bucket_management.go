@@ -385,6 +385,12 @@ func (s *AdminServer) CreateS3BucketWithObjectLock(bucketName string, quotaBytes
 			s.log.V(1).Info("Object lock enabled, forcing versioning to be enabled", "bucketName", bucketName)
 		}
 
+		if len(bucketName) > 63 {
+			return fmt.Errorf("bucket name must be less than 63 characters")
+		} else if len(bucketName) < 3 {
+			return fmt.Errorf("bucket name must be at least 3 characters")
+		}
+
 		// Create bucket directory
 		entry := &filer_pb.Entry{
 			Name: bucketName,
@@ -412,6 +418,10 @@ func (s *AdminServer) CreateS3BucketWithObjectLock(bucketName string, quotaBytes
 		// Configure object lock
 		if objectLockEnabled {
 			s.log.V(1).Info("Configuring object lock for bucket", "bucketName", bucketName, "mode", objectLockMode, "duration", objectLockDuration)
+
+			if objectLockMode != "GOVERNANCE" && objectLockMode != "COMPLIANCE" {
+				return fmt.Errorf("invalid object lock mode: %s", objectLockMode)
+			}
 
 			// Create object lock configuration
 			objectLockConfig := s3api.CreateObjectLockConfigurationFromParams(true, objectLockMode, objectLockDuration)

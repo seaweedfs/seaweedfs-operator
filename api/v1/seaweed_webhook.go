@@ -19,6 +19,7 @@ package v1
 import (
 	"errors"
 
+	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	corev1 "k8s.io/api/core/v1"
@@ -26,11 +27,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // log is for logging in this package.
-var seaweedlog = logf.Log.WithName("seaweed-resource")
+var seaweedlog *zap.SugaredLogger
 
 func (r *Seaweed) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
@@ -44,7 +44,7 @@ func (r *Seaweed) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 // Default implements webhook.Defaulter so a webhook will be registered for the type
 func (r *Seaweed) Default() {
-	seaweedlog.Info("default", "name", r.Name)
+	seaweedlog.Infow("default", "name", r.Name)
 
 	// TODO(user): fill in your defaulting logic.
 }
@@ -54,7 +54,7 @@ func (r *Seaweed) Default() {
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
-	seaweedlog.Info("validate create", "name", r.Name)
+	seaweedlog.Infow("validate create", "name", r.Name)
 	errs := []error{}
 
 	// TODO(user): fill in your validation logic upon object creation.
@@ -78,7 +78,7 @@ func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *Seaweed) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
-	seaweedlog.Info("validate update", "name", r.Name)
+	seaweedlog.Infow("validate update", "name", r.Name)
 
 	// TODO(user): fill in your validation logic upon object update.
 	return nil, nil
@@ -86,7 +86,7 @@ func (r *Seaweed) ValidateUpdate(old runtime.Object) (admission.Warnings, error)
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *Seaweed) ValidateDelete() (admission.Warnings, error) {
-	seaweedlog.Info("validate delete", "name", r.Name)
+	seaweedlog.Infow("validate delete", "name", r.Name)
 
 	// TODO(user): fill in your validation logic upon object deletion.
 	return nil, nil

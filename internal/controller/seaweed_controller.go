@@ -20,7 +20,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-logr/logr"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -33,7 +33,7 @@ import (
 // SeaweedReconciler reconciles a Seaweed object
 type SeaweedReconciler struct {
 	client.Client
-	Log    logr.Logger
+	Log    *zap.SugaredLogger
 	Scheme *runtime.Scheme
 }
 
@@ -51,9 +51,9 @@ type SeaweedReconciler struct {
 
 // Reconcile implements the reconciliation logic
 func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("seaweed", req.NamespacedName)
+	log := r.Log.With("seaweed", req.NamespacedName)
 
-	log.Info("start Reconcile ...")
+	log.Debug("start Reconcile ...")
 
 	seaweedCR, done, result, err := r.findSeaweedCustomResourceInstance(ctx, log, req)
 	if done {
@@ -99,28 +99,30 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
 
-func (r *SeaweedReconciler) findSeaweedCustomResourceInstance(ctx context.Context, log logr.Logger, req ctrl.Request) (*seaweedv1.Seaweed, bool, ctrl.Result, error) {
+func (r *SeaweedReconciler) findSeaweedCustomResourceInstance(ctx context.Context, log *zap.SugaredLogger, req ctrl.Request) (*seaweedv1.Seaweed, bool, ctrl.Result, error) {
 	// fetch the master instance
 	seaweedCR := &seaweedv1.Seaweed{}
 	err := r.Get(ctx, req.NamespacedName, seaweedCR)
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
-			log.Info("Seaweed CR not found. Ignoring since object must be deleted")
+			log.Info("seaweed CR not found. ignoring since object must be deleted")
 			return nil, true, ctrl.Result{RequeueAfter: time.Second * 5}, nil
 		}
 		// Error reading the object - requeue the request.
-		log.Error(err, "Failed to get SeaweedCR")
+		log.Errorw("failed to get SeaweedCR", "error", err)
 		return nil, true, ctrl.Result{}, err
 	}
-	log.Info("Get master " + seaweedCR.Name)
+
+	log.Debug("get master " + seaweedCR.Name)
 	return seaweedCR, false, ctrl.Result{}, nil
 }
 
 func (r *SeaweedReconciler) getSecret(ctx context.Context, secretName string, namespace string) (map[string]string, error) {
-	log := r.Log.WithValues("getSecret", secretName)
+	log := r.Log.With("get-secret", secretName)
 
 	secret := &corev1.Secret{}
 	err := r.Get(ctx, client.ObjectKey{
@@ -129,7 +131,7 @@ func (r *SeaweedReconciler) getSecret(ctx context.Context, secretName string, na
 	}, secret)
 
 	if err != nil {
-		log.Error(err, "Failed to get secret", "secret", secretName)
+		log.Errorw("failed to get secret", "secret", secretName, "error", err)
 		return nil, err
 	}
 

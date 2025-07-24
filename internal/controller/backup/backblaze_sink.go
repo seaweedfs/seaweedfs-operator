@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-logr/logr"
+	"go.uber.org/zap"
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
@@ -29,7 +29,7 @@ func (e *BackblazeCredentialExtractor) GetMapping() interface{} {
 }
 
 // ExtractBackblazeCredentials extracts Backblaze credentials from secret or uses provided values
-func ExtractBackblazeCredentials(ctx context.Context, backblazeConfig *seaweedv1.BackblazeSinkConfig, namespace string, log logr.Logger, secretGetter SecretGetter) (string, string) {
+func ExtractBackblazeCredentials(ctx context.Context, backblazeConfig *seaweedv1.BackblazeSinkConfig, namespace string, log *zap.SugaredLogger, secretGetter SecretGetter) (string, string) {
 	b2AccountID := backblazeConfig.B2AccountID
 	b2MasterApplicationKey := backblazeConfig.B2MasterApplicationKey
 
@@ -48,7 +48,7 @@ func ExtractBackblazeCredentials(ctx context.Context, backblazeConfig *seaweedv1
 			if accountID, exists := secret[b2AccountIDKey]; exists {
 				b2AccountID = accountID
 			} else {
-				log.Info("Secret key not found in secret", "secret", backblazeConfig.BackblazeCredentialsSecretRef.Name, "mapping", b2AccountIDKey)
+				log.Infow("Secret key not found in secret", "secret", backblazeConfig.BackblazeCredentialsSecretRef.Name, "mapping", b2AccountIDKey)
 			}
 
 			b2MasterApplicationKeyKey := mapping.B2MasterApplicationKey
@@ -59,7 +59,7 @@ func ExtractBackblazeCredentials(ctx context.Context, backblazeConfig *seaweedv1
 			if masterKey, exists := secret[b2MasterApplicationKeyKey]; exists {
 				b2MasterApplicationKey = masterKey
 			} else {
-				log.Info("Secret key not found in secret", "secret", backblazeConfig.BackblazeCredentialsSecretRef.Name, "mapping", b2MasterApplicationKeyKey)
+				log.Infow("Secret key not found in secret", "secret", backblazeConfig.BackblazeCredentialsSecretRef.Name, "mapping", b2MasterApplicationKeyKey)
 			}
 		}
 	}
@@ -68,7 +68,7 @@ func ExtractBackblazeCredentials(ctx context.Context, backblazeConfig *seaweedv1
 }
 
 // GenerateBackblazeSinkConfig generates configuration for Backblaze sink
-func GenerateBackblazeSinkConfig(ctx context.Context, config *strings.Builder, backblazeConfig *seaweedv1.BackblazeSinkConfig, namespace string, log logr.Logger, secretGetter SecretGetter) {
+func GenerateBackblazeSinkConfig(ctx context.Context, config *strings.Builder, backblazeConfig *seaweedv1.BackblazeSinkConfig, namespace string, log *zap.SugaredLogger, secretGetter SecretGetter) {
 	b2AccountID, b2MasterApplicationKey := ExtractBackblazeCredentials(ctx, backblazeConfig, namespace, log, secretGetter)
 
 	config.WriteString("[sink.backblaze]\n")

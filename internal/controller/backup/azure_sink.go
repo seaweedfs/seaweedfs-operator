@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-logr/logr"
+	"go.uber.org/zap"
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
@@ -29,7 +29,7 @@ func (e *AzureCredentialExtractor) GetMapping() interface{} {
 }
 
 // ExtractAzureCredentials extracts Azure credentials from secret or uses provided values
-func ExtractAzureCredentials(ctx context.Context, azureConfig *seaweedv1.AzureSinkConfig, namespace string, log logr.Logger, secretGetter SecretGetter) (string, string) {
+func ExtractAzureCredentials(ctx context.Context, azureConfig *seaweedv1.AzureSinkConfig, namespace string, log *zap.SugaredLogger, secretGetter SecretGetter) (string, string) {
 	accountName := azureConfig.AccountName
 	accountKey := azureConfig.AccountKey
 
@@ -48,7 +48,7 @@ func ExtractAzureCredentials(ctx context.Context, azureConfig *seaweedv1.AzureSi
 			if name, exists := secret[accountNameKey]; exists {
 				accountName = name
 			} else {
-				log.Info("Secret key not found in secret", "secret", azureConfig.AzureCredentialsSecretRef.Name, "mapping", accountNameKey)
+				log.Infow("Secret key not found in secret", "secret", azureConfig.AzureCredentialsSecretRef.Name, "mapping", accountNameKey)
 			}
 
 			accountKeyKey := mapping.AccountKey
@@ -60,7 +60,7 @@ func ExtractAzureCredentials(ctx context.Context, azureConfig *seaweedv1.AzureSi
 			if key, exists := secret[accountKeyKey]; exists {
 				accountKey = key
 			} else {
-				log.Info("Secret key not found in secret", "secret", azureConfig.AzureCredentialsSecretRef.Name, "mapping", accountKeyKey)
+				log.Infow("Secret key not found in secret", "secret", azureConfig.AzureCredentialsSecretRef.Name, "mapping", accountKeyKey)
 			}
 		}
 	}
@@ -69,7 +69,7 @@ func ExtractAzureCredentials(ctx context.Context, azureConfig *seaweedv1.AzureSi
 }
 
 // GenerateAzureSinkConfig generates configuration for Azure sink
-func GenerateAzureSinkConfig(ctx context.Context, config *strings.Builder, azureConfig *seaweedv1.AzureSinkConfig, namespace string, log logr.Logger, secretGetter SecretGetter) {
+func GenerateAzureSinkConfig(ctx context.Context, config *strings.Builder, azureConfig *seaweedv1.AzureSinkConfig, namespace string, log *zap.SugaredLogger, secretGetter SecretGetter) {
 	accountName, accountKey := ExtractAzureCredentials(ctx, azureConfig, namespace, log, secretGetter)
 
 	config.WriteString("[sink.azure]\n")

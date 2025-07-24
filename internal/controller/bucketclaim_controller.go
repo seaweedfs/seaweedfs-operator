@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
+	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -41,7 +41,7 @@ type adminServerEntry struct {
 // BucketClaimReconciler reconciles a BucketClaim object
 type BucketClaimReconciler struct {
 	client.Client
-	Log    logr.Logger
+	Log    *zap.SugaredLogger
 	Scheme *runtime.Scheme
 
 	adminServers  map[string]*adminServerEntry
@@ -57,9 +57,9 @@ type BucketClaimReconciler struct {
 
 // Reconcile implements the reconciliation logic for BucketClaim
 func (r *BucketClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("bucketclaim", req.NamespacedName)
+	log := r.Log.With("bucketclaim", req.NamespacedName)
 
-	log.Info("Starting BucketClaim Reconcile")
+	log.Info("starting bucketclaim Reconcile")
 
 	// Fetch the BucketClaim instance
 	bucketClaim := &seaweedv1.BucketClaim{}
@@ -68,7 +68,7 @@ func (r *BucketClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			log.Info("BucketClaim not found. Ignoring since object must be deleted")
+			log.Info("bucketclaim not found. ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
 
@@ -79,7 +79,7 @@ func (r *BucketClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Check if the BucketClaim is being deleted
 	if !bucketClaim.DeletionTimestamp.IsZero() {
-		log.Info("BucketClaim is being deleted, cleaning up bucket")
+		log.Info("bucketclaim is being deleted, cleaning up bucket")
 		return r.handleDeletion(ctx, bucketClaim)
 	}
 
@@ -104,6 +104,7 @@ func (r *BucketClaimReconciler) getAdminServer(adminService string) (*admin.Admi
 			server:     admin.NewAdminServer(masterAddresses, r.Log),
 			lastAccess: time.Now(),
 		}
+
 		r.adminServers[adminService] = entry
 	} else {
 		entry.lastAccess = time.Now()
@@ -119,10 +120,7 @@ func (r *BucketClaimReconciler) getMasterAddressesForAdminService(adminServiceUR
 
 	// Parse the admin service URL to extract cluster name and namespace
 	// Remove http:// prefix
-	serviceName := adminServiceURL
-	if strings.HasPrefix(serviceName, "http://") {
-		serviceName = serviceName[7:] // Remove "http://"
-	}
+	serviceName := strings.TrimPrefix(adminServiceURL, "http://")
 
 	// Split by first dot to get cluster-admin part
 	parts := strings.SplitN(serviceName, ".", 2)
@@ -149,55 +147,56 @@ func (r *BucketClaimReconciler) getMasterAddressesForAdminService(adminServiceUR
 	// Construct master service address
 	masterAddress := fmt.Sprintf("%s-master.%s.svc.cluster.local:9333", clusterName, namespace)
 
-	r.Log.V(1).Info("Constructed master address", "adminService", adminServiceURL, "masterAddress", masterAddress)
+	r.Log.Debugw("Constructed master address", "adminService", adminServiceURL, "masterAddress", masterAddress)
 
 	return masterAddress, nil
 }
 
 // handleReconciliation handles the main reconciliation logic for bucket creation/update
 func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucketClaim *seaweedv1.BucketClaim) (ctrl.Result, error) {
-	log := r.Log.WithValues("bucketclaim", bucketClaim.Name)
+	log := r.Log.With("bucketclaim", bucketClaim.Name)
 
-	log.Info("Starting BucketClaim handleReconciliation")
+	log.Info("starting bucketclaim handleReconciliation")
 
 	// Get the referenced Seaweed cluster
 	seaweedCluster, err := r.getSeaweedCluster(ctx, bucketClaim)
 	if err != nil {
-		log.Error(err, "Failed to get Seaweed cluster")
+		log.Errorw("failed to get seaweed cluster", "error", err)
 		return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to get Seaweed cluster: %v", err))
 	}
 
 	// Check if admin service is available
 	adminService, err := r.getAdminService(seaweedCluster)
 	if err != nil {
-		log.Error(err, "Failed to get admin service")
+		log.Errorw("failed to get admin service", "error", err)
 		return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to get admin service: %v", err))
 	}
 
 	// Update status to Creating if not already set
 	if bucketClaim.Status.Phase == "" || bucketClaim.Status.Phase == seaweedv1.BucketClaimPhasePending {
 		if _, err := r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseCreating, "Creating bucket"); err != nil {
-			log.Error(err, "Failed to update status to Creating", "error", err)
+			log.Errorw("failed to update status to creating", "error", err)
 			return ctrl.Result{}, err
 		}
 	}
 
-	log.Info("Preparing to check if bucket exists", "adminService", adminService)
+	log.Debug("preparing to check if bucket exists", "adminService", adminService)
 
 	// Check if bucket already exists
 	exists, err := r.bucketExists(adminService, bucketClaim.Spec.BucketName)
 	if err != nil {
-		log.Error(err, "Failed to check if bucket exists")
+		log.Errorw("failed to check if bucket exists", "error", err)
 		return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to check bucket existence: %v", err))
 	}
 
-	log.Info("Bucket existing state", "exists", exists)
+	log.Debug("bucket existing state", "exists", exists)
 
 	if exists {
 		// Bucket exists, update status to Ready
-		bucketInfo, err := r.getBucketInfo(adminService, bucketClaim.Spec.BucketName)
+		bucketInfo, err := r.getBucketInfo(adminService, bucketClaim.Spec.BucketName, false)
+
 		if err != nil {
-			log.Error(err, "Failed to get bucket info")
+			log.Errorw("failed to get bucket info", "error", err)
 			return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to get bucket info: %v", err))
 		}
 
@@ -207,50 +206,50 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 	// Create the bucket
 	err = r.createBucket(adminService, bucketClaim)
 	if err != nil {
-		log.Error(err, "Failed to create bucket")
+		log.Errorw("failed to create bucket", "error", err)
 		return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to create bucket: %v", err))
 	}
 
-	log.Info("Bucket created state")
+	log.Debug("bucket created state")
 
 	// Get bucket info after creation
-	bucketInfo, err := r.getBucketInfo(adminService, bucketClaim.Spec.BucketName)
+	bucketInfo, err := r.getBucketInfo(adminService, bucketClaim.Spec.BucketName, false)
 	if err != nil {
-		log.Error(err, "Failed to get bucket info after creation")
+		log.Errorw("failed to get bucket info after creation", "error", err)
 		return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to get bucket info: %v", err))
 	}
 
-	log.Info("Bucket info", "bucketInfo", bucketInfo)
+	log.Info("bucket info", "bucketInfo", bucketInfo)
 
 	return r.updateStatusWithBucketInfo(ctx, bucketClaim, seaweedv1.BucketClaimPhaseReady, "Bucket created successfully", bucketInfo)
 }
 
 // handleDeletion handles bucket deletion when BucketClaim is being deleted
 func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim *seaweedv1.BucketClaim) (ctrl.Result, error) {
-	log := r.Log.WithValues("bucketclaim", bucketClaim.Name)
+	log := r.Log.With("bucketclaim", bucketClaim.Name)
 
 	// Get the referenced Seaweed cluster
 	seaweedCluster, err := r.getSeaweedCluster(ctx, bucketClaim)
 	if err != nil {
-		log.Error(err, "Failed to get Seaweed cluster for deletion")
+		log.Errorw("failed to get seaweed cluster for deletion", "error", err)
 		return ctrl.Result{}, err
 	}
 
 	// Get admin service
 	adminService, err := r.getAdminService(seaweedCluster)
 	if err != nil {
-		log.Error(err, "Failed to get admin service for deletion")
+		log.Errorw("failed to get admin service for deletion", "error", err)
 		return ctrl.Result{}, err
 	}
 
 	// Delete the bucket
 	err = r.deleteBucket(adminService, bucketClaim.Spec.BucketName)
 	if err != nil {
-		log.Error(err, "Failed to delete bucket")
+		log.Errorw("failed to delete bucket", "error", err)
 		// Don't return error to avoid blocking deletion
 	}
 
-	log.Info("Bucket deletion completed")
+	log.Debug("bucket deletion completed")
 	return ctrl.Result{}, nil
 }
 
@@ -295,49 +294,46 @@ func (r *BucketClaimReconciler) getAdminService(seaweedCluster *seaweedv1.Seawee
 
 // bucketExists checks if a bucket exists in the SeaweedFS cluster
 func (r *BucketClaimReconciler) bucketExists(adminServiceURL, bucketName string) (bool, error) {
-	log := r.Log.WithValues("bucketclaim-bucketExists", bucketName)
+	log := r.Log.With("bucketclaim-bucketExists", bucketName)
 
-	log.Info("Checking if bucket exists", "adminServiceURL", adminServiceURL)
+	log.Debug("checking if bucket exists", "adminServiceURL", adminServiceURL)
 
 	adminServer, err := r.getAdminServer(adminServiceURL)
-
-	log.Info("Got admin server", "adminServer", adminServer, "err", err)
 
 	if err != nil {
 		return false, fmt.Errorf("failed to get admin server: %w", err)
 	}
 
-	log.Info("Getting S3 buckets")
+	log.Debug("getting S3 buckets")
 
 	list, err := adminServer.GetS3Buckets()
 
-	log.Info("Got S3 buckets", "list", list, "err", err)
 	if err != nil {
 		return false, fmt.Errorf("failed to check bucket existence: %w", err)
 	}
 
 	for _, bucket := range list {
-		log.Info("Checking if bucket exists", "bucketName", bucketName)
+		log.Debug("checking if bucket exists", "bucketName", bucketName)
 
 		if bucket.Name == bucketName {
-			log.Info("Bucket exists", "bucketName", bucketName)
+			log.Debug("bucket exists", "bucketName", bucketName)
 			return true, nil
 		}
 	}
 
-	log.Info("Bucket does not exist", "bucketName", bucketName)
+	log.Debug("bucket does not exist", "bucketName", bucketName)
 
 	return false, nil
 }
 
 // getBucketInfo retrieves information about a bucket
-func (r *BucketClaimReconciler) getBucketInfo(adminServiceURL, bucketName string) (*seaweedv1.BucketInfo, error) {
+func (r *BucketClaimReconciler) getBucketInfo(adminServiceURL, bucketName string, includeObjects bool) (*seaweedv1.BucketInfo, error) {
 	adminServer, err := r.getAdminServer(adminServiceURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get admin server: %w", err)
 	}
 
-	bucket, err := adminServer.GetBucketDetails(bucketName)
+	bucket, err := adminServer.GetBucketDetails(bucketName, includeObjects)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get bucket info: %w", err)
 	}
@@ -418,9 +414,9 @@ func (r *BucketClaimReconciler) deleteBucket(adminServiceURL, bucketName string)
 
 // updateStatus updates the BucketClaim status
 func (r *BucketClaimReconciler) updateStatus(ctx context.Context, bucketClaim *seaweedv1.BucketClaim, phase seaweedv1.BucketClaimPhase, message string) (ctrl.Result, error) {
-	log := r.Log.WithValues("bucketclaim-update-status", bucketClaim.Name)
+	log := r.Log.With("bucketclaim-update-status", bucketClaim.Name)
 
-	log.Info("Updating status", "phase", phase, "message", message)
+	log.Debug("updating status", "phase", phase, "message", message)
 
 	bucketClaim.Status.Phase = phase
 	bucketClaim.Status.Message = message
@@ -515,7 +511,7 @@ func (r *BucketClaimReconciler) cleanupInactiveAdminServers() {
 	for adminService, entry := range r.adminServers {
 		if now.Sub(entry.lastAccess) > inactivityThreshold {
 			delete(r.adminServers, adminService)
-			r.Log.Info("Removed inactive admin server", "adminService", adminService, "inactiveFor", now.Sub(entry.lastAccess))
+			r.Log.Info("removed inactive admin server", "adminService", adminService, "inactiveFor", now.Sub(entry.lastAccess))
 		}
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-logr/logr"
+	"go.uber.org/zap"
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
@@ -29,7 +29,7 @@ func (e *GCSCredentialExtractor) GetMapping() interface{} {
 }
 
 // ExtractGCSCredentials extracts GCS credentials from secret or uses provided values
-func ExtractGCSCredentials(ctx context.Context, gcsConfig *seaweedv1.GoogleCloudStorageSinkConfig, namespace string, log logr.Logger, secretGetter SecretGetter) string {
+func ExtractGCSCredentials(ctx context.Context, gcsConfig *seaweedv1.GoogleCloudStorageSinkConfig, namespace string, log *zap.SugaredLogger, secretGetter SecretGetter) string {
 	googleApplicationCredentials := gcsConfig.GoogleApplicationCredentials
 
 	if gcsConfig.GoogleCloudStorageCredentialsSecretRef != nil {
@@ -46,7 +46,7 @@ func ExtractGCSCredentials(ctx context.Context, gcsConfig *seaweedv1.GoogleCloud
 			if creds, exists := secret[googleApplicationCredentialsKey]; exists {
 				googleApplicationCredentials = creds
 			} else {
-				log.Info("Secret key not found in secret", "secret", gcsConfig.GoogleCloudStorageCredentialsSecretRef.Name, "mapping", googleApplicationCredentialsKey)
+				log.Infow("Secret key not found in secret", "secret", gcsConfig.GoogleCloudStorageCredentialsSecretRef.Name, "mapping", googleApplicationCredentialsKey)
 			}
 		}
 	}
@@ -55,7 +55,7 @@ func ExtractGCSCredentials(ctx context.Context, gcsConfig *seaweedv1.GoogleCloud
 }
 
 // GenerateGCSSinkConfig generates configuration for GCS sink
-func GenerateGCSSinkConfig(ctx context.Context, config *strings.Builder, gcsConfig *seaweedv1.GoogleCloudStorageSinkConfig, namespace string, log logr.Logger, secretGetter SecretGetter) {
+func GenerateGCSSinkConfig(ctx context.Context, config *strings.Builder, gcsConfig *seaweedv1.GoogleCloudStorageSinkConfig, namespace string, log *zap.SugaredLogger, secretGetter SecretGetter) {
 	googleApplicationCredentials := ExtractGCSCredentials(ctx, gcsConfig, namespace, log, secretGetter)
 
 	config.WriteString("[sink.google_cloud_storage]\n")

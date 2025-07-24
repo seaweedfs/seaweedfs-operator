@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr"
+	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -39,7 +39,7 @@ func TestBucketClaimReconciler_SetupWithManager(t *testing.T) {
 	// Create the reconciler
 	reconciler := &BucketClaimReconciler{
 		Client: client,
-		Log:    logr.Discard(),
+		Log:    zap.NewNop().Sugar(),
 		Scheme: scheme,
 	}
 
@@ -94,7 +94,7 @@ func TestBucketClaimReconciler_getSeaweedCluster(t *testing.T) {
 	// Create the reconciler
 	reconciler := &BucketClaimReconciler{
 		Client: client,
-		Log:    logr.Discard(),
+		Log:    zap.NewNop().Sugar(),
 		Scheme: scheme,
 	}
 

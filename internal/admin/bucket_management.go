@@ -24,15 +24,15 @@ func (s *AdminServer) GetS3Buckets() ([]S3Bucket, error) {
 		FileCount int64
 	})
 
-	s.log.Info("Getting volume information")
+	s.log.Info("getting volume information")
 
 	// Collect volume information by collection
 	err := s.WithMasterClient(func(client master_pb.SeaweedClient) error {
-		s.log.V(1).Info("Getting volume list from master")
+		s.log.Debugw("getting volume list from master")
 
 		resp, err := client.VolumeList(context.Background(), &master_pb.VolumeListRequest{})
 
-		s.log.V(2).Info("Got volume list response", "resp", resp)
+		s.log.Debugw("got volume list response", "resp", resp)
 
 		if err != nil {
 			s.log.Error(err, "Failed to get volume list")
@@ -40,13 +40,13 @@ func (s *AdminServer) GetS3Buckets() ([]S3Bucket, error) {
 		}
 
 		if resp.TopologyInfo != nil {
-			s.log.V(2).Info("Processing topology info")
+			s.log.Debugw("processing topology info")
 			for _, dc := range resp.TopologyInfo.DataCenterInfos {
 				for _, rack := range dc.RackInfos {
 					for _, node := range rack.DataNodeInfos {
 						for _, diskInfo := range node.DiskInfos {
 							for _, volInfo := range diskInfo.VolumeInfos {
-								s.log.V(3).Info("Processing volume", "collection", volInfo.Collection, "size", volInfo.Size, "fileCount", volInfo.FileCount)
+								s.log.Debugw("processing volume", "collection", volInfo.Collection, "size", volInfo.Size, "fileCount", volInfo.FileCount)
 								collection := volInfo.Collection
 								if collection == "" {
 									collection = "default"
@@ -70,7 +70,7 @@ func (s *AdminServer) GetS3Buckets() ([]S3Bucket, error) {
 			}
 		}
 
-		s.log.V(1).Info("Completed volume information collection", "collections", len(collectionMap))
+		s.log.Debugw("Completed volume information collection", "collections", len(collectionMap))
 
 		return nil
 	})
@@ -83,7 +83,7 @@ func (s *AdminServer) GetS3Buckets() ([]S3Bucket, error) {
 	// Get filer configuration to determine FilerGroup
 	var filerGroup string
 
-	s.log.V(1).Info("Getting filer configuration")
+	s.log.Debugw("getting filer configuration")
 
 	err = s.WithFilerClient(func(client filer_pb.SeaweedFilerClient) error {
 		configResp, err := client.GetFilerConfiguration(context.Background(), &filer_pb.GetFilerConfigurationRequest{})
@@ -94,7 +94,7 @@ func (s *AdminServer) GetS3Buckets() ([]S3Bucket, error) {
 		}
 
 		filerGroup = configResp.FilerGroup
-		s.log.V(1).Info("Got filer group", "filerGroup", filerGroup)
+		s.log.Debugw("got filer group", "filerGroup", filerGroup)
 		return nil
 	})
 
@@ -102,11 +102,11 @@ func (s *AdminServer) GetS3Buckets() ([]S3Bucket, error) {
 		return nil, fmt.Errorf("failed to get filer configuration: %w", err)
 	}
 
-	s.log.V(1).Info("Starting bucket listing process")
+	s.log.Debugw("Starting bucket listing process")
 
 	// Now list buckets from the filer and match with collection data
 	err = s.WithFilerClient(func(client filer_pb.SeaweedFilerClient) error {
-		s.log.V(1).Info("Listing buckets from filer")
+		s.log.Debugw("Listing buckets from filer")
 		// List buckets by looking at the /buckets directory
 		stream, err := client.ListEntries(context.Background(), &filer_pb.ListEntriesRequest{
 			Directory:          "/buckets",
@@ -119,7 +119,7 @@ func (s *AdminServer) GetS3Buckets() ([]S3Bucket, error) {
 			return err
 		}
 
-		s.log.V(2).Info("Got bucket listing stream")
+		s.log.Debugw("got bucket listing stream")
 
 		for {
 			resp, err := stream.Recv()
@@ -131,7 +131,7 @@ func (s *AdminServer) GetS3Buckets() ([]S3Bucket, error) {
 				return err
 			}
 
-			s.log.V(3).Info("Processing bucket entry", "name", resp.Entry.Name, "isDirectory", resp.Entry.IsDirectory)
+			s.log.Debugw("processing bucket entry", "name", resp.Entry.Name, "isDirectory", resp.Entry.IsDirectory)
 
 			if resp.Entry.IsDirectory {
 				bucketName := resp.Entry.Name
@@ -199,7 +199,7 @@ func (s *AdminServer) GetS3Buckets() ([]S3Bucket, error) {
 		return nil, fmt.Errorf("failed to list Object Store buckets: %w", err)
 	}
 
-	s.log.V(1).Info("Successfully retrieved S3 buckets", "count", len(buckets))
+	s.log.Debugw("Successfully retrieved S3 buckets", "count", len(buckets))
 	return buckets, nil
 }
 
@@ -208,7 +208,7 @@ func (s *AdminServer) GetS3Buckets() ([]S3Bucket, error) {
 //#region GetBucketDetails
 
 // GetBucketDetails retrieves detailed information about a specific bucket
-func (s *AdminServer) GetBucketDetails(bucketName string) (*BucketDetails, error) {
+func (s *AdminServer) GetBucketDetails(bucketName string, includeObjects bool) (*BucketDetails, error) {
 	bucketPath := fmt.Sprintf("/buckets/%s", bucketName)
 
 	details := &BucketDetails{
@@ -262,8 +262,12 @@ func (s *AdminServer) GetBucketDetails(bucketName string) (*BucketDetails, error
 		details.Bucket.ObjectLockMode = objectLockMode
 		details.Bucket.ObjectLockDuration = objectLockDuration
 
-		// List objects in bucket (recursively)
-		return s.listBucketObjects(client, bucketPath, "", details)
+		if includeObjects {
+			// List objects in bucket (recursively)
+			return s.listBucketObjects(client, bucketPath, "", details)
+		}
+
+		return nil
 	})
 
 	if err != nil {
@@ -365,7 +369,7 @@ func (s *AdminServer) CreateS3BucketWithObjectLock(bucketName string, quotaBytes
 		// Object lock requires versioning to be enabled
 		if objectLockEnabled && !versioningEnabled {
 			versioningEnabled = true
-			s.log.V(1).Info("Object lock enabled, forcing versioning to be enabled", "bucketName", bucketName)
+			s.log.Debugw("Object lock enabled, forcing versioning to be enabled", "bucketName", bucketName)
 		}
 
 		if len(bucketName) > 63 {
@@ -390,6 +394,7 @@ func (s *AdminServer) CreateS3BucketWithObjectLock(bucketName string, quotaBytes
 				},
 			},
 		})
+
 		// Ignore error if directory already exists
 		if err != nil && !strings.Contains(err.Error(), "already exists") && !strings.Contains(err.Error(), "existing entry") {
 			return fmt.Errorf("failed to create /buckets directory: %w", err)
@@ -400,6 +405,7 @@ func (s *AdminServer) CreateS3BucketWithObjectLock(bucketName string, quotaBytes
 			Directory: "/buckets",
 			Name:      bucketName,
 		})
+
 		if err == nil {
 			return fmt.Errorf("bucket %s already exists", bucketName)
 		}
@@ -443,7 +449,7 @@ func (s *AdminServer) CreateS3BucketWithObjectLock(bucketName string, quotaBytes
 
 		// Handle Object Lock configuration using shared utilities
 		if objectLockEnabled {
-			s.log.V(1).Info("Configuring object lock for bucket", "bucketName", bucketName, "mode", objectLockMode, "duration", objectLockDuration)
+			s.log.Debugw("Configuring object lock for bucket", "bucketName", bucketName, "mode", objectLockMode, "duration", objectLockDuration)
 
 			if objectLockMode != "GOVERNANCE" && objectLockMode != "COMPLIANCE" {
 				return fmt.Errorf("invalid object lock mode: %s", objectLockMode)
@@ -472,7 +478,7 @@ func (s *AdminServer) CreateS3BucketWithObjectLock(bucketName string, quotaBytes
 			return fmt.Errorf("failed to create bucket directory: %w", err)
 		}
 
-		s.log.V(1).Info("Successfully created bucket with object lock configuration",
+		s.log.Debugw("Successfully created bucket with object lock configuration",
 			"bucketName", bucketName,
 			"versioningEnabled", versioningEnabled,
 			"objectLockEnabled", objectLockEnabled)

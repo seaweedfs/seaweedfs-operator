@@ -15,7 +15,7 @@ import (
 
 func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	_ = context.Background()
-	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
+	_ = r.Log.With("seaweed", seaweedCR.Name)
 
 	if done, result, err = r.ensureVolumeServerPeerService(seaweedCR); done {
 		return
@@ -41,7 +41,7 @@ func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (d
 }
 
 func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-volume-statefulset", seaweedCR.Name)
+	log := r.Log.With("sw-volume-statefulset", seaweedCR.Name)
 
 	volumeServerStatefulSet := r.createVolumeServerStatefulSet(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, volumeServerStatefulSet, r.Scheme); err != nil {
@@ -63,7 +63,7 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.S
 
 func (r *SeaweedReconciler) ensureVolumeServerPeerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 
-	log := r.Log.WithValues("sw-volume-peer-service", seaweedCR.Name)
+	log := r.Log.With("sw-volume-peer-service", seaweedCR.Name)
 
 	volumeServerPeerService := r.createVolumeServerPeerService(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, volumeServerPeerService, r.Scheme); err != nil {
@@ -89,7 +89,7 @@ func (r *SeaweedReconciler) ensureVolumeServerServices(seaweedCR *seaweedv1.Seaw
 
 func (r *SeaweedReconciler) ensureVolumeServerService(seaweedCR *seaweedv1.Seaweed, i int) (bool, ctrl.Result, error) {
 
-	log := r.Log.WithValues("sw-volume-service", seaweedCR.Name, "index", i)
+	log := r.Log.With("sw-volume-service", seaweedCR.Name, "index", i)
 
 	volumeServerService := r.createVolumeServerService(seaweedCR, i)
 	if err := controllerutil.SetControllerReference(seaweedCR, volumeServerService, r.Scheme); err != nil {
@@ -102,7 +102,7 @@ func (r *SeaweedReconciler) ensureVolumeServerService(seaweedCR *seaweedv1.Seawe
 }
 
 func (r *SeaweedReconciler) ensureVolumeServerServiceMonitor(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-volume-servicemonitor", seaweedCR.Name)
+	log := r.Log.With("sw-volume-servicemonitor", seaweedCR.Name)
 
 	volumeServiceMonitor := r.createVolumeServerServiceMonitor(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, volumeServiceMonitor, r.Scheme); err != nil {
@@ -110,7 +110,7 @@ func (r *SeaweedReconciler) ensureVolumeServerServiceMonitor(seaweedCR *seaweedv
 	}
 	_, err := r.CreateOrUpdateServiceMonitor(volumeServiceMonitor)
 
-	log.Info("Get volume service monitor " + volumeServiceMonitor.Name)
+	log.Info("get volume service monitor " + volumeServiceMonitor.Name)
 	return ReconcileResult(err)
 }
 

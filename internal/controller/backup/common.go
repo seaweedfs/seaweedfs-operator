@@ -3,7 +3,7 @@ package backup
 import (
 	"context"
 
-	"github.com/go-logr/logr"
+	"go.uber.org/zap"
 )
 
 // SecretGetter defines the interface for retrieving secrets
@@ -18,16 +18,16 @@ type CredentialExtractor interface {
 }
 
 // extractCredentialsFromSecret retrieves credentials from a Kubernetes secret
-func extractCredentialsFromSecret(ctx context.Context, extractor CredentialExtractor, namespace string, log logr.Logger, secretGetter SecretGetter) (map[string]string, error) {
+func extractCredentialsFromSecret(ctx context.Context, extractor CredentialExtractor, namespace string, log *zap.SugaredLogger, secretGetter SecretGetter) (map[string]string, error) {
 	secretRef := extractor.GetSecretRef()
 	if secretRef == nil || *secretRef == "" {
 		return nil, nil
 	}
 
-	log.Info("Getting credentials from secret", "secret", *secretRef)
+	log.Infow("Getting credentials from secret", "secret", *secretRef)
 	secret, err := secretGetter.GetSecret(ctx, *secretRef, namespace)
 	if err != nil {
-		log.Error(err, "Error getting credentials from secret", "secret", *secretRef)
+		log.Errorw("Error getting credentials from secret", "secret", *secretRef, "error", err)
 		return nil, err
 	}
 

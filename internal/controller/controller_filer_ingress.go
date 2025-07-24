@@ -11,7 +11,7 @@ import (
 )
 
 func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1.Ingress {
-	log := r.Log.WithValues("sw-create-ingress", m.Name)
+	log := r.Log.With("sw-create-ingress", m.Name)
 	labels := labelsForIngress(m.Name)
 	pathType := networkingv1.PathTypePrefix
 

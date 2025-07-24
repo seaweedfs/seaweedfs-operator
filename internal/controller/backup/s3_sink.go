@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-logr/logr"
+	"go.uber.org/zap"
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
@@ -29,7 +29,7 @@ func (e *S3CredentialExtractor) GetMapping() interface{} {
 }
 
 // ExtractS3Credentials extracts S3 credentials from secret or uses provided values
-func ExtractS3Credentials(ctx context.Context, s3Config *seaweedv1.S3SinkConfig, namespace string, log logr.Logger, secretGetter SecretGetter) (string, string) {
+func ExtractS3Credentials(ctx context.Context, s3Config *seaweedv1.S3SinkConfig, namespace string, log *zap.SugaredLogger, secretGetter SecretGetter) (string, string) {
 	awsAccessKeyID := s3Config.AWSAccessKeyID
 	awsSecretAccessKey := s3Config.AWSSecretAccessKey
 
@@ -47,7 +47,7 @@ func ExtractS3Credentials(ctx context.Context, s3Config *seaweedv1.S3SinkConfig,
 			if accessKey, exists := secret[secretAccessKeyKey]; exists {
 				awsSecretAccessKey = accessKey
 			} else {
-				log.Info("Secret key not found in secret", "secret", s3Config.AWSCredentialsSecretRef.Name, "mapping", secretAccessKeyKey)
+				log.Infow("Secret key not found in secret", "secret", s3Config.AWSCredentialsSecretRef.Name, "mapping", secretAccessKeyKey)
 			}
 
 			accessKeyIDKey := mapping.AWSAccessKeyID
@@ -58,7 +58,7 @@ func ExtractS3Credentials(ctx context.Context, s3Config *seaweedv1.S3SinkConfig,
 			if accessKey, exists := secret[accessKeyIDKey]; exists {
 				awsAccessKeyID = accessKey
 			} else {
-				log.Info("Secret key not found in secret", "secret", s3Config.AWSCredentialsSecretRef.Name, "mapping", accessKeyIDKey)
+				log.Infow("Secret key not found in secret", "secret", s3Config.AWSCredentialsSecretRef.Name, "mapping", accessKeyIDKey)
 			}
 		}
 	}
@@ -67,7 +67,7 @@ func ExtractS3Credentials(ctx context.Context, s3Config *seaweedv1.S3SinkConfig,
 }
 
 // GenerateS3SinkConfig generates configuration for S3 sink
-func GenerateS3SinkConfig(ctx context.Context, config *strings.Builder, s3Config *seaweedv1.S3SinkConfig, namespace string, log logr.Logger, secretGetter SecretGetter) {
+func GenerateS3SinkConfig(ctx context.Context, config *strings.Builder, s3Config *seaweedv1.S3SinkConfig, namespace string, log *zap.SugaredLogger, secretGetter SecretGetter) {
 	awsAccessKeyID, awsSecretAccessKey := ExtractS3Credentials(ctx, s3Config, namespace, log, secretGetter)
 
 	config.WriteString("[sink.s3]\n")

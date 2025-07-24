@@ -14,22 +14,22 @@ func (r *SeaweedReconciler) maintenance(ctx context.Context, m *seaweedv1.Seawee
 
 	masters := getMasterPeersString(m)
 
-	r.Log.V(0).Info("wait to connect to masters", "masters", masters)
+	r.Log.Debugw("wait to connect to masters", "masters", masters)
 
 	// this step blocks since the operator can not access the masters when running from outside of the k8s cluster
 	sa := swadmin.NewSeaweedAdmin(ctx, masters, io.Discard)
 
 	// For now this is an example of the admin commands
 	// master by default has some maintenance commands already.
-	r.Log.V(0).Info("volume.list")
+	r.Log.Debugw("volume.list")
 	sa.Output = os.Stdout
 	if err := sa.ProcessCommand("volume.list"); err != nil {
-		r.Log.V(0).Info("volume.list", "error", err)
+		r.Log.Debugw("volume.list", "error", err)
 	}
 
 	sa.ProcessCommand("lock")
 	if err := sa.ProcessCommand("volume.balance -force"); err != nil {
-		r.Log.V(0).Info("volume.balance", "error", err)
+		r.Log.Debugw("volume.balance", "error", err)
 	}
 	sa.ProcessCommand("unlock")
 

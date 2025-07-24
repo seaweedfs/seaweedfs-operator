@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/seaweedfs/seaweedfs/weed/cluster"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
@@ -15,6 +14,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -30,11 +30,11 @@ type AdminServer struct {
 	filerCacheExpiration time.Duration
 
 	// Logger
-	log logr.Logger
+	log *zap.SugaredLogger
 }
 
 // NewAdminServer creates a new AdminServer instance
-func NewAdminServer(masters string, log logr.Logger) *AdminServer {
+func NewAdminServer(masters string, log *zap.SugaredLogger) *AdminServer {
 	grpcDialOption := security.LoadClientTLS(util.GetViper(), "grpc.client")
 
 	// Create master client with multiple master support
@@ -124,7 +124,7 @@ func (s *AdminServer) getDiscoveredFilers() []string {
 
 	if err != nil {
 		currentMaster := s.masterClient.GetMaster(context.Background())
-		s.log.V(1).Info("Failed to discover filers from master", "master", currentMaster, "error", err)
+		s.log.Debugw("Failed to discover filers from master", "master", currentMaster, "error", err)
 		// Return cached filers even if expired, better than nothing
 		return s.cachedFilers
 	}

@@ -3,6 +3,8 @@ package admin
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -350,26 +352,7 @@ func (s *AdminServer) CreateS3Bucket(bucketName string) error {
 
 // CreateS3BucketWithQuota creates a new S3 bucket with optional quota
 func (s *AdminServer) CreateS3BucketWithQuota(bucketName string, quotaBytes int64, quotaEnabled bool) error {
-	return s.WithFilerClient(func(client filer_pb.SeaweedFilerClient) error {
-		// Create bucket directory
-		_, err := client.CreateEntry(context.Background(), &filer_pb.CreateEntryRequest{
-			Directory: "/buckets",
-			Entry: &filer_pb.Entry{
-				Name: bucketName,
-				Attributes: &filer_pb.FuseAttributes{
-					Mtime:    time.Now().Unix(),
-					Crtime:   time.Now().Unix(),
-					FileMode: uint32(0755 | 040000), // Directory mode
-				},
-				Quota: quotaBytes,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create bucket: %w", err)
-		}
-
-		return nil
-	})
+	return s.CreateS3BucketWithObjectLock(bucketName, quotaBytes, quotaEnabled, false, false, "", 0)
 }
 
 //#endregion
@@ -391,31 +374,74 @@ func (s *AdminServer) CreateS3BucketWithObjectLock(bucketName string, quotaBytes
 			return fmt.Errorf("bucket name must be at least 3 characters")
 		}
 
-		// Create bucket directory
-		entry := &filer_pb.Entry{
-			Name: bucketName,
-			Attributes: &filer_pb.FuseAttributes{
-				Mtime:    time.Now().Unix(),
-				Crtime:   time.Now().Unix(),
-				FileMode: uint32(0755 | 040000), // Directory mode
+		// First ensure /buckets directory exists
+		_, err := client.CreateEntry(context.Background(), &filer_pb.CreateEntryRequest{
+			Directory: "/",
+			Entry: &filer_pb.Entry{
+				Name:        "buckets",
+				IsDirectory: true,
+				Attributes: &filer_pb.FuseAttributes{
+					FileMode: uint32(0755 | os.ModeDir), // Directory mode
+					Uid:      uint32(1000),
+					Gid:      uint32(1000),
+					Crtime:   time.Now().Unix(),
+					Mtime:    time.Now().Unix(),
+					TtlSec:   0,
+				},
 			},
-			Quota: quotaBytes,
+		})
+		// Ignore error if directory already exists
+		if err != nil && !strings.Contains(err.Error(), "already exists") && !strings.Contains(err.Error(), "existing entry") {
+			return fmt.Errorf("failed to create /buckets directory: %w", err)
 		}
 
-		// Set up extended attributes for versioning and object lock
-		if versioningEnabled || objectLockEnabled {
-			entry.Extended = make(map[string][]byte)
+		// Check if bucket already exists
+		_, err = client.LookupDirectoryEntry(context.Background(), &filer_pb.LookupDirectoryEntryRequest{
+			Directory: "/buckets",
+			Name:      bucketName,
+		})
+		if err == nil {
+			return fmt.Errorf("bucket %s already exists", bucketName)
 		}
 
-		// Configure versioning
-		if versioningEnabled {
-			s.log.V(1).Info("Enabling versioning for bucket", "bucketName", bucketName)
-			if err := s3api.StoreVersioningInExtended(entry, true); err != nil {
-				return fmt.Errorf("failed to configure versioning: %w", err)
-			}
+		// Determine quota value (negative if disabled)
+		var quota int64
+		if quotaEnabled && quotaBytes > 0 {
+			quota = quotaBytes
+		} else if !quotaEnabled && quotaBytes > 0 {
+			quota = -quotaBytes
+		} else {
+			quota = 0
 		}
 
-		// Configure object lock
+		// Prepare bucket attributes with versioning and object lock metadata
+		attributes := &filer_pb.FuseAttributes{
+			FileMode: uint32(0755 | os.ModeDir), // Directory mode
+			Uid:      filer_pb.OS_UID,
+			Gid:      filer_pb.OS_GID,
+			Crtime:   time.Now().Unix(),
+			Mtime:    time.Now().Unix(),
+			TtlSec:   0,
+		}
+
+		// Create extended attributes map for versioning
+		extended := make(map[string][]byte)
+
+		// Create bucket entry
+		bucketEntry := &filer_pb.Entry{
+			Name:        bucketName,
+			IsDirectory: true,
+			Attributes:  attributes,
+			Extended:    extended,
+			Quota:       quota,
+		}
+
+		// Handle versioning using shared utilities
+		if err := s3api.StoreVersioningInExtended(bucketEntry, versioningEnabled); err != nil {
+			return fmt.Errorf("failed to store versioning configuration: %w", err)
+		}
+
+		// Handle Object Lock configuration using shared utilities
 		if objectLockEnabled {
 			s.log.V(1).Info("Configuring object lock for bucket", "bucketName", bucketName, "mode", objectLockMode, "duration", objectLockDuration)
 
@@ -423,21 +449,27 @@ func (s *AdminServer) CreateS3BucketWithObjectLock(bucketName string, quotaBytes
 				return fmt.Errorf("invalid object lock mode: %s", objectLockMode)
 			}
 
-			// Create object lock configuration
-			objectLockConfig := s3api.CreateObjectLockConfigurationFromParams(true, objectLockMode, objectLockDuration)
+			// Validate Object Lock parameters
+			if err := s3api.ValidateObjectLockParameters(objectLockEnabled, objectLockMode, objectLockDuration); err != nil {
+				return fmt.Errorf("invalid Object Lock parameters: %w", err)
+			}
 
-			if err := s3api.StoreObjectLockConfigurationInExtended(entry, objectLockConfig); err != nil {
-				return fmt.Errorf("failed to configure object lock: %w", err)
+			// Create Object Lock configuration using shared utility
+			objectLockConfig := s3api.CreateObjectLockConfigurationFromParams(objectLockEnabled, objectLockMode, objectLockDuration)
+
+			// Store Object Lock configuration in extended attributes using shared utility
+			if err := s3api.StoreObjectLockConfigurationInExtended(bucketEntry, objectLockConfig); err != nil {
+				return fmt.Errorf("failed to store Object Lock configuration: %w", err)
 			}
 		}
 
-		// Create the bucket
-		_, err := client.CreateEntry(context.Background(), &filer_pb.CreateEntryRequest{
+		// Create bucket directory under /buckets
+		_, err = client.CreateEntry(context.Background(), &filer_pb.CreateEntryRequest{
 			Directory: "/buckets",
-			Entry:     entry,
+			Entry:     bucketEntry,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to create bucket: %w", err)
+			return fmt.Errorf("failed to create bucket directory: %w", err)
 		}
 
 		s.log.V(1).Info("Successfully created bucket with object lock configuration",

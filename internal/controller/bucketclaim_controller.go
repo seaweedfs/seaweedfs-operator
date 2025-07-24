@@ -357,6 +357,25 @@ func (r *BucketClaimReconciler) getBucketInfo(adminServiceURL, bucketName string
 	return bucketInfo, nil
 }
 
+// Helper function to convert quota size and unit to bytes
+func convertQuotaToBytes(size int64, unit string) int64 {
+	if size <= 0 {
+		return 0
+	}
+
+	switch strings.ToUpper(unit) {
+	case "TB":
+		return size * 1024 * 1024 * 1024 * 1024
+	case "GB":
+		return size * 1024 * 1024 * 1024
+	case "MB":
+		return size * 1024 * 1024
+	default:
+		// Default to MB if unit is not recognized
+		return size * 1024 * 1024
+	}
+}
+
 // createBucket creates a new bucket in the SeaweedFS cluster
 func (r *BucketClaimReconciler) createBucket(adminServiceURL string, bucketClaim *seaweedv1.BucketClaim) error {
 	adminServer, err := r.getAdminServer(adminServiceURL)
@@ -372,7 +391,9 @@ func (r *BucketClaimReconciler) createBucket(adminServiceURL string, bucketClaim
 	objectLockMode := bucketClaim.Spec.ObjectLock.Mode
 	objectLockDuration := bucketClaim.Spec.ObjectLock.Duration
 
-	err = adminServer.CreateS3BucketWithObjectLock(bucketClaim.Spec.BucketName, quota.Size, quota.Enabled, versioningEnabled, objectLockEnabled, objectLockMode, objectLockDuration)
+	quotaBytes := convertQuotaToBytes(quota.Size, quota.Unit)
+
+	err = adminServer.CreateS3BucketWithObjectLock(bucketClaim.Spec.BucketName, quotaBytes, quota.Enabled, versioningEnabled, objectLockEnabled, objectLockMode, objectLockDuration)
 	if err != nil {
 		return fmt.Errorf("failed to create bucket: %w", err)
 	}

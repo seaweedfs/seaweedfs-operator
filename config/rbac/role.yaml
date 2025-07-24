@@ -5,33 +5,11 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - apps
-  resources:
-  - statefulsets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - ""
   resources:
   - configmaps
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - persistentvolumeclaims
+  - services
   verbs:
   - create
   - delete
@@ -54,9 +32,9 @@ rules:
   verbs:
   - get
 - apiGroups:
-  - ""
+  - apps
   resources:
-  - services
+  - statefulsets
   verbs:
   - create
   - delete
@@ -67,6 +45,7 @@ rules:
   - watch
 - apiGroups:
   - extensions
+  - networking.k8s.io
   resources:
   - ingresses
   verbs:
@@ -90,40 +69,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - networking.k8s.io
-  resources:
-  - ingresses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - seaweed.seaweedfs.com
   resources:
   - bucketclaims
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - seaweed.seaweedfs.com
-  resources:
-  - bucketclaims/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - seaweed.seaweedfs.com
-  resources:
   - seaweeds
   verbs:
   - create
@@ -136,6 +84,7 @@ rules:
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:
+  - bucketclaims/status
   - seaweeds/status
   verbs:
   - get

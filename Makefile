@@ -248,7 +248,7 @@ CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 # renovate: datasource=github-tags depName=kubernetes-sigs/kustomize
 KUSTOMIZE_VERSION ?= v5.3.0
 # renovate: datasource=github-tags depName=kubernetes-sigs/controller-tools
-CONTROLLER_TOOLS_VERSION ?= v0.15.0
+CONTROLLER_TOOLS_VERSION ?= v0.18.0
 ENVTEST_VERSION ?= latest
 # renovate: datasource=github-tags depName=golangci/golangci-lint
 GOLANGCI_LINT_VERSION ?= v1.59.1

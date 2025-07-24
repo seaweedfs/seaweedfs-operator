@@ -50,17 +50,6 @@ spec:
                 required:
                 - name
                 type: object
-              collection:
-                type: string
-              readOnly:
-                default: false
-                type: boolean
-              replication:
-                default: "000"
-                type: string
-              ttlSec:
-                format: int32
-                type: integer
             required:
             - bucketName
             - clusterRef
@@ -69,20 +58,11 @@ spec:
             properties:
               bucketInfo:
                 properties:
-                  collection:
-                    type: string
                   createdAt:
                     format: date-time
                     type: string
                   name:
                     type: string
-                  readOnly:
-                    type: boolean
-                  replication:
-                    type: string
-                  ttlSec:
-                    format: int32
-                    type: integer
                 type: object
               conditions:
                 items:

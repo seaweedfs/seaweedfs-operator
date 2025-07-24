@@ -8,6 +8,7 @@ rules:
   - seaweed.seaweedfs.com
   resources:
   - seaweeds
+  - bucketclaims
   verbs:
   - get
   - list
@@ -16,5 +17,6 @@ rules:
   - seaweed.seaweedfs.com
   resources:
   - seaweeds/status
+  - bucketclaims/status
   verbs:
   - get

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/cluster"
+	"github.com/seaweedfs/seaweedfs/weed/credential"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -28,6 +29,9 @@ type AdminServer struct {
 	cachedFilers         []string
 	lastFilerUpdate      time.Time
 	filerCacheExpiration time.Duration
+
+	// Credential management
+	credentialManager *credential.CredentialManager
 
 	// Logger
 	log *zap.SugaredLogger
@@ -52,11 +56,19 @@ func NewAdminServer(masters string, log *zap.SugaredLogger) *AdminServer {
 	ctx := context.Background()
 	go masterClient.KeepConnectedToMaster(ctx)
 
+	// Initialize credential manager with defaults
+	credentialManager, err := credential.NewCredentialManagerWithDefaults("")
+	if err != nil {
+		log.Warnf("failed to initialize credential manager: %v", err)
+		// Continue without credential manager - will fall back to legacy approach
+	}
+
 	server := &AdminServer{
 		masterClient:         masterClient,
 		grpcDialOption:       grpcDialOption,
 		cacheExpiration:      10 * time.Second,
 		filerCacheExpiration: 30 * time.Second, // Cache filers for 30 seconds
+		credentialManager:    credentialManager,
 		log:                  log,
 	}
 

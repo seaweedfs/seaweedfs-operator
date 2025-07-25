@@ -59,6 +59,8 @@ type BucketClaimReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
+//#region Reconcile
+
 // Reconcile implements the reconciliation logic for BucketClaim
 func (r *BucketClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.With("bucketclaim", req.NamespacedName)
@@ -90,6 +92,10 @@ func (r *BucketClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Handle bucket creation/update
 	return r.handleReconciliation(ctx, bucketClaim)
 }
+
+//#endregion
+
+//#region getAdminServer
 
 func (r *BucketClaimReconciler) getAdminServer(adminService string) (*admin.AdminServer, error) {
 	r.adminMutex.Lock()
@@ -155,6 +161,10 @@ func (r *BucketClaimReconciler) getMasterAddressesForAdminService(adminServiceUR
 
 	return masterAddress, nil
 }
+
+//#endregion
+
+//#region handleReconciliation
 
 // handleReconciliation handles the main reconciliation logic for bucket creation/update
 func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucketClaim *seaweedv1.BucketClaim) (ctrl.Result, error) {
@@ -249,6 +259,10 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 	return r.updateStatusWithBucketAndSecretInfo(ctx, bucketClaim, seaweedv1.BucketClaimPhaseReady, "Bucket created successfully", bucketInfo, secretInfo)
 }
 
+//#endregion
+
+//#region handleDeletion
+
 // handleDeletion handles bucket deletion when BucketClaim is being deleted
 func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim *seaweedv1.BucketClaim) (ctrl.Result, error) {
 	log := r.Log.With("bucketclaim", bucketClaim.Name)
@@ -286,6 +300,10 @@ func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim 
 	return ctrl.Result{}, nil
 }
 
+//#endregion
+
+//#region deleteS3CredentialsSecret
+
 func (r *BucketClaimReconciler) deleteS3CredentialsSecret(ctx context.Context, bucketClaim *seaweedv1.BucketClaim) error {
 	log := r.Log.With("bucketclaim", bucketClaim.Name)
 
@@ -313,6 +331,10 @@ func (r *BucketClaimReconciler) deleteS3CredentialsSecret(ctx context.Context, b
 	return nil
 }
 
+//#endregion
+
+//#region getSeaweedCluster
+
 // getSeaweedCluster retrieves the referenced Seaweed cluster
 func (r *BucketClaimReconciler) getSeaweedCluster(ctx context.Context, bucketClaim *seaweedv1.BucketClaim) (*seaweedv1.Seaweed, error) {
 	namespace := bucketClaim.Spec.ClusterRef.Namespace
@@ -333,6 +355,10 @@ func (r *BucketClaimReconciler) getSeaweedCluster(ctx context.Context, bucketCla
 	return seaweedCluster, nil
 }
 
+//#endregion
+
+//#region getAdminService
+
 // getAdminService retrieves the admin service for the Seaweed cluster
 func (r *BucketClaimReconciler) getAdminService(seaweedCluster *seaweedv1.Seaweed) (string, error) {
 	// Check if admin is enabled
@@ -351,6 +377,10 @@ func (r *BucketClaimReconciler) getAdminService(seaweedCluster *seaweedv1.Seawee
 
 	return adminServiceURL, nil
 }
+
+//#endregion
+
+//#region bucketExists
 
 // bucketExists checks if a bucket exists in the SeaweedFS cluster
 func (r *BucketClaimReconciler) bucketExists(adminServiceURL, bucketName string) (bool, error) {
@@ -387,6 +417,11 @@ func (r *BucketClaimReconciler) bucketExists(adminServiceURL, bucketName string)
 }
 
 // getBucketInfo retrieves information about a bucket
+
+//#endregion
+
+//#region getBucketInfo
+
 func (r *BucketClaimReconciler) getBucketInfo(adminServiceURL, bucketName string, includeObjects bool) (*seaweedv1.BucketInfo, error) {
 	adminServer, err := r.getAdminServer(adminServiceURL)
 	if err != nil {
@@ -414,6 +449,11 @@ func (r *BucketClaimReconciler) getBucketInfo(adminServiceURL, bucketName string
 }
 
 // Helper function to convert quota size and unit to bytes
+
+//#endregion
+
+//#region convertQuotaToBytes
+
 func convertQuotaToBytes(size int64, unit string) int64 {
 	if size <= 0 {
 		return 0
@@ -433,6 +473,11 @@ func convertQuotaToBytes(size int64, unit string) int64 {
 }
 
 // generateS3Credentials generates random S3 access key and secret key
+
+//#endregion
+
+//#region generateS3Credentials
+
 func generateS3Credentials() (string, string, error) {
 	// Generate access key (32 characters)
 	accessKeyBytes := make([]byte, 24) // 24 bytes = 32 base64 characters
@@ -459,10 +504,14 @@ func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, b
 		return nil, nil
 	}
 
-	// Generate S3 credentials
-	accessKey, secretKey, err := generateS3Credentials()
+	accessKey, err := admin.GenerateAccessKey()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate S3 credentials: %w", err)
+		return nil, fmt.Errorf("failed to generate access key: %w", err)
+	}
+
+	secretKey, err := admin.GenerateSecretKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate secret key: %w", err)
 	}
 
 	// Determine secret name
@@ -565,6 +614,10 @@ func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, b
 	}, nil
 }
 
+//#endregion
+
+//#region createBucket
+
 // createBucket creates a new bucket in the SeaweedFS cluster
 func (r *BucketClaimReconciler) createBucket(adminServiceURL string, bucketClaim *seaweedv1.BucketClaim) error {
 	adminServer, err := r.getAdminServer(adminServiceURL)
@@ -604,6 +657,10 @@ func (r *BucketClaimReconciler) deleteBucket(adminServiceURL, bucketName string)
 
 	return nil
 }
+
+//#endregion
+
+//#region updateStatus
 
 // updateStatus updates the BucketClaim status
 func (r *BucketClaimReconciler) updateStatus(ctx context.Context, bucketClaim *seaweedv1.BucketClaim, phase seaweedv1.BucketClaimPhase, message string) (ctrl.Result, error) {
@@ -659,12 +716,20 @@ func (r *BucketClaimReconciler) updateStatus(ctx context.Context, bucketClaim *s
 	}
 }
 
+//#endregion
+
+//#region updateStatusWithBucketAndSecretInfo
+
 // updateStatusWithBucketAndSecretInfo updates the BucketClaim status with both bucket and secret information
 func (r *BucketClaimReconciler) updateStatusWithBucketAndSecretInfo(ctx context.Context, bucketClaim *seaweedv1.BucketClaim, phase seaweedv1.BucketClaimPhase, message string, bucketInfo *seaweedv1.BucketInfo, secretInfo *seaweedv1.BucketSecretInfo) (ctrl.Result, error) {
 	bucketClaim.Status.BucketInfo = bucketInfo
 	bucketClaim.Status.SecretInfo = secretInfo
 	return r.updateStatus(ctx, bucketClaim, phase, message)
 }
+
+//#endregion
+
+//#region startCleanupGoroutine
 
 // startCleanupGoroutine starts the background cleanup goroutine
 func (r *BucketClaimReconciler) startCleanupGoroutine() {
@@ -684,6 +749,10 @@ func (r *BucketClaimReconciler) startCleanupGoroutine() {
 	}()
 }
 
+//#endregion
+
+//#region stopCleanupGoroutine
+
 // stopCleanupGoroutine stops the background cleanup goroutine
 func (r *BucketClaimReconciler) stopCleanupGoroutine() {
 	if r.cleanupTicker != nil {
@@ -693,6 +762,10 @@ func (r *BucketClaimReconciler) stopCleanupGoroutine() {
 		close(r.stopCleanup)
 	}
 }
+
+//#endregion
+
+//#region cleanupInactiveAdminServers
 
 // cleanupInactiveAdminServers removes admin servers that haven't been accessed for 5 minutes
 func (r *BucketClaimReconciler) cleanupInactiveAdminServers() {
@@ -710,6 +783,10 @@ func (r *BucketClaimReconciler) cleanupInactiveAdminServers() {
 	}
 }
 
+//#endregion
+
+//#region SetupWithManager
+
 // SetupWithManager sets up the controller with the manager
 func (r *BucketClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Initialize the admin servers map
@@ -726,6 +803,10 @@ func (r *BucketClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
+//#endregion
+
+//#region cleanupRunnable
+
 // cleanupRunnable implements the Runnable interface to ensure cleanup on shutdown
 type cleanupRunnable struct {
 	reconciler *BucketClaimReconciler
@@ -738,3 +819,5 @@ func (c cleanupRunnable) Start(ctx context.Context) error {
 	c.reconciler.stopCleanupGoroutine()
 	return nil
 }
+
+//#endregion

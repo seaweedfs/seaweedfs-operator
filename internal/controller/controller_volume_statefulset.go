@@ -6,6 +6,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -17,16 +18,29 @@ func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string) string 
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
 	commands = append(commands, "-max=0")
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-volume-peer.%s", m.Name, m.Namespace))
+
 	if m.Spec.HostSuffix != nil && *m.Spec.HostSuffix != "" {
 		commands = append(commands, fmt.Sprintf("-publicUrl=$(POD_NAME).%s", *m.Spec.HostSuffix))
 	}
+
 	commands = append(commands, fmt.Sprintf("-mserver=%s", getMasterPeersString(m)))
 	commands = append(commands, fmt.Sprintf("-dir=%s", strings.Join(dirs, ",")))
-	if m.Spec.Volume.MetricsPort != nil {
-		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Volume.MetricsPort))
+
+	metricsPort := resolveMetricsPort(m, m.Spec.Volume.MetricsPort)
+
+	if metricsPort != nil {
+		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *metricsPort))
 	}
 
 	return strings.Join(commands, " ")
+}
+
+// getStorageClassName safely gets the storage class name from the storage spec
+func getStorageClassName(storage *seaweedv1.StorageSpec) *string {
+	if storage != nil {
+		return storage.StorageClassName
+	}
+	return nil
 }
 
 func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
@@ -42,19 +56,37 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 			Name:          "volume-grpc",
 		},
 	}
-	if m.Spec.Volume.MetricsPort != nil {
+
+	metricsPort := resolveMetricsPort(m, m.Spec.Volume.MetricsPort)
+
+	if metricsPort != nil {
 		ports = append(ports, corev1.ContainerPort{
-			ContainerPort: *m.Spec.Volume.MetricsPort,
+			ContainerPort: *metricsPort,
 			Name:          "volume-metrics",
 		})
 	}
-	replicas := int32(m.Spec.Volume.Replicas)
+	replicas := m.Spec.Volume.Replicas
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
 
-	volumeCount := int(m.Spec.VolumeServerDiskCount)
-	volumeRequests := corev1.ResourceList{
-		corev1.ResourceStorage: m.Spec.Volume.Requests[corev1.ResourceStorage],
+	// Set default storage configuration if not specified
+	var volumeCount int
+	if m.Spec.Storage != nil {
+		volumeCount = int(m.Spec.Storage.VolumeServerDiskCount)
+	} else {
+		// Default to 1 disk if storage spec is not provided
+		volumeCount = 1
+	}
+
+	// Set default storage request if not specified
+	var volumeRequests corev1.ResourceList
+	if m.Spec.Volume.Requests != nil {
+		volumeRequests = m.Spec.Volume.Requests
+	} else {
+		// Default to 4Gi if no requests specified
+		volumeRequests = corev1.ResourceList{
+			corev1.ResourceStorage: resource.MustParse("4Gi"),
+		}
 	}
 
 	// connect all the disks
@@ -62,6 +94,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 	var volumes []corev1.Volume
 	var persistentVolumeClaims []corev1.PersistentVolumeClaim
 	var dirs []string
+
 	for i := 0; i < volumeCount; i++ {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      fmt.Sprintf("mount%d", i),
@@ -82,7 +115,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 				Name: fmt.Sprintf("mount%d", i),
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
-				StorageClassName: m.Spec.Volume.StorageClassName,
+				StorageClassName: resolveStorageClassName(getStorageClassName(m.Spec.Storage), m.Spec.Volume.StorageClassName),
 				AccessModes: []corev1.PersistentVolumeAccessMode{
 					corev1.ReadWriteOnce,
 				},

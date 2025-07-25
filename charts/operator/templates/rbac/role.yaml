@@ -21,6 +21,30 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - create
+  - update
+  - patch
+  - delete
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - configmaps
   verbs:
   - create
@@ -78,6 +102,7 @@ rules:
   - seaweed.seaweedfs.com
   resources:
   - seaweeds
+  - bucketclaims
   verbs:
   - create
   - delete
@@ -90,6 +115,7 @@ rules:
   - seaweed.seaweedfs.com
   resources:
   - seaweeds/status
+  - bucketclaims/status
   verbs:
   - get
   - patch

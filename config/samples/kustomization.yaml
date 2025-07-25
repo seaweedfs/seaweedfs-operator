@@ -1,3 +1,5 @@
 ## This file is auto-generated, do not modify ##
 resources:
 - seaweed_v1_seaweed.yaml
+- seaweed_v1_seaweed_with_admin.yaml
+- seaweed_v1_bucketclaim.yaml

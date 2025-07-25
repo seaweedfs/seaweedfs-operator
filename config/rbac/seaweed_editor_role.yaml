@@ -22,3 +22,21 @@ rules:
   - seaweeds/status
   verbs:
   - get
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - bucketclaims
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - bucketclaims/status
+  verbs:
+  - get

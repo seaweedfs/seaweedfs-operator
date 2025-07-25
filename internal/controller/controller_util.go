@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -13,7 +15,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -111,7 +112,7 @@ func (r *SeaweedReconciler) CreateOrUpdateDeployment(deploy *appsv1.Deployment) 
 			existingDep.Spec.Template.Annotations[k] = v
 		}
 		// podSpec of deployment is hard to merge, use an annotation to assist
-		if DeploymentPodSpecChanged(desiredDep, existingDep) {
+		if DeploymentPodSpecChanged(desiredDep, existingDep, r.Log) {
 			// Record last applied spec in favor of future equality check
 			b, err := json.Marshal(desiredDep.Spec.Template.Spec)
 			if err != nil {
@@ -140,7 +141,7 @@ func (r *SeaweedReconciler) CreateOrUpdateService(svc *corev1.Service) (*corev1.
 			existingSvc.Annotations[k] = v
 		}
 		existingSvc.Labels = desiredSvc.Labels
-		equal, err := ServiceEqual(desiredSvc, existingSvc)
+		equal, err := ServiceEqual(desiredSvc, existingSvc, r.Log)
 		if err != nil {
 			return err
 		}
@@ -194,7 +195,7 @@ func (r *SeaweedReconciler) CreateOrUpdateIngress(ingress *networkingv1.Ingress)
 			existingIngress.Annotations[k] = v
 		}
 		existingIngress.Labels = desiredIngress.Labels
-		equal, err := IngressEqual(desiredIngress, existingIngress)
+		equal, err := IngressEqual(desiredIngress, existingIngress, r.Log)
 		if err != nil {
 			return err
 		}
@@ -263,7 +264,7 @@ func (r *SeaweedReconciler) EmptyClone(obj runtime.Object) (runtime.Object, erro
 
 	meta, ok := obj.(metav1.Object)
 	if !ok {
-		return nil, fmt.Errorf("Obj %v is not a metav1.Object, cannot call EmptyClone", obj)
+		return nil, fmt.Errorf("object %v is not a metav1.Object, cannot call EmptyClone", obj)
 	}
 
 	gvk, err := r.InferObjectKind(obj)
@@ -276,7 +277,7 @@ func (r *SeaweedReconciler) EmptyClone(obj runtime.Object) (runtime.Object, erro
 	}
 	instMeta, ok := inst.(metav1.Object)
 	if !ok {
-		return nil, fmt.Errorf("New instatnce %v created from scheme is not a metav1.Object, EmptyClone failed", inst)
+		return nil, fmt.Errorf("new instance %v created from scheme is not a metav1.Object, emptyClone failed", inst)
 	}
 
 	instMeta.SetName(meta.GetName())
@@ -291,7 +292,7 @@ func (r *SeaweedReconciler) InferObjectKind(obj runtime.Object) (schema.GroupVer
 		return schema.GroupVersionKind{}, err
 	}
 	if len(gvks) != 1 {
-		return schema.GroupVersionKind{}, fmt.Errorf("Object %v has ambigious GVK", obj)
+		return schema.GroupVersionKind{}, fmt.Errorf("object %v has ambigious GVK", obj)
 	}
 	return gvks[0], nil
 }
@@ -311,22 +312,22 @@ func GetDeploymentLastAppliedPodTemplate(dep *appsv1.Deployment) (*corev1.PodSpe
 }
 
 // DeploymentPodSpecChanged checks whether the new deployment differs with the old one's last-applied-config
-func DeploymentPodSpecChanged(newDep *appsv1.Deployment, oldDep *appsv1.Deployment) bool {
+func DeploymentPodSpecChanged(newDep *appsv1.Deployment, oldDep *appsv1.Deployment, log *zap.SugaredLogger) bool {
 	lastAppliedPodTemplate, err := GetDeploymentLastAppliedPodTemplate(oldDep)
 	if err != nil {
-		klog.Warningf("error get last-applied-config of deployment %s/%s: %v", oldDep.Namespace, oldDep.Name, err)
+		log.Warnw("error get last-applied-config of deployment", "namespace", oldDep.Namespace, "name", oldDep.Name, "error", err)
 		return true
 	}
 	return !apiequality.Semantic.DeepEqual(newDep.Spec.Template.Spec, lastAppliedPodTemplate)
 }
 
 // ServiceEqual compares the new Service's spec with old Service's last applied config
-func ServiceEqual(newSvc, oldSvc *corev1.Service) (bool, error) {
+func ServiceEqual(newSvc, oldSvc *corev1.Service, log *zap.SugaredLogger) (bool, error) {
 	oldSpec := corev1.ServiceSpec{}
 	if lastAppliedConfig, ok := oldSvc.Annotations[LastAppliedConfigAnnotation]; ok {
 		err := json.Unmarshal([]byte(lastAppliedConfig), &oldSpec)
 		if err != nil {
-			klog.Errorf("unmarshal ServiceSpec: [%s/%s]'s applied config failed,error: %v", oldSvc.GetNamespace(), oldSvc.GetName(), err)
+			log.Errorw("unmarshal ServiceSpec applied config failed", "namespace", oldSvc.GetNamespace(), "name", oldSvc.GetName(), "error", err)
 			return false, err
 		}
 		return apiequality.Semantic.DeepEqual(oldSpec, newSvc.Spec), nil
@@ -334,12 +335,12 @@ func ServiceEqual(newSvc, oldSvc *corev1.Service) (bool, error) {
 	return false, nil
 }
 
-func IngressEqual(newIngress, oldIngres *networkingv1.Ingress) (bool, error) {
+func IngressEqual(newIngress, oldIngres *networkingv1.Ingress, log *zap.SugaredLogger) (bool, error) {
 	oldIngressSpec := networkingv1.IngressSpec{}
 	if lastAppliedConfig, ok := oldIngres.Annotations[LastAppliedConfigAnnotation]; ok {
 		err := json.Unmarshal([]byte(lastAppliedConfig), &oldIngressSpec)
 		if err != nil {
-			klog.Errorf("unmarshal IngressSpec: [%s/%s]'s applied config failed,error: %v", oldIngres.GetNamespace(), oldIngres.GetName(), err)
+			log.Errorw("unmarshal IngressSpec applied config failed", "namespace", oldIngres.GetNamespace(), "name", oldIngres.GetName(), "error", err)
 			return false, err
 		}
 		return apiequality.Semantic.DeepEqual(oldIngressSpec, newIngress.Spec), nil

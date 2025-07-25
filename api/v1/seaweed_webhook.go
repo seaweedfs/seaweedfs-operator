@@ -18,6 +18,8 @@ package v1
 
 import (
 	"errors"
+
+	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	corev1 "k8s.io/api/core/v1"
@@ -25,12 +27,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 // log is for logging in this package.
-var seaweedlog = logf.Log.WithName("seaweed-resource")
+var seaweedlog *zap.SugaredLogger
 
 func (r *Seaweed) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
@@ -42,11 +42,9 @@ func (r *Seaweed) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 // +kubebuilder:webhook:path=/mutate-seaweed-seaweedfs-com-v1-seaweed,mutating=true,failurePolicy=fail,sideEffects=None,groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=create;update,versions=v1,name=mseaweed.kb.io,admissionReviewVersions=v1
 
-var _ webhook.Defaulter = &Seaweed{}
-
 // Default implements webhook.Defaulter so a webhook will be registered for the type
 func (r *Seaweed) Default() {
-	seaweedlog.Info("default", "name", r.Name)
+	seaweedlog.Infow("default", "name", r.Name)
 
 	// TODO(user): fill in your defaulting logic.
 }
@@ -54,11 +52,9 @@ func (r *Seaweed) Default() {
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
 // +kubebuilder:webhook:verbs=create;update,path=/validate-seaweed-seaweedfs-com-v1-seaweed,mutating=false,failurePolicy=fail,sideEffects=None,groups=seaweed.seaweedfs.com,resources=seaweeds,versions=v1,name=vseaweed.kb.io,admissionReviewVersions=v1
 
-var _ webhook.Validator = &Seaweed{}
-
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
-	seaweedlog.Info("validate create", "name", r.Name)
+	seaweedlog.Debugw("validate create", "name", r.Name)
 	errs := []error{}
 
 	// TODO(user): fill in your validation logic upon object creation.
@@ -69,7 +65,10 @@ func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
 	if r.Spec.Volume == nil {
 		errs = append(errs, errors.New("missing volume spec"))
 	} else {
-		if r.Spec.Volume.Requests[corev1.ResourceStorage].Equal(resource.MustParse("0")) {
+		// Check if Requests is nil or if storage request is zero
+		if r.Spec.Volume.Requests == nil {
+			// Requests is nil, which is fine - it will use defaults
+		} else if storageReq, exists := r.Spec.Volume.Requests[corev1.ResourceStorage]; exists && storageReq.Equal(resource.MustParse("0")) {
 			errs = append(errs, errors.New("volume storage request cannot be zero"))
 		}
 	}
@@ -79,7 +78,7 @@ func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *Seaweed) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
-	seaweedlog.Info("validate update", "name", r.Name)
+	seaweedlog.Debugw("validate update", "name", r.Name)
 
 	// TODO(user): fill in your validation logic upon object update.
 	return nil, nil
@@ -87,7 +86,7 @@ func (r *Seaweed) ValidateUpdate(old runtime.Object) (admission.Warnings, error)
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *Seaweed) ValidateDelete() (admission.Warnings, error) {
-	seaweedlog.Info("validate delete", "name", r.Name)
+	seaweedlog.Debugw("validate delete", "name", r.Name)
 
 	// TODO(user): fill in your validation logic upon object deletion.
 	return nil, nil

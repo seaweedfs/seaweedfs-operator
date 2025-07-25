@@ -126,7 +126,9 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 							},
 						},
 					},
-					VolumeServerDiskCount: 1,
+					Storage: &seaweedv1.StorageSpec{
+						VolumeServerDiskCount: 1,
+					},
 				},
 			}
 		})

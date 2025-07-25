@@ -200,7 +200,16 @@ func (s *Seaweed) BaseFilerSpec() ComponentAccessor {
 	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Filer.ComponentSpec)
 }
 
+// BaseFilerBackupSpec provides merged spec of filer backups
+func (s *Seaweed) BaseFilerBackupSpec() ComponentAccessor {
+	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.FilerBackup.ComponentSpec)
+}
+
 // BaseVolumeSpec provides merged spec of volumes
 func (s *Seaweed) BaseVolumeSpec() ComponentAccessor {
 	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Volume.ComponentSpec)
+}
+
+func (s *Seaweed) BaseAdminSpec() ComponentAccessor {
+	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Admin.ComponentSpec)
 }

@@ -52,7 +52,22 @@ test-e2e:
 
 # Build manager binary
 manager: generate fmt vet
-	go build -ldflags="-s -w" -o bin/manager main.go
+	go build -ldflags="-s -w" -o bin/manager cmd/main.go
+
+# Build cross-platform binaries for release
+.PHONY: build-cross
+build-cross: generate fmt vet
+	@echo "Building cross-platform binaries..."
+	@mkdir -p bin
+	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/seaweedfs-operator-linux-amd64 cmd/main.go
+	GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o bin/seaweedfs-operator-linux-arm64 cmd/main.go
+	GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o bin/seaweedfs-operator-linux-arm-7 cmd/main.go
+	@echo "Creating SHA256 checksums..."
+	@cd bin && for binary in seaweedfs-operator-*; do \
+		if [[ -f "$$binary" ]]; then \
+			sha256sum "$$binary" > "$$binary.sha256"; \
+		fi; \
+	done
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run: generate fmt vet manifests
@@ -64,7 +79,7 @@ debug: generate fmt vet manifests
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:maxDescLen=0 webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 # Run go fmt against code
 fmt:
@@ -93,6 +108,8 @@ nilaway-lint: nilaway
 # Generate code
 generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	cp config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml charts/operator/crds/seaweed.seaweedfs.com_seaweeds.yaml
+	cp config/crd/bases/seaweed.seaweedfs.com_bucketclaims.yaml charts/operator/crds/seaweed.seaweedfs.com_bucketclaims.yaml
 
 # Build the docker image
 .PHONY: docker-build
@@ -102,6 +119,18 @@ docker-build:
 	  --platform ${TARGETOS}/${TARGETARCH} \
 	  --build-arg TARGETARCH=${TARGETARCH} \
 	  --build-arg TARGETOS=${TARGETOS}
+
+# Build multi-platform docker image for release
+.PHONY: docker-build-release
+docker-build-release: build-cross
+	@echo "Preparing Docker assets..."
+	@mkdir -p docker/assets/linux/amd64 docker/assets/linux/arm64 docker/assets/linux/arm/v7
+	@cp bin/seaweedfs-operator-linux-amd64 docker/assets/linux/amd64/manager
+	@cp bin/seaweedfs-operator-linux-arm64 docker/assets/linux/arm64/manager
+	@cp bin/seaweedfs-operator-linux-arm-7 docker/assets/linux/arm/v7/manager
+	@chmod +x docker/assets/linux/amd64/manager docker/assets/linux/arm64/manager docker/assets/linux/arm/v7/manager
+	@echo "Building multi-platform Docker image..."
+	${CONTAINER_TOOL} buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t ${IMG} ./docker --push
 
 # Push the docker image
 docker-push:
@@ -217,7 +246,7 @@ CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 # renovate: datasource=github-tags depName=kubernetes-sigs/kustomize
 KUSTOMIZE_VERSION ?= v5.3.0
 # renovate: datasource=github-tags depName=kubernetes-sigs/controller-tools
-CONTROLLER_TOOLS_VERSION ?= v0.15.0
+CONTROLLER_TOOLS_VERSION ?= v0.18.0
 ENVTEST_VERSION ?= latest
 # renovate: datasource=github-tags depName=golangci/golangci-lint
 GOLANGCI_LINT_VERSION ?= v1.59.1

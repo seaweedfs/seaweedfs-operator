@@ -13,6 +13,10 @@ func (r *SeaweedReconciler) createFilerConfigMap(m *seaweedv1.Seaweed) *corev1.C
 	toml := ""
 	if m.Spec.Filer.Config != nil {
 		toml = *m.Spec.Filer.Config
+	} else {
+		toml += "[leveldb2]\n"
+		toml += "enabled = true\n"
+		toml += `dir = "/data/filerldb2"`
 	}
 
 	dep := &corev1.ConfigMap{

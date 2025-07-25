@@ -1,0 +1,93 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-all-sinks
+  namespace: default
+spec:
+  image: chrislusf/seaweedfs:latest
+  volumeServerDiskCount: 1
+  hostSuffix: seaweed.abcdefg.com
+  master:
+    replicas: 3
+    volumeSizeLimitMB: 1024
+  volume:
+    replicas: 1
+    requests:
+      storage: 2Gi
+  filer:
+    replicas: 2
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"
+  filerBackup:
+    replicas: 1
+    persistence:
+      enabled: true
+      mountPath: "/data/backup"
+      resources:
+        requests:
+          storage: "10Gi"
+    service:
+      type: ClusterIP
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+    # Comprehensive sink configuration examples
+    sink:
+      # Local file system backup
+      local:
+        enabled: true
+        directory: "/data/local-backups"
+        isIncremental: false
+      
+      # Backup to another filer
+      filer:
+        enabled: true
+        grpcAddress: "backup-filer:18888"
+        directory: "/backup"
+        replication: "001"
+        collection: "backup"
+        ttlSec: 0
+        isIncremental: false
+      
+      # S3 backup
+      s3:
+        enabled: true
+        awsAccessKeyID: ""  # Will use IAM role or credentials file
+        awsSecretAccessKey: ""  # Will use IAM role or credentials file
+        region: "us-east-1"
+        bucket: "my-seaweedfs-backups"
+        directory: "/backups/seaweed1"
+        endpoint: ""  # Custom endpoint for S3-compatible storage
+        isIncremental: false
+      
+      # Google Cloud Storage backup
+      googleCloudStorage:
+        enabled: true
+        googleApplicationCredentials: "/etc/seaweedfs/gcp-credentials.json"
+        bucket: "my-gcs-backup-bucket"
+        directory: "/backups"
+        isIncremental: false
+      
+      # Azure Blob Storage backup
+      azure:
+        enabled: true
+        accountName: "myazureaccount"
+        accountKey: ""  # Should be provided via secret
+        container: "backups"
+        directory: "/seaweed1"
+        isIncremental: false
+      
+      # Backblaze B2 backup
+      backblaze:
+        enabled: true
+        b2AccountID: "your-account-id"
+        b2MasterApplicationKey: ""  # Should be provided via secret
+        b2Region: "us-west-002"
+        bucket: "my-backup-bucket"
+        directory: "/backups"
+        isIncremental: false

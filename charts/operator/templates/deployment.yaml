@@ -27,6 +27,9 @@ spec:
         - /manager
         args:
         - --leader-elect
+        {{- if .Values.serviceMonitor.enabled }}
+        - --metrics-bind-address=:{{ .Values.port.number }}
+        {{- end }}
         env:
         {{- if eq .Values.webhook.enabled false }}
         - name: ENABLE_WEBHOOKS

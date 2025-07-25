@@ -54,7 +54,7 @@ func (r *Seaweed) Default() {
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
-	seaweedlog.Infow("validate create", "name", r.Name)
+	seaweedlog.Debugw("validate create", "name", r.Name)
 	errs := []error{}
 
 	// TODO(user): fill in your validation logic upon object creation.
@@ -78,7 +78,7 @@ func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *Seaweed) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
-	seaweedlog.Infow("validate update", "name", r.Name)
+	seaweedlog.Debugw("validate update", "name", r.Name)
 
 	// TODO(user): fill in your validation logic upon object update.
 	return nil, nil
@@ -86,7 +86,7 @@ func (r *Seaweed) ValidateUpdate(old runtime.Object) (admission.Warnings, error)
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *Seaweed) ValidateDelete() (admission.Warnings, error) {
-	seaweedlog.Infow("validate delete", "name", r.Name)
+	seaweedlog.Debugw("validate delete", "name", r.Name)
 
 	// TODO(user): fill in your validation logic upon object deletion.
 	return nil, nil

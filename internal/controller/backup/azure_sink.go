@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.uber.org/zap"
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+	"go.uber.org/zap"
 )
 
 // AzureCredentialExtractor implements CredentialExtractor for Azure credentials
@@ -48,7 +48,7 @@ func ExtractAzureCredentials(ctx context.Context, azureConfig *seaweedv1.AzureSi
 			if name, exists := secret[accountNameKey]; exists {
 				accountName = name
 			} else {
-				log.Infow("Secret key not found in secret", "secret", azureConfig.AzureCredentialsSecretRef.Name, "mapping", accountNameKey)
+				log.Warnw("secret key not found in secret", "secret", azureConfig.AzureCredentialsSecretRef.Name, "mapping", accountNameKey)
 			}
 
 			accountKeyKey := mapping.AccountKey
@@ -60,7 +60,7 @@ func ExtractAzureCredentials(ctx context.Context, azureConfig *seaweedv1.AzureSi
 			if key, exists := secret[accountKeyKey]; exists {
 				accountKey = key
 			} else {
-				log.Infow("Secret key not found in secret", "secret", azureConfig.AzureCredentialsSecretRef.Name, "mapping", accountKeyKey)
+				log.Warnw("secret key not found in secret", "secret", azureConfig.AzureCredentialsSecretRef.Name, "mapping", accountKeyKey)
 			}
 		}
 	}

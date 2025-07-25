@@ -109,7 +109,7 @@ func (r *SeaweedReconciler) findSeaweedCustomResourceInstance(ctx context.Contex
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
-			log.Info("seaweed CR not found. ignoring since object must be deleted")
+			log.Debug("seaweed CR not found. ignoring since object must be deleted")
 			return nil, true, ctrl.Result{RequeueAfter: time.Second * 5}, nil
 		}
 		// Error reading the object - requeue the request.

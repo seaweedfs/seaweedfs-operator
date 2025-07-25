@@ -65,7 +65,8 @@ func (r *SeaweedReconciler) waitForMasterStatefulSet(seaweedCR *seaweedv1.Seawee
 		return true, ctrl.Result{RequeueAfter: 3 * time.Second}, nil
 	}
 
-	log.Info("pods", "count", len(podList.Items))
+	log.Debugw("pods", "count", len(podList.Items))
+
 	runningCounter := 0
 	for _, pod := range podList.Items {
 		if pod.Status.Phase == corev1.PodRunning {
@@ -73,19 +74,19 @@ func (r *SeaweedReconciler) waitForMasterStatefulSet(seaweedCR *seaweedv1.Seawee
 				if containerStatus.Ready {
 					runningCounter++
 				}
-				log.Info("pod", "name", pod.Name, "containerStatus", containerStatus)
+				log.Debugw("pod", "name", pod.Name, "containerStatus", containerStatus)
 			}
 		} else {
-			log.Info("pod", "name", pod.Name, "status", pod.Status)
+			log.Debugw("pod", "name", pod.Name, "status", pod.Status)
 		}
 	}
 
 	if runningCounter < int(seaweedCR.Spec.Master.Replicas)/2+1 {
-		log.Info("some masters are not ready", "missing", int(seaweedCR.Spec.Master.Replicas)-runningCounter)
+		log.Debugw("some masters are not ready", "missing", int(seaweedCR.Spec.Master.Replicas)-runningCounter)
 		return true, ctrl.Result{RequeueAfter: 3 * time.Second}, nil
 	}
 
-	log.Info("masters are ready")
+	log.Debug("masters are ready")
 	return ReconcileResult(nil)
 
 }
@@ -106,7 +107,8 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 		return nil
 	})
-	log.Info("ensure master stateful set " + masterStatefulSet.Name)
+
+	log.Debug("ensure master stateful set " + masterStatefulSet.Name)
 	return ReconcileResult(err)
 }
 
@@ -119,7 +121,7 @@ func (r *SeaweedReconciler) ensureMasterConfigMap(seaweedCR *seaweedv1.Seaweed) 
 	}
 	_, err := r.CreateOrUpdateConfigMap(masterConfigMap)
 
-	log.Info("get master ConfigMap " + masterConfigMap.Name)
+	log.Debug("get master ConfigMap " + masterConfigMap.Name)
 	return ReconcileResult(err)
 }
 
@@ -132,7 +134,7 @@ func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed) (b
 	}
 	_, err := r.CreateOrUpdateService(masterService)
 
-	log.Info("get master service " + masterService.Name)
+	log.Debug("get master service " + masterService.Name)
 	return ReconcileResult(err)
 }
 
@@ -145,7 +147,7 @@ func (r *SeaweedReconciler) ensureMasterPeerService(seaweedCR *seaweedv1.Seaweed
 	}
 	_, err := r.CreateOrUpdateService(masterPeerService)
 
-	log.Info("get master peer service " + masterPeerService.Name)
+	log.Debug("get master peer service " + masterPeerService.Name)
 	return ReconcileResult(err)
 }
 
@@ -156,9 +158,10 @@ func (r *SeaweedReconciler) ensureMasterServiceMonitor(seaweedCR *seaweedv1.Seaw
 	if err := controllerutil.SetControllerReference(seaweedCR, masterServiceMonitor, r.Scheme); err != nil {
 		return ReconcileResult(err)
 	}
+
 	_, err := r.CreateOrUpdateServiceMonitor(masterServiceMonitor)
 
-	log.Info("get master service monitor " + masterServiceMonitor.Name)
+	log.Debug("get master service monitor " + masterServiceMonitor.Name)
 	return ReconcileResult(err)
 }
 

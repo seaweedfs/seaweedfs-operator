@@ -57,7 +57,7 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.S
 		return nil
 	})
 
-	log.Info("ensure volume stateful set " + volumeServerStatefulSet.Name)
+	log.Debug("ensure volume stateful set " + volumeServerStatefulSet.Name)
 	return ReconcileResult(err)
 }
 
@@ -71,7 +71,7 @@ func (r *SeaweedReconciler) ensureVolumeServerPeerService(seaweedCR *seaweedv1.S
 	}
 	_, err := r.CreateOrUpdateService(volumeServerPeerService)
 
-	log.Info("ensure volume peer service " + volumeServerPeerService.Name)
+	log.Debug("ensure volume peer service " + volumeServerPeerService.Name)
 	return ReconcileResult(err)
 }
 
@@ -97,7 +97,7 @@ func (r *SeaweedReconciler) ensureVolumeServerService(seaweedCR *seaweedv1.Seawe
 	}
 	_, err := r.CreateOrUpdateService(volumeServerService)
 
-	log.Info("ensure volume service "+volumeServerService.Name, "index", i)
+	log.Debug("ensure volume service "+volumeServerService.Name, "index", i)
 	return ReconcileResult(err)
 }
 
@@ -110,7 +110,7 @@ func (r *SeaweedReconciler) ensureVolumeServerServiceMonitor(seaweedCR *seaweedv
 	}
 	_, err := r.CreateOrUpdateServiceMonitor(volumeServiceMonitor)
 
-	log.Info("get volume service monitor " + volumeServiceMonitor.Name)
+	log.Debug("get volume service monitor " + volumeServiceMonitor.Name)
 	return ReconcileResult(err)
 }
 

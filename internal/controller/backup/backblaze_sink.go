@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.uber.org/zap"
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+	"go.uber.org/zap"
 )
 
 // BackblazeCredentialExtractor implements CredentialExtractor for Backblaze credentials
@@ -48,7 +48,7 @@ func ExtractBackblazeCredentials(ctx context.Context, backblazeConfig *seaweedv1
 			if accountID, exists := secret[b2AccountIDKey]; exists {
 				b2AccountID = accountID
 			} else {
-				log.Infow("Secret key not found in secret", "secret", backblazeConfig.BackblazeCredentialsSecretRef.Name, "mapping", b2AccountIDKey)
+				log.Warnw("secret key not found in secret", "secret", backblazeConfig.BackblazeCredentialsSecretRef.Name, "mapping", b2AccountIDKey)
 			}
 
 			b2MasterApplicationKeyKey := mapping.B2MasterApplicationKey
@@ -59,7 +59,7 @@ func ExtractBackblazeCredentials(ctx context.Context, backblazeConfig *seaweedv1
 			if masterKey, exists := secret[b2MasterApplicationKeyKey]; exists {
 				b2MasterApplicationKey = masterKey
 			} else {
-				log.Infow("Secret key not found in secret", "secret", backblazeConfig.BackblazeCredentialsSecretRef.Name, "mapping", b2MasterApplicationKeyKey)
+				log.Warnw("secret key not found in secret", "secret", backblazeConfig.BackblazeCredentialsSecretRef.Name, "mapping", b2MasterApplicationKeyKey)
 			}
 		}
 	}

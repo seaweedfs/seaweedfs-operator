@@ -47,7 +47,7 @@ func ExtractS3Credentials(ctx context.Context, s3Config *seaweedv1.S3SinkConfig,
 			if accessKey, exists := secret[secretAccessKeyKey]; exists {
 				awsSecretAccessKey = accessKey
 			} else {
-				log.Infow("Secret key not found in secret", "secret", s3Config.AWSCredentialsSecretRef.Name, "mapping", secretAccessKeyKey)
+				log.Warnw("secret key not found in secret", "secret", s3Config.AWSCredentialsSecretRef.Name, "mapping", secretAccessKeyKey)
 			}
 
 			accessKeyIDKey := mapping.AWSAccessKeyID
@@ -58,7 +58,7 @@ func ExtractS3Credentials(ctx context.Context, s3Config *seaweedv1.S3SinkConfig,
 			if accessKey, exists := secret[accessKeyIDKey]; exists {
 				awsAccessKeyID = accessKey
 			} else {
-				log.Infow("Secret key not found in secret", "secret", s3Config.AWSCredentialsSecretRef.Name, "mapping", accessKeyIDKey)
+				log.Warnw("secret key not found in secret", "secret", s3Config.AWSCredentialsSecretRef.Name, "mapping", accessKeyIDKey)
 			}
 		}
 	}

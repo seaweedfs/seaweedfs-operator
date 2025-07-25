@@ -36,7 +36,7 @@ func (r *SeaweedReconciler) ensureAdminService(seaweedCR *seaweedv1.Seaweed) (bo
 	}
 	_, err := r.CreateOrUpdateService(adminService)
 
-	log.Info("ensure admin service " + adminService.Name)
+	log.Debug("ensure admin service " + adminService.Name)
 
 	return ReconcileResult(err)
 }
@@ -68,6 +68,6 @@ func (r *SeaweedReconciler) ensureAdminStatefulSet(seaweedCR *seaweedv1.Seaweed)
 		return nil
 	})
 
-	log.Info("ensure admin stateful set " + adminStatefulSet.Name)
+	log.Debug("ensure admin stateful set " + adminStatefulSet.Name)
 	return ReconcileResult(err)
 }

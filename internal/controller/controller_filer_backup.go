@@ -43,7 +43,8 @@ func (r *SeaweedReconciler) ensureFilerBackupStatefulSet(seaweedCR *seaweedv1.Se
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 		return nil
 	})
-	log.Info("ensure filer backup stateful set " + filerBackupStatefulSet.Name)
+
+	log.Debug("ensure filer backup stateful set " + filerBackupStatefulSet.Name)
 	return ReconcileResult(err)
 }
 
@@ -56,7 +57,7 @@ func (r *SeaweedReconciler) ensureFilerBackupConfigMap(ctx context.Context, seaw
 	}
 	_, err := r.CreateOrUpdateConfigMap(filerBackupConfigMap)
 
-	log.Info("get filer backup ConfigMap " + filerBackupConfigMap.Name)
+	log.Debug("get filer backup ConfigMap " + filerBackupConfigMap.Name)
 	return ReconcileResult(err)
 }
 

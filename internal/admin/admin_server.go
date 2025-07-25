@@ -91,10 +91,11 @@ func NewAdminServer(masters string, log *zap.SugaredLogger) *AdminServer {
 						filerAddr := server.GetFilerAddress()
 						if filerAddr != "" {
 							filerClientSetter.SetFilerClient(filerAddr, server.grpcDialOption)
-							log.Infof("set filer client for credential manager: %s", filerAddr)
+							log.Debugw("set filer client for credential manager", "filerAddr", filerAddr)
 							break
 						}
-						log.Debugf("waiting for filer discovery for credential manager...")
+
+						log.Debug("waiting for filer discovery for credential manager...")
 						time.Sleep(5 * time.Second) // Retry every 5 seconds
 					}
 				}()

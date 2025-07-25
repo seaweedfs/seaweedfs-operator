@@ -60,7 +60,8 @@ func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed)
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 		return nil
 	})
-	log.Info("ensure filer stateful set " + filerStatefulSet.Name)
+
+	log.Debug("ensure filer stateful set " + filerStatefulSet.Name)
 	return ReconcileResult(err)
 }
 
@@ -74,7 +75,7 @@ func (r *SeaweedReconciler) ensureFilerPeerService(seaweedCR *seaweedv1.Seaweed)
 	}
 
 	_, err := r.CreateOrUpdateService(filerPeerService)
-	log.Info("ensure filer peer service " + filerPeerService.Name)
+	log.Debug("ensure filer peer service " + filerPeerService.Name)
 
 	return ReconcileResult(err)
 }
@@ -89,7 +90,7 @@ func (r *SeaweedReconciler) ensureFilerService(seaweedCR *seaweedv1.Seaweed) (bo
 	}
 	_, err := r.CreateOrUpdateService(filerService)
 
-	log.Info("ensure filer service " + filerService.Name)
+	log.Debug("ensure filer service " + filerService.Name)
 
 	return ReconcileResult(err)
 }
@@ -103,7 +104,7 @@ func (r *SeaweedReconciler) ensureFilerConfigMap(seaweedCR *seaweedv1.Seaweed) (
 	}
 	_, err := r.CreateOrUpdateConfigMap(filerConfigMap)
 
-	log.Info("get filer ConfigMap " + filerConfigMap.Name)
+	log.Debug("get filer ConfigMap " + filerConfigMap.Name)
 	return ReconcileResult(err)
 }
 
@@ -116,7 +117,7 @@ func (r *SeaweedReconciler) ensureFilerServiceMonitor(seaweedCR *seaweedv1.Seawe
 	}
 	_, err := r.CreateOrUpdateServiceMonitor(filerServiceMonitor)
 
-	log.Info("get filer service monitor " + filerServiceMonitor.Name)
+	log.Debug("get filer service monitor " + filerServiceMonitor.Name)
 	return ReconcileResult(err)
 }
 

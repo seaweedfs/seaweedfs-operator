@@ -24,7 +24,8 @@ func extractCredentialsFromSecret(ctx context.Context, extractor CredentialExtra
 		return nil, nil
 	}
 
-	log.Infow("Getting credentials from secret", "secret", *secretRef)
+	log.Debugw("getting credentials from secret", "secret", *secretRef)
+
 	secret, err := secretGetter.GetSecret(ctx, *secretRef, namespace)
 	if err != nil {
 		log.Errorw("Error getting credentials from secret", "secret", *secretRef, "error", err)

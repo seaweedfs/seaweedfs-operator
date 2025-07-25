@@ -63,7 +63,7 @@ type BucketClaimReconciler struct {
 func (r *BucketClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.With("bucketclaim", req.NamespacedName)
 
-	log.Info("starting bucketclaim Reconcile")
+	log.Debugw("starting bucketclaim Reconcile", "bucketclaim", req.NamespacedName)
 
 	// Fetch the BucketClaim instance
 	bucketClaim := &seaweedv1.BucketClaim{}
@@ -72,18 +72,18 @@ func (r *BucketClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			log.Info("bucketclaim not found. ignoring since object must be deleted")
+			log.Debug("bucketclaim not found. ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
 
 		// Error reading the object - requeue the request.
-		log.Error(err, "Failed to get BucketClaim")
+		log.Errorw("failed to get BucketClaim", "error", err)
 		return ctrl.Result{}, err
 	}
 
 	// Check if the BucketClaim is being deleted
 	if !bucketClaim.DeletionTimestamp.IsZero() {
-		log.Info("bucketclaim is being deleted, cleaning up bucket")
+		log.Debug("bucketclaim is being deleted, cleaning up bucket")
 		return r.handleDeletion(ctx, bucketClaim)
 	}
 
@@ -168,7 +168,7 @@ func (r *BucketClaimReconciler) getMasterAddressesForAdminService(adminServiceUR
 func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucketClaim *seaweedv1.BucketClaim) (ctrl.Result, error) {
 	log := r.Log.With("bucketclaim", bucketClaim.Name)
 
-	log.Info("starting bucketclaim handleReconciliation")
+	log.Debug("executing handleReconciliation")
 
 	// Get the referenced Seaweed cluster
 	seaweedCluster, err := r.getSeaweedCluster(ctx, bucketClaim)
@@ -192,7 +192,7 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 		}
 	}
 
-	log.Debug("preparing to check if bucket exists", "adminService", adminService)
+	log.Debugw("preparing to check if bucket exists", "adminService", adminService)
 
 	// Check if bucket already exists
 	exists, err := r.bucketExists(adminService, bucketClaim.Spec.BucketName)
@@ -201,7 +201,7 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 		return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to check bucket existence: %v", err))
 	}
 
-	log.Debug("bucket existing state", "exists", exists)
+	log.Debugw("bucket existing state", "exists", exists)
 
 	if exists {
 		// Bucket exists, update status to Ready
@@ -240,8 +240,6 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 		log.Errorw("failed to get bucket info after creation", "error", err)
 		return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to get bucket info: %v", err))
 	}
-
-	log.Info("bucket info", "bucketInfo", bucketInfo)
 
 	// Create S3 credentials secret if enabled
 	var secretInfo *seaweedv1.BucketSecretInfo
@@ -361,7 +359,7 @@ func (r *BucketClaimReconciler) deleteS3User(bucketClaim *seaweedv1.BucketClaim,
 	if err != nil {
 		// Check if user doesn't exist (might have been already deleted)
 		if strings.Contains(err.Error(), "not found") {
-			log.Debug("S3 user already deleted", "username", username)
+			log.Debugw("S3 user already deleted", "username", username)
 			return nil
 		}
 		return fmt.Errorf("failed to check S3 user existence: %w", err)
@@ -373,7 +371,7 @@ func (r *BucketClaimReconciler) deleteS3User(bucketClaim *seaweedv1.BucketClaim,
 		return fmt.Errorf("failed to delete S3 user: %w", err)
 	}
 
-	log.Info("deleted S3 user", "username", username)
+	log.Debugw("deleted S3 user", "username", username)
 	return nil
 }
 
@@ -684,7 +682,7 @@ func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, b
 		}
 	}
 
-	log.Info("created S3 credentials secret", "secretName", secretName, "bucketName", bucketClaim.Spec.BucketName)
+	log.Debugw("created S3 credentials secret", "secretName", secretName, "bucketName", bucketClaim.Spec.BucketName)
 
 	return &seaweedv1.BucketSecretInfo{
 		Name:      secretName,
@@ -856,7 +854,7 @@ func (r *BucketClaimReconciler) cleanupInactiveAdminServers() {
 	for adminService, entry := range r.adminServers {
 		if now.Sub(entry.lastAccess) > inactivityThreshold {
 			delete(r.adminServers, adminService)
-			r.Log.Info("removed inactive admin server", "adminService", adminService, "inactiveFor", now.Sub(entry.lastAccess))
+			r.Log.Debugw("removed inactive admin server", "adminService", adminService, "inactiveFor", now.Sub(entry.lastAccess))
 		}
 	}
 }

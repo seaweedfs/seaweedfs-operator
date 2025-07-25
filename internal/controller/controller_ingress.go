@@ -28,7 +28,7 @@ func (r *SeaweedReconciler) ensureAllIngress(seaweedCR *seaweedv1.Seaweed) (bool
 	}
 	_, err := r.CreateOrUpdateIngress(ingressService)
 
-	log.Info("ensure ingress " + ingressService.Name)
+	log.Debug("ensure ingress " + ingressService.Name)
 	return ReconcileResult(err)
 }
 

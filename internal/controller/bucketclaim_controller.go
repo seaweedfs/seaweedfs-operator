@@ -288,6 +288,15 @@ func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim 
 		// Don't return error to avoid blocking deletion
 	}
 
+	// Delete the S3 user if credentials secret is enabled
+	if bucketClaim.Spec.Secret != nil && bucketClaim.Spec.Secret.Enabled {
+		err = r.deleteS3User(bucketClaim, seaweedCluster)
+		if err != nil {
+			log.Errorw("failed to delete S3 user", "error", err)
+			// Don't return error to avoid blocking deletion
+		}
+	}
+
 	// Delete the S3 credentials secret if enabled
 	if bucketClaim.Spec.Secret != nil && bucketClaim.Spec.Secret.Enabled {
 		err = r.deleteS3CredentialsSecret(ctx, bucketClaim)
@@ -328,6 +337,45 @@ func (r *BucketClaimReconciler) deleteS3CredentialsSecret(ctx context.Context, b
 		return fmt.Errorf("failed to delete S3 credentials secret: %w", err)
 	}
 
+	return nil
+}
+
+//#endregion
+
+//#region deleteS3User
+
+// deleteS3User deletes the S3 user associated with the bucket claim
+func (r *BucketClaimReconciler) deleteS3User(bucketClaim *seaweedv1.BucketClaim, seaweedCluster *seaweedv1.Seaweed) error {
+	log := r.Log.With("bucketclaim", bucketClaim.Name)
+
+	// Get admin server for S3 user management
+	adminServiceURL := fmt.Sprintf("http://%s-admin.%s.svc.cluster.local:%d", seaweedCluster.Name, seaweedCluster.Namespace, seaweedv1.AdminHTTPPort)
+	adminServer, err := r.getAdminServer(adminServiceURL)
+	if err != nil {
+		return fmt.Errorf("failed to get admin server: %w", err)
+	}
+
+	// Generate the same username that was used during creation
+	username := fmt.Sprintf("bucket-%s-%s", bucketClaim.Namespace, bucketClaim.Name)
+
+	// Check if user exists before trying to delete
+	_, err = adminServer.GetObjectStoreUserDetails(username)
+	if err != nil {
+		// Check if user doesn't exist (might have been already deleted)
+		if strings.Contains(err.Error(), "not found") {
+			log.Debug("S3 user already deleted", "username", username)
+			return nil
+		}
+		return fmt.Errorf("failed to check S3 user existence: %w", err)
+	}
+
+	// Delete the S3 user
+	err = adminServer.DeleteObjectStoreUser(username)
+	if err != nil {
+		return fmt.Errorf("failed to delete S3 user: %w", err)
+	}
+
+	log.Info("deleted S3 user", "username", username)
 	return nil
 }
 
@@ -504,14 +552,66 @@ func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, b
 		return nil, nil
 	}
 
-	accessKey, err := admin.GenerateAccessKey()
+	// Get admin server for S3 user management
+	adminServiceURL := fmt.Sprintf("http://%s-admin.%s.svc.cluster.local:%d", seaweedCluster.Name, seaweedCluster.Namespace, seaweedv1.AdminHTTPPort)
+	adminServer, err := r.getAdminServer(adminServiceURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate access key: %w", err)
+		return nil, fmt.Errorf("failed to get admin server: %w", err)
 	}
 
-	secretKey, err := admin.GenerateSecretKey()
+	// Generate unique username for this bucket claim
+	username := fmt.Sprintf("bucket-%s-%s", bucketClaim.Namespace, bucketClaim.Name)
+
+	// Create S3 user with bucket-specific permissions
+	userReq := admin.CreateUserRequest{
+		Username: username,
+		// Allow all S3 operations on this specific bucket
+		Actions: []string{
+			fmt.Sprintf("Read:%s", bucketClaim.Spec.BucketName),
+			fmt.Sprintf("Write:%s", bucketClaim.Spec.BucketName),
+			fmt.Sprintf("List:%s", bucketClaim.Spec.BucketName),
+			fmt.Sprintf("Tagging:%s", bucketClaim.Spec.BucketName),
+			fmt.Sprintf("Admin:%s", bucketClaim.Spec.BucketName),
+		},
+		GenerateKey: true,
+	}
+
+	user, err := adminServer.CreateObjectStoreUser(userReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate secret key: %w", err)
+		// Check if user already exists (might happen during reconciliation)
+		if strings.Contains(err.Error(), "already exists") {
+			// Get existing user details
+			userDetails, err := adminServer.GetObjectStoreUserDetails(username)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get existing user details: %w", err)
+			}
+
+			// Use the first access key if available
+			if len(userDetails.AccessKeys) > 0 {
+				user = &admin.ObjectStoreUser{
+					Username:    username,
+					Email:       userDetails.Email,
+					AccessKey:   userDetails.AccessKeys[0].AccessKey,
+					SecretKey:   userDetails.AccessKeys[0].SecretKey,
+					Permissions: userDetails.Actions,
+				}
+			} else {
+				// Create new access key for existing user
+				accessKeyInfo, err := adminServer.CreateAccessKey(username)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create access key for existing user: %w", err)
+				}
+				user = &admin.ObjectStoreUser{
+					Username:    username,
+					Email:       userDetails.Email,
+					AccessKey:   accessKeyInfo.AccessKey,
+					SecretKey:   accessKeyInfo.SecretKey,
+					Permissions: userDetails.Actions,
+				}
+			}
+		} else {
+			return nil, fmt.Errorf("failed to create S3 user: %w", err)
+		}
 	}
 
 	// Determine secret name
@@ -529,19 +629,19 @@ func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, b
 		s3Region = "us-east-1" // Default region
 	}
 
-	// Create secret data
+	// Create secret data using the S3 user credentials
 	secretData := map[string][]byte{
-		"access-key-id":         []byte(accessKey),
-		"secret-access-key":     []byte(secretKey),
+		"access-key-id":         []byte(user.AccessKey),
+		"secret-access-key":     []byte(user.SecretKey),
 		"endpoint":              []byte(s3Endpoint),
 		"region":                []byte(s3Region),
 		"bucket":                []byte(bucketClaim.Spec.BucketName),
-		"S3_ACCESS_KEY_ID":      []byte(accessKey),
-		"S3_SECRET_ACCESS_KEY":  []byte(secretKey),
+		"S3_ACCESS_KEY_ID":      []byte(user.AccessKey),
+		"S3_SECRET_ACCESS_KEY":  []byte(user.SecretKey),
 		"S3_REGION":             []byte(s3Region),
 		"S3_BUCKET":             []byte(bucketClaim.Spec.BucketName),
-		"AWS_ACCESS_KEY_ID":     []byte(accessKey),
-		"AWS_SECRET_ACCESS_KEY": []byte(secretKey),
+		"AWS_ACCESS_KEY_ID":     []byte(user.AccessKey),
+		"AWS_SECRET_ACCESS_KEY": []byte(user.SecretKey),
 		"AWS_REGION":            []byte(s3Region),
 		"AWS_BUCKET":            []byte(bucketClaim.Spec.BucketName),
 	}
@@ -559,6 +659,7 @@ func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, b
 			Annotations: map[string]string{
 				"seaweed.seaweedfs.com/created-by": "bucketclaim-controller",
 				"seaweed.seaweedfs.com/bucket":     bucketClaim.Spec.BucketName,
+				"seaweed.seaweedfs.com/s3-user":    username,
 			},
 		},
 		Type: corev1.SecretTypeOpaque,
@@ -571,6 +672,7 @@ func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, b
 			secret.Labels[k] = v
 		}
 	}
+
 	if bucketClaim.Spec.Secret.Annotations != nil {
 		for k, v := range bucketClaim.Spec.Secret.Annotations {
 			secret.Annotations[k] = v

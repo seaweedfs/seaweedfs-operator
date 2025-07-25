@@ -352,7 +352,7 @@ func (r *BucketClaimReconciler) deleteS3User(bucketClaim *seaweedv1.BucketClaim,
 	}
 
 	// Generate the same username that was used during creation
-	username := fmt.Sprintf("bucket-%s-%s", bucketClaim.Namespace, bucketClaim.Name)
+	username := formatUsername(bucketClaim)
 
 	// Check if user exists before trying to delete
 	_, err = adminServer.GetObjectStoreUserDetails(username)
@@ -518,6 +518,10 @@ func convertQuotaToBytes(size int64, unit string) int64 {
 
 //#endregion
 
+func formatUsername(bucketClaim *seaweedv1.BucketClaim) string {
+	return fmt.Sprintf("claim-%s-%s", bucketClaim.Namespace, bucketClaim.Name)
+}
+
 // createS3CredentialsSecret creates a Kubernetes secret with S3 credentials
 func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, bucketClaim *seaweedv1.BucketClaim, seaweedCluster *seaweedv1.Seaweed) (*seaweedv1.BucketSecretInfo, error) {
 	log := r.Log.With("bucketclaim", bucketClaim.Name)
@@ -534,7 +538,7 @@ func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, b
 	}
 
 	// Generate unique username for this bucket claim
-	username := fmt.Sprintf("bucket-%s-%s", bucketClaim.Namespace, bucketClaim.Name)
+	username := formatUsername(bucketClaim)
 
 	// Create S3 user with bucket-specific permissions
 	userReq := admin.CreateUserRequest{

@@ -32,21 +32,6 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-func TestGenerateS3Credentials(t *testing.T) {
-	accessKey1, secretKey1, err := generateS3Credentials()
-	require.NoError(t, err)
-	assert.NotEmpty(t, accessKey1)
-	assert.NotEmpty(t, secretKey1)
-	assert.Len(t, accessKey1, 32)
-	assert.Len(t, secretKey1, 64)
-
-	// Generate another set to ensure they're different
-	accessKey2, secretKey2, err := generateS3Credentials()
-	require.NoError(t, err)
-	assert.NotEqual(t, accessKey1, accessKey2)
-	assert.NotEqual(t, secretKey1, secretKey2)
-}
-
 func TestBucketClaimReconciler_CreateS3CredentialsSecret(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, seaweedv1.AddToScheme(scheme))

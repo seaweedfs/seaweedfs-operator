@@ -16,8 +16,6 @@ package controller
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"strings"
 	"sync"
@@ -520,29 +518,7 @@ func convertQuotaToBytes(size int64, unit string) int64 {
 	}
 }
 
-// generateS3Credentials generates random S3 access key and secret key
-
 //#endregion
-
-//#region generateS3Credentials
-
-func generateS3Credentials() (string, string, error) {
-	// Generate access key (32 characters)
-	accessKeyBytes := make([]byte, 24) // 24 bytes = 32 base64 characters
-	if _, err := rand.Read(accessKeyBytes); err != nil {
-		return "", "", fmt.Errorf("failed to generate access key: %w", err)
-	}
-	accessKey := base64.URLEncoding.EncodeToString(accessKeyBytes)
-
-	// Generate secret key (64 characters)
-	secretKeyBytes := make([]byte, 48) // 48 bytes = 64 base64 characters
-	if _, err := rand.Read(secretKeyBytes); err != nil {
-		return "", "", fmt.Errorf("failed to generate secret key: %w", err)
-	}
-	secretKey := base64.URLEncoding.EncodeToString(secretKeyBytes)
-
-	return accessKey, secretKey, nil
-}
 
 // createS3CredentialsSecret creates a Kubernetes secret with S3 credentials
 func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, bucketClaim *seaweedv1.BucketClaim, seaweedCluster *seaweedv1.Seaweed) (*seaweedv1.BucketSecretInfo, error) {

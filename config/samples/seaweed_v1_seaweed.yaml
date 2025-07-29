@@ -17,6 +17,25 @@ spec:
       storage: 2Gi
   filer:
     replicas: 2
+    s3:
+      enabled: true
+      identities: 
+        - name: "user1"
+          actions: 
+            - "Admin"
+          credentials:
+            - accessKey: "testkey"
+              secretKey: "testpass"
+            - accessKey: "testkey2"
+              secretKey: "testpass2"
+        - name: "user2"
+          actions: 
+            - "Read"
+            - "List"
+            - "Write"
+          credentials:
+            - accessKey: "testkey3"
+              secretKey: "testpass3"
     config: |
       [leveldb2]
       enabled = true

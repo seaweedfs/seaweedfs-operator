@@ -29,6 +29,10 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 		return
 	}
 
+	if done, result, err = r.ensureFilerS3ConfigMap(seaweedCR); done {
+		return
+	}
+
 	if done, result, err = r.ensureFilerStatefulSet(seaweedCR); done {
 		return
 	}
@@ -102,6 +106,19 @@ func (r *SeaweedReconciler) ensureFilerConfigMap(seaweedCR *seaweedv1.Seaweed) (
 	_, err := r.CreateOrUpdateConfigMap(filerConfigMap)
 
 	log.Info("Get filer ConfigMap " + filerConfigMap.Name)
+	return ReconcileResult(err)
+}
+
+func (r *SeaweedReconciler) ensureFilerS3ConfigMap(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-filer-s3-configmap", seaweedCR.Name)
+
+	filerS3ConfigMap := r.createFilerS3ConfigMap(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, filerS3ConfigMap, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
+	_, err := r.CreateOrUpdateConfigMap(filerS3ConfigMap)
+
+	log.Info("Get filer S3 ConfigMap " + filerS3ConfigMap.Name)
 	return ReconcileResult(err)
 }
 

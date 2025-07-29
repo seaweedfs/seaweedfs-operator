@@ -2297,8 +2297,43 @@ spec:
                       More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                     type: object
                   s3:
-                    default: true
-                    type: boolean
+                    default:
+                      enabled: true
+                    description: S3 configuration for the filer
+                    properties:
+                      enabled:
+                        type: boolean
+                      identities:
+                        items:
+                          description: S3Identity defines an identity with its credentials
+                            and allowed actions
+                          properties:
+                            actions:
+                              items:
+                                type: string
+                              type: array
+                            credentials:
+                              items:
+                                description: S3Credential defines the access key and
+                                  secret key for an S3 identity
+                                properties:
+                                  accessKey:
+                                    type: string
+                                  secretKey:
+                                    type: string
+                                required:
+                                - accessKey
+                                - secretKey
+                                type: object
+                              type: array
+                            name:
+                              type: string
+                          required:
+                          - actions
+                          - name
+                          type: object
+                        type: array
+                    type: object
                   schedulerName:
                     description: SchedulerName of the component. Override the cluster-level
                       one if present

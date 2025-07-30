@@ -21,6 +21,7 @@ spec:
       enabled: true
       configSecret: 
         name: test-secret
+        key: seaweedfs_s3_config.json
     config: |
       [leveldb2]
       enabled = true

@@ -164,7 +164,7 @@ type VolumeSpec struct {
 // S3Config defines the S3 configuration with identities
 type S3Config struct {
 	Enabled      bool                        `json:"enabled,omitempty"`
-	ConfigSecret corev1.LocalObjectReference `json:"configSecret,omitempty"`
+	ConfigSecret *corev1.SecretKeySelector `json:"configSecret,omitempty"`
 }
 
 // FilerSpec is the spec for filers

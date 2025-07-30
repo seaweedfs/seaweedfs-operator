@@ -2302,10 +2302,12 @@ spec:
                     description: S3 configuration for the filer
                     properties:
                       configSecret:
-                        description: |-
-                          LocalObjectReference contains enough information to let you locate the
-                          referenced object inside the same namespace.
+                        description: SecretKeySelector selects a key of a Secret.
                         properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
                           name:
                             default: ""
                             description: |-
@@ -2317,6 +2319,12 @@ spec:
                               More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
                               TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                             type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
                         type: object
                         x-kubernetes-map-type: atomic
                       enabled:

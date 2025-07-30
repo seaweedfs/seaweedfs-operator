@@ -20,7 +20,7 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 	if s3Config := m.Spec.Filer.S3; s3Config != nil && s3Config.Enabled {
 		commands = append(commands, "-s3")
 		if s3Config.ConfigSecret.Name != "" {
-			commands = append(commands, "-s3.config=/etc/sw/seaweedfs_s3_config.json")
+			commands = append(commands, "-s3.config=/etc/sw/"+s3Config.ConfigSecret.Key)
 		}
 	}
 

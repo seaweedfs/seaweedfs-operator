@@ -44,7 +44,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			Name:          "filer-grpc",
 		},
 	}
-	if m.Spec.Filer.S3.Enabled {
+	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled {
 		ports = append(ports, corev1.ContainerPort{
 			ContainerPort: seaweedv1.FilerS3Port,
 			Name:          "filer-s3",

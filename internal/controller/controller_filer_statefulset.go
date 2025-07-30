@@ -17,10 +17,13 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.FilerHTTPPort))
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-filer-peer.%s", m.Name, m.Namespace))
 	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m)))
-	if m.Spec.Filer.S3.Enabled {
+	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled {
 		commands = append(commands, "-s3")
-		commands = append(commands, "-s3.config=/etc/s3/s3_identities.json")
 	}
+	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.ConfigSecret.Name != "" {
+		commands = append(commands, "-s3.config=/etc/sw/seaweedfs_s3_config.json")
+	}
+
 	if m.Spec.Filer.MetricsPort != nil {
 		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Filer.MetricsPort))
 	}
@@ -78,20 +81,18 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		},
 	}
 
-	if m.Spec.Filer.S3.Enabled {
+	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.ConfigSecret.Name != "" {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "s3-config",
+			Name:      "config-users",
 			ReadOnly:  true,
-			MountPath: "/etc/s3/",
+			MountPath: "/etc/sw",
 		})
 		filerPodSpec.Volumes = append(filerPodSpec.Volumes,
 			corev1.Volume{
-				Name: "s3-config",
+				Name: "config-users",
 				VolumeSource: corev1.VolumeSource{
-					ConfigMap: &corev1.ConfigMapVolumeSource{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: m.Name + "-filer-s3",
-						},
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: m.Spec.Filer.S3.ConfigSecret.Name,
 					},
 				},
 			})

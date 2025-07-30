@@ -161,23 +161,10 @@ type VolumeSpec struct {
 	MinFreeSpacePercent *int32 `json:"minFreeSpacePercent,omitempty"`
 }
 
-// S3Credential defines the access key and secret key for an S3 identity
-type S3Credential struct {
-	AccessKey string `json:"accessKey"`
-	SecretKey string `json:"secretKey"`
-}
-
-// S3Identity defines an identity with its credentials and allowed actions
-type S3Identity struct {
-	Name        string         `json:"name"`
-	Credentials []S3Credential `json:"credentials,omitempty"`
-	Actions     []string       `json:"actions"`
-}
-
 // S3Config defines the S3 configuration with identities
 type S3Config struct {
-	Enabled    bool         `json:"enabled,omitempty"`
-	Identities []S3Identity `json:"identities,omitempty"`
+	Enabled      bool                        `json:"enabled,omitempty"`
+	ConfigSecret corev1.LocalObjectReference `json:"configSecret,omitempty"`
 }
 
 // FilerSpec is the spec for filers

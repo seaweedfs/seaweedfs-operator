@@ -17,6 +17,11 @@ spec:
       storage: 2Gi
   filer:
     replicas: 2
+    s3:
+      enabled: true
+      configSecret: 
+        name: test-secret
+        key: seaweedfs_s3_config.json
     config: |
       [leveldb2]
       enabled = true

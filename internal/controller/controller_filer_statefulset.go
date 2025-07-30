@@ -17,9 +17,13 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.FilerHTTPPort))
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-filer-peer.%s", m.Name, m.Namespace))
 	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m)))
-	if m.Spec.Filer.S3 {
+	if s3Config := m.Spec.Filer.S3; s3Config != nil && s3Config.Enabled {
 		commands = append(commands, "-s3")
+		if s3Config.ConfigSecret.Name != "" {
+			commands = append(commands, "-s3.config=/etc/sw/"+s3Config.ConfigSecret.Key)
+		}
 	}
+
 	if m.Spec.Filer.MetricsPort != nil {
 		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Filer.MetricsPort))
 	}
@@ -40,7 +44,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			Name:          "filer-grpc",
 		},
 	}
-	if m.Spec.Filer.S3 {
+	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled {
 		ports = append(ports, corev1.ContainerPort{
 			ContainerPort: seaweedv1.FilerS3Port,
 			Name:          "filer-s3",
@@ -76,6 +80,24 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			MountPath: "/etc/seaweedfs",
 		},
 	}
+
+	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled && m.Spec.Filer.S3.ConfigSecret.Name != "" {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "config-users",
+			ReadOnly:  true,
+			MountPath: "/etc/sw",
+		})
+		filerPodSpec.Volumes = append(filerPodSpec.Volumes,
+			corev1.Volume{
+				Name: "config-users",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: m.Spec.Filer.S3.ConfigSecret.Name,
+					},
+				},
+			})
+	}
+
 	var persistentVolumeClaims []corev1.PersistentVolumeClaim
 	if m.Spec.Filer.Persistence != nil && m.Spec.Filer.Persistence.Enabled {
 		claimName := m.Name + "-filer"

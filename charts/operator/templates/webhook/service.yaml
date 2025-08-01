@@ -11,7 +11,7 @@ spec:
   ports:
     - name: https
       port: 443
-      targetPort: 9443
+      targetPort: webhook-server
   selector:
     app: {{ include "seaweedfs-operator.fullname" . }}
 

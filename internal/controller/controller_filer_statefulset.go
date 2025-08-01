@@ -20,6 +20,15 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 	if m.Spec.Filer.S3 {
 		commands = append(commands, "-s3")
 	}
+	if m.Spec.Filer.IAM {
+		commands = append(commands, "-iam")
+		// Use custom IAM port if specified, otherwise use default
+		iamPort := seaweedv1.FilerIAMPort
+		if m.Spec.IAM != nil && m.Spec.IAM.Port != nil {
+			iamPort = *m.Spec.IAM.Port
+		}
+		commands = append(commands, fmt.Sprintf("-iam.port=%d", iamPort))
+	}
 	if m.Spec.Filer.MetricsPort != nil {
 		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Filer.MetricsPort))
 	}
@@ -44,6 +53,16 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		ports = append(ports, corev1.ContainerPort{
 			ContainerPort: seaweedv1.FilerS3Port,
 			Name:          "filer-s3",
+		})
+	}
+	if m.Spec.Filer.IAM {
+		iamPort := seaweedv1.FilerIAMPort
+		if m.Spec.IAM != nil && m.Spec.IAM.Port != nil {
+			iamPort = *m.Spec.IAM.Port
+		}
+		ports = append(ports, corev1.ContainerPort{
+			ContainerPort: iamPort,
+			Name:          "filer-iam",
 		})
 	}
 	if m.Spec.Filer.MetricsPort != nil {

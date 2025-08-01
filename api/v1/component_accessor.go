@@ -204,3 +204,8 @@ func (s *Seaweed) BaseFilerSpec() ComponentAccessor {
 func (s *Seaweed) BaseVolumeSpec() ComponentAccessor {
 	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Volume.ComponentSpec)
 }
+
+// BaseIAMSpec provides merged spec of iam
+func (s *Seaweed) BaseIAMSpec() ComponentAccessor {
+	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.IAM.ComponentSpec)
+}

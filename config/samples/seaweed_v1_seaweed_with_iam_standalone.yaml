@@ -1,0 +1,40 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  labels:
+    app.kubernetes.io/name: seaweed
+    app.kubernetes.io/instance: seaweed-sample
+    app.kubernetes.io/part-of: seaweedfs-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: seaweedfs-operator
+  name: seaweed-sample
+spec:
+  image: chrislusf/seaweedfs:latest
+  
+  # Master servers
+  master:
+    replicas: 1
+    volumeSizeLimitMB: 1024
+
+  # Volume servers  
+  volume:
+    replicas: 1
+
+  # Filer servers with S3
+  filer:
+    replicas: 1
+    s3: true
+
+  # Standalone IAM service
+  iam:
+    replicas: 1
+    port: 8111
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+    service:
+      type: ClusterIP

@@ -46,6 +46,12 @@ var _ = BeforeSuite(func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
+	By("install CRDs", func() {
+		cmd := exec.Command("make", "install")
+		_, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
 	By("deploy controller-manager", func() {
 		cmd := exec.Command("make", "deploy")
 		_, err := utils.Run(cmd)
@@ -57,6 +63,10 @@ var _ = AfterSuite(func() {
 	By("cleanup", func() {
 		cmd := exec.Command("make", "undeploy")
 		_, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+
+		cmd = exec.Command("make", "uninstall")
+		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
 	})
 })

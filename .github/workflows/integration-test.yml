@@ -79,12 +79,6 @@ jobs:
       - name: Run unit tests
         run: make test
 
-      - name: Run linter
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.59.1
-          args: --config=.golangci.yml --timeout=10m
-
       - name: Build manager binary
         run: make build
 

@@ -5,6 +5,8 @@
 
 This [Kubernetes Operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) is made to easily deploy SeaweedFS onto your Kubernetes cluster.
 
+The operator manages the complete SeaweedFS infrastructure on Kubernetes, including Master servers, Volume servers, Filer services, and IAM (Identity and Access Management) services. This provides a scalable, resilient distributed file system with S3-compatible API and built-in authentication.
+
 The difference to [seaweedfs-csi-driver](https://github.com/seaweedfs/seaweedfs-csi-driver) is that the infrastructure (SeaweedFS) itself runs on Kubernetes as well (Master, Filer, Volume-Servers) and can as such easily scale with it as you need. It is also by far more resilent to failures then a simple systemD service in regards to handling crashing services or accidental deletes.
 
 By using `make deploy` it will deploy a Resource of type 'Seaweed' onto your current kubectl $KUBECONFIG target (the operator itself) which by default will do nothing unless you configurate it (see examples in config/samples/).
@@ -16,6 +18,7 @@ Goals:
 - [ ] Compability with [seaweedfs-csi-driver](https://github.com/seaweedfs/seaweedfs-csi-driver)
 - [x] Auto rolling upgrade and restart
 - [x] Ingress for volume server, filer and S3, to support HDFS, REST filer, S3 API and cross-cluster replication
+- [x] IAM (Identity and Access Management) service support for S3 API authentication and authorization
 - [ ] Support all major cloud Kubernetes: AWS, Google, Azure
 - [ ] Scheduled backup to cloud storage: S3, Google Cloud Storage , Azure
 - [ ] Put warm data to cloud storage tier: S3, Google Cloud Storage , Azure
@@ -163,17 +166,28 @@ See the next section for example usage - **at this point you only deployed the O
 
 ## Configuration Examples
 
-- Please send us your use-cases / example configs ... this is currently empty (needs to be written)
-- For now see: <https://github.com/seaweedfs/seaweedfs-operator/blob/master/config/samples/seaweed_v1_seaweed.yaml>
+### Basic SeaweedFS Deployment
+
+For detailed configuration options and examples, see the sample configurations in the `config/samples/` directory.
+
+### IAM Support
+
+The operator now supports IAM (Identity and Access Management) for S3 API authentication. IAM can be deployed in two ways:
+
+- **Standalone IAM Service**: Deploy IAM as a separate service
+- **Embedded IAM**: Run IAM embedded within filer pods
+
+For complete IAM configuration details, examples, and deployment scenarios, see [IAM_SUPPORT.md](./IAM_SUPPORT.md).
+
+### Example Configuration
 
 ```yaml
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Seaweed
 metadata:
-  name: seaweed1
+  name: seaweed-sample
   namespace: default
 spec:
-  # Add fields here
   image: chrislusf/seaweedfs:latest
   volumeServerDiskCount: 1
   hostSuffix: seaweed.abcdefg.com
@@ -186,11 +200,21 @@ spec:
       storage: 2Gi
   filer:
     replicas: 2
+    s3: true          # Enable S3 API
+    iam: true         # Enable embedded IAM
     config: |
       [leveldb2]
       enabled = true
       dir = "/data/filerldb2"
+  # Optional: Standalone IAM service
+  # iam:
+  #   replicas: 1
+  #   port: 8111
 ```
+
+For more examples including standalone IAM configurations, see the `config/samples/` directory:
+- `seaweed_v1_seaweed_with_iam_standalone.yaml`
+- `seaweed_v1_seaweed_with_iam_embedded.yaml`
 
 ## Maintenance and Uninstallation
 
@@ -212,6 +236,20 @@ make deploy
 
 # install example of CR
 kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
+
+# or install example with IAM support
+kubectl apply -f config/samples/seaweed_v1_seaweed_with_iam_standalone.yaml
+```
+
+### Testing IAM Functionality
+
+To test the IAM implementation:
+
+```bash
+# Run IAM-specific tests
+go test -v -run "IAM" ./api/v1
+go test -v -run "TestCreateIAM|TestBuildIAM|TestLabelsForIAM" ./internal/controller
+go test -v -run "Filer.*IAM|IAM.*Filer" ./internal/controller
 ```
 
 ### Update the Operator

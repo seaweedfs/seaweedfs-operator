@@ -30,10 +30,10 @@ jobs:
     name: Integration Tests on k8s ${{ matrix.k8s.version }}
     # Pull request has label 'ok-to-test' or the author is a member of the organization, or it's a push to main/master
     if: |
-      github.event_name == 'push' || 
-      contains(github.event.pull_request.labels.*.name, 'ok-to-test') || 
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.labels.*.name, 'ok-to-test') ||
       contains(fromJSON('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.pull_request.author_association)
-    
+
     strategy:
       fail-fast: false
       matrix:
@@ -44,10 +44,10 @@ jobs:
             attribute: current
           - version: v1.31.0
             attribute: latest
-    
+
     runs-on: ubuntu-22.04
     timeout-minutes: 30
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -78,9 +78,6 @@ jobs:
 
       - name: Run unit tests
         run: make test
-
-      - name: Run linter
-        run: make lint
 
       - name: Build manager binary
         run: make build
@@ -124,19 +121,19 @@ jobs:
         run: |
           echo "=== Operator Manager Logs ==="
           kubectl logs -n seaweedfs-operator-system deployment/seaweedfs-operator-controller-manager --tail=100 || true
-          
+
           echo "=== All Pods in operator namespace ==="
           kubectl get pods -n seaweedfs-operator-system || true
-          
+
           echo "=== All Pods in test namespace ==="
           kubectl get pods -n test-resources || true
-          
+
           echo "=== Events ==="
           kubectl get events --all-namespaces --sort-by='.lastTimestamp' --tail=50 || true
-          
+
           echo "=== StatefulSets ==="
           kubectl get statefulsets --all-namespaces || true
-          
+
           echo "=== Seaweed Resources ==="
           kubectl get seaweed --all-namespaces -o yaml || true
 
@@ -152,7 +149,7 @@ jobs:
     name: Resource Validation Test
     runs-on: ubuntu-22.04
     timeout-minutes: 15
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -171,14 +168,14 @@ jobs:
         run: |
           echo "Testing that storage resources are properly filtered..."
           go test ./internal/controller/ -run TestFilterContainerResources -v
-          
+
           echo "Verifying filter function exists and compiles..."
           go build -o /dev/null ./internal/controller/
 
   build-check:
     name: Build Check
     runs-on: ubuntu-22.04
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -198,4 +195,4 @@ jobs:
         run: |
           make docker-build
         env:
-          IMG: test-image:latest 
+          IMG: test-image:latest

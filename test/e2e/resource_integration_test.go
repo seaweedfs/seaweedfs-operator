@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -25,7 +26,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
@@ -44,10 +48,15 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 	BeforeAll(func() {
 		ctx = context.Background()
 
-		// Get Kubernetes client
+		// Set up scheme with Seaweed CRDs
+		scheme := runtime.NewScheme()
+		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+		utilruntime.Must(seaweedv1.AddToScheme(scheme))
+
+		// Get Kubernetes client with proper scheme
 		cfg := config.GetConfigOrDie()
 		var err error
-		k8sClient, err = client.New(cfg, client.Options{})
+		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
 		Expect(err).NotTo(HaveOccurred())
 
 		// Create test namespace
@@ -58,9 +67,27 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 		}
 		err = k8sClient.Create(ctx, ns)
 		if err != nil {
-			// Namespace might already exist, ignore error
-			_ = k8sClient.Get(ctx, types.NamespacedName{Name: testNamespace}, ns)
+			// Namespace might already exist, try to get it
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: testNamespace}, ns)
+			if err != nil {
+				Expect(err).NotTo(HaveOccurred(), "Failed to create or get test namespace")
+			}
 		}
+
+		// Verify CRDs are installed by checking if we can list Seaweed resources
+		seaweedList := &seaweedv1.SeaweedList{}
+		err = k8sClient.List(ctx, seaweedList, client.InNamespace(testNamespace))
+		if err != nil {
+			GinkgoWriter.Printf("WARNING: Could not list Seaweed resources: %v\n", err)
+			GinkgoWriter.Printf("This might indicate CRDs are not installed in the cluster\n")
+			// Try to get CRD info
+			GinkgoWriter.Printf("Checking if Seaweed CRD exists in cluster...\n")
+		} else {
+			GinkgoWriter.Printf("SUCCESS: Can list Seaweed resources (found %d items)\n", len(seaweedList.Items))
+		}
+
+		// Wait briefly for controller to be ready to process requests
+		time.Sleep(5 * time.Second)
 	})
 
 	AfterAll(func() {
@@ -147,31 +174,61 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 
 		It("should apply resource requirements to master containers correctly", func() {
 			// Create the Seaweed resource
-			Expect(k8sClient.Create(ctx, seaweed)).To(Succeed())
+			GinkgoWriter.Printf("Creating Seaweed resource in namespace %s\n", testNamespace)
+			err := k8sClient.Create(ctx, seaweed)
+			if err != nil {
+				GinkgoWriter.Printf("FAILED to create Seaweed resource: %v\n", err)
+				GinkgoWriter.Printf("Error type: %T\n", err)
+				Fail(fmt.Sprintf("Could not create Seaweed resource: %v", err))
+			}
+			GinkgoWriter.Printf("Seaweed resource created successfully\n")
 
 			// Wait for the master statefulset to be created
+			GinkgoWriter.Printf("Waiting for StatefulSet %s-master to be created...\n", seaweedName)
 			Eventually(func() error {
 				clientset, err := utils.GetClientset(config.GetConfigOrDie())
 				if err != nil {
+					GinkgoWriter.Printf("Failed to get clientset: %v\n", err)
 					return err
 				}
 
 				sts, err := clientset.AppsV1().StatefulSets(testNamespace).Get(ctx, seaweedName+"-master", metav1.GetOptions{})
 				if err != nil {
+					GinkgoWriter.Printf("StatefulSet not found yet: %v\n", err)
 					return err
 				}
+
+				GinkgoWriter.Printf("StatefulSet found! Checking containers...\n")
 
 				// Verify the container has the correct resource requirements
 				container := sts.Spec.Template.Spec.Containers[0]
 				Expect(container.Name).To(Equal("master"))
 
 				// Check CPU requests and limits
-				Expect(container.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("500m")))
-				Expect(container.Resources.Limits[corev1.ResourceCPU]).To(Equal(resource.MustParse("1000m")))
+				actualCPURequest := container.Resources.Requests[corev1.ResourceCPU]
+				expectedCPURequest := resource.MustParse("500m")
+				GinkgoWriter.Printf("CPU Request - Expected: %s, Actual: %s\n", expectedCPURequest.String(), actualCPURequest.String())
+				// Compare CPU values numerically to handle format differences
+				Expect(actualCPURequest.MilliValue()).To(Equal(expectedCPURequest.MilliValue()))
+
+				actualCPULimit := container.Resources.Limits[corev1.ResourceCPU]
+				expectedCPULimit := resource.MustParse("1000m")
+				GinkgoWriter.Printf("CPU Limit - Expected: %s, Actual: %s\n", expectedCPULimit.String(), actualCPULimit.String())
+				// Compare CPU values numerically (1000m == 1.0 cores)
+				Expect(actualCPULimit.MilliValue()).To(Equal(expectedCPULimit.MilliValue()))
 
 				// Check memory requests and limits
-				Expect(container.Resources.Requests[corev1.ResourceMemory]).To(Equal(resource.MustParse("1Gi")))
-				Expect(container.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("2Gi")))
+				actualMemRequest := container.Resources.Requests[corev1.ResourceMemory]
+				expectedMemRequest := resource.MustParse("1Gi")
+				GinkgoWriter.Printf("Memory Request - Expected: %s, Actual: %s\n", expectedMemRequest.String(), actualMemRequest.String())
+				// Compare memory values numerically to handle format differences
+				Expect(actualMemRequest.Value()).To(Equal(expectedMemRequest.Value()))
+
+				actualMemLimit := container.Resources.Limits[corev1.ResourceMemory]
+				expectedMemLimit := resource.MustParse("2Gi")
+				GinkgoWriter.Printf("Memory Limit - Expected: %s, Actual: %s\n", expectedMemLimit.String(), actualMemLimit.String())
+				// Compare memory values numerically to handle format differences
+				Expect(actualMemLimit.Value()).To(Equal(expectedMemLimit.Value()))
 
 				return nil
 			}, time.Minute*2, time.Second*10).Should(Succeed())

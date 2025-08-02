@@ -19,7 +19,7 @@ spec:
     replicas: 2
     s3:
       enabled: true
-      configSecret: 
+      configSecret:
         name: test-secret
         key: seaweedfs_s3_config.json
     config: |

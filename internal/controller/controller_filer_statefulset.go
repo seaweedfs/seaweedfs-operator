@@ -19,11 +19,16 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m)))
 	if s3Config := m.Spec.Filer.S3; s3Config != nil && s3Config.Enabled {
 		commands = append(commands, "-s3")
-		if s3Config.ConfigSecret.Name != "" {
+		if s3Config.ConfigSecret != nil && s3Config.ConfigSecret.Name != "" {
 			commands = append(commands, "-s3.config=/etc/sw/"+s3Config.ConfigSecret.Key)
 		}
 	}
-
+	if m.Spec.Filer.IAM {
+		commands = append(commands, "-iam")
+		// Use custom IAM port if specified, otherwise use default
+		iamPort := getIAMPort(m)
+		commands = append(commands, fmt.Sprintf("-iam.port=%d", iamPort))
+	}
 	if m.Spec.Filer.MetricsPort != nil {
 		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Filer.MetricsPort))
 	}
@@ -48,6 +53,13 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		ports = append(ports, corev1.ContainerPort{
 			ContainerPort: seaweedv1.FilerS3Port,
 			Name:          "filer-s3",
+		})
+	}
+	if m.Spec.Filer.IAM {
+		iamPort := getIAMPort(m)
+		ports = append(ports, corev1.ContainerPort{
+			ContainerPort: iamPort,
+			Name:          "filer-iam",
 		})
 	}
 	if m.Spec.Filer.MetricsPort != nil {
@@ -81,7 +93,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		},
 	}
 
-	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled && m.Spec.Filer.S3.ConfigSecret.Name != "" {
+	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled && m.Spec.Filer.S3.ConfigSecret != nil && m.Spec.Filer.S3.ConfigSecret.Name != "" {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "config-users",
 			ReadOnly:  true,

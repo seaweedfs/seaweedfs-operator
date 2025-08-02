@@ -177,12 +177,26 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 				Expect(container.Name).To(Equal("master"))
 
 				// Check CPU requests and limits
-				Expect(container.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("500m")))
-				Expect(container.Resources.Limits[corev1.ResourceCPU]).To(Equal(resource.MustParse("1000m")))
+				actualCPURequest := container.Resources.Requests[corev1.ResourceCPU]
+				expectedCPURequest := resource.MustParse("500m")
+				GinkgoWriter.Printf("CPU Request - Expected: %s, Actual: %s\n", expectedCPURequest.String(), actualCPURequest.String())
+				Expect(actualCPURequest).To(Equal(expectedCPURequest))
+
+				actualCPULimit := container.Resources.Limits[corev1.ResourceCPU]
+				expectedCPULimit := resource.MustParse("1000m")
+				GinkgoWriter.Printf("CPU Limit - Expected: %s, Actual: %s\n", expectedCPULimit.String(), actualCPULimit.String())
+				Expect(actualCPULimit).To(Equal(expectedCPULimit))
 
 				// Check memory requests and limits
-				Expect(container.Resources.Requests[corev1.ResourceMemory]).To(Equal(resource.MustParse("1Gi")))
-				Expect(container.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("2Gi")))
+				actualMemRequest := container.Resources.Requests[corev1.ResourceMemory]
+				expectedMemRequest := resource.MustParse("1Gi")
+				GinkgoWriter.Printf("Memory Request - Expected: %s, Actual: %s\n", expectedMemRequest.String(), actualMemRequest.String())
+				Expect(actualMemRequest).To(Equal(expectedMemRequest))
+
+				actualMemLimit := container.Resources.Limits[corev1.ResourceMemory]
+				expectedMemLimit := resource.MustParse("2Gi")
+				GinkgoWriter.Printf("Memory Limit - Expected: %s, Actual: %s\n", expectedMemLimit.String(), actualMemLimit.String())
+				Expect(actualMemLimit).To(Equal(expectedMemLimit))
 
 				return nil
 			}, time.Minute*2, time.Second*10).Should(Succeed())

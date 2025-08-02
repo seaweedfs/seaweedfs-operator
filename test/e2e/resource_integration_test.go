@@ -69,6 +69,9 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 			// Namespace might already exist, ignore error
 			_ = k8sClient.Get(ctx, types.NamespacedName{Name: testNamespace}, ns)
 		}
+
+		// Wait briefly for controller to be ready to process requests
+		time.Sleep(5 * time.Second)
 	})
 
 	AfterAll(func() {

@@ -399,12 +399,14 @@ func TestIAMSpecDefaults(t *testing.T) {
 			}
 
 			// Test port (with default fallback)
-			expectedPort := tt.expected.port
+			var usedPort int32
 			if tt.spec.Port != nil {
-				expectedPort = *tt.spec.Port
+				usedPort = *tt.spec.Port
+			} else {
+				usedPort = FilerIAMPort // Default from API constant
 			}
-			if tt.spec.Port != nil && *tt.spec.Port != expectedPort {
-				t.Errorf("Expected port %d, got %d", expectedPort, *tt.spec.Port)
+			if usedPort != tt.expected.port {
+				t.Errorf("Expected port %d, got %d", tt.expected.port, usedPort)
 			}
 
 			// Test service type

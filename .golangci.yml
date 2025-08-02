@@ -1,6 +1,8 @@
 run:
-  deadline: 5m
+  timeout: 10m
   allow-parallel-runners: true
+  go: "1.22"
+  concurrency: 2  # Reduce concurrency to save memory
 
 issues:
   # don't skip warning about doc comments
@@ -16,12 +18,16 @@ issues:
       linters:
         - dupl
         - lll
+    - path: "internal/controller/*_test.go"
+      linters:
+        - gocyclo  # Test functions can be complex due to table-driven tests
+        - goconst  # Test files often have repeated test strings
 linters:
   disable-all: true
   enable:
     - dupl
     - errcheck
-    - exportloopref
+    - copyloopvar  # Replaced exportloopref (deprecated)
     - goconst
     - gocyclo
     - gofmt

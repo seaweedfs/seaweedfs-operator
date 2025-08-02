@@ -13,6 +13,11 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
+const (
+	iamHTTPPortName    = "iam-http"
+	iamMetricsPortName = "iam-metrics"
+)
+
 func TestCreateIAMStatefulSet(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -56,7 +61,7 @@ func TestCreateIAMStatefulSet(t *testing.T) {
 				// Check default IAM port
 				found := false
 				for _, port := range container.Ports {
-					if port.Name == "iam-http" && port.ContainerPort == seaweedv1.FilerIAMPort {
+					if port.Name == iamHTTPPortName && port.ContainerPort == seaweedv1.FilerIAMPort {
 						found = true
 						break
 					}
@@ -125,7 +130,7 @@ func TestCreateIAMStatefulSet(t *testing.T) {
 				// Check metrics port
 				found := false
 				for _, port := range container.Ports {
-					if port.Name == "iam-metrics" && port.ContainerPort == 9090 {
+					if port.Name == iamMetricsPortName && port.ContainerPort == 9090 {
 						found = true
 						break
 					}

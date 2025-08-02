@@ -12,6 +12,10 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
+const (
+	filerIAMPortName = "filer-iam"
+)
+
 func TestBuildFilerStartupScriptWithIAM(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -153,7 +157,7 @@ func TestCreateFilerStatefulSetWithIAM(t *testing.T) {
 				s3PortFound := false
 
 				for _, port := range container.Ports {
-					if port.Name == "filer-iam" && port.ContainerPort == seaweedv1.FilerIAMPort {
+					if port.Name == filerIAMPortName && port.ContainerPort == seaweedv1.FilerIAMPort {
 						iamPortFound = true
 					}
 					if port.Name == "filer-s3" && port.ContainerPort == seaweedv1.FilerS3Port {

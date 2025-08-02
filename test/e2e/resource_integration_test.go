@@ -25,7 +25,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
@@ -44,10 +47,15 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 	BeforeAll(func() {
 		ctx = context.Background()
 
-		// Get Kubernetes client
+		// Set up scheme with Seaweed CRDs
+		scheme := runtime.NewScheme()
+		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+		utilruntime.Must(seaweedv1.AddToScheme(scheme))
+
+		// Get Kubernetes client with proper scheme
 		cfg := config.GetConfigOrDie()
 		var err error
-		k8sClient, err = client.New(cfg, client.Options{})
+		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
 		Expect(err).NotTo(HaveOccurred())
 
 		// Create test namespace

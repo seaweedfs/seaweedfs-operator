@@ -328,7 +328,7 @@ The operator generates the following command for standalone IAM:
 ```bash
 weed -logtostderr=true iam \
   -master=<master-peers> \
-  -filer=<filer-service>:8888 \
+  -filer=<filer-service>:8888 \  # Default filer port, configurable via FilerHTTPPort
   -port=8111 \
   -metricsPort=9090
 ```

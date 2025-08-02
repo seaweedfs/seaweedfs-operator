@@ -165,6 +165,12 @@ type VolumeSpec struct {
 	MinFreeSpacePercent *int32 `json:"minFreeSpacePercent,omitempty"`
 }
 
+// S3Config defines the S3 configuration with identities
+type S3Config struct {
+	Enabled      bool                      `json:"enabled,omitempty"`
+	ConfigSecret *corev1.SecretKeySelector `json:"configSecret,omitempty"`
+}
+
 // FilerSpec is the spec for filers
 type FilerSpec struct {
 	ComponentSpec               `json:",inline"`
@@ -187,8 +193,9 @@ type FilerSpec struct {
 	// Filer-specific settings
 
 	MaxMB *int32 `json:"maxMB,omitempty"`
-	// +kubebuilder:default:=true
-	S3 bool `json:"s3,omitempty"`
+	// S3 configuration for the filer
+	// +kubebuilder:default:={enabled:true}
+	S3 *S3Config `json:"s3,omitempty"`
 	// Enable IAM service embedded with filer (alternative to standalone IAM)
 	IAM bool `json:"iam,omitempty"`
 }

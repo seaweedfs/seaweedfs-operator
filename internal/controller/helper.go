@@ -62,6 +62,15 @@ func getMasterPeersString(m *seaweedv1.Seaweed) string {
 	return strings.Join(getMasterAddresses(m.Namespace, m.Name, m.Spec.Master.Replicas), ",")
 }
 
+// getIAMPort returns the IAM port to use, checking both standalone and embedded configurations
+func getIAMPort(m *seaweedv1.Seaweed) int32 {
+	iamPort := int32(seaweedv1.FilerIAMPort)
+	if m.Spec.IAM != nil && m.Spec.IAM.Port != nil {
+		iamPort = *m.Spec.IAM.Port
+	}
+	return iamPort
+}
+
 func copyAnnotations(src map[string]string) map[string]string {
 	if src == nil {
 		return nil

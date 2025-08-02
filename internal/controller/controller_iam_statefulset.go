@@ -108,7 +108,7 @@ func (r *SeaweedReconciler) createIAMStatefulSet(m *seaweedv1.Seaweed) *appsv1.S
 				InitialDelaySeconds: 10,
 				PeriodSeconds:       45,
 				SuccessThreshold:    2,
-				FailureThreshold:    100,
+				FailureThreshold:    10,
 			},
 			LivenessProbe: &corev1.Probe{
 				ProbeHandler: corev1.ProbeHandler{

@@ -17,18 +17,18 @@ import (
 
 func (r *SeaweedReconciler) ensureIAM(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	if seaweedCR.Spec.IAM == nil {
-		return true, ctrl.Result{}, nil
+		return false, ctrl.Result{}, nil
 	}
 
-	if done, result, err = r.ensureIAMService(seaweedCR); !done {
+	if done, result, err = r.ensureIAMService(seaweedCR); done {
 		return
 	}
 
-	if done, result, err = r.ensureIAMStatefulSet(seaweedCR); !done {
+	if done, result, err = r.ensureIAMStatefulSet(seaweedCR); done {
 		return
 	}
 
-	return true, ctrl.Result{}, nil
+	return false, ctrl.Result{}, nil
 }
 
 func (r *SeaweedReconciler) ensureIAMStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
@@ -38,14 +38,14 @@ func (r *SeaweedReconciler) ensureIAMStatefulSet(seaweedCR *seaweedv1.Seaweed) (
 	if errors.IsNotFound(err) {
 		statefulSet = r.createIAMStatefulSet(seaweedCR)
 		if err := controllerutil.SetControllerReference(seaweedCR, statefulSet, r.Scheme); err != nil {
-			return false, ctrl.Result{}, err
+			return ReconcileResult(err)
 		}
 		if err = r.Create(context.TODO(), statefulSet); err != nil {
-			return false, ctrl.Result{}, err
+			return ReconcileResult(err)
 		}
-		return false, ctrl.Result{RequeueAfter: time.Second * 5}, nil
+		return true, ctrl.Result{RequeueAfter: time.Second * 5}, nil
 	} else if err != nil {
-		return false, ctrl.Result{}, err
+		return ReconcileResult(err)
 	}
 
 	// Update the statefulset
@@ -54,12 +54,12 @@ func (r *SeaweedReconciler) ensureIAMStatefulSet(seaweedCR *seaweedv1.Seaweed) (
 		newStatefulSet.ResourceVersion = statefulSet.ResourceVersion
 		newStatefulSet.Spec.Replicas = statefulSet.Spec.Replicas
 		if err = r.Update(context.TODO(), newStatefulSet); err != nil {
-			return false, ctrl.Result{}, err
+			return ReconcileResult(err)
 		}
-		return false, ctrl.Result{RequeueAfter: time.Second * 5}, nil
+		return true, ctrl.Result{RequeueAfter: time.Second * 5}, nil
 	}
 
-	return true, ctrl.Result{}, nil
+	return ReconcileResult(nil)
 }
 
 func (r *SeaweedReconciler) ensureIAMService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
@@ -69,14 +69,14 @@ func (r *SeaweedReconciler) ensureIAMService(seaweedCR *seaweedv1.Seaweed) (bool
 	if errors.IsNotFound(err) {
 		service = r.createIAMService(seaweedCR)
 		if err := controllerutil.SetControllerReference(seaweedCR, service, r.Scheme); err != nil {
-			return false, ctrl.Result{}, err
+			return ReconcileResult(err)
 		}
 		if err = r.Create(context.TODO(), service); err != nil {
-			return false, ctrl.Result{}, err
+			return ReconcileResult(err)
 		}
-		return false, ctrl.Result{RequeueAfter: time.Second * 5}, nil
+		return true, ctrl.Result{RequeueAfter: time.Second * 5}, nil
 	} else if err != nil {
-		return false, ctrl.Result{}, err
+		return ReconcileResult(err)
 	}
 
 	// Update the service
@@ -85,12 +85,12 @@ func (r *SeaweedReconciler) ensureIAMService(seaweedCR *seaweedv1.Seaweed) (bool
 		newService.ResourceVersion = service.ResourceVersion
 		newService.Spec.ClusterIP = service.Spec.ClusterIP
 		if err = r.Update(context.TODO(), newService); err != nil {
-			return false, ctrl.Result{}, err
+			return ReconcileResult(err)
 		}
-		return false, ctrl.Result{RequeueAfter: time.Second * 5}, nil
+		return true, ctrl.Result{RequeueAfter: time.Second * 5}, nil
 	}
 
-	return true, ctrl.Result{}, nil
+	return ReconcileResult(nil)
 }
 
 func labelsForIAM(name string) map[string]string {

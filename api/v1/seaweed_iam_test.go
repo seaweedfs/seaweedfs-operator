@@ -115,7 +115,7 @@ func TestFilerSpecIAMValidation(t *testing.T) {
 			name: "Filer with embedded IAM enabled",
 			spec: FilerSpec{
 				Replicas: 1,
-				S3:       true,
+				S3:       &S3Config{Enabled: true},
 				IAM:      true,
 			},
 			desc: "Should support embedded IAM with S3",
@@ -124,7 +124,7 @@ func TestFilerSpecIAMValidation(t *testing.T) {
 			name: "Filer with embedded IAM disabled",
 			spec: FilerSpec{
 				Replicas: 1,
-				S3:       true,
+				S3:       &S3Config{Enabled: true},
 				IAM:      false,
 			},
 			desc: "Should support disabling embedded IAM",
@@ -133,7 +133,7 @@ func TestFilerSpecIAMValidation(t *testing.T) {
 			name: "Filer with IAM but no S3",
 			spec: FilerSpec{
 				Replicas: 1,
-				S3:       false,
+				S3:       &S3Config{Enabled: false},
 				IAM:      true,
 			},
 			desc: "Should support IAM without S3 (though not common)",
@@ -150,7 +150,7 @@ func TestFilerSpecIAMValidation(t *testing.T) {
 			}
 
 			// IAM without S3 might be unusual but not invalid
-			if tt.spec.IAM && !tt.spec.S3 {
+			if tt.spec.IAM && (tt.spec.S3 == nil || !tt.spec.S3.Enabled) {
 				t.Log("Note: IAM enabled without S3 - unusual but valid configuration")
 			}
 		})
@@ -176,7 +176,7 @@ func TestSeaweedSpecWithIAM(t *testing.T) {
 				},
 				Filer: &FilerSpec{
 					Replicas: 1,
-					S3:       true,
+					S3:       &S3Config{Enabled: true},
 				},
 				IAM: &IAMSpec{
 					Replicas: 1,
@@ -205,7 +205,7 @@ func TestSeaweedSpecWithIAM(t *testing.T) {
 				},
 				Filer: &FilerSpec{
 					Replicas: 1,
-					S3:       true,
+					S3:       &S3Config{Enabled: true},
 					IAM:      true,
 				},
 			},
@@ -228,7 +228,7 @@ func TestSeaweedSpecWithIAM(t *testing.T) {
 				},
 				Filer: &FilerSpec{
 					Replicas: 1,
-					S3:       true,
+					S3:       &S3Config{Enabled: true},
 					IAM:      true,
 				},
 				IAM: &IAMSpec{
@@ -258,7 +258,7 @@ func TestSeaweedSpecWithIAM(t *testing.T) {
 				},
 				Filer: &FilerSpec{
 					Replicas: 1,
-					S3:       true,
+					S3:       &S3Config{Enabled: true},
 				},
 			},
 			validate: func(t *testing.T, spec *SeaweedSpec) {

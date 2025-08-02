@@ -263,8 +263,9 @@ func TestEnsureIAMIntegration(t *testing.T) {
 
 			// For successful operations, check results
 			if !tt.expectError {
-				// Should be done if no IAM or successfully created
-				expectedDone := tt.seaweed.Spec.IAM == nil || result.RequeueAfter == 0
+				// Should always be done=false on success (to continue to next components)
+				// Only done=true when there's an error or requeue needed
+				expectedDone := result.RequeueAfter > 0 || err != nil
 				if done != expectedDone {
 					t.Errorf("Expected done=%v, got done=%v, result=%v", expectedDone, done, result)
 				}
@@ -310,7 +311,7 @@ func TestFullSeaweedReconcileWithIAM(t *testing.T) {
 			},
 			Filer: &seaweedv1.FilerSpec{
 				Replicas: 1,
-				S3:       true,
+				S3:       &seaweedv1.S3Config{Enabled: true},
 				IAM:      true, // Embedded IAM
 				ResourceRequirements: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{

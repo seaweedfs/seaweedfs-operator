@@ -30,7 +30,7 @@ func TestBuildFilerStartupScriptWithIAM(t *testing.T) {
 					Master: &seaweedv1.MasterSpec{Replicas: 1},
 					Filer: &seaweedv1.FilerSpec{
 						Replicas: 1,
-						S3:       true,
+						S3:       &seaweedv1.S3Config{Enabled: true},
 					},
 				},
 			},
@@ -54,7 +54,7 @@ func TestBuildFilerStartupScriptWithIAM(t *testing.T) {
 					Master: &seaweedv1.MasterSpec{Replicas: 1},
 					Filer: &seaweedv1.FilerSpec{
 						Replicas: 1,
-						S3:       true,
+						S3:       &seaweedv1.S3Config{Enabled: true},
 						IAM:      true,
 					},
 				},
@@ -81,7 +81,7 @@ func TestBuildFilerStartupScriptWithIAM(t *testing.T) {
 					Master: &seaweedv1.MasterSpec{Replicas: 1},
 					Filer: &seaweedv1.FilerSpec{
 						Replicas: 1,
-						S3:       true,
+						S3:       &seaweedv1.S3Config{Enabled: true},
 						IAM:      true,
 					},
 					IAM: &seaweedv1.IAMSpec{
@@ -140,7 +140,7 @@ func TestCreateFilerStatefulSetWithIAM(t *testing.T) {
 					Master: &seaweedv1.MasterSpec{Replicas: 1},
 					Filer: &seaweedv1.FilerSpec{
 						Replicas: 1,
-						S3:       true,
+						S3:       &seaweedv1.S3Config{Enabled: true},
 						IAM:      true,
 					},
 				},
@@ -239,7 +239,7 @@ func TestCreateFilerServiceWithIAM(t *testing.T) {
 					Master: &seaweedv1.MasterSpec{Replicas: 1},
 					Filer: &seaweedv1.FilerSpec{
 						Replicas: 1,
-						S3:       true,
+						S3:       &seaweedv1.S3Config{Enabled: true},
 						IAM:      true,
 					},
 				},
@@ -316,7 +316,7 @@ func TestCreateFilerServiceWithIAM(t *testing.T) {
 					Master: &seaweedv1.MasterSpec{Replicas: 1},
 					Filer: &seaweedv1.FilerSpec{
 						Replicas: 1,
-						S3:       true,
+						S3:       &seaweedv1.S3Config{Enabled: true},
 						IAM:      false,
 					},
 				},
@@ -358,7 +358,7 @@ func TestCreateFilerPeerServiceWithIAM(t *testing.T) {
 					Master: &seaweedv1.MasterSpec{Replicas: 1},
 					Filer: &seaweedv1.FilerSpec{
 						Replicas: 1,
-						S3:       true,
+						S3:       &seaweedv1.S3Config{Enabled: true},
 						IAM:      true,
 					},
 				},

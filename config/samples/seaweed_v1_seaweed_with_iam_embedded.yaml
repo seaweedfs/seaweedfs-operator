@@ -23,7 +23,8 @@ spec:
   # Filer servers with S3 and embedded IAM
   filer:
     replicas: 1
-    s3: true
+    s3:
+      enabled: true
     iam: true  # Enable IAM service embedded with filer
     resources:
       requests:

@@ -23,7 +23,7 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 	if m.Spec.Filer.IAM {
 		commands = append(commands, "-iam")
 		// Use custom IAM port if specified, otherwise use default
-		iamPort := seaweedv1.FilerIAMPort
+		iamPort := int32(seaweedv1.FilerIAMPort)
 		if m.Spec.IAM != nil && m.Spec.IAM.Port != nil {
 			iamPort = *m.Spec.IAM.Port
 		}
@@ -56,7 +56,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		})
 	}
 	if m.Spec.Filer.IAM {
-		iamPort := seaweedv1.FilerIAMPort
+		iamPort := int32(seaweedv1.FilerIAMPort)
 		if m.Spec.IAM != nil && m.Spec.IAM.Port != nil {
 			iamPort = *m.Spec.IAM.Port
 		}

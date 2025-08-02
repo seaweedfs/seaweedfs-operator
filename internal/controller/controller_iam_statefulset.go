@@ -19,12 +19,12 @@ func buildIAMStartupScript(m *seaweedv1.Seaweed) string {
 
 	// Use custom port if specified, otherwise use default
 	iamPort := int32(seaweedv1.FilerIAMPort)
-	if m.Spec.IAM.Port != nil {
+	if m.Spec.IAM != nil && m.Spec.IAM.Port != nil {
 		iamPort = *m.Spec.IAM.Port
 	}
 	commands = append(commands, fmt.Sprintf("-port=%d", iamPort))
 
-	if m.Spec.IAM.MetricsPort != nil {
+	if m.Spec.IAM != nil && m.Spec.IAM.MetricsPort != nil {
 		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.IAM.MetricsPort))
 	}
 

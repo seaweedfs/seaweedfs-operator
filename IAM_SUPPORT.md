@@ -24,7 +24,7 @@ metadata:
   name: seaweed-sample
 spec:
   image: chrislusf/seaweedfs:latest
-  
+
   master:
     replicas: 1
   volume:
@@ -32,7 +32,7 @@ spec:
   filer:
     replicas: 1
     s3: true
-  
+
   # Standalone IAM service
   iam:
     replicas: 1
@@ -59,18 +59,18 @@ metadata:
   name: seaweed-sample
 spec:
   image: chrislusf/seaweedfs:latest
-  
+
   master:
     replicas: 1
   volume:
     replicas: 1
-  
+
   # Filer with embedded IAM
   filer:
     replicas: 1
     s3: true
     iam: true  # Enable embedded IAM
-  
+
   # Optional: Configure IAM port (applies to both standalone and embedded)
   iam:
     port: 8111
@@ -109,7 +109,7 @@ The `FilerSpec` has been updated to support embedded IAM:
 ```go
 type FilerSpec struct {
     // ... existing fields ...
-    
+
     // Enable IAM service embedded with filer (alternative to standalone IAM)
     IAM bool `json:"iam,omitempty"`
 }

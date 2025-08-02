@@ -10,13 +10,13 @@ metadata:
   name: seaweed-sample
 spec:
   image: chrislusf/seaweedfs:latest
-  
+
   # Master servers
   master:
     replicas: 1
     volumeSizeLimitMB: 1024
 
-  # Volume servers  
+  # Volume servers
   volume:
     replicas: 1
 

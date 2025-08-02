@@ -66,9 +66,19 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 		}
 		err = k8sClient.Create(ctx, ns)
 		if err != nil {
-			// Namespace might already exist, ignore error
-			_ = k8sClient.Get(ctx, types.NamespacedName{Name: testNamespace}, ns)
+			// Namespace might already exist, try to get it
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: testNamespace}, ns)
+			if err != nil {
+				Expect(err).NotTo(HaveOccurred(), "Failed to create or get test namespace")
+			}
 		}
+
+		// Verify CRDs are installed
+		crd := &seaweedv1.Seaweed{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: "nonexistent", Namespace: testNamespace}, crd)
+		// We expect this to fail with NotFound, not with "no kind registered"
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).ToNot(ContainSubstring("no kind is registered"))
 
 		// Wait briefly for controller to be ready to process requests
 		time.Sleep(5 * time.Second)
@@ -158,19 +168,26 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 
 		It("should apply resource requirements to master containers correctly", func() {
 			// Create the Seaweed resource
+			GinkgoWriter.Printf("Creating Seaweed resource in namespace %s\n", testNamespace)
 			Expect(k8sClient.Create(ctx, seaweed)).To(Succeed())
+			GinkgoWriter.Printf("Seaweed resource created successfully\n")
 
 			// Wait for the master statefulset to be created
+			GinkgoWriter.Printf("Waiting for StatefulSet %s-master to be created...\n", seaweedName)
 			Eventually(func() error {
 				clientset, err := utils.GetClientset(config.GetConfigOrDie())
 				if err != nil {
+					GinkgoWriter.Printf("Failed to get clientset: %v\n", err)
 					return err
 				}
 
 				sts, err := clientset.AppsV1().StatefulSets(testNamespace).Get(ctx, seaweedName+"-master", metav1.GetOptions{})
 				if err != nil {
+					GinkgoWriter.Printf("StatefulSet not found yet: %v\n", err)
 					return err
 				}
+
+				GinkgoWriter.Printf("StatefulSet found! Checking containers...\n")
 
 				// Verify the container has the correct resource requirements
 				container := sts.Spec.Template.Spec.Containers[0]

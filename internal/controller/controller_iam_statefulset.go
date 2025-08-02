@@ -15,7 +15,7 @@ import (
 func buildIAMStartupScript(m *seaweedv1.Seaweed) string {
 	commands := []string{"weed", "-logtostderr=true", "iam"}
 	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m)))
-	commands = append(commands, fmt.Sprintf("-filer=%s-filer:8888", m.Name))
+	commands = append(commands, fmt.Sprintf("-filer=%s-filer:%d", m.Name, seaweedv1.FilerHTTPPort))
 
 	// Use custom port if specified, otherwise use default
 	iamPort := int32(seaweedv1.FilerIAMPort)

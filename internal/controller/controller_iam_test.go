@@ -472,10 +472,3 @@ func stringPtr(s string) *string {
 func contains(str, substr string) bool {
 	return strings.Contains(str, substr)
 }
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}

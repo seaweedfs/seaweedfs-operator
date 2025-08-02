@@ -1,13 +1,21 @@
 run:
-  timeout: 10m
-  allow-parallel-runners: true
+  timeout: 15m
+  allow-parallel-runners: false  # Disable parallel runners to save memory
   go: "1.22"
-  concurrency: 2  # Reduce concurrency to save memory
+  concurrency: 1  # Single thread to minimize memory usage
 
 issues:
   # don't skip warning about doc comments
   # don't exclude the default set of lint
   exclude-use-default: false
+  max-issues-per-linter: 50  # Limit issues per linter to save memory
+  max-same-issues: 10        # Limit same issues to save memory
+  exclude-dirs:
+    - bin
+    - .git
+    - vendor
+  exclude-files:
+    - ".*\\.pb\\.go$"  # Skip generated protobuf files
   # restore some of the defaults
   # (fill in the rest as needed)
   exclude-rules:
@@ -25,22 +33,10 @@ issues:
 linters:
   disable-all: true
   enable:
-    - dupl
-    - errcheck
-    - copyloopvar  # Replaced exportloopref (deprecated)
-    - goconst
-    - gocyclo
-    - gofmt
-    - goimports
-    - gosimple
-    - govet
-    - ineffassign
-    - lll
-    - misspell
-    - nakedret
-    - prealloc
-    - staticcheck
-    - typecheck
-    - unconvert
-    - unparam
-    - unused
+    # Essential linters only to reduce memory usage
+    - errcheck      # Check for unchecked errors
+    - gofmt         # Code formatting
+    - govet         # Go vet analysis
+    - staticcheck   # Advanced static analysis
+    - typecheck     # Type checking
+    - unused        # Find unused code

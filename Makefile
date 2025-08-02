@@ -79,8 +79,17 @@ mod-tidy: ## Run go mod tidy against code.
 	go mod tidy
 
 .PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter & yamllint
-	$(GOLANGCI_LINT) run
+lint: ## Run golangci-lint linter & yamllint
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		echo "Using system golangci-lint"; \
+		golangci-lint run; \
+	elif [ -x "$(GOLANGCI_LINT)" ]; then \
+		echo "Using local golangci-lint"; \
+		$(GOLANGCI_LINT) run; \
+	else \
+		echo "Installing golangci-lint..."; \
+		$(MAKE) golangci-lint && $(GOLANGCI_LINT) run; \
+	fi
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
@@ -259,7 +268,8 @@ crd-ref-docs: $(LOCALBIN)
 .PHONY: golangci-lint
 golangci-lint: $(LOCALBIN)
 	@test -x $(GOLANGCI_LINT) && $(GOLANGCI_LINT) version | grep -q $(GOLANGCI_LINT_VERSION) || \
-	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	( echo "Installing golangci-lint with memory limits..." && \
+	  GOMEMLIMIT=500MiB GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) )
 
 .PHONY: nilaway
 nilaway: $(LOCALBIN)

@@ -71,7 +71,9 @@ func TestBucketClaimReconciler_CreateS3CredentialsSecret(t *testing.T) {
 		},
 		Spec: seaweedv1.SeaweedSpec{
 			Filer: &seaweedv1.FilerSpec{
-				S3: true,
+				S3: &seaweedv1.S3Config{
+					Enabled: true,
+				},
 			},
 		},
 	}
@@ -155,7 +157,9 @@ func TestBucketClaimReconciler_CreateS3CredentialsSecret_Disabled(t *testing.T) 
 		},
 		Spec: seaweedv1.SeaweedSpec{
 			Filer: &seaweedv1.FilerSpec{
-				S3: true,
+				S3: &seaweedv1.S3Config{
+					Enabled: true,
+				},
 			},
 		},
 	}
@@ -227,7 +231,9 @@ func TestBucketClaimReconciler_getSeaweedCluster(t *testing.T) {
 			},
 			Filer: &seaweedv1.FilerSpec{
 				Replicas: 1,
-				S3:       true,
+				S3: &seaweedv1.S3Config{
+					Enabled: true,
+				},
 			},
 			Admin: &seaweedv1.AdminSpec{
 				Replicas: 1,

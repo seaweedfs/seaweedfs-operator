@@ -186,6 +186,25 @@ type VolumeSpec struct {
 	MinFreeSpacePercent *int32 `json:"minFreeSpacePercent,omitempty"`
 }
 
+// S3Credential defines an S3 credential
+type S3Credential struct {
+	AccessKey string `json:"accessKey"`
+	SecretKey string `json:"secretKey"`
+}
+
+// S3Identity defines an identity with credentials and allowed actions
+type S3Identity struct {
+	Name        string         `json:"name"`
+	Credentials []S3Credential `json:"credentials,omitempty"`
+	Actions     []string       `json:"actions"`
+}
+
+// S3Config defines the S3 configuration
+type S3Config struct {
+	Enabled    bool         `json:"enabled,omitempty"`
+	Identities []S3Identity `json:"identities,omitempty"`
+}
+
 // FilerSpec is the spec for filers
 type FilerSpec struct {
 	ComponentSpec               `json:",inline"`
@@ -208,8 +227,10 @@ type FilerSpec struct {
 	// Filer-specific settings
 
 	MaxMB *int32 `json:"maxMB,omitempty"`
-	// +kubebuilder:default:=true
-	S3 bool `json:"s3,omitempty"`
+
+	// S3 configuration
+	// +kubebuilder:default:={enabled:true}
+	S3 *S3Config `json:"s3,omitempty"`
 }
 
 // FilerBackupSpec is the spec for filer backups

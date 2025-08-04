@@ -16,9 +16,9 @@ spec:
         image: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v20231011-8b53cabe0
         args:
           - create
-          - --host={{ include "seaweedfs-operator.fullname" . }}-webhook,{{ include "seaweedfs-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc
+          - --host=webhook-service,webhook-service.{{ .Release.Namespace }}.svc
           - --namespace=$(POD_NAMESPACE)
-          - --secret-name={{ include "seaweedfs-operator.fullname" . }}-webhook-server-cert
+          - --secret-name={{ .Values.webhook.certificateSecretName | default "webhook-server-cert" }}
         env:
           - name: POD_NAMESPACE
             valueFrom:
@@ -48,7 +48,7 @@ spec:
           - --namespace=$(POD_NAMESPACE)
           - --patch-mutating=true
           - --patch-validating=false
-          - --secret-name={{ include "seaweedfs-operator.fullname" . }}-webhook-server-cert
+          - --secret-name={{ .Values.webhook.certificateSecretName | default "webhook-server-cert" }}
           - --patch-failure-policy=Fail
 
         env:
@@ -80,7 +80,7 @@ spec:
           - --namespace=$(POD_NAMESPACE)
           - --patch-mutating=false
           - --patch-validating=true
-          - --secret-name={{ include "seaweedfs-operator.fullname" . }}-webhook-server-cert
+          - --secret-name={{ .Values.webhook.certificateSecretName | default "webhook-server-cert" }}
           - --patch-failure-policy=Fail
 
         env:

@@ -83,7 +83,9 @@ serviceMonitor:
 
 webhook:
   # -- Enable or disable webhooks
-  enabled: false
+  enabled: true
+  # -- Webhook certificate secret name (defaults to webhook-server-cert)
+  certificateSecretName: ""
 
 ## seaweedfs-operator containers' resource requests and limits.
 ## ref: http://kubernetes.io/docs/user-guide/compute-resources/

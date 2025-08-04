@@ -8,7 +8,7 @@ metadata:
 webhooks:
 - clientConfig:
     service:
-      name: {{ include "seaweedfs-operator.fullname" . }}-webhook
+      name: webhook-service
       namespace: {{ .Release.Namespace }}
       port: 443
       path: /mutate-seaweed-seaweedfs-com-v1-seaweed

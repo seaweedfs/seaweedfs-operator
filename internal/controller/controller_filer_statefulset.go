@@ -18,7 +18,7 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-filer-peer.%s", m.Name, m.Namespace))
 	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m)))
 
-	if m.Spec.Filer.S3 {
+	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled {
 		commands = append(commands, "-s3")
 	}
 
@@ -44,7 +44,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			Name:          "filer-grpc",
 		},
 	}
-	if m.Spec.Filer.S3 {
+	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled {
 		ports = append(ports, corev1.ContainerPort{
 			ContainerPort: seaweedv1.FilerS3Port,
 			Name:          "filer-s3",

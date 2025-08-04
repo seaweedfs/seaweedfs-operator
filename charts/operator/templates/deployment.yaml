@@ -59,7 +59,7 @@ spec:
       - name: cert
         secret:
           defaultMode: 420
-          secretName: {{ include "seaweedfs-operator.fullname" . }}-webhook-server-cert
+          secretName: {{ .Values.webhook.certificateSecretName | default "webhook-server-cert" }}
           items:
           - key: cert
             path: tls.crt

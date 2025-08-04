@@ -1869,8 +1869,38 @@ spec:
                       x-kubernetes-int-or-string: true
                     type: object
                   s3:
-                    default: true
-                    type: boolean
+                    default:
+                      enabled: true
+                    properties:
+                      enabled:
+                        type: boolean
+                      identities:
+                        items:
+                          properties:
+                            actions:
+                              items:
+                                type: string
+                              type: array
+                            credentials:
+                              items:
+                                properties:
+                                  accessKey:
+                                    type: string
+                                  secretKey:
+                                    type: string
+                                required:
+                                - accessKey
+                                - secretKey
+                                type: object
+                              type: array
+                            name:
+                              type: string
+                          required:
+                          - actions
+                          - name
+                          type: object
+                        type: array
+                    type: object
                   schedulerName:
                     type: string
                   service:

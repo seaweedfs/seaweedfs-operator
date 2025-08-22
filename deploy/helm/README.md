@@ -1,6 +1,6 @@
 # seaweedfs-operator
 
-![Version: 0.0.2](https://img.shields.io/badge/Version-0.0.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.0.1](https://img.shields.io/badge/AppVersion-0.0.1-informational?style=flat-square)
+![Version: 0.1.2](https://img.shields.io/badge/Version-0.1.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.4](https://img.shields.io/badge/AppVersion-1.0.4-informational?style=flat-square)
 
 A Helm chart for the seaweedfs-operator
 
@@ -38,7 +38,7 @@ A Helm chart for the seaweedfs-operator
 | service.port                    | int    | `8080`                          | port to use for Kubernetes service                                                                                                                                                                                   |
 | service.portName                | string | `"http"`                        | name of the port to use for Kubernetes service                                                                                                                                                                       |
 | serviceMonitor.additionalLabels | object | `{}`                            | Used to pass Labels that are used by the Prometheus installed in your cluster to select Service Monitors to work with                                                                                                |
-| serviceMonitor.enabled          | bool   | `true`                          | Enable or disable ServiceMonitor for prometheus metrics                                                                                                                                                              |
+| serviceMonitor.enabled          | bool   | `false`                         | Enable or disable ServiceMonitor for prometheus metrics                                                                                                                                                              |
 | serviceMonitor.honorLabels      | bool   | `true`                          | Specify honorLabels parameter to add the scrape endpoint                                                                                                                                                             |
 | serviceMonitor.interval         | string | `"10s"`                         | Specify the interval at which metrics should be scraped                                                                                                                                                              |
 | serviceMonitor.scrapeTimeout    | string | `"10s"`                         | Specify the timeout after which the scrape is ended                                                                                                                                                                  |

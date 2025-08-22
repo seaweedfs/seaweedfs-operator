@@ -3,24 +3,55 @@ kind: Deployment
 metadata:
   name: {{ include "seaweedfs-operator.fullname" . }}
   labels:
-    app: {{ include "seaweedfs-operator.fullname" . }}
+    {{- include "seaweedfs-operator.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: {{ include "seaweedfs-operator.fullname" . }}
+      {{- include "seaweedfs-operator.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        app: {{ include "seaweedfs-operator.fullname" . }}
+        {{- include "seaweedfs-operator.selectorLabels" . | nindent 8 }}
+      {{- with .Values.commonAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       {{ if or .Values.image.credentials .Values.image.pullSecrets }}
       imagePullSecrets:
         - name: {{ include "seaweedfs-operator.pullSecretName" . }}
       {{ end }}
       serviceAccountName: {{ include "seaweedfs-operator.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - name: seaweedfs-operator
+        {{- with .Values.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command:

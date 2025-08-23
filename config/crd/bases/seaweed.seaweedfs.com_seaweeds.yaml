@@ -2297,8 +2297,6 @@ spec:
                       More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                     type: object
                   s3:
-                    default:
-                      enabled: true
                     description: S3 configuration for the filer
                     properties:
                       configSecret:
@@ -2328,6 +2326,7 @@ spec:
                         type: object
                         x-kubernetes-map-type: atomic
                       enabled:
+                        default: true
                         type: boolean
                     type: object
                   schedulerName:

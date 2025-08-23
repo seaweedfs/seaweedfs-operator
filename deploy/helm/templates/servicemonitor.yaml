@@ -19,6 +19,6 @@ spec:
       path: /metrics
   selector:
     matchLabels:
-      {{- include "seaweedfs-operator.selectorLabels" . | nindent 6 }}
+      app: {{ include "seaweedfs-operator.fullname" . }}
 
 {{- end }}

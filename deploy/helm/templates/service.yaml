@@ -12,4 +12,4 @@ spec:
       port: {{ .Values.service.port }}
       targetPort: {{ .Values.port.number }}
   selector:
-    app: {{ include "seaweedfs-operator.fullname" . }}
+    {{- include "seaweedfs-operator.selectorLabels" . | nindent 6 }}

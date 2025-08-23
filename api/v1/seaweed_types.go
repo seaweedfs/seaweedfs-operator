@@ -167,6 +167,7 @@ type VolumeSpec struct {
 
 // S3Config defines the S3 configuration with identities
 type S3Config struct {
+	// +kubebuilder:default:=true
 	Enabled      bool                      `json:"enabled,omitempty"`
 	ConfigSecret *corev1.SecretKeySelector `json:"configSecret,omitempty"`
 }
@@ -194,7 +195,6 @@ type FilerSpec struct {
 
 	MaxMB *int32 `json:"maxMB,omitempty"`
 	// S3 configuration for the filer
-	// +kubebuilder:default:={enabled:true}
 	S3 *S3Config `json:"s3,omitempty"`
 	// Enable IAM service embedded with filer (alternative to standalone IAM)
 	IAM bool `json:"iam,omitempty"`

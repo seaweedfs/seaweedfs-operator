@@ -39,6 +39,10 @@ spec:
   template:
     spec:
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
+      initContainers:
+      - name: wait-for-webhook
+        image: busybox:1.36
+        command: ['sh', '-c', 'until wget -q --spider --no-check-certificate https://{{ include "seaweedfs-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc:443/mutate-seaweed-seaweedfs-com-v1-seaweed; do echo waiting for webhook; sleep 1; done;']
       containers:
       - name: certgen
         image: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v20231011-8b53cabe0
@@ -71,6 +75,10 @@ spec:
   template:
     spec:
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
+      initContainers:
+      - name: wait-for-webhook
+        image: busybox:1.36
+        command: ['sh', '-c', 'until wget -q --spider --no-check-certificate https://{{ include "seaweedfs-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc:443/validate-seaweed-seaweedfs-com-v1-seaweed; do echo waiting for webhook; sleep 1; done;']
       containers:
       - name: certgen
         image: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v20231011-8b53cabe0

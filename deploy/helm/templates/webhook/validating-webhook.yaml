@@ -13,6 +13,7 @@ webhooks:
       port: 443
       path: /validate-seaweed-seaweedfs-com-v1-seaweed
   name: vseaweed.kb.io
+  failurePolicy: Ignore
   sideEffects: None
   admissionReviewVersions:
   - v1

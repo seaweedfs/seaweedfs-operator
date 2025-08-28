@@ -85,6 +85,16 @@ Create the name of the service account to use
 {{- end -}}
 
 {{/*
+Mutating webhook path
+*/}}
+{{- define "seaweedfs-operator.mutatingWebhookPath" -}}/mutate-seaweed-seaweedfs-com-v1-seaweed{{- end -}}
+
+{{/*
+Validating webhook path
+*/}}
+{{- define "seaweedfs-operator.validatingWebhookPath" -}}/validate-seaweed-seaweedfs-com-v1-seaweed{{- end -}}
+
+{{/*
 Webhook init container for waiting until webhook service is ready
 */}}
 {{- define "seaweedfs-operator.webhookWaitInitContainer" -}}

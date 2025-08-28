@@ -11,7 +11,7 @@ webhooks:
       name: {{ include "seaweedfs-operator.fullname" . }}-webhook
       namespace: {{ .Release.Namespace }}
       port: 443
-      path: /mutate-seaweed-seaweedfs-com-v1-seaweed
+      path: {{ include "seaweedfs-operator.mutatingWebhookPath" . }}
   name: mseaweed.kb.io
   failurePolicy: Ignore
   sideEffects: None

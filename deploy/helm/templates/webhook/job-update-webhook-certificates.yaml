@@ -40,7 +40,7 @@ spec:
     spec:
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
       initContainers:
-      {{- include "seaweedfs-operator.webhookWaitInitContainer" (dict "Values" .Values "Release" .Release "webhookPath" "/mutate-seaweed-seaweedfs-com-v1-seaweed") | nindent 6 }}
+      {{- include "seaweedfs-operator.webhookWaitInitContainer" (dict "Chart" .Chart "Values" .Values "Release" .Release "webhookPath" (include "seaweedfs-operator.mutatingWebhookPath" .)) | nindent 8 }}
       containers:
       - name: certgen
         image: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v20231011-8b53cabe0
@@ -74,7 +74,7 @@ spec:
     spec:
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
       initContainers:
-      {{- include "seaweedfs-operator.webhookWaitInitContainer" (dict "Values" .Values "Release" .Release "webhookPath" "/validate-seaweed-seaweedfs-com-v1-seaweed") | nindent 6 }}
+      {{- include "seaweedfs-operator.webhookWaitInitContainer" (dict "Chart" .Chart "Values" .Values "Release" .Release "webhookPath" (include "seaweedfs-operator.validatingWebhookPath" .)) | nindent 8 }}
       containers:
       - name: certgen
         image: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v20231011-8b53cabe0

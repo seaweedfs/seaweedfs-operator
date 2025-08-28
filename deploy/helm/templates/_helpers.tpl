@@ -83,3 +83,22 @@ Create the name of the service account to use
   {{- default "default" .Values.rbac.serviceAccount.name -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Mutating webhook path
+*/}}
+{{- define "seaweedfs-operator.mutatingWebhookPath" -}}/mutate-seaweed-seaweedfs-com-v1-seaweed{{- end -}}
+
+{{/*
+Validating webhook path
+*/}}
+{{- define "seaweedfs-operator.validatingWebhookPath" -}}/validate-seaweed-seaweedfs-com-v1-seaweed{{- end -}}
+
+{{/*
+Webhook init container for waiting until webhook service is ready
+*/}}
+{{- define "seaweedfs-operator.webhookWaitInitContainer" -}}
+- name: wait-for-webhook
+  image: {{ .Values.webhook.initContainer.image }}
+  command: ['sh', '-c', 'set -e; until wget -q --spider --timeout=5 --no-check-certificate https://{{ include "seaweedfs-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc:443{{ .webhookPath }}; do echo waiting for webhook; sleep 1; done;']
+{{- end -}}

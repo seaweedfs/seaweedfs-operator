@@ -5,7 +5,7 @@ metadata:
   name: {{ include "seaweedfs-operator.fullname" . }}-create-webhook-certificates
   namespace: {{ .Release.Namespace }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   template:
@@ -39,6 +39,8 @@ spec:
   template:
     spec:
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
+      initContainers:
+      {{- include "seaweedfs-operator.webhookWaitInitContainer" (dict "Chart" .Chart "Values" .Values "Release" .Release "webhookPath" (include "seaweedfs-operator.mutatingWebhookPath" .)) | nindent 8 }}
       containers:
       - name: certgen
         image: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v20231011-8b53cabe0
@@ -71,6 +73,8 @@ spec:
   template:
     spec:
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
+      initContainers:
+      {{- include "seaweedfs-operator.webhookWaitInitContainer" (dict "Chart" .Chart "Values" .Values "Release" .Release "webhookPath" (include "seaweedfs-operator.validatingWebhookPath" .)) | nindent 8 }}
       containers:
       - name: certgen
         image: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v20231011-8b53cabe0

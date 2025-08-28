@@ -60,6 +60,11 @@ type SeaweedSpec struct {
 	// Volume
 	Volume *VolumeSpec `json:"volume,omitempty"`
 
+	// VolumeTopology defines multiple volume server groups with topology-aware placement
+	// This allows defining volume servers across different datacenters and racks in a tree structure
+	// +kubebuilder:validation:Optional
+	VolumeTopology map[string]*VolumeTopologySpec `json:"volumeTopology,omitempty"`
+
 	// Filer
 	Filer *FilerSpec `json:"filer,omitempty"`
 
@@ -163,6 +168,43 @@ type VolumeSpec struct {
 	IdleTimeout         *int32 `json:"idleTimeout,omitempty"`
 	MaxVolumeCounts     *int32 `json:"maxVolumeCounts,omitempty"`
 	MinFreeSpacePercent *int32 `json:"minFreeSpacePercent,omitempty"`
+
+	// Topology configuration for rack/datacenter-aware placement
+	// +kubebuilder:validation:Optional
+	Rack *string `json:"rack,omitempty"`
+	// +kubebuilder:validation:Optional
+	DataCenter *string `json:"dataCenter,omitempty"`
+}
+
+// VolumeTopologySpec defines a volume server group with specific topology placement
+// It inherits all fields from VolumeSpec but allows overriding them for topology-specific configuration
+type VolumeTopologySpec struct {
+	ComponentSpec               `json:",inline"`
+	corev1.ResourceRequirements `json:",inline"`
+
+	// The desired ready replicas for this topology group
+	// +kubebuilder:validation:Minimum=1
+	Replicas int32        `json:"replicas"`
+	Service  *ServiceSpec `json:"service,omitempty"`
+
+	StorageClassName *string `json:"storageClassName,omitempty"`
+
+	// MetricsPort is the port that the prometheus metrics export listens on
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
+
+	// Volume-specific settings (inherited but can be overridden)
+	CompactionMBps      *int32 `json:"compactionMBps,omitempty"`
+	FileSizeLimitMB     *int32 `json:"fileSizeLimitMB,omitempty"`
+	FixJpgOrientation   *bool  `json:"fixJpgOrientation,omitempty"`
+	IdleTimeout         *int32 `json:"idleTimeout,omitempty"`
+	MaxVolumeCounts     *int32 `json:"maxVolumeCounts,omitempty"`
+	MinFreeSpacePercent *int32 `json:"minFreeSpacePercent,omitempty"`
+
+	// Topology configuration for this volume group (required for topology groups)
+	// +kubebuilder:validation:Required
+	Rack string `json:"rack"`
+	// +kubebuilder:validation:Required
+	DataCenter string `json:"dataCenter"`
 }
 
 // S3Config defines the S3 configuration with identities

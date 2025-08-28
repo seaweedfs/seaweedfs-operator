@@ -92,6 +92,10 @@ serviceMonitor:
 webhook:
   # -- Enable or disable webhooks
   enabled: true
+  # -- Configuration for webhook certificate jobs
+  initContainer:
+    # -- Image for webhook readiness check init container
+    image: busybox:1.36
 
 ## seaweedfs-operator containers' resource requests and limits.
 ## ref: http://kubernetes.io/docs/user-guide/compute-resources/

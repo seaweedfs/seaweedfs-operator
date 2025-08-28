@@ -5,7 +5,7 @@ metadata:
   name: {{ include "seaweedfs-operator.fullname" . }}-create-webhook-certificates
   namespace: {{ .Release.Namespace }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   template:
@@ -33,7 +33,7 @@ metadata:
   name: {{ include "seaweedfs-operator.fullname" . }}-patch-mutating-webhook
   namespace: {{ .Release.Namespace }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   template:
@@ -65,7 +65,7 @@ metadata:
   name: {{ include "seaweedfs-operator.fullname" . }}-patch-validating-webhook
   namespace: {{ .Release.Namespace }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   template:

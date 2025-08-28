@@ -316,6 +316,26 @@ kubectl label node <node-name> \
 4. Apply the updated configuration
 5. Verify all volume servers report correct topology
 
+**Migration Example:**
+```yaml
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-migration
+spec:
+  # Disable legacy volume section
+  volume:
+    replicas: 0
+  
+  # Use new topology structure
+  volumeTopology:
+    dc1-rack1:
+      replicas: 3
+      rack: "rack1"
+      dataCenter: "dc1"
+      # ... other settings
+```
+
 ## Troubleshooting
 
 ### Simple Topology Issues

@@ -151,7 +151,7 @@ type VolumeSpec struct {
 	corev1.ResourceRequirements `json:",inline"`
 
 	// The desired ready replicas
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 	Replicas int32        `json:"replicas"`
 	Service  *ServiceSpec `json:"service,omitempty"`
 

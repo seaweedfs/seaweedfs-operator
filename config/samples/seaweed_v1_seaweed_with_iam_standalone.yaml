@@ -30,12 +30,11 @@ spec:
   iam:
     replicas: 1
     port: 8111
-    resources:
-      requests:
-        memory: "64Mi"
-        cpu: "50m"
-      limits:
-        memory: "128Mi"
-        cpu: "100m"
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
     service:
       type: ClusterIP

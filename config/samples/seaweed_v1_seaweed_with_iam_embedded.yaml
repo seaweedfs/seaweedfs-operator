@@ -26,13 +26,12 @@ spec:
     s3:
       enabled: true
     iam: true  # Enable IAM service embedded with filer
-    resources:
-      requests:
-        memory: "128Mi"
-        cpu: "100m"
-      limits:
-        memory: "256Mi"
-        cpu: "200m"
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
     service:
       type: ClusterIP
 

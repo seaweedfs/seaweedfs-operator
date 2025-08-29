@@ -220,7 +220,12 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
 
-	volumeCount := int(m.Spec.VolumeServerDiskCount)
+	var volumeCount int
+	if m.Spec.VolumeServerDiskCount != nil {
+		volumeCount = int(*m.Spec.VolumeServerDiskCount)
+	} else {
+		volumeCount = 1 // default value; adjust as appropriate for your application
+	}
 	volumeRequests := corev1.ResourceList{
 		corev1.ResourceStorage: topologySpec.Requests[corev1.ResourceStorage],
 	}

@@ -82,6 +82,50 @@ func copyAnnotations(src map[string]string) map[string]string {
 	return dst
 }
 
+// mergeAnnotations merges cluster-level annotations with component-level annotations
+// Component-level annotations take precedence over cluster-level ones
+func mergeAnnotations(clusterAnnotations, componentAnnotations map[string]string) map[string]string {
+	if clusterAnnotations == nil && componentAnnotations == nil {
+		return nil
+	}
+
+	merged := map[string]string{}
+
+	// Add cluster-level annotations first
+	for k, v := range clusterAnnotations {
+		merged[k] = v
+	}
+
+	// Override with component-level annotations
+	for k, v := range componentAnnotations {
+		merged[k] = v
+	}
+
+	return merged
+}
+
+// mergeNodeSelector merges cluster-level nodeSelector with component-level nodeSelector
+// Component-level nodeSelector takes precedence over cluster-level ones
+func mergeNodeSelector(clusterNodeSelector, componentNodeSelector map[string]string) map[string]string {
+	if clusterNodeSelector == nil && componentNodeSelector == nil {
+		return nil
+	}
+
+	merged := map[string]string{}
+
+	// Add cluster-level nodeSelector first
+	for k, v := range clusterNodeSelector {
+		merged[k] = v
+	}
+
+	// Override with component-level nodeSelector
+	for k, v := range componentNodeSelector {
+		merged[k] = v
+	}
+
+	return merged
+}
+
 // filterContainerResources removes storage resources that are not valid for container specifications
 // while keeping resources like ephemeral-storage that are valid for containers
 func filterContainerResources(resources corev1.ResourceRequirements) corev1.ResourceRequirements {

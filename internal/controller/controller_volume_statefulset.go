@@ -231,7 +231,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 
 func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.Seaweed, topologyName string, topologySpec *seaweedv1.VolumeTopologySpec) *appsv1.StatefulSet {
 	labels := labelsForVolumeServerTopology(m.Name, topologyName)
-	annotations := topologySpec.Annotations
+	annotations := mergeAnnotations(m.Spec.Annotations, topologySpec.Annotations)
 	ports := []corev1.ContainerPort{
 		{
 			ContainerPort: seaweedv1.VolumeHTTPPort,
@@ -256,7 +256,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 	if m.Spec.VolumeServerDiskCount != nil {
 		volumeCount = int(*m.Spec.VolumeServerDiskCount)
 	} else {
-		volumeCount = 1 // default value; adjust as appropriate for your application
+		volumeCount = 1 // default value
 	}
 	volumeRequests := corev1.ResourceList{
 		corev1.ResourceStorage: topologySpec.Requests[corev1.ResourceStorage],
@@ -388,11 +388,8 @@ func buildTopologyPodSpec(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTo
 		podSpec.Affinity = m.Spec.Affinity
 	}
 
-	if topologySpec.NodeSelector != nil {
-		podSpec.NodeSelector = topologySpec.NodeSelector
-	} else if m.Spec.NodeSelector != nil {
-		podSpec.NodeSelector = m.Spec.NodeSelector
-	}
+	// Merge cluster-level and topology-level node selectors
+	podSpec.NodeSelector = mergeNodeSelector(m.Spec.NodeSelector, topologySpec.NodeSelector)
 
 	if topologySpec.Tolerations != nil {
 		podSpec.Tolerations = topologySpec.Tolerations

@@ -167,7 +167,6 @@ func (r *SeaweedReconciler) createVolumeServerTopologyPeerService(m *seaweedv1.S
 func (r *SeaweedReconciler) createVolumeServerTopologyService(m *seaweedv1.Seaweed, topologyName string, i int) *corev1.Service {
 	labels := labelsForVolumeServerTopology(m.Name, topologyName)
 	serviceName := fmt.Sprintf("%s-volume-%s-%d", m.Name, topologyName, i)
-	labels[label.PodName] = serviceName
 	ports := []corev1.ServicePort{
 		{
 			Name:       "volume-http",
@@ -206,7 +205,10 @@ func (r *SeaweedReconciler) createVolumeServerTopologyService(m *seaweedv1.Seawe
 		Spec: corev1.ServiceSpec{
 			PublishNotReadyAddresses: true,
 			Ports:                    ports,
-			Selector:                 labels,
+			// Use StatefulSet pod name label to select the specific pod
+			Selector: map[string]string{
+				"statefulset.kubernetes.io/pod-name": serviceName,
+			},
 		},
 	}
 

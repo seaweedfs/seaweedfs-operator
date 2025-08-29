@@ -475,6 +475,11 @@ func (in *SeaweedSpec) DeepCopyInto(out *SeaweedSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.VolumeServerDiskCount != nil {
+		in, out := &in.VolumeServerDiskCount, &out.VolumeServerDiskCount
+		*out = new(int32)
+		**out = **in
+	}
 	if in.HostSuffix != nil {
 		in, out := &in.HostSuffix, &out.HostSuffix
 		*out = new(string)

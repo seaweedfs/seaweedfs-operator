@@ -78,7 +78,12 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
 
-	volumeCount := int(m.Spec.VolumeServerDiskCount)
+	var volumeCount int
+	if m.Spec.VolumeServerDiskCount != nil {
+		volumeCount = int(*m.Spec.VolumeServerDiskCount)
+	} else {
+		volumeCount = 1 // default value
+	}
 	volumeRequests := corev1.ResourceList{
 		corev1.ResourceStorage: m.Spec.Volume.Requests[corev1.ResourceStorage],
 	}

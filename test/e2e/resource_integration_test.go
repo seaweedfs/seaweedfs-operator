@@ -155,7 +155,7 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 							},
 						},
 					},
-					VolumeServerDiskCount: 1,
+					VolumeServerDiskCount: func() *int32 { v := int32(1); return &v }(),
 				},
 			}
 		})

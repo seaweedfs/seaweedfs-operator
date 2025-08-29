@@ -106,7 +106,7 @@ type SeaweedSpec struct {
 	// Template.
 	StatefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType `json:"statefulSetUpdateStrategy,omitempty"`
 
-	VolumeServerDiskCount int32 `json:"volumeServerDiskCount,omitempty"`
+	VolumeServerDiskCount *int32 `json:"volumeServerDiskCount,omitempty"`
 
 	// Ingresses
 	HostSuffix *string `json:"hostSuffix,omitempty"`

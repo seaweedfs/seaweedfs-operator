@@ -302,10 +302,12 @@ func TestFullSeaweedReconcileWithIAM(t *testing.T) {
 			},
 			Volume: &seaweedv1.VolumeSpec{
 				Replicas: 1,
-				ResourceRequirements: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("200m"),
-						corev1.ResourceMemory: resource.MustParse("512Mi"),
+				VolumeServerConfig: seaweedv1.VolumeServerConfig{
+					ResourceRequirements: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("200m"),
+							corev1.ResourceMemory: resource.MustParse("512Mi"),
+						},
 					},
 				},
 			},

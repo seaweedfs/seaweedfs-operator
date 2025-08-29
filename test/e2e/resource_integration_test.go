@@ -126,17 +126,19 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 					},
 					Volume: &seaweedv1.VolumeSpec{
 						Replicas: 1,
-						ResourceRequirements: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceCPU:              resource.MustParse("250m"),
-								corev1.ResourceMemory:           resource.MustParse("512Mi"),
-								corev1.ResourceStorage:          resource.MustParse("10Gi"), // Should NOT appear in container
-								corev1.ResourceEphemeralStorage: resource.MustParse("1Gi"),  // Should appear in container
-							},
-							Limits: corev1.ResourceList{
-								corev1.ResourceCPU:     resource.MustParse("500m"),
-								corev1.ResourceMemory:  resource.MustParse("1Gi"),
-								corev1.ResourceStorage: resource.MustParse("20Gi"), // Should NOT appear in container
+						VolumeServerConfig: seaweedv1.VolumeServerConfig{
+							ResourceRequirements: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:              resource.MustParse("250m"),
+									corev1.ResourceMemory:           resource.MustParse("512Mi"),
+									corev1.ResourceStorage:          resource.MustParse("10Gi"), // Should NOT appear in container
+									corev1.ResourceEphemeralStorage: resource.MustParse("1Gi"),  // Should appear in container
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:     resource.MustParse("500m"),
+									corev1.ResourceMemory:  resource.MustParse("1Gi"),
+									corev1.ResourceStorage: resource.MustParse("20Gi"), // Should NOT appear in container
+								},
 							},
 						},
 					},
@@ -153,7 +155,7 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 							},
 						},
 					},
-					VolumeServerDiskCount: 1,
+					VolumeServerDiskCount: func() *int32 { v := int32(1); return &v }(),
 				},
 			}
 		})

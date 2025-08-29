@@ -60,6 +60,11 @@ type SeaweedSpec struct {
 	// Volume
 	Volume *VolumeSpec `json:"volume,omitempty"`
 
+	// VolumeTopology defines multiple volume server groups with topology-aware placement
+	// This allows defining volume servers across different datacenters and racks in a tree structure
+	// +kubebuilder:validation:Optional
+	VolumeTopology map[string]*VolumeTopologySpec `json:"volumeTopology,omitempty"`
+
 	// Filer
 	Filer *FilerSpec `json:"filer,omitempty"`
 
@@ -101,7 +106,7 @@ type SeaweedSpec struct {
 	// Template.
 	StatefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType `json:"statefulSetUpdateStrategy,omitempty"`
 
-	VolumeServerDiskCount int32 `json:"volumeServerDiskCount,omitempty"`
+	VolumeServerDiskCount *int32 `json:"volumeServerDiskCount,omitempty"`
 
 	// Ingresses
 	HostSuffix *string `json:"hostSuffix,omitempty"`
@@ -140,29 +145,55 @@ type MasterSpec struct {
 	ConcurrentStart *bool `json:"concurrentStart,omitempty"`
 }
 
-// VolumeSpec is the spec for volume servers
-type VolumeSpec struct {
+// VolumeServerConfig contains common configuration for volume servers
+type VolumeServerConfig struct {
 	ComponentSpec               `json:",inline"`
 	corev1.ResourceRequirements `json:",inline"`
 
-	// The desired ready replicas
-	// +kubebuilder:validation:Minimum=1
-	Replicas int32        `json:"replicas"`
-	Service  *ServiceSpec `json:"service,omitempty"`
-
-	StorageClassName *string `json:"storageClassName,omitempty"`
+	Service          *ServiceSpec `json:"service,omitempty"`
+	StorageClassName *string      `json:"storageClassName,omitempty"`
 
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
 	// Volume-specific settings
-
 	CompactionMBps      *int32 `json:"compactionMBps,omitempty"`
 	FileSizeLimitMB     *int32 `json:"fileSizeLimitMB,omitempty"`
 	FixJpgOrientation   *bool  `json:"fixJpgOrientation,omitempty"`
 	IdleTimeout         *int32 `json:"idleTimeout,omitempty"`
 	MaxVolumeCounts     *int32 `json:"maxVolumeCounts,omitempty"`
 	MinFreeSpacePercent *int32 `json:"minFreeSpacePercent,omitempty"`
+}
+
+// VolumeSpec is the spec for volume servers
+type VolumeSpec struct {
+	VolumeServerConfig `json:",inline"`
+
+	// The desired ready replicas
+	// +kubebuilder:validation:Minimum=0
+	Replicas int32 `json:"replicas"`
+
+	// Topology configuration for rack/datacenter-aware placement
+	// +kubebuilder:validation:Optional
+	Rack *string `json:"rack,omitempty"`
+	// +kubebuilder:validation:Optional
+	DataCenter *string `json:"dataCenter,omitempty"`
+}
+
+// VolumeTopologySpec defines a volume server group with specific topology placement
+// It inherits all fields from VolumeServerConfig but allows overriding them for topology-specific configuration
+type VolumeTopologySpec struct {
+	VolumeServerConfig `json:",inline"`
+
+	// The desired ready replicas for this topology group
+	// +kubebuilder:validation:Minimum=1
+	Replicas int32 `json:"replicas"`
+
+	// Topology configuration for this volume group (required for topology groups)
+	// +kubebuilder:validation:Required
+	Rack string `json:"rack"`
+	// +kubebuilder:validation:Required
+	DataCenter string `json:"dataCenter"`
 }
 
 // S3Config defines the S3 configuration with identities

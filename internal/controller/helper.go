@@ -82,6 +82,50 @@ func copyAnnotations(src map[string]string) map[string]string {
 	return dst
 }
 
+// mergeAnnotations merges cluster-level annotations with component-level annotations
+// Component-level annotations take precedence over cluster-level ones
+func mergeAnnotations(clusterAnnotations, componentAnnotations map[string]string) map[string]string {
+	if clusterAnnotations == nil && componentAnnotations == nil {
+		return nil
+	}
+
+	merged := map[string]string{}
+
+	// Add cluster-level annotations first
+	for k, v := range clusterAnnotations {
+		merged[k] = v
+	}
+
+	// Override with component-level annotations
+	for k, v := range componentAnnotations {
+		merged[k] = v
+	}
+
+	return merged
+}
+
+// mergeNodeSelector merges cluster-level nodeSelector with component-level nodeSelector
+// Component-level nodeSelector takes precedence over cluster-level ones
+func mergeNodeSelector(clusterNodeSelector, componentNodeSelector map[string]string) map[string]string {
+	if clusterNodeSelector == nil && componentNodeSelector == nil {
+		return nil
+	}
+
+	merged := map[string]string{}
+
+	// Add cluster-level nodeSelector first
+	for k, v := range clusterNodeSelector {
+		merged[k] = v
+	}
+
+	// Override with component-level nodeSelector
+	for k, v := range componentNodeSelector {
+		merged[k] = v
+	}
+
+	return merged
+}
+
 // filterContainerResources removes storage resources that are not valid for container specifications
 // while keeping resources like ephemeral-storage that are valid for containers
 func filterContainerResources(resources corev1.ResourceRequirements) corev1.ResourceRequirements {
@@ -108,4 +152,69 @@ func filterContainerResources(resources corev1.ResourceRequirements) corev1.Reso
 	}
 
 	return filtered
+}
+
+// getStorageClassName returns the storage class name with fallback logic
+func getStorageClassName(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *string {
+	if topologySpec != nil && topologySpec.StorageClassName != nil {
+		return topologySpec.StorageClassName
+	}
+	if m.Spec.Volume != nil && m.Spec.Volume.StorageClassName != nil {
+		return m.Spec.Volume.StorageClassName
+	}
+	return nil
+}
+
+// getResourceRequirements returns the resource requirements with fallback logic
+func getResourceRequirements(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) corev1.ResourceRequirements {
+	// Start with base resources from spec.volume, if available
+	resources := corev1.ResourceRequirements{}
+	if m.Spec.Volume != nil {
+		resources = m.Spec.Volume.ResourceRequirements
+	}
+
+	// If no topology spec, return base
+	if topologySpec == nil {
+		return resources
+	}
+
+	// Override with topology-specific resources if they are provided
+	if len(topologySpec.ResourceRequirements.Requests) > 0 {
+		resources.Requests = topologySpec.ResourceRequirements.Requests
+	}
+	if len(topologySpec.ResourceRequirements.Limits) > 0 {
+		resources.Limits = topologySpec.ResourceRequirements.Limits
+	}
+
+	return resources
+}
+
+// getMetricsPort returns the metrics port with fallback logic
+func getMetricsPort(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *int32 {
+	if topologySpec != nil && topologySpec.MetricsPort != nil {
+		return topologySpec.MetricsPort
+	}
+	if m.Spec.Volume != nil && m.Spec.Volume.MetricsPort != nil {
+		return m.Spec.Volume.MetricsPort
+	}
+	return nil
+}
+
+// getServiceSpec returns the service spec with fallback logic
+func getServiceSpec(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *seaweedv1.ServiceSpec {
+	if topologySpec != nil && topologySpec.Service != nil {
+		return topologySpec.Service
+	}
+	if m.Spec.Volume != nil && m.Spec.Volume.Service != nil {
+		return m.Spec.Volume.Service
+	}
+	return nil
+}
+
+// getVolumeServerConfigValue returns volume server config values with fallback logic
+func getVolumeServerConfigValue[T any](topologyValue, volumeValue *T) *T {
+	if topologyValue != nil {
+		return topologyValue
+	}
+	return volumeValue
 }

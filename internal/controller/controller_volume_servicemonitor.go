@@ -31,3 +31,29 @@ func (r *SeaweedReconciler) createVolumeServerServiceMonitor(m *seaweedv1.Seawee
 
 	return dep
 }
+
+func (r *SeaweedReconciler) createVolumeServerTopologyServiceMonitor(m *seaweedv1.Seaweed, topologyName string, topologySpec *seaweedv1.VolumeTopologySpec) *monitorv1.ServiceMonitor {
+	labels := labelsForVolumeServerTopology(m.Name, topologyName)
+	labels["seaweedfs/service-role"] = "peer"
+
+	dep := &monitorv1.ServiceMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      m.Name + "-volume-" + topologyName,
+			Namespace: m.Namespace,
+			Labels:    labels,
+		},
+		Spec: monitorv1.ServiceMonitorSpec{
+			Endpoints: []monitorv1.Endpoint{
+				{
+					Path: "/metrics",
+					Port: "volume-metrics",
+				},
+			},
+			Selector: metav1.LabelSelector{
+				MatchLabels: labels,
+			},
+		},
+	}
+
+	return dep
+}

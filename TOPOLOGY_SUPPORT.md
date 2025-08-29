@@ -248,10 +248,6 @@ Once deployed, you can verify that volume servers are reporting the correct topo
 2. Looking at the volume server list to confirm datacenter and rack information
 3. Using the SeaweedFS shell: `echo "cluster.status" | weed shell -master=<master-service>:9333`
 
-## Migration
-
-If you're upgrading from a version without topology support, existing volume servers will continue to work without any rack or datacenter information. You can gradually add topology information to new volume servers as needed.
-
 ## Tree Topology Advantages
 
 The tree topology approach (`volumeTopology`) offers several advantages over the simple topology approach:
@@ -309,12 +305,19 @@ kubectl label node <node-name> \
 
 ## Migration
 
+### From Older Versions to Topology Support
+
+If you're upgrading from a version without topology support, existing volume servers will continue to work without any rack or datacenter information. You can gradually add topology information to new volume servers as needed.
+
 ### From Simple to Tree Topology
-1. Note current volume server configuration
-2. Create equivalent topology groups in `volumeTopology`
-3. Set original `volume.replicas: 0` to disable simple topology
-4. Apply the updated configuration
-5. Verify all volume servers report correct topology
+
+When transitioning from the simple topology approach to the more flexible tree topology approach:
+
+1. **Document Current Configuration**: Note your current volume server configuration
+2. **Create Equivalent Topology Groups**: Create equivalent topology groups in `volumeTopology`
+3. **Disable Simple Topology**: Set original `volume.replicas: 0` to disable simple topology
+4. **Apply Configuration**: Apply the updated configuration 
+5. **Verify Topology**: Verify all volume servers report correct topology
 
 **Migration Example:**
 ```yaml

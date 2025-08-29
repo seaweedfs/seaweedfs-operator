@@ -399,7 +399,7 @@ func buildTopologyPodSpec(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTo
 }
 
 func getImagePullPolicy(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) corev1.PullPolicy {
-	if topologySpec.ImagePullPolicy != nil {
+	if topologySpec != nil && topologySpec.ImagePullPolicy != nil {
 		return *topologySpec.ImagePullPolicy
 	}
 	if m.Spec.ImagePullPolicy != "" {
@@ -409,7 +409,7 @@ func getImagePullPolicy(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopo
 }
 
 func getEnvVars(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) []corev1.EnvVar {
-	if topologySpec.Env != nil {
+	if topologySpec != nil && topologySpec.Env != nil {
 		return topologySpec.Env
 	}
 	if m.Spec.Volume != nil && m.Spec.Volume.Env != nil {

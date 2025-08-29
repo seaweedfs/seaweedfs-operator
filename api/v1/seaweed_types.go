@@ -145,29 +145,33 @@ type MasterSpec struct {
 	ConcurrentStart *bool `json:"concurrentStart,omitempty"`
 }
 
-// VolumeSpec is the spec for volume servers
-type VolumeSpec struct {
+// VolumeServerConfig contains common configuration for volume servers
+type VolumeServerConfig struct {
 	ComponentSpec               `json:",inline"`
 	corev1.ResourceRequirements `json:",inline"`
 
-	// The desired ready replicas
-	// +kubebuilder:validation:Minimum=0
-	Replicas int32        `json:"replicas"`
-	Service  *ServiceSpec `json:"service,omitempty"`
-
-	StorageClassName *string `json:"storageClassName,omitempty"`
+	Service          *ServiceSpec `json:"service,omitempty"`
+	StorageClassName *string      `json:"storageClassName,omitempty"`
 
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
 	// Volume-specific settings
-
 	CompactionMBps      *int32 `json:"compactionMBps,omitempty"`
 	FileSizeLimitMB     *int32 `json:"fileSizeLimitMB,omitempty"`
 	FixJpgOrientation   *bool  `json:"fixJpgOrientation,omitempty"`
 	IdleTimeout         *int32 `json:"idleTimeout,omitempty"`
 	MaxVolumeCounts     *int32 `json:"maxVolumeCounts,omitempty"`
 	MinFreeSpacePercent *int32 `json:"minFreeSpacePercent,omitempty"`
+}
+
+// VolumeSpec is the spec for volume servers
+type VolumeSpec struct {
+	VolumeServerConfig `json:",inline"`
+
+	// The desired ready replicas
+	// +kubebuilder:validation:Minimum=0
+	Replicas int32 `json:"replicas"`
 
 	// Topology configuration for rack/datacenter-aware placement
 	// +kubebuilder:validation:Optional
@@ -177,28 +181,13 @@ type VolumeSpec struct {
 }
 
 // VolumeTopologySpec defines a volume server group with specific topology placement
-// It inherits all fields from VolumeSpec but allows overriding them for topology-specific configuration
+// It inherits all fields from VolumeServerConfig but allows overriding them for topology-specific configuration
 type VolumeTopologySpec struct {
-	ComponentSpec               `json:",inline"`
-	corev1.ResourceRequirements `json:",inline"`
+	VolumeServerConfig `json:",inline"`
 
 	// The desired ready replicas for this topology group
 	// +kubebuilder:validation:Minimum=1
-	Replicas int32        `json:"replicas"`
-	Service  *ServiceSpec `json:"service,omitempty"`
-
-	StorageClassName *string `json:"storageClassName,omitempty"`
-
-	// MetricsPort is the port that the prometheus metrics export listens on
-	MetricsPort *int32 `json:"metricsPort,omitempty"`
-
-	// Volume-specific settings (inherited but can be overridden)
-	CompactionMBps      *int32 `json:"compactionMBps,omitempty"`
-	FileSizeLimitMB     *int32 `json:"fileSizeLimitMB,omitempty"`
-	FixJpgOrientation   *bool  `json:"fixJpgOrientation,omitempty"`
-	IdleTimeout         *int32 `json:"idleTimeout,omitempty"`
-	MaxVolumeCounts     *int32 `json:"maxVolumeCounts,omitempty"`
-	MinFreeSpacePercent *int32 `json:"minFreeSpacePercent,omitempty"`
+	Replicas int32 `json:"replicas"`
 
 	// Topology configuration for this volume group (required for topology groups)
 	// +kubebuilder:validation:Required

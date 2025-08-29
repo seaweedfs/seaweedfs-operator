@@ -6020,6 +6020,7 @@ spec:
                     - name
                     x-kubernetes-list-type: map
                   compactionMBps:
+                    description: Volume-specific settings
                     format: int32
                     type: integer
                   dataCenter:
@@ -6343,7 +6344,7 @@ spec:
                 additionalProperties:
                   description: |-
                     VolumeTopologySpec defines a volume server group with specific topology placement
-                    It inherits all fields from VolumeSpec but allows overriding them for topology-specific configuration
+                    It inherits all fields from VolumeServerConfig but allows overriding them for topology-specific configuration
                   properties:
                     affinity:
                       description: Affinity of the component. Override the cluster-level
@@ -7308,8 +7309,7 @@ spec:
                       - name
                       x-kubernetes-list-type: map
                     compactionMBps:
-                      description: Volume-specific settings (inherited but can be
-                        overridden)
+                      description: Volume-specific settings
                       format: int32
                       type: integer
                     dataCenter:

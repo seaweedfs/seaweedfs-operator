@@ -47,7 +47,7 @@ spec:
   master:
     replicas: 3
     defaultReplication: "210"
-  
+
   # Define multiple topology groups
   volumeTopology:
     # Datacenter 1, Rack 1
@@ -68,7 +68,7 @@ spec:
         requests:
           cpu: "1"
           memory: "2Gi"
-    
+
     # Datacenter 1, Rack 2
     dc1-rack2:
       replicas: 2
@@ -80,7 +80,7 @@ spec:
         topology.kubernetes.io/zone: "us-west-2b"
         seaweedfs/datacenter: "dc1"
         seaweedfs/rack: "rack2"
-    
+
     # Datacenter 2, Rack 1
     dc2-rack1:
       replicas: 3
@@ -94,7 +94,7 @@ spec:
         seaweedfs/rack: "rack1"
       storageClassName: "fast-ssd"
       compactionMBps: 100
-    
+
     # Datacenter 2, Rack 2
     dc2-rack2:
       replicas: 2
@@ -257,13 +257,13 @@ The tree topology approach (`volumeTopology`) offers several advantages over the
 - Use different storage classes for different locations
 - Apply different volume server settings per topology group
 
-### 2. **Better Organization** 
+### 2. **Better Organization**
 - Logical grouping by datacenter and rack
 - Clear naming convention for topology groups
 - Individual service and monitoring per group
 
 ### 3. **Flexible Scaling**
-- Scale each topology group independently 
+- Scale each topology group independently
 - Add new topology groups without affecting existing ones
 - Different replica counts per topology location
 
@@ -316,7 +316,7 @@ When transitioning from the simple topology approach to the more flexible tree t
 1. **Document Current Configuration**: Note your current volume server configuration
 2. **Create Equivalent Topology Groups**: Create equivalent topology groups in `volumeTopology`
 3. **Disable Simple Topology**: Set original `volume.replicas: 0` to disable simple topology
-4. **Apply Configuration**: Apply the updated configuration 
+4. **Apply Configuration**: Apply the updated configuration
 5. **Verify Topology**: Verify all volume servers report correct topology
 
 **Migration Example:**
@@ -329,7 +329,7 @@ spec:
   # Disable legacy volume section
   volume:
     replicas: 0
-  
+
   # Use new topology structure
   volumeTopology:
     dc1-rack1:

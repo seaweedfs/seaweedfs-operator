@@ -7,18 +7,18 @@ spec:
   # SeaweedFS image
   image: chrislusf/seaweedfs:latest
   volumeServerDiskCount: 1
-  
+
   # Master configuration with 210 replication
   master:
     replicas: 3
     volumeSizeLimitMB: 1024
     # Set default replication to 210 (2 copies in different datacenters, 1 copy in different rack, 0 copies in same rack)
     defaultReplication: "210"
-  
+
   # Disable the single volume specification since we're using topology tree
   # volume:
   #   replicas: 0
-  
+
   # Tree-structured topology configuration
   # This creates a hierarchical deployment across multiple datacenters and racks
   volumeTopology:
@@ -49,7 +49,7 @@ spec:
           cpu: "1"
           memory: "2Gi"
       metricsPort: 9324
-    
+
     # Datacenter 1, Rack 2
     dc1-rack2:
       replicas: 2
@@ -74,7 +74,7 @@ spec:
           cpu: "500m"
           memory: "1.5Gi"
       metricsPort: 9325
-      
+
     # Datacenter 2, Rack 1
     dc2-rack1:
       replicas: 3
@@ -104,13 +104,13 @@ spec:
       # Volume-specific settings for this topology
       compactionMBps: 100
       maxVolumeCounts: 100
-      
-    # Datacenter 2, Rack 2  
+
+    # Datacenter 2, Rack 2
     dc2-rack2:
       replicas: 2
       requests:
         storage: 15Gi
-      rack: "rack2" 
+      rack: "rack2"
       dataCenter: "dc2"
       nodeSelector:
         topology.kubernetes.io/zone: "us-east-1b"
@@ -132,7 +132,7 @@ spec:
       metricsPort: 9327
       compactionMBps: 80
       maxVolumeCounts: 80
-  
+
   # Filer configuration
   filer:
     replicas: 2
@@ -142,7 +142,7 @@ spec:
       [leveldb2]
       enabled = true
       dir = "/data/filerldb2"
-      
+
       # Enable cross-datacenter replication
       [replication]
       dc1 = "dc1"

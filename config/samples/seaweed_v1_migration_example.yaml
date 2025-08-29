@@ -9,13 +9,13 @@ metadata:
 spec:
   image: chrislusf/seaweedfs:latest
   volumeServerDiskCount: 1
-  
+
   # Master configuration
   master:
     replicas: 3
     volumeSizeLimitMB: 1024
     defaultReplication: "210"  # Enable 210 replication
-  
+
   # DISABLE legacy volume section by setting replicas to 0
   # This is now allowed after the validation fix
   volume:
@@ -24,7 +24,7 @@ spec:
       storage: 10Gi
     # You can still specify other volume settings here as defaults
     # but they won't be used since replicas: 0
-  
+
   # NEW: Use volumeTopology for structured deployment
   volumeTopology:
     dc1-rack1:
@@ -42,9 +42,9 @@ spec:
           cpu: "2"
           memory: "4Gi"
         requests:
-          cpu: "1"  
+          cpu: "1"
           memory: "2Gi"
-    
+
     dc1-rack2:
       replicas: 2
       requests:
@@ -62,7 +62,7 @@ spec:
         requests:
           cpu: "500m"
           memory: "1.5Gi"
-    
+
     dc2-rack1:
       replicas: 3
       requests:

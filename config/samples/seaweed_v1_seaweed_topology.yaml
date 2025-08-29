@@ -7,14 +7,14 @@ spec:
   # SeaweedFS image
   image: chrislusf/seaweedfs:latest
   volumeServerDiskCount: 1
-  
+
   # Master configuration with 210 replication
   master:
     replicas: 3
     volumeSizeLimitMB: 1024
     # Set default replication to 210 (2 copies in different datacenters, 1 copy in different rack, 0 copies in same rack)
     defaultReplication: "210"
-  
+
   # Volume server configuration with topology information
   volume:
     replicas: 6  # Deploy 6 volume servers across different racks/datacenters
@@ -27,7 +27,7 @@ spec:
     nodeSelector:
       seaweedfs/datacenter: "dc1"
       seaweedfs/rack: "rack1"
-  
+
   # Filer configuration
   filer:
     replicas: 2
@@ -48,11 +48,11 @@ metadata:
 spec:
   image: chrislusf/seaweedfs:latest
   volumeServerDiskCount: 1
-  
+
   # Only deploy volume servers for this instance
   master:
     replicas: 0  # Don't deploy masters, use the main instance
-  
+
   volume:
     replicas: 3
     requests:
@@ -62,7 +62,7 @@ spec:
     nodeSelector:
       seaweedfs/datacenter: "dc1"
       seaweedfs/rack: "rack2"
-  
+
   filer:
     replicas: 0  # Don't deploy filers, use the main instance
 
@@ -75,11 +75,11 @@ metadata:
 spec:
   image: chrislusf/seaweedfs:latest
   volumeServerDiskCount: 1
-  
+
   # Only deploy volume servers for this instance
   master:
     replicas: 0  # Don't deploy masters, use the main instance
-  
+
   volume:
     replicas: 3
     requests:
@@ -89,6 +89,6 @@ spec:
     nodeSelector:
       seaweedfs/datacenter: "dc2"
       seaweedfs/rack: "rack1"
-  
+
   filer:
     replicas: 0  # Don't deploy filers, use the main instance

@@ -279,6 +279,8 @@ These fields use topology-specific values when provided, otherwise fall back to 
 
 - **`env`**: `volumeTopology.GROUP.env` → `spec.volume.env`
 - **`requests`** and **`limits`**: `volumeTopology.GROUP.requests/limits` → `spec.volume.requests/limits`
+
+**Note**: If `requests` or `limits` are specified for a topology group, they completely replace the corresponding settings from `spec.volume`. They are not merged. You must specify all desired requests/limits for that group.
 - **`storageClassName`**: `volumeTopology.GROUP.storageClassName` → `spec.volume.storageClassName`
 - **`metricsPort`**: `volumeTopology.GROUP.metricsPort` → `spec.volume.metricsPort`
 - **`service`**: `volumeTopology.GROUP.service` → `spec.volume.service`

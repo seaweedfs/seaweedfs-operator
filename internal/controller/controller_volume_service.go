@@ -212,9 +212,9 @@ func (r *SeaweedReconciler) createVolumeServerTopologyService(m *seaweedv1.Seawe
 		},
 	}
 
-	// Apply service specification from topology spec
-	if topologySpec.Service != nil {
-		svcSpec := topologySpec.Service
+	// Apply service specification with fallback logic
+	svcSpec := getServiceSpec(m, topologySpec)
+	if svcSpec != nil {
 		dep.Annotations = copyAnnotations(svcSpec.Annotations)
 
 		if svcSpec.Type != "" {

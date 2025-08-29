@@ -22,8 +22,9 @@ spec:
     replicas: 0  # ✅ Now valid! Previously required minimum: 1
     requests:
       storage: 10Gi
-    # Note: Only 'env' settings here are inherited by topology groups
-    # Other settings (resources, storageClass, etc.) are topology-specific
+    # Note: All volume server settings here are inherited by topology groups
+    # Including resources, storageClass, volume server config, service, etc.
+    # Topology groups only need to specify overrides for different settings
 
   # NEW: Use volumeTopology for structured deployment
   volumeTopology:

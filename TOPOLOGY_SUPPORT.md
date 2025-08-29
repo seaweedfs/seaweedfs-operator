@@ -275,9 +275,14 @@ These fields use topology-specific values when provided, otherwise fall back to 
 
 #### Fields with Volume-Specific Fallback
 
-These fields fall back to `spec.volume` settings:
+These fields use topology-specific values when provided, otherwise fall back to `spec.volume` settings:
 
 - **`env`**: `volumeTopology.GROUP.env` → `spec.volume.env`
+- **`requests`** and **`limits`**: `volumeTopology.GROUP.requests/limits` → `spec.volume.requests/limits`
+- **`storageClassName`**: `volumeTopology.GROUP.storageClassName` → `spec.volume.storageClassName`
+- **`metricsPort`**: `volumeTopology.GROUP.metricsPort` → `spec.volume.metricsPort`
+- **`service`**: `volumeTopology.GROUP.service` → `spec.volume.service`
+- **Volume server settings**: All fields (`compactionMBps`, `maxVolumeCounts`, `fileSizeLimitMB`, etc.) fall back to `spec.volume` equivalents
 
 #### Fields with Merge Behavior
 
@@ -290,19 +295,16 @@ These fields merge global and topology-specific values:
 
 These fields are topology-specific only and do not inherit from global settings:
 
-- **`requests`** and **`limits`**: Resource requirements must be specified per topology group
-- **`storageClassName`**: Storage class must be specified per topology group
 - **`priorityClassName`**: Priority class is topology-specific only
 - **`terminationGracePeriodSeconds`**: Termination grace period is topology-specific only
-- **Volume server settings**: `compactionMBps`, `maxVolumeCounts`, `fileSizeLimitMB`, etc. are topology-specific only
-- **`service`**: Service configuration is topology-specific only
 
 #### Migration Considerations
 
 When migrating from simple to tree topology:
 - Most pod-level settings (scheduling, networking) will inherit from global spec
-- Resource requirements and storage settings must be explicitly defined for each topology group
-- Volume server tuning parameters must be redefined if needed
+- **Volume server settings now inherit automatically**: Resource requirements, storage settings, and volume server tuning parameters defined in `spec.volume` will automatically be used as defaults for all topology groups
+- **Override only as needed**: You only need to specify settings in topology groups that differ from the `spec.volume` defaults
+- **Consistent behavior**: The same fallback logic applies to all VolumeServerConfig fields, making the API predictable and user-friendly
 
 ## Kubernetes Node Labels
 

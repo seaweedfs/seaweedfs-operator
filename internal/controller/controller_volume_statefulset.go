@@ -16,9 +16,10 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 	commands := []string{"weed", "-logtostderr=true", "volume"}
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
 
-	// Configure max volume counts
-	if topologySpec.MaxVolumeCounts != nil {
-		commands = append(commands, fmt.Sprintf("-max=%d", *topologySpec.MaxVolumeCounts))
+	// Configure max volume counts with fallback
+	maxVolumeCounts := getVolumeServerConfigValue(topologySpec.MaxVolumeCounts, m.Spec.Volume.MaxVolumeCounts)
+	if maxVolumeCounts != nil {
+		commands = append(commands, fmt.Sprintf("-max=%d", *maxVolumeCounts))
 	} else {
 		commands = append(commands, "-max=0")
 	}
@@ -30,30 +31,36 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 	commands = append(commands, fmt.Sprintf("-mserver=%s", getMasterPeersString(m)))
 	commands = append(commands, fmt.Sprintf("-dir=%s", strings.Join(dirs, ",")))
 
-	// Configure metrics port
-	if topologySpec.MetricsPort != nil {
-		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *topologySpec.MetricsPort))
+	// Configure metrics port with fallback
+	metricsPort := getMetricsPort(m, topologySpec)
+	if metricsPort != nil {
+		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *metricsPort))
 	}
 
 	// Always include rack and datacenter for topology groups
 	commands = append(commands, fmt.Sprintf("-rack=%s", topologySpec.Rack))
 	commands = append(commands, fmt.Sprintf("-dataCenter=%s", topologySpec.DataCenter))
 
-	// Add topology-specific volume server configuration parameters
-	if topologySpec.CompactionMBps != nil {
-		commands = append(commands, fmt.Sprintf("-compactionMBps=%d", *topologySpec.CompactionMBps))
+	// Add volume server configuration parameters with fallback
+	compactionMBps := getVolumeServerConfigValue(topologySpec.CompactionMBps, m.Spec.Volume.CompactionMBps)
+	if compactionMBps != nil {
+		commands = append(commands, fmt.Sprintf("-compactionMBps=%d", *compactionMBps))
 	}
-	if topologySpec.FileSizeLimitMB != nil {
-		commands = append(commands, fmt.Sprintf("-fileSizeLimitMB=%d", *topologySpec.FileSizeLimitMB))
+	fileSizeLimitMB := getVolumeServerConfigValue(topologySpec.FileSizeLimitMB, m.Spec.Volume.FileSizeLimitMB)
+	if fileSizeLimitMB != nil {
+		commands = append(commands, fmt.Sprintf("-fileSizeLimitMB=%d", *fileSizeLimitMB))
 	}
-	if topologySpec.FixJpgOrientation != nil {
-		commands = append(commands, fmt.Sprintf("-fixJpgOrientation=%t", *topologySpec.FixJpgOrientation))
+	fixJpgOrientation := getVolumeServerConfigValue(topologySpec.FixJpgOrientation, m.Spec.Volume.FixJpgOrientation)
+	if fixJpgOrientation != nil {
+		commands = append(commands, fmt.Sprintf("-fixJpgOrientation=%t", *fixJpgOrientation))
 	}
-	if topologySpec.IdleTimeout != nil {
-		commands = append(commands, fmt.Sprintf("-idleTimeout=%d", *topologySpec.IdleTimeout))
+	idleTimeout := getVolumeServerConfigValue(topologySpec.IdleTimeout, m.Spec.Volume.IdleTimeout)
+	if idleTimeout != nil {
+		commands = append(commands, fmt.Sprintf("-idleTimeout=%d", *idleTimeout))
 	}
-	if topologySpec.MinFreeSpacePercent != nil {
-		commands = append(commands, fmt.Sprintf("-minFreeSpacePercent=%d", *topologySpec.MinFreeSpacePercent))
+	minFreeSpacePercent := getVolumeServerConfigValue(topologySpec.MinFreeSpacePercent, m.Spec.Volume.MinFreeSpacePercent)
+	if minFreeSpacePercent != nil {
+		commands = append(commands, fmt.Sprintf("-minFreeSpacePercent=%d", *minFreeSpacePercent))
 	}
 
 	return strings.Join(commands, " ")
@@ -289,9 +296,11 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 	} else {
 		volumeCount = 1 // default value
 	}
+	// Get resource requirements with fallback logic
+	resourceRequirements := getResourceRequirements(m, topologySpec)
 	volumeRequests := corev1.ResourceList{}
-	if topologySpec.Requests != nil {
-		if storageRequest, ok := topologySpec.Requests[corev1.ResourceStorage]; ok {
+	if resourceRequirements.Requests != nil {
+		if storageRequest, ok := resourceRequirements.Requests[corev1.ResourceStorage]; ok {
 			volumeRequests[corev1.ResourceStorage] = storageRequest
 		}
 	}
@@ -321,7 +330,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 				Name: fmt.Sprintf("mount%d", i),
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
-				StorageClassName: topologySpec.StorageClassName,
+				StorageClassName: getStorageClassName(m, topologySpec),
 				AccessModes: []corev1.PersistentVolumeAccessMode{
 					corev1.ReadWriteOnce,
 				},
@@ -341,7 +350,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 		Image:           m.Spec.Image,
 		ImagePullPolicy: getImagePullPolicy(m, topologySpec),
 		Env:             append(getEnvVars(m, topologySpec), kubernetesEnvVars...),
-		Resources:       filterContainerResources(topologySpec.ResourceRequirements),
+		Resources:       filterContainerResources(resourceRequirements),
 		Command: []string{
 			"/bin/sh",
 			"-ec",

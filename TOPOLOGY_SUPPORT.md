@@ -258,6 +258,52 @@ Each topology group supports the following fields:
 - `terminationGracePeriodSeconds` (int64, optional): Pod termination grace period
 - `hostNetwork` (bool, optional): Enable host networking
 
+### Field Inheritance Behavior
+
+When using `volumeTopology`, it's important to understand which fields inherit from global settings and which are topology-specific only:
+
+#### Fields with Global Fallback
+
+These fields use topology-specific values when provided, otherwise fall back to global `spec` settings:
+
+- **`affinity`**: `volumeTopology.GROUP.affinity` → `spec.affinity`
+- **`tolerations`**: `volumeTopology.GROUP.tolerations` → `spec.tolerations`
+- **`schedulerName`**: `volumeTopology.GROUP.schedulerName` → `spec.schedulerName`
+- **`imagePullSecrets`**: `volumeTopology.GROUP.imagePullSecrets` → `spec.imagePullSecrets`
+- **`hostNetwork`**: `volumeTopology.GROUP.hostNetwork` → `spec.hostNetwork`
+- **`imagePullPolicy`**: `volumeTopology.GROUP.imagePullPolicy` → `spec.imagePullPolicy`
+
+#### Fields with Volume-Specific Fallback
+
+These fields fall back to `spec.volume` settings:
+
+- **`env`**: `volumeTopology.GROUP.env` → `spec.volume.env`
+
+#### Fields with Merge Behavior
+
+These fields merge global and topology-specific values:
+
+- **`nodeSelector`**: Merges `spec.nodeSelector` and `volumeTopology.GROUP.nodeSelector` (topology takes precedence for conflicting keys)
+- **`annotations`**: Merges `spec.annotations` and `volumeTopology.GROUP.annotations` (topology takes precedence for conflicting keys)
+
+#### Fields with No Inheritance
+
+These fields are topology-specific only and do not inherit from global settings:
+
+- **`requests`** and **`limits`**: Resource requirements must be specified per topology group
+- **`storageClassName`**: Storage class must be specified per topology group
+- **`priorityClassName`**: Priority class is topology-specific only
+- **`terminationGracePeriodSeconds`**: Termination grace period is topology-specific only
+- **Volume server settings**: `compactionMBps`, `maxVolumeCounts`, `fileSizeLimitMB`, etc. are topology-specific only
+- **`service`**: Service configuration is topology-specific only
+
+#### Migration Considerations
+
+When migrating from simple to tree topology:
+- Most pod-level settings (scheduling, networking) will inherit from global spec
+- Resource requirements and storage settings must be explicitly defined for each topology group
+- Volume server tuning parameters must be redefined if needed
+
 ## Kubernetes Node Labels
 
 For proper topology-aware placement, ensure your Kubernetes nodes are labeled appropriately:

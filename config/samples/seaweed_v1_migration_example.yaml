@@ -22,8 +22,8 @@ spec:
     replicas: 0  # ✅ Now valid! Previously required minimum: 1
     requests:
       storage: 10Gi
-    # You can still specify other volume settings here as defaults
-    # but they won't be used since replicas: 0
+    # Note: Only 'env' settings here are inherited by topology groups
+    # Other settings (resources, storageClass, etc.) are topology-specific
 
   # NEW: Use volumeTopology for structured deployment
   volumeTopology:

@@ -167,15 +167,26 @@ func getStorageClassName(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTop
 
 // getResourceRequirements returns the resource requirements with fallback logic
 func getResourceRequirements(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) corev1.ResourceRequirements {
-	if topologySpec != nil {
-		// Use topology-specific resources if available
-		return topologySpec.ResourceRequirements
-	}
+	// Start with base resources from spec.volume, if available
+	resources := corev1.ResourceRequirements{}
 	if m.Spec.Volume != nil {
-		// Fall back to volume-level resources
-		return m.Spec.Volume.ResourceRequirements
+		resources = m.Spec.Volume.ResourceRequirements
 	}
-	return corev1.ResourceRequirements{}
+
+	// If no topology spec, return base
+	if topologySpec == nil {
+		return resources
+	}
+
+	// Override with topology-specific resources if they are provided
+	if len(topologySpec.ResourceRequirements.Requests) > 0 {
+		resources.Requests = topologySpec.ResourceRequirements.Requests
+	}
+	if len(topologySpec.ResourceRequirements.Limits) > 0 {
+		resources.Limits = topologySpec.ResourceRequirements.Limits
+	}
+
+	return resources
 }
 
 // getMetricsPort returns the metrics port with fallback logic

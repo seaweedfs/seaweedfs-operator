@@ -180,8 +180,44 @@ spec:
 
 #### Simple Topology Fields
 
-- `rack` (string, optional): The rack name for volume servers. This will be passed as the `-rack` flag to the volume server command.
-- `dataCenter` (string, optional): The datacenter name for volume servers. This will be passed as the `-dataCenter` flag to the volume server command.
+Since `VolumeSpec` embeds `VolumeServerConfig`, the simple topology supports all the same configuration options as individual topology groups, plus topology-specific fields:
+
+**Required Fields:**
+- `replicas` (int32, required): Number of volume server replicas
+
+**Topology Placement (Simple Topology Specific):**
+- `rack` (string, optional): The rack name for volume servers
+- `dataCenter` (string, optional): The datacenter name for volume servers
+
+**Resource Configuration:**
+- `requests` (ResourceList): Resource requests (CPU, memory, storage) for volume servers
+- `limits` (ResourceList): Resource limits (CPU, memory) for containers
+- `storageClassName` (string, optional): Storage class for PVCs
+
+**Kubernetes Pod Placement:**
+- `nodeSelector` (map[string]string): Node selector to ensure pods are scheduled on appropriate nodes
+- `tolerations` ([]corev1.Toleration): Tolerations for pod scheduling
+- `affinity` (corev1.Affinity): Affinity rules for pod placement
+
+**Volume Server Configuration:**
+- `compactionMBps` (int32, optional): Background compaction speed limit in MB/s
+- `maxVolumeCounts` (int32, optional): Maximum number of volumes per volume server
+- `fileSizeLimitMB` (int32, optional): File size limit in MB
+- `fixJpgOrientation` (bool, optional): Fix JPEG orientation on upload
+- `idleTimeout` (int32, optional): Idle connection timeout in seconds
+- `minFreeSpacePercent` (int32, optional): Minimum free space percentage before volume becomes read-only
+- `metricsPort` (int32, optional): Port for Prometheus metrics
+- `service` (ServiceSpec, optional): Service configuration for volume servers
+
+**Pod Configuration:**
+- `env` ([]corev1.EnvVar): Environment variables for volume server containers
+- `imagePullPolicy` (corev1.PullPolicy): Image pull policy override
+- `imagePullSecrets` ([]corev1.LocalObjectReference): Image pull secrets
+- `priorityClassName` (string, optional): Priority class for pod scheduling
+- `schedulerName` (string, optional): Custom scheduler name
+- `terminationGracePeriodSeconds` (int64, optional): Pod termination grace period
+- `hostNetwork` (bool, optional): Enable host networking
+- `annotations` (map[string]string): Annotations for pods and services
 
 #### Tree Topology Fields
 

@@ -62,21 +62,49 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string) string {
 	commands := []string{"weed", "-logtostderr=true", "volume"}
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
-	commands = append(commands, "-max=0")
+
+	// Configure max volume counts
+	if m.Spec.Volume.MaxVolumeCounts != nil {
+		commands = append(commands, fmt.Sprintf("-max=%d", *m.Spec.Volume.MaxVolumeCounts))
+	} else {
+		commands = append(commands, "-max=0")
+	}
+
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-volume-peer.%s", m.Name, m.Namespace))
 	if m.Spec.HostSuffix != nil && *m.Spec.HostSuffix != "" {
 		commands = append(commands, fmt.Sprintf("-publicUrl=$(POD_NAME).%s", *m.Spec.HostSuffix))
 	}
 	commands = append(commands, fmt.Sprintf("-mserver=%s", getMasterPeersString(m)))
 	commands = append(commands, fmt.Sprintf("-dir=%s", strings.Join(dirs, ",")))
+
+	// Configure metrics port
 	if m.Spec.Volume.MetricsPort != nil {
 		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Volume.MetricsPort))
 	}
+
+	// Configure topology placement
 	if m.Spec.Volume.Rack != nil && *m.Spec.Volume.Rack != "" {
 		commands = append(commands, fmt.Sprintf("-rack=%s", *m.Spec.Volume.Rack))
 	}
 	if m.Spec.Volume.DataCenter != nil && *m.Spec.Volume.DataCenter != "" {
 		commands = append(commands, fmt.Sprintf("-dataCenter=%s", *m.Spec.Volume.DataCenter))
+	}
+
+	// Add volume server configuration parameters from VolumeServerConfig
+	if m.Spec.Volume.CompactionMBps != nil {
+		commands = append(commands, fmt.Sprintf("-compactionMBps=%d", *m.Spec.Volume.CompactionMBps))
+	}
+	if m.Spec.Volume.FileSizeLimitMB != nil {
+		commands = append(commands, fmt.Sprintf("-fileSizeLimitMB=%d", *m.Spec.Volume.FileSizeLimitMB))
+	}
+	if m.Spec.Volume.FixJpgOrientation != nil {
+		commands = append(commands, fmt.Sprintf("-fixJpgOrientation=%t", *m.Spec.Volume.FixJpgOrientation))
+	}
+	if m.Spec.Volume.IdleTimeout != nil {
+		commands = append(commands, fmt.Sprintf("-idleTimeout=%d", *m.Spec.Volume.IdleTimeout))
+	}
+	if m.Spec.Volume.MinFreeSpacePercent != nil {
+		commands = append(commands, fmt.Sprintf("-minFreeSpacePercent=%d", *m.Spec.Volume.MinFreeSpacePercent))
 	}
 
 	return strings.Join(commands, " ")

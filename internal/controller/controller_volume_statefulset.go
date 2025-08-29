@@ -111,8 +111,11 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 	} else {
 		volumeCount = 1 // default value
 	}
-	volumeRequests := corev1.ResourceList{
-		corev1.ResourceStorage: m.Spec.Volume.Requests[corev1.ResourceStorage],
+	volumeRequests := corev1.ResourceList{}
+	if m.Spec.Volume.Requests != nil {
+		if storageRequest, ok := m.Spec.Volume.Requests[corev1.ResourceStorage]; ok {
+			volumeRequests[corev1.ResourceStorage] = storageRequest
+		}
 	}
 
 	// connect all the disks
@@ -258,8 +261,11 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 	} else {
 		volumeCount = 1 // default value
 	}
-	volumeRequests := corev1.ResourceList{
-		corev1.ResourceStorage: topologySpec.Requests[corev1.ResourceStorage],
+	volumeRequests := corev1.ResourceList{}
+	if topologySpec.Requests != nil {
+		if storageRequest, ok := topologySpec.Requests[corev1.ResourceStorage]; ok {
+			volumeRequests[corev1.ResourceStorage] = storageRequest
+		}
 	}
 
 	// connect all the disks

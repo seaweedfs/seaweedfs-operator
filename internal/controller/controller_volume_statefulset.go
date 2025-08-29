@@ -15,19 +15,46 @@ import (
 func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []string, topologyName string, topologySpec *seaweedv1.VolumeTopologySpec) string {
 	commands := []string{"weed", "-logtostderr=true", "volume"}
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
-	commands = append(commands, "-max=0")
+
+	// Configure max volume counts
+	if topologySpec.MaxVolumeCounts != nil {
+		commands = append(commands, fmt.Sprintf("-max=%d", *topologySpec.MaxVolumeCounts))
+	} else {
+		commands = append(commands, "-max=0")
+	}
+
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-volume-%s-peer.%s", m.Name, topologyName, m.Namespace))
 	if m.Spec.HostSuffix != nil && *m.Spec.HostSuffix != "" {
 		commands = append(commands, fmt.Sprintf("-publicUrl=$(POD_NAME).%s", *m.Spec.HostSuffix))
 	}
 	commands = append(commands, fmt.Sprintf("-mserver=%s", getMasterPeersString(m)))
 	commands = append(commands, fmt.Sprintf("-dir=%s", strings.Join(dirs, ",")))
+
+	// Configure metrics port
 	if topologySpec.MetricsPort != nil {
 		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *topologySpec.MetricsPort))
 	}
+
 	// Always include rack and datacenter for topology groups
 	commands = append(commands, fmt.Sprintf("-rack=%s", topologySpec.Rack))
 	commands = append(commands, fmt.Sprintf("-dataCenter=%s", topologySpec.DataCenter))
+
+	// Add topology-specific volume server configuration parameters
+	if topologySpec.CompactionMBps != nil {
+		commands = append(commands, fmt.Sprintf("-compactionMBps=%d", *topologySpec.CompactionMBps))
+	}
+	if topologySpec.FileSizeLimitMB != nil {
+		commands = append(commands, fmt.Sprintf("-fileSizeLimitMB=%d", *topologySpec.FileSizeLimitMB))
+	}
+	if topologySpec.FixJpgOrientation != nil {
+		commands = append(commands, fmt.Sprintf("-fixJpgOrientation=%t", *topologySpec.FixJpgOrientation))
+	}
+	if topologySpec.IdleTimeout != nil {
+		commands = append(commands, fmt.Sprintf("-idleTimeout=%d", *topologySpec.IdleTimeout))
+	}
+	if topologySpec.MinFreeSpacePercent != nil {
+		commands = append(commands, fmt.Sprintf("-minFreeSpacePercent=%d", *topologySpec.MinFreeSpacePercent))
+	}
 
 	return strings.Join(commands, " ")
 }

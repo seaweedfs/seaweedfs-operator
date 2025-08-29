@@ -25,8 +25,6 @@ spec:
     # Datacenter 1, Rack 1
     dc1-rack1:
       replicas: 3
-      requests:
-        storage: 10Gi
       rack: "rack1"
       dataCenter: "dc1"
       # Use node selector to ensure placement on appropriate nodes
@@ -53,8 +51,6 @@ spec:
     # Datacenter 1, Rack 2
     dc1-rack2:
       replicas: 2
-      requests:
-        storage: 10Gi
       rack: "rack2"
       dataCenter: "dc1"
       nodeSelector:
@@ -78,8 +74,6 @@ spec:
     # Datacenter 2, Rack 1
     dc2-rack1:
       replicas: 3
-      requests:
-        storage: 15Gi  # Different storage size for this location
       rack: "rack1"
       dataCenter: "dc2"
       nodeSelector:
@@ -108,8 +102,6 @@ spec:
     # Datacenter 2, Rack 2
     dc2-rack2:
       replicas: 2
-      requests:
-        storage: 15Gi
       rack: "rack2"
       dataCenter: "dc2"
       nodeSelector:

@@ -15,9 +15,22 @@ spec:
     # Set default replication to 210 (2 copies in different datacenters, 1 copy in different rack, 0 copies in same rack)
     defaultReplication: "210"
 
-  # Disable the single volume specification since we're using topology tree
-  # volume:
-  #   replicas: 0
+  # Default volume server configuration. Settings here are inherited by all topology groups.
+  # Set replicas to 0 to disable the simple volume group and only use volumeTopology.
+  volume:
+    replicas: 0
+    requests:
+      storage: "5Gi" # Default storage size, can be overridden per group
+      cpu: "500m"    # Default CPU request
+      memory: "1Gi"  # Default memory request
+    limits:
+      cpu: "1"       # Default CPU limit
+      memory: "2Gi"  # Default memory limit
+    metricsPort: 9323 # Default metrics port, can be overridden per group
+    # Default environment variables that all topology groups will inherit
+    env:
+      - name: WEED_VOLUME_MAX_VOLUMES
+        value: "50"
 
   # Tree-structured topology configuration
   # This creates a hierarchical deployment across multiple datacenters and racks
@@ -49,6 +62,7 @@ spec:
       metricsPort: 9324
 
     # Datacenter 1, Rack 2
+    # This group inherits most settings from spec.volume but overrides storage size and adds nodeSelector
     dc1-rack2:
       replicas: 2
       rack: "rack2"
@@ -62,13 +76,9 @@ spec:
           operator: "Equal"
           value: "dc1"
           effect: "NoSchedule"
+      # Override only storage size, other resource settings inherit from spec.volume
       requests:
-        storage: 10Gi
-        cpu: "500m"
-        memory: "1.5Gi"
-      limits:
-        cpu: "1.5"
-        memory: "3Gi"
+        storage: 8Gi
       metricsPort: 9325
 
     # Datacenter 2, Rack 1

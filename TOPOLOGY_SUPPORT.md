@@ -107,9 +107,9 @@ spec:
       storageClassName: "fast-ssd"
 ```
 
-### Complete Example for 210 Replication (Legacy Approach)
+### Complete Example for 210 Replication (Multi-Instance Approach)
 
-For 210 replication using the legacy single-instance approach (2 copies in different datacenters, 1 copy in different rack, 0 copies in same rack), you need volume servers in multiple racks and datacenters:
+For 210 replication using the multi-instance approach (2 copies in different datacenters, 1 copy in different rack, 0 copies in same rack), you need to deploy multiple separate Seaweed instances with volume servers in multiple racks and datacenters:
 
 ```yaml
 apiVersion: seaweed.seaweedfs.com/v1

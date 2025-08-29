@@ -53,59 +53,57 @@ spec:
     # Datacenter 1, Rack 1
     dc1-rack1:
       replicas: 3
-      requests:
-        storage: 10Gi
       rack: "rack1"
       dataCenter: "dc1"
       nodeSelector:
         topology.kubernetes.io/zone: "us-west-2a"
         seaweedfs/datacenter: "dc1"
         seaweedfs/rack: "rack1"
-      resources:
-        limits:
-          cpu: "2"
-          memory: "4Gi"
-        requests:
-          cpu: "1"
-          memory: "2Gi"
+      requests:
+        storage: 10Gi
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
 
     # Datacenter 1, Rack 2
     dc1-rack2:
       replicas: 2
-      requests:
-        storage: 10Gi
       rack: "rack2"
       dataCenter: "dc1"
       nodeSelector:
         topology.kubernetes.io/zone: "us-west-2b"
         seaweedfs/datacenter: "dc1"
         seaweedfs/rack: "rack2"
+      requests:
+        storage: 10Gi
 
     # Datacenter 2, Rack 1
     dc2-rack1:
       replicas: 3
-      requests:
-        storage: 15Gi
       rack: "rack1"
       dataCenter: "dc2"
       nodeSelector:
         topology.kubernetes.io/zone: "us-east-1a"
         seaweedfs/datacenter: "dc2"
         seaweedfs/rack: "rack1"
+      requests:
+        storage: 15Gi
       storageClassName: "fast-ssd"
       compactionMBps: 100
 
     # Datacenter 2, Rack 2
     dc2-rack2:
       replicas: 2
-      requests:
-        storage: 15Gi
       rack: "rack2"
       dataCenter: "dc2"
       nodeSelector:
         topology.kubernetes.io/zone: "us-east-1b"
         seaweedfs/datacenter: "dc2"
         seaweedfs/rack: "rack2"
+      requests:
+        storage: 15Gi
       storageClassName: "fast-ssd"
 ```
 
@@ -199,8 +197,8 @@ Each topology group supports the following fields:
 - `dataCenter` (string, required): The datacenter name for this topology group
 
 **Resource Configuration:**
-- `requests` (ResourceRequirements): Resource requests (CPU, memory, storage) for this topology group
-- `resources` (ResourceRequirements): Resource limits and requests for containers
+- `requests` (ResourceList): Resource requests (CPU, memory, storage) for this topology group
+- `limits` (ResourceList): Resource limits (CPU, memory) for containers
 - `storageClassName` (string, optional): Storage class for PVCs in this topology group
 
 **Topology-Specific Settings:**
@@ -363,4 +361,4 @@ spec:
 
 - [SeaweedFS Replication Documentation](https://github.com/seaweedfs/seaweedfs/wiki/Replication)
 - [Kubernetes Node Labels](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/)
-- [SeaweedFS Topology Documentation](https://github.com/seaweedfs/seaweedfs/wiki/Replication)
+- [SeaweedFS Architecture](https://github.com/seaweedfs/seaweedfs/wiki/Architecture)

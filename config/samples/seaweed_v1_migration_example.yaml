@@ -29,39 +29,35 @@ spec:
   volumeTopology:
     dc1-rack1:
       replicas: 3
-      requests:
-        storage: 10Gi
       rack: "rack1"
       dataCenter: "dc1"
       nodeSelector:
         topology.kubernetes.io/zone: "us-west-2a"
         seaweedfs/datacenter: "dc1"
         seaweedfs/rack: "rack1"
-      resources:
-        limits:
-          cpu: "2"
-          memory: "4Gi"
-        requests:
-          cpu: "1"
-          memory: "2Gi"
+      requests:
+        storage: 10Gi
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
 
     dc1-rack2:
       replicas: 2
-      requests:
-        storage: 10Gi
       rack: "rack2"
       dataCenter: "dc1"
       nodeSelector:
         topology.kubernetes.io/zone: "us-west-2b"
         seaweedfs/datacenter: "dc1"
         seaweedfs/rack: "rack2"
-      resources:
-        limits:
-          cpu: "1.5"
-          memory: "3Gi"
-        requests:
-          cpu: "500m"
-          memory: "1.5Gi"
+      requests:
+        storage: 10Gi
+        cpu: "500m"
+        memory: "1.5Gi"
+      limits:
+        cpu: "1.5"
+        memory: "3Gi"
 
     dc2-rack1:
       replicas: 3

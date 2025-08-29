@@ -41,13 +41,13 @@ spec:
           value: "dc1"
           effect: "NoSchedule"
       # Resource requirements specific to this topology group
-      resources:
-        limits:
-          cpu: "2"
-          memory: "4Gi"
-        requests:
-          cpu: "1"
-          memory: "2Gi"
+      requests:
+        storage: 10Gi
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
       metricsPort: 9324
 
     # Datacenter 1, Rack 2
@@ -66,13 +66,13 @@ spec:
           operator: "Equal"
           value: "dc1"
           effect: "NoSchedule"
-      resources:
-        limits:
-          cpu: "1.5"
-          memory: "3Gi"
-        requests:
-          cpu: "500m"
-          memory: "1.5Gi"
+      requests:
+        storage: 10Gi
+        cpu: "500m"
+        memory: "1.5Gi"
+      limits:
+        cpu: "1.5"
+        memory: "3Gi"
       metricsPort: 9325
 
     # Datacenter 2, Rack 1
@@ -91,13 +91,13 @@ spec:
           operator: "Equal"
           value: "dc2"
           effect: "NoSchedule"
-      resources:
-        limits:
-          cpu: "2"
-          memory: "4Gi"
-        requests:
-          cpu: "1"
-          memory: "2Gi"
+      requests:
+        storage: 15Gi
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
       # Use different storage class for this topology group
       storageClassName: "fast-ssd"
       metricsPort: 9326
@@ -121,13 +121,13 @@ spec:
           operator: "Equal"
           value: "dc2"
           effect: "NoSchedule"
-      resources:
-        limits:
-          cpu: "1.5"
-          memory: "3Gi"
-        requests:
-          cpu: "500m"
-          memory: "1.5Gi"
+      requests:
+        storage: 15Gi
+        cpu: "500m"
+        memory: "1.5Gi"
+      limits:
+        cpu: "1.5"
+        memory: "3Gi"
       storageClassName: "fast-ssd"
       metricsPort: 9327
       compactionMBps: 80
@@ -158,8 +158,9 @@ metadata:
     app: seaweedfs
 spec:
   selector:
-    matchLabels:
-      seaweedfs/topology: "*"  # Match all topology groups
+    matchExpressions:
+    - key: seaweedfs/topology
+      operator: Exists
   endpoints:
   - port: volume-metrics
     path: /metrics

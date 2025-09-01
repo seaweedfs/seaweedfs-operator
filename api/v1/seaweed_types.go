@@ -186,7 +186,7 @@ type VolumeTopologySpec struct {
 	VolumeServerConfig `json:",inline"`
 
 	// The desired ready replicas for this topology group
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 	Replicas int32 `json:"replicas"`
 
 	// Topology configuration for this volume group (required for topology groups)

@@ -29,9 +29,11 @@ Goals:
 ### Helm
 
 ```bash
-helm repo add seaweedfs-operator https://seaweedfs.github.io/seaweedfs-operator/helm
+helm repo add seaweedfs-operator https://seaweedfs.github.io/seaweedfs-operator/
 helm template seaweedfs-operator seaweedfs-operator/seaweedfs-operator
 ```
+
+> **Note**: For versions prior to 0.1.2, the legacy repository URL `https://seaweedfs.github.io/seaweedfs-operator/helm` can still be used, but new releases will only be published to the main repository URL above.
 
 ### FluxCD
 
@@ -64,7 +66,7 @@ metadata:
   namespace: seaweedfs-operator
 spec:
   interval: 1h
-  url: https://seaweedfs.github.io/seaweedfs-operator/helm
+  url: https://seaweedfs.github.io/seaweedfs-operator/
 ```
 
 seaweedfs-operator-helmrelease.yaml

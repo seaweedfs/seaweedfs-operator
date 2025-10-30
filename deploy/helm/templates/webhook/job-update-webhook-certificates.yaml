@@ -1,4 +1,4 @@
-{{- if .Values.webhook.enabled }}
+{{- if .Values.webhook.enabled -}}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -169,4 +169,4 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
     namespace: {{ .Release.Namespace }}
-{{- end }}
+{{- end -}}

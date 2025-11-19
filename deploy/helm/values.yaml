@@ -95,7 +95,7 @@ webhook:
   # -- Configuration for webhook certificate jobs
   initContainer:
     # -- Image for webhook readiness check init container
-    image: busybox:1.37
+    image: curlimages/curl:8.8.0
 
 ## seaweedfs-operator containers' resource requests and limits.
 ## ref: http://kubernetes.io/docs/user-guide/compute-resources/

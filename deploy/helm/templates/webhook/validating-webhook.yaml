@@ -13,11 +13,10 @@ webhooks:
       port: 443
       path: {{ include "seaweedfs-operator.validatingWebhookPath" . }}
   name: vseaweed.kb.io
-  failurePolicy: Ignore
+  failurePolicy: Fail
   sideEffects: None
   admissionReviewVersions:
   - v1
-  - v1beta1
   rules:
   - apiGroups:
     - seaweed.seaweedfs.com

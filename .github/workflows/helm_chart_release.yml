@@ -47,6 +47,21 @@ jobs:
           echo "Setting appVersion to: $TAG"
           sed -i "s/appVersion: .*/appVersion: \"$TAG\"/" deploy/helm/Chart.yaml
 
+      - name: Set chart version based on tag
+        run: |
+          # Increment the chart version for each release
+          CURRENT_VERSION=$(grep '^version:' deploy/helm/Chart.yaml | awk '{print $2}')
+          IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+          VERSION="$major.$minor.$((patch + 1))"
+          echo "Setting chart version to: $VERSION"
+          sed -i "s/version: .*/version: $VERSION/" deploy/helm/Chart.yaml
+
+      - name: Commit Chart.yaml changes
+        run: |
+          git add deploy/helm/Chart.yaml
+          git commit -m "Update Helm chart version for release ${{ steps.get_tag.outputs.tag }}"
+          git push
+
       - name: Debug chart structure
         run: |
           echo "Chart.yaml content:"

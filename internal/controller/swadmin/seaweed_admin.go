@@ -1,6 +1,7 @@
 package swadmin
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"regexp"
@@ -26,7 +27,7 @@ func NewSeaweedAdmin(masters string, output io.Writer) *SeaweedAdmin {
 	commandEnv := shell.NewCommandEnv(&shellOptions)
 	reg, _ := regexp.Compile(`'.*?'|".*?"|\S+`)
 
-	go commandEnv.MasterClient.KeepConnectedToMaster()
+	go commandEnv.MasterClient.KeepConnectedToMaster(context.Background())
 
 	return &SeaweedAdmin{
 		commandEnv: commandEnv,
@@ -46,7 +47,7 @@ func (sa *SeaweedAdmin) ProcessCommands(cmds string) error {
 }
 
 func (sa *SeaweedAdmin) ProcessCommand(cmd string) error {
-	sa.commandEnv.MasterClient.WaitUntilConnected()
+	sa.commandEnv.MasterClient.WaitUntilConnected(context.Background())
 	cmds := sa.commandReg.FindAllString(cmd, -1)
 	if len(cmds) == 0 {
 		return nil

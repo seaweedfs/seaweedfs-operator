@@ -6,6 +6,11 @@ on:
       - opened
       - labeled
       - synchronize
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
 
 jobs:
   test:

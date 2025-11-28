@@ -6,6 +6,12 @@ on:
       - opened
       - labeled
       - synchronize
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'Dockerfile'
 #
 jobs:
   test-e2e:

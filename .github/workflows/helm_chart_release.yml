@@ -56,6 +56,9 @@ jobs:
           echo "Setting chart version to: $VERSION"
           sed -i "s/version: .*/version: $VERSION/" deploy/helm/Chart.yaml
 
+      - name: Checkout branch
+        run: git checkout master
+
       - name: Commit Chart.yaml changes
         run: |
           git add deploy/helm/Chart.yaml

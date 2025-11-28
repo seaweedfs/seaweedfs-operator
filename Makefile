@@ -64,7 +64,7 @@ debug: generate fmt vet manifests
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:maxDescLen=0 webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 # Run go fmt against code
 fmt:
@@ -211,7 +211,7 @@ CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 # renovate: datasource=github-tags depName=kubernetes-sigs/kustomize
 KUSTOMIZE_VERSION ?= v5.3.0
 # renovate: datasource=github-tags depName=kubernetes-sigs/controller-tools
-CONTROLLER_TOOLS_VERSION ?= v0.15.0
+CONTROLLER_TOOLS_VERSION ?= v0.17.0
 ENVTEST_VERSION ?= latest
 
 # renovate: datasource=github-tags depName=kubernetes-sigs/kind

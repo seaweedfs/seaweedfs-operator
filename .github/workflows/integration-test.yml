@@ -40,23 +40,41 @@ jobs:
           set -euo pipefail
           set -x
 
-          # Try to fetch releases; if network or API fails, fall back to sensible defaults
-          VERSIONS_RAW=$(curl -sS --fail https://api.github.com/repos/kubernetes/kubernetes/releases || true)
+          # Try to fetch tags (tags endpoint tends to be smaller and contains semantic tags)
+          PER_PAGE=200
+          API_URL="https://api.github.com/repos/kubernetes/kubernetes/tags?per_page=${PER_PAGE}"
+          VERSIONS_RAW=$(curl -sS --fail "$API_URL" || true)
+
           if [ -z "${VERSIONS_RAW:-}" ]; then
-            echo "Warning: failed to fetch Kubernetes releases; using fallback versions"
+            echo "Warning: failed to fetch Kubernetes tags; using fallback versions" >&2
             MATRIX='[{"version":"v1.31.0","attribute":"latest"},{"version":"v1.30.0","attribute":"current"},{"version":"v1.29.0","attribute":"previous"}]'
             echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # Parse and pick the last 3 semantic v1.x.y tags
-          VERSIONS=$(echo "$VERSIONS_RAW" | jq -r '.[] | select(.tag_name | test("^v1\\.[0-9]+\\.[0-9]+$")) | .tag_name' | sort -V | uniq | tail -3)
+          # Extract candidate tag names. Prefer jq; fall back to Python parsing if jq missing.
+          if command -v jq >/dev/null 2>&1; then
+            CANDIDATES=$(printf '%s' "$VERSIONS_RAW" | jq -r '.[].name' | grep -E '^v1\.[0-9]+' || true)
+          else
+            CANDIDATES=$(printf '%s' "$VERSIONS_RAW" | python3 -c 'import sys,json,re;data=json.load(sys.stdin);out=[item.get("name") for item in data if isinstance(item,dict) and item.get("name") and re.match(r"^v1\.[0-9]+(\.[0-9]+)?$", item.get("name"))]; print("\n".join(out))')
+          fi
 
+          # Normalize v1.X to v1.X.0, sort semver, unique, and pick the latest N
+          NUM=3
+          VERSIONS=$(printf '%s' "$CANDIDATES" | sed -E 's/^(v[0-9]+\.[0-9]+)$/\1.0/' | sort -V | uniq | tail -n "$NUM")
+
+          # Build matrix as array of objects {version, attribute}
           MATRIX='[]'
-          ATTRIBUTES=("penultimate" "previous" "latest")
+          ATTRIBUTES=("latest" "current" "previous")
 
-          # Read into array preserving whitespace
-          mapfile -t arr <<<"$VERSIONS"
+          # read into array preserving newlines
+          mapfile -t arr <<<"${VERSIONS:-}"
+          # reverse order so latest becomes first (tail gave newest at bottom)
+          if [ ${#arr[@]} -gt 0 ]; then
+            # ensure latest first
+            arr=( $(printf '%s\n' "${arr[@]}" | tac) )
+          fi
+
           for i in "${!arr[@]}"; do
             v=${arr[i]}
             a=${ATTRIBUTES[i]:-latest}

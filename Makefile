@@ -159,12 +159,34 @@ kind-load: docker-build kind ## Build and upload docker image to the local Kind 
 
 .PHONY: kind-create
 kind-create: kind yq ## Create kubernetes cluster using Kind.
-	@if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image $(KIND_IMAGE); \
-	fi
-	@if ! $(CONTAINER_TOOL) ps --format json | $(YQ) -P -pj e 'select(.Names == "$(KIND_CLUSTER_NAME)-control-plane") | .Image' | grep -q $(KIND_IMAGE); then \
-  		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image $(KIND_IMAGE); \
+	@set -e; \
+	IMAGE_TRY=$(KIND_IMAGE); \
+	if ! $(CONTAINER_TOOL) pull $$IMAGE_TRY >/dev/null 2>&1; then \
+		echo "KIND image $$IMAGE_TRY not found, attempting fallback patches..."; \
+		V=$$(echo "$(K8S_VERSION)" | sed 's/^v//'); \
+		MAJOR=$$(echo $$V | cut -d. -f1); \
+		MINOR=$$(echo $$V | cut -d. -f2); \
+		PATCH=$$(echo $$V | cut -d. -f3 2>/dev/null || echo 0); \
+		if [ -z "$$PATCH" ]; then PATCH=0; fi; \
+		FOUND=0; \
+		for p in $$(seq $$PATCH -1 0); do \
+			try=kindest/node:v$$MAJOR.$$MINOR.$$p; \
+			echo "Trying $$try"; \
+			if $(CONTAINER_TOOL) pull $$try >/dev/null 2>&1; then \
+				IMAGE_TRY=$$try; FOUND=1; break; \
+			fi; \
+		done; \
+		if [ $$FOUND -eq 0 ]; then \
+			echo "No matching patch image found, falling back to v$$MAJOR.$$MINOR.0"; \
+			IMAGE_TRY=kindest/node:v$$MAJOR.$$MINOR.0; \
+		fi; \
+	fi; \
+	echo "Using KIND image: $$IMAGE_TRY"; \
+	if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image $$IMAGE_TRY; \
+	elif ! $(CONTAINER_TOOL) ps --format json | $(YQ) -P -pj e 'select(.Names == "$(KIND_CLUSTER_NAME)-control-plane") | .Image' | grep -q $$IMAGE_TRY; then \
+		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image $$IMAGE_TRY; \
 	fi
 
 .PHONY: kind-delete

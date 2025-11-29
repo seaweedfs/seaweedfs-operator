@@ -54,9 +54,11 @@ jobs:
 
           # Extract candidate tag names. Prefer jq; fall back to Python parsing if jq missing.
           if command -v jq >/dev/null 2>&1; then
-            CANDIDATES=$(printf '%s' "$VERSIONS_RAW" | jq -r '.[].name' | grep -E '^v1\.[0-9]+' || true)
+            # Only accept full semver tags like v1.X.Y (exclude alpha/beta/rc)
+            CANDIDATES=$(printf '%s' "$VERSIONS_RAW" | jq -r '.[].name' | grep -E '^v1\.[0-9]+\.[0-9]+$' || true)
           else
-            CANDIDATES=$(printf '%s' "$VERSIONS_RAW" | python3 -c 'import sys,json,re;data=json.load(sys.stdin);out=[item.get("name") for item in data if isinstance(item,dict) and item.get("name") and re.match(r"^v1\.[0-9]+(\.[0-9]+)?$", item.get("name"))]; print("\n".join(out))')
+            # python fallback also restricts to v1.X.Y
+            CANDIDATES=$(printf '%s' "$VERSIONS_RAW" | python3 -c 'import sys,json,re;data=json.load(sys.stdin);out=[item.get("name") for item in data if isinstance(item,dict) and item.get("name") and re.match(r"^v1\.[0-9]+\.[0-9]+$", item.get("name"))]; print("\n".join(out))')
           fi
 
           # Normalize v1.X to v1.X.0, sort semver, unique, and pick the latest N
@@ -86,6 +88,8 @@ jobs:
             MATRIX='[{"version":"v1.31.0","attribute":"latest"},{"version":"v1.30.0","attribute":"current"},{"version":"v1.29.0","attribute":"previous"}]'
           fi
 
+          # Compact JSON (no newlines) so it can be safely written to GITHUB_OUTPUT
+          MATRIX=$(echo "$MATRIX" | jq -c '.')
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
 
   integration-test:

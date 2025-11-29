@@ -71,12 +71,35 @@ jobs:
           cat deploy/helm/Chart.yaml
           echo -e "\nLinting chart:"
           helm lint deploy/helm
-          echo -e "\nPackaging chart for verification:"
-          helm package deploy/helm --debug
 
-      - name: Run chart-releaser
-        uses: helm/chart-releaser-action@v1.6.0
-        env:
-          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      - name: Package Helm chart
+        run: |
+          helm package deploy/helm -d .cr-release-packages
+
+      - name: Upload chart to release
+        uses: softprops/action-gh-release@v2
         with:
-          charts_dir: deploy
+          tag_name: ${{ steps.get_tag.outputs.tag }}
+          files: .cr-release-packages/*.tgz
+
+      - name: Update Helm repo index
+        run: |
+          # Checkout gh-pages branch
+          git fetch origin gh-pages:gh-pages || true
+          git checkout gh-pages || git checkout --orphan gh-pages
+          
+          # Ensure helm directory exists
+          mkdir -p helm
+          
+          # Update index.yaml in the helm/ subdirectory (where users expect it)
+          if [ -f helm/index.yaml ]; then
+            helm repo index .cr-release-packages --url https://github.com/${{ github.repository }}/releases/download/${{ steps.get_tag.outputs.tag }} --merge helm/index.yaml
+            cp .cr-release-packages/index.yaml helm/index.yaml
+          else
+            helm repo index .cr-release-packages --url https://github.com/${{ github.repository }}/releases/download/${{ steps.get_tag.outputs.tag }}
+            cp .cr-release-packages/index.yaml helm/index.yaml
+          fi
+          
+          git add helm/index.yaml
+          git commit -m "Update Helm repo index for ${{ steps.get_tag.outputs.tag }}" || true
+          git push origin gh-pages

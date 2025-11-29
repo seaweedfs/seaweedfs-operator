@@ -26,8 +26,33 @@ on:
       - 'config/**'
 
 jobs:
+  determine-versions:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.versions.outputs.matrix }}
+    steps:
+      - name: Determine latest K8s versions
+        id: versions
+        run: |
+          # Fetch latest Kubernetes versions from GitHub API
+          VERSIONS=$(curl -s https://api.github.com/repos/kubernetes/kubernetes/releases | jq -r '.[] | select(.tag_name | test("^v1\\.[0-9]+\\.[0-9]+$")) | .tag_name' | sort -V | tail -3)
+          
+          # Create matrix JSON
+          MATRIX="[]"
+          COUNT=0
+          ATTRIBUTES=("penultimate" "previous" "latest")
+          
+          for VERSION in $VERSIONS; do
+            ATTRIBUTE=${ATTRIBUTES[$COUNT]}
+            MATRIX=$(echo $MATRIX | jq --arg v "$VERSION" --arg a "$ATTRIBUTE" '. += [{"version": $v, "attribute": $a}]')
+            ((COUNT++))
+          done
+          
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+
   integration-test:
     name: Integration Tests on k8s ${{ matrix.k8s.version }}
+    needs: determine-versions
     # Pull request has label 'ok-to-test' or the author is a member of the organization, or it's a push to main/master
     if: |
       github.event_name == 'push' ||
@@ -37,13 +62,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        k8s:
-          - version: v1.29.0
-            attribute: previous
-          - version: v1.30.0
-            attribute: current
-          - version: v1.31.0
-            attribute: latest
+        k8s: ${{ fromJson(needs.determine-versions.outputs.matrix) }}
 
     runs-on: ubuntu-22.04
     timeout-minutes: 30
@@ -55,7 +74,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.24'
           cache: true
 
       - name: Set up Docker Buildx
@@ -157,7 +176,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.24'
           cache: true
 
       - name: Run resource filtering unit tests
@@ -183,7 +202,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.24'
           cache: true
 
       - name: Check if code compiles

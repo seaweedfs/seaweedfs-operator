@@ -92,10 +92,12 @@ generate: controller-gen
 .PHONY: docker-build
 docker-build:
 	echo ${IMG}
-	${CONTAINER_TOOL} build . -t ${IMG} \
+	@# Use buildx with docker output to ensure compatibility with kind load
+	${CONTAINER_TOOL} buildx build . -t ${IMG} \
 	  --platform ${TARGETOS}/${TARGETARCH} \
 	  --build-arg TARGETARCH=${TARGETARCH} \
-	  --build-arg TARGETOS=${TARGETOS}
+	  --build-arg TARGETOS=${TARGETOS} \
+	  --load
 
 # Push the docker image
 docker-push:
@@ -156,16 +158,12 @@ redeploy: deploy ## Redeploy controller with new docker image.
 .PHONY: kind-load
 kind-load: docker-build kind ## Build and upload docker image to the local Kind cluster.
 	@# Workaround for containerd snapshotter issues (https://github.com/kubernetes-sigs/kind/issues/3795)
-	@# Use docker save --platform + kind load image-archive when Docker 28+ is available
+	@# Save without --platform since the image was built for a single platform
 	@set -e; \
-	if $(CONTAINER_TOOL) save --help 2>&1 | grep -q -- '--platform'; then \
-		echo "Using docker save --platform workaround for containerd image store"; \
-		$(CONTAINER_TOOL) save --platform ${TARGETOS}/${TARGETARCH} -o /tmp/kind-image.tar ${IMG}; \
-		$(KIND) load image-archive /tmp/kind-image.tar --name $(KIND_CLUSTER_NAME); \
-		rm -f /tmp/kind-image.tar; \
-	else \
-		$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME); \
-	fi
+	echo "Saving and loading image to Kind cluster..."; \
+	$(CONTAINER_TOOL) save -o /tmp/kind-image.tar ${IMG}; \
+	$(KIND) load image-archive /tmp/kind-image.tar --name $(KIND_CLUSTER_NAME); \
+	rm -f /tmp/kind-image.tar
 
 .PHONY: kind-create
 kind-create: kind yq ## Create kubernetes cluster using Kind.

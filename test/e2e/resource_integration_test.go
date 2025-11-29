@@ -104,6 +104,7 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 		var seaweed *seaweedv1.Seaweed
 
 		BeforeEach(func() {
+			concurrentStart := true
 			seaweed = &seaweedv1.Seaweed{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      seaweedName,
@@ -112,7 +113,8 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 				Spec: seaweedv1.SeaweedSpec{
 					Image: "chrislusf/seaweedfs:latest",
 					Master: &seaweedv1.MasterSpec{
-						Replicas: 1,
+						Replicas:        1,
+						ConcurrentStart: &concurrentStart, // Allow parallel creation of volume/filer StatefulSets
 						ResourceRequirements: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceCPU:    resource.MustParse("500m"),

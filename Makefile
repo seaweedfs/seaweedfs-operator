@@ -92,10 +92,23 @@ generate: controller-gen
 .PHONY: docker-build
 docker-build:
 	echo ${IMG}
-	${CONTAINER_TOOL} build . -t ${IMG} \
+	${CONTAINER_TOOL} buildx build . -t ${IMG} \
 	  --platform ${TARGETOS}/${TARGETARCH} \
 	  --build-arg TARGETARCH=${TARGETARCH} \
-	  --build-arg TARGETOS=${TARGETOS}
+	  --build-arg TARGETOS=${TARGETOS} \
+	  --load
+
+# Build docker image and save to tar file (for kind load, avoids containerd snapshotter issues)
+.PHONY: docker-build-tar
+docker-build-tar:
+	echo ${IMG}
+	@# Output directly to tar file to avoid containerd snapshotter issues
+	@# See: https://github.com/kubernetes-sigs/kind/issues/3795
+	${CONTAINER_TOOL} buildx build . -t ${IMG} \
+	  --platform ${TARGETOS}/${TARGETARCH} \
+	  --build-arg TARGETARCH=${TARGETARCH} \
+	  --build-arg TARGETOS=${TARGETOS} \
+	  --output type=docker,dest=/tmp/kind-image.tar
 
 # Push the docker image
 docker-push:
@@ -154,18 +167,11 @@ redeploy: deploy ## Redeploy controller with new docker image.
 	$(KUBECTL) rollout restart -n $(NAMESPACE) deploy/seaweedfs-operator-controller-manager
 
 .PHONY: kind-load
-kind-load: docker-build kind ## Build and upload docker image to the local Kind cluster.
+kind-load: docker-build-tar kind ## Build and upload docker image to the local Kind cluster.
 	@# Workaround for containerd snapshotter issues (https://github.com/kubernetes-sigs/kind/issues/3795)
-	@# Use docker save --platform + kind load image-archive when Docker 28+ is available
-	@set -e; \
-	if $(CONTAINER_TOOL) save --help 2>&1 | grep -q -- '--platform'; then \
-		echo "Using docker save --platform workaround for containerd image store"; \
-		$(CONTAINER_TOOL) save --platform ${TARGETOS}/${TARGETARCH} -o /tmp/kind-image.tar ${IMG}; \
-		$(KIND) load image-archive /tmp/kind-image.tar --name $(KIND_CLUSTER_NAME); \
-		rm -f /tmp/kind-image.tar; \
-	else \
-		$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME); \
-	fi
+	@# docker-build-tar outputs directly to /tmp/kind-image.tar, avoiding docker save
+	$(KIND) load image-archive /tmp/kind-image.tar --name $(KIND_CLUSTER_NAME)
+	@rm -f /tmp/kind-image.tar
 
 .PHONY: kind-create
 kind-create: kind yq ## Create kubernetes cluster using Kind.

@@ -37,20 +37,37 @@ jobs:
       - name: Determine latest K8s versions
         id: versions
         run: |
-          # Fetch latest Kubernetes versions from GitHub API
-          VERSIONS=$(curl -s https://api.github.com/repos/kubernetes/kubernetes/releases | jq -r '.[] | select(.tag_name | test("^v1\\.[0-9]+\\.[0-9]+$")) | .tag_name' | sort -V | tail -3)
-          
-          # Create matrix JSON
-          MATRIX="[]"
-          COUNT=0
+          set -euo pipefail
+          set -x
+
+          # Try to fetch releases; if network or API fails, fall back to sensible defaults
+          VERSIONS_RAW=$(curl -sS --fail https://api.github.com/repos/kubernetes/kubernetes/releases || true)
+          if [ -z "${VERSIONS_RAW:-}" ]; then
+            echo "Warning: failed to fetch Kubernetes releases; using fallback versions"
+            MATRIX='[{"version":"v1.31.0","attribute":"latest"},{"version":"v1.30.0","attribute":"current"},{"version":"v1.29.0","attribute":"previous"}]'
+            echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Parse and pick the last 3 semantic v1.x.y tags
+          VERSIONS=$(echo "$VERSIONS_RAW" | jq -r '.[] | select(.tag_name | test("^v1\\.[0-9]+\\.[0-9]+$")) | .tag_name' | sort -V | uniq | tail -3)
+
+          MATRIX='[]'
           ATTRIBUTES=("penultimate" "previous" "latest")
-          
-          for VERSION in $VERSIONS; do
-            ATTRIBUTE=${ATTRIBUTES[$COUNT]}
-            MATRIX=$(echo $MATRIX | jq --arg v "$VERSION" --arg a "$ATTRIBUTE" '. += [{"version": $v, "attribute": $a}]')
-            ((COUNT++))
+
+          # Read into array preserving whitespace
+          mapfile -t arr <<<"$VERSIONS"
+          for i in "${!arr[@]}"; do
+            v=${arr[i]}
+            a=${ATTRIBUTES[i]:-latest}
+            MATRIX=$(echo "$MATRIX" | jq --arg v "$v" --arg a "$a" '. += [{"version": $v, "attribute": $a}]')
           done
-          
+
+          # If parsing produced empty matrix, use fallback defaults
+          if [ "$(echo "$MATRIX" | jq length)" -eq 0 ]; then
+            MATRIX='[{"version":"v1.31.0","attribute":"latest"},{"version":"v1.30.0","attribute":"current"},{"version":"v1.29.0","attribute":"previous"}]'
+          fi
+
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
 
   integration-test:

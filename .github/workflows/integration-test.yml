@@ -61,22 +61,20 @@ jobs:
             CANDIDATES=$(printf '%s' "$VERSIONS_RAW" | python3 -c 'import sys,json,re;data=json.load(sys.stdin);out=[item.get("name") for item in data if isinstance(item,dict) and item.get("name") and re.match(r"^v1\.[0-9]+\.[0-9]+$", item.get("name"))]; print("\n".join(out))')
           fi
 
-          # Normalize v1.X to v1.X.0, sort semver, unique, and pick the latest N
+          # Compute latest patch per minor (e.g., pick v1.34.2 for minor 1.34),
+          # then pick the latest 3 minor versions (1.34,1.33,1.32)
           NUM=3
-          VERSIONS=$(printf '%s' "$CANDIDATES" | sed -E 's/^(v[0-9]+\.[0-9]+)$/\1.0/' | sort -V | uniq | tail -n "$NUM")
+          # LATEST_PER_MINOR: for each minor (1.X) keep the highest patch
+          LATEST_PER_MINOR=$(printf '%s' "$CANDIDATES" | sed 's/^v//' | sort -V | awk -F. '{ minor=$1"."$2; versions[minor]=$0 } END { for (m in versions) print versions[m] }')
+          # Now sort by semver desc (latest minor first) and pick top NUM
+          VERSIONS=$(printf '%s' "$LATEST_PER_MINOR" | sort -V -r | head -n "$NUM" | sed 's/^/v/')
 
           # Build matrix as array of objects {version, attribute}
           MATRIX='[]'
           ATTRIBUTES=("latest" "current" "previous")
 
-          # read into array preserving newlines
+          # read into array preserving newlines (VERSIONS already latest-first)
           mapfile -t arr <<<"${VERSIONS:-}"
-          # reverse order so latest becomes first (tail gave newest at bottom)
-          if [ ${#arr[@]} -gt 0 ]; then
-            # ensure latest first
-            arr=( $(printf '%s\n' "${arr[@]}" | tac) )
-          fi
-
           for i in "${!arr[@]}"; do
             v=${arr[i]}
             a=${ATTRIBUTES[i]:-latest}

@@ -169,14 +169,12 @@ redeploy: deploy ## Redeploy controller with new docker image.
 .PHONY: kind-load
 kind-load: docker-build-tar kind ## Build and upload docker image to the local Kind cluster.
 	@# Workaround for containerd snapshotter issues (https://github.com/kubernetes-sigs/kind/issues/3795)
-	@# We bypass 'kind load' entirely and use docker cp + ctr directly with platform-specific import
+	@# We bypass 'kind load' entirely and pipe directly to ctr via stdin
 	@# This avoids the --all-platforms flag that causes failures with containerd image store
 	@set -e; \
 	NODE=$(KIND_CLUSTER_NAME)-control-plane; \
 	echo "Loading image to Kind cluster (bypassing kind load)..."; \
-	$(CONTAINER_TOOL) cp /tmp/kind-image.tar $$NODE:/tmp/image.tar; \
-	$(CONTAINER_TOOL) exec $$NODE ctr --namespace=k8s.io images import --digests --snapshotter=overlayfs /tmp/image.tar; \
-	$(CONTAINER_TOOL) exec $$NODE rm -f /tmp/image.tar; \
+	cat /tmp/kind-image.tar | $(CONTAINER_TOOL) exec -i $$NODE ctr --namespace=k8s.io images import --digests --snapshotter=overlayfs -; \
 	rm -f /tmp/kind-image.tar; \
 	echo "Image loaded successfully"
 

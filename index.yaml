@@ -3,6 +3,19 @@ entries:
   seaweedfs-operator:
   - apiVersion: v2
     appVersion: 1.0.6
+    created: "2025-11-30T12:28:40.564391-08:00"
+    description: A Helm chart for the seaweedfs-operator
+    digest: f72d61314bc123e15a38be554e4875b19b16d697018d973d14f34e9959622d41
+    maintainers:
+    - name: chrislusf
+      url: https://github.com/chrislusf
+    name: seaweedfs-operator
+    type: application
+    urls:
+    - https://github.com/seaweedfs/seaweedfs-operator/releases/download/seaweedfs-operator-0.1.7/seaweedfs-operator-0.1.7.tgz
+    version: 0.1.7
+  - apiVersion: v2
+    appVersion: 1.0.6
     created: "2025-11-29T07:51:43.205022772Z"
     description: A Helm chart for the seaweedfs-operator
     digest: e418b4e4f72afe2d22f8b05a5c3713347120cab5d5b1db42ee8ffa444efb9df2
@@ -40,4 +53,4 @@ entries:
     urls:
     - https://github.com/seaweedfs/seaweedfs-operator/releases/download/seaweedfs-operator-0.1.2/seaweedfs-operator-0.1.2.tgz
     version: 0.1.2
-generated: "2025-11-29T08:03:51.568534772Z"
+generated: "2025-11-30T12:28:40.562285-08:00"

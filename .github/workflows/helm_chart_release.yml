@@ -48,6 +48,7 @@ jobs:
           sed -i "s/appVersion: .*/appVersion: \"$TAG\"/" deploy/helm/Chart.yaml
 
       - name: Set chart version based on tag
+        id: set_chart_version
         run: |
           # Increment the chart version for each release
           CURRENT_VERSION=$(grep '^version:' deploy/helm/Chart.yaml | awk '{print $2}')
@@ -55,6 +56,7 @@ jobs:
           VERSION="$major.$minor.$((patch + 1))"
           echo "Setting chart version to: $VERSION"
           sed -i "s/version: .*/version: $VERSION/" deploy/helm/Chart.yaml
+          echo "chart_version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Checkout branch
         run: git checkout master
@@ -79,7 +81,7 @@ jobs:
       - name: Upload chart to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.get_tag.outputs.tag }}
+          tag_name: seaweedfs-operator-${{ steps.set_chart_version.outputs.chart_version }}
           files: .cr-release-packages/*.tgz
 
       - name: Update Helm repo index
@@ -93,13 +95,13 @@ jobs:
           
           # Update index.yaml in the helm/ subdirectory (where users expect it)
           if [ -f helm/index.yaml ]; then
-            helm repo index .cr-release-packages --url https://github.com/${{ github.repository }}/releases/download/${{ steps.get_tag.outputs.tag }} --merge helm/index.yaml
+            helm repo index .cr-release-packages --url https://github.com/${{ github.repository }}/releases/download/seaweedfs-operator-${{ steps.set_chart_version.outputs.chart_version }} --merge helm/index.yaml
             cp .cr-release-packages/index.yaml helm/index.yaml
           else
-            helm repo index .cr-release-packages --url https://github.com/${{ github.repository }}/releases/download/${{ steps.get_tag.outputs.tag }}
+            helm repo index .cr-release-packages --url https://github.com/${{ github.repository }}/releases/download/seaweedfs-operator-${{ steps.set_chart_version.outputs.chart_version }}
             cp .cr-release-packages/index.yaml helm/index.yaml
           fi
           
           git add helm/index.yaml
-          git commit -m "Update Helm repo index for ${{ steps.get_tag.outputs.tag }}" || true
+          git commit -m "Update Helm repo index for seaweedfs-operator-${{ steps.set_chart_version.outputs.chart_version }}" || true
           git push origin gh-pages

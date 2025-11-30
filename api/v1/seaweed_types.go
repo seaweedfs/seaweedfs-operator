@@ -106,6 +106,7 @@ type SeaweedSpec struct {
 	// Template.
 	StatefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType `json:"statefulSetUpdateStrategy,omitempty"`
 
+	// +kubebuilder:validation:Type=integer
 	VolumeServerDiskCount *int32 `json:"volumeServerDiskCount,omitempty"`
 
 	// Ingresses

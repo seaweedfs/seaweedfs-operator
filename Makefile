@@ -256,7 +256,7 @@ CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 # renovate: datasource=github-tags depName=kubernetes-sigs/kustomize
 KUSTOMIZE_VERSION ?= v5.3.0
 # renovate: datasource=github-tags depName=kubernetes-sigs/controller-tools
-CONTROLLER_TOOLS_VERSION ?= v0.17.0
+CONTROLLER_TOOLS_VERSION ?= v0.19.0
 ENVTEST_VERSION ?= latest
 
 # renovate: datasource=github-tags depName=kubernetes-sigs/kind

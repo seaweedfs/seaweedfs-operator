@@ -71,12 +71,8 @@ jobs:
         run: |
           make manifests
 
-      - name: Fix CRD format warnings (remove invalid int32/int64 formats)
+      - name: Copy fixed CRD to Helm chart
         run: |
-          # Remove invalid format: int32 and format: int64 from the CRD
-          # These are not valid OpenAPI v3 formats and cause kubectl warnings
-          perl -i -pe 's/\s+format: int32\n//g; s/\s+format: int64\n//g' config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml
-          # Copy the fixed CRD to the Helm chart
           cp config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml deploy/helm/crds/seaweed.seaweedfs.com_seaweeds.yaml
 
       - name: Debug chart structure

@@ -65,6 +65,8 @@ debug: generate fmt vet manifests
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:maxDescLen=0 webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	@# Fix invalid OpenAPI format fields (int32/int64 are not valid in OpenAPI v3)
+	@perl -i -pe 's/\s+format: int32\n//g; s/\s+format: int64\n//g' config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml
 
 # Run go fmt against code
 fmt:

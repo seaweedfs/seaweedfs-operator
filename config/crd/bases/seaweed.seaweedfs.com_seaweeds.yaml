@@ -74,7 +74,7 @@ spec:
                               type: object
                               x-kubernetes-map-type: atomic
                             weight:
-                              format: int32
+                              format: integer
                               type: integer
                           required:
                           - preference
@@ -212,7 +212,7 @@ spec:
                               - topologyKey
                               type: object
                             weight:
-                              format: int32
+                              format: integer
                               type: integer
                           required:
                           - podAffinityTerm
@@ -378,7 +378,7 @@ spec:
                               - topologyKey
                               type: object
                             weight:
-                              format: int32
+                              format: integer
                               type: integer
                           required:
                           - podAffinityTerm
@@ -521,7 +521,7 @@ spec:
                                   type: object
                                   x-kubernetes-map-type: atomic
                                 weight:
-                                  format: int32
+                                  format: integer
                                   type: integer
                               required:
                               - preference
@@ -659,7 +659,7 @@ spec:
                                   - topologyKey
                                   type: object
                                 weight:
-                                  format: int32
+                                  format: integer
                                   type: integer
                               required:
                               - podAffinityTerm
@@ -825,7 +825,7 @@ spec:
                                   - topologyKey
                                   type: object
                                 weight:
-                                  format: int32
+                                  format: integer
                                   type: integer
                               required:
                               - podAffinityTerm
@@ -1020,10 +1020,10 @@ spec:
                       x-kubernetes-int-or-string: true
                     type: object
                   maxMB:
-                    format: int32
+                    format: integer
                     type: integer
                   metricsPort:
-                    format: int32
+                    format: integer
                     type: integer
                   nodeSelector:
                     additionalProperties:
@@ -1119,7 +1119,7 @@ spec:
                   priorityClassName:
                     type: string
                   replicas:
-                    format: int32
+                    format: integer
                     minimum: 1
                     type: integer
                   requests:
@@ -1167,7 +1167,7 @@ spec:
                   statefulSetUpdateStrategy:
                     type: string
                   terminationGracePeriodSeconds:
-                    format: int64
+                    format: integer
                     type: integer
                   tolerations:
                     items:
@@ -1179,7 +1179,7 @@ spec:
                         operator:
                           type: string
                         tolerationSeconds:
-                          format: int64
+                          format: integer
                           type: integer
                         value:
                           type: string
@@ -1244,7 +1244,7 @@ spec:
                                   type: object
                                   x-kubernetes-map-type: atomic
                                 weight:
-                                  format: int32
+                                  format: integer
                                   type: integer
                               required:
                               - preference
@@ -1382,7 +1382,7 @@ spec:
                                   - topologyKey
                                   type: object
                                 weight:
-                                  format: int32
+                                  format: integer
                                   type: integer
                               required:
                               - podAffinityTerm
@@ -1548,7 +1548,7 @@ spec:
                                   - topologyKey
                                   type: object
                                 weight:
-                                  format: int32
+                                  format: integer
                                   type: integer
                               required:
                               - podAffinityTerm
@@ -1741,19 +1741,19 @@ spec:
                       x-kubernetes-int-or-string: true
                     type: object
                   metricsPort:
-                    format: int32
+                    format: integer
                     type: integer
                   nodeSelector:
                     additionalProperties:
                       type: string
                     type: object
                   port:
-                    format: int32
+                    format: integer
                     type: integer
                   priorityClassName:
                     type: string
                   replicas:
-                    format: int32
+                    format: integer
                     minimum: 1
                     type: integer
                   requests:
@@ -1782,7 +1782,7 @@ spec:
                   statefulSetUpdateStrategy:
                     type: string
                   terminationGracePeriodSeconds:
-                    format: int64
+                    format: integer
                     type: integer
                   tolerations:
                     items:
@@ -1794,7 +1794,7 @@ spec:
                         operator:
                           type: string
                         tolerationSeconds:
-                          format: int64
+                          format: integer
                           type: integer
                         value:
                           type: string
@@ -1868,7 +1868,7 @@ spec:
                                   type: object
                                   x-kubernetes-map-type: atomic
                                 weight:
-                                  format: int32
+                                  format: integer
                                   type: integer
                               required:
                               - preference
@@ -2006,7 +2006,7 @@ spec:
                                   - topologyKey
                                   type: object
                                 weight:
-                                  format: int32
+                                  format: integer
                                   type: integer
                               required:
                               - podAffinityTerm
@@ -2172,7 +2172,7 @@ spec:
                                   - topologyKey
                                   type: object
                                 weight:
-                                  format: int32
+                                  format: integer
                                   type: integer
                               required:
                               - podAffinityTerm
@@ -2371,7 +2371,7 @@ spec:
                       x-kubernetes-int-or-string: true
                     type: object
                   metricsPort:
-                    format: int32
+                    format: integer
                     type: integer
                   nodeSelector:
                     additionalProperties:
@@ -2380,10 +2380,10 @@ spec:
                   priorityClassName:
                     type: string
                   pulseSeconds:
-                    format: int32
+                    format: integer
                     type: integer
                   replicas:
-                    format: int32
+                    format: integer
                     minimum: 1
                     type: integer
                   requests:
@@ -2412,7 +2412,7 @@ spec:
                   statefulSetUpdateStrategy:
                     type: string
                   terminationGracePeriodSeconds:
-                    format: int64
+                    format: integer
                     type: integer
                   tolerations:
                     items:
@@ -2424,7 +2424,7 @@ spec:
                         operator:
                           type: string
                         tolerationSeconds:
-                          format: int64
+                          format: integer
                           type: integer
                         value:
                           type: string
@@ -2435,7 +2435,7 @@ spec:
                   volumePreallocate:
                     type: boolean
                   volumeSizeLimitMB:
-                    format: int32
+                    format: integer
                     type: integer
                 required:
                 - replicas
@@ -2462,7 +2462,7 @@ spec:
                     operator:
                       type: string
                     tolerationSeconds:
-                      format: int64
+                      format: integer
                       type: integer
                     value:
                       type: string
@@ -2520,7 +2520,7 @@ spec:
                                   type: object
                                   x-kubernetes-map-type: atomic
                                 weight:
-                                  format: int32
+                                  format: integer
                                   type: integer
                               required:
                               - preference
@@ -2658,7 +2658,7 @@ spec:
                                   - topologyKey
                                   type: object
                                 weight:
-                                  format: int32
+                                  format: integer
                                   type: integer
                               required:
                               - podAffinityTerm
@@ -2824,7 +2824,7 @@ spec:
                                   - topologyKey
                                   type: object
                                 weight:
-                                  format: int32
+                                  format: integer
                                   type: integer
                               required:
                               - podAffinityTerm
@@ -2928,7 +2928,7 @@ spec:
                     - name
                     x-kubernetes-list-type: map
                   compactionMBps:
-                    format: int32
+                    format: integer
                     type: integer
                   dataCenter:
                     type: string
@@ -2999,14 +2999,14 @@ spec:
                       type: object
                     type: array
                   fileSizeLimitMB:
-                    format: int32
+                    format: integer
                     type: integer
                   fixJpgOrientation:
                     type: boolean
                   hostNetwork:
                     type: boolean
                   idleTimeout:
-                    format: int32
+                    format: integer
                     type: integer
                   imagePullPolicy:
                     type: string
@@ -3028,13 +3028,13 @@ spec:
                       x-kubernetes-int-or-string: true
                     type: object
                   maxVolumeCounts:
-                    format: int32
+                    format: integer
                     type: integer
                   metricsPort:
-                    format: int32
+                    format: integer
                     type: integer
                   minFreeSpacePercent:
-                    format: int32
+                    format: integer
                     type: integer
                   nodeSelector:
                     additionalProperties:
@@ -3045,7 +3045,7 @@ spec:
                   rack:
                     type: string
                   replicas:
-                    format: int32
+                    format: integer
                     minimum: 0
                     type: integer
                   requests:
@@ -3076,7 +3076,7 @@ spec:
                   storageClassName:
                     type: string
                   terminationGracePeriodSeconds:
-                    format: int64
+                    format: integer
                     type: integer
                   tolerations:
                     items:
@@ -3088,7 +3088,7 @@ spec:
                         operator:
                           type: string
                         tolerationSeconds:
-                          format: int64
+                          format: integer
                           type: integer
                         value:
                           type: string
@@ -3100,7 +3100,7 @@ spec:
                 - replicas
                 type: object
               volumeServerDiskCount:
-                format: int32
+                format: integer
                 type: integer
               volumeTopology:
                 additionalProperties:
@@ -3153,7 +3153,7 @@ spec:
                                     type: object
                                     x-kubernetes-map-type: atomic
                                   weight:
-                                    format: int32
+                                    format: integer
                                     type: integer
                                 required:
                                 - preference
@@ -3291,7 +3291,7 @@ spec:
                                     - topologyKey
                                     type: object
                                   weight:
-                                    format: int32
+                                    format: integer
                                     type: integer
                                 required:
                                 - podAffinityTerm
@@ -3457,7 +3457,7 @@ spec:
                                     - topologyKey
                                     type: object
                                   weight:
-                                    format: int32
+                                    format: integer
                                     type: integer
                                 required:
                                 - podAffinityTerm
@@ -3561,7 +3561,7 @@ spec:
                       - name
                       x-kubernetes-list-type: map
                     compactionMBps:
-                      format: int32
+                      format: integer
                       type: integer
                     dataCenter:
                       type: string
@@ -3632,14 +3632,14 @@ spec:
                         type: object
                       type: array
                     fileSizeLimitMB:
-                      format: int32
+                      format: integer
                       type: integer
                     fixJpgOrientation:
                       type: boolean
                     hostNetwork:
                       type: boolean
                     idleTimeout:
-                      format: int32
+                      format: integer
                       type: integer
                     imagePullPolicy:
                       type: string
@@ -3661,13 +3661,13 @@ spec:
                         x-kubernetes-int-or-string: true
                       type: object
                     maxVolumeCounts:
-                      format: int32
+                      format: integer
                       type: integer
                     metricsPort:
-                      format: int32
+                      format: integer
                       type: integer
                     minFreeSpacePercent:
-                      format: int32
+                      format: integer
                       type: integer
                     nodeSelector:
                       additionalProperties:
@@ -3678,7 +3678,7 @@ spec:
                     rack:
                       type: string
                     replicas:
-                      format: int32
+                      format: integer
                       minimum: 0
                       type: integer
                     requests:
@@ -3709,7 +3709,7 @@ spec:
                     storageClassName:
                       type: string
                     terminationGracePeriodSeconds:
-                      format: int64
+                      format: integer
                       type: integer
                     tolerations:
                       items:
@@ -3721,7 +3721,7 @@ spec:
                           operator:
                             type: string
                           tolerationSeconds:
-                            format: int64
+                            format: integer
                             type: integer
                           value:
                             type: string

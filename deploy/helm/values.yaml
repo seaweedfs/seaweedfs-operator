@@ -96,6 +96,22 @@ webhook:
   initContainer:
     # -- Image for webhook readiness check init container
     image: curlimages/curl:8.8.0
+  # -- Pod security context for webhook jobs
+  # ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  # -- Container security context for webhook jobs
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
 
 ## seaweedfs-operator containers' resource requests and limits.
 ## ref: http://kubernetes.io/docs/user-guide/compute-resources/

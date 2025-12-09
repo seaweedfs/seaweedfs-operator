@@ -97,13 +97,13 @@ jobs:
           # Checkout gh-pages branch
           git fetch origin gh-pages:gh-pages || true
           git checkout gh-pages || git checkout --orphan gh-pages
-          
+
           # Ensure helm directory exists
           mkdir -p helm
-          
+
           CHART_VERSION="${{ steps.set_chart_version.outputs.chart_version }}"
           RELEASE_URL="https://github.com/${{ github.repository }}/releases/download/seaweedfs-operator-${CHART_VERSION}"
-          
+
           # Update index.yaml in the helm/ subdirectory
           if [ -f helm/index.yaml ]; then
             helm repo index .cr-release-packages --url "${RELEASE_URL}" --merge helm/index.yaml
@@ -112,10 +112,10 @@ jobs:
             helm repo index .cr-release-packages --url "${RELEASE_URL}"
             cp .cr-release-packages/index.yaml helm/index.yaml
           fi
-          
+
           # Also update the root index.yaml (some users add repo without /helm suffix)
           cp helm/index.yaml index.yaml
-          
+
           git add helm/index.yaml index.yaml
           git commit -m "Update Helm repo index for seaweedfs-operator-${CHART_VERSION}" || true
           git push origin gh-pages

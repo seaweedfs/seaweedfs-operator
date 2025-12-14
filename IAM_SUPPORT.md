@@ -4,7 +4,7 @@ This document describes the IAM (Identity and Access Management) service support
 
 ## Overview
 
-The IAM API is now **embedded in the S3 server by default**. This follows the pattern used by MinIO and Ceph RGW, providing a simpler deployment model where both S3 and IAM APIs are available on the same port (8333).
+Starting from SeaweedFS version **4.03**, the IAM API is now **embedded in the S3 server by default**. This follows the pattern used by MinIO and Ceph RGW, providing a simpler deployment model where both S3 and IAM APIs are available on the same port (8333).
 
 ## Configuration
 

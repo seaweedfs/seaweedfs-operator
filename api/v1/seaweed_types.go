@@ -32,8 +32,7 @@ const (
 	MasterHTTPPort = 9333
 	VolumeHTTPPort = 8444
 	FilerHTTPPort  = 8888
-	FilerS3Port    = 8333
-	FilerIAMPort   = 8111
+	FilerS3Port    = 8333 // S3 port (IAM API is also available on this port when S3 is enabled)
 
 	MasterGRPCPort = MasterHTTPPort + GRPCPortDelta
 	VolumeGRPCPort = VolumeHTTPPort + GRPCPortDelta
@@ -68,8 +67,9 @@ type SeaweedSpec struct {
 	// Filer
 	Filer *FilerSpec `json:"filer,omitempty"`
 
-	// IAM
-	IAM *IAMSpec `json:"iam,omitempty"`
+	// Note: Standalone IAM has been removed. IAM is now embedded in S3 by default.
+	// When filer.s3.enabled=true, IAM API is available on the same S3 port.
+	// Use filer.iam=false to disable embedded IAM if needed.
 
 	// SchedulerName of pods
 	SchedulerName string `json:"schedulerName,omitempty"`
@@ -229,38 +229,10 @@ type FilerSpec struct {
 	// S3 configuration for the filer
 	S3 *S3Config `json:"s3,omitempty"`
 	// IAM enables/disables IAM API embedded in S3 server.
-	// When S3 is enabled, IAM is enabled by default (on the same S3 port).
+	// When S3 is enabled, IAM is enabled by default (on the same S3 port: 8333).
 	// Set to false to explicitly disable embedded IAM.
-	// Note: The standalone IAM server is deprecated in favor of embedded IAM.
 	// +kubebuilder:default:=true
 	IAM bool `json:"iam,omitempty"`
-}
-
-// IAMSpec is the spec for standalone IAM servers.
-// DEPRECATED: Standalone IAM is deprecated. IAM is now embedded in the S3 server by default.
-// When S3 is enabled, IAM API is automatically available on the same port (FilerS3Port).
-// Use filer.iam=false to disable embedded IAM if needed.
-type IAMSpec struct {
-	ComponentSpec               `json:",inline"`
-	corev1.ResourceRequirements `json:",inline"`
-
-	// The desired ready replicas
-	// +kubebuilder:validation:Minimum=1
-	// DEPRECATED: Standalone IAM replicas are deprecated. Use embedded IAM in S3 instead.
-	Replicas int32        `json:"replicas"`
-	Service  *ServiceSpec `json:"service,omitempty"`
-
-	// Config in raw toml string
-	Config *string `json:"config,omitempty"`
-
-	// MetricsPort is the port that the prometheus metrics export listens on
-	MetricsPort *int32 `json:"metricsPort,omitempty"`
-
-	// IAM-specific settings
-
-	// Port for IAM service (default: 8111)
-	// DEPRECATED: When using embedded IAM, the IAM API is on the same port as S3.
-	Port *int32 `json:"port,omitempty"`
 }
 
 // ComponentSpec is the base spec of each component, the fields should always accessed by the Basic<Component>Spec() method to respect the cluster-level properties

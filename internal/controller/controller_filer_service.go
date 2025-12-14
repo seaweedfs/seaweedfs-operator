@@ -25,20 +25,12 @@ func (r *SeaweedReconciler) createFilerPeerService(m *seaweedv1.Seaweed) *corev1
 		},
 	}
 	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled {
+		// S3 port also serves IAM API when embedded IAM is enabled (default)
 		ports = append(ports, corev1.ServicePort{
 			Name:       "filer-s3",
 			Protocol:   corev1.Protocol("TCP"),
 			Port:       seaweedv1.FilerS3Port,
 			TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),
-		})
-	}
-	if m.Spec.Filer.IAM {
-		iamPort := getIAMPort(m)
-		ports = append(ports, corev1.ServicePort{
-			Name:       "filer-iam",
-			Protocol:   corev1.Protocol("TCP"),
-			Port:       iamPort,
-			TargetPort: intstr.FromInt(int(iamPort)),
 		})
 	}
 	if m.Spec.Filer.MetricsPort != nil {
@@ -86,20 +78,12 @@ func (r *SeaweedReconciler) createFilerService(m *seaweedv1.Seaweed) *corev1.Ser
 		},
 	}
 	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled {
+		// S3 port also serves IAM API when embedded IAM is enabled (default)
 		ports = append(ports, corev1.ServicePort{
 			Name:       "filer-s3",
 			Protocol:   corev1.Protocol("TCP"),
 			Port:       seaweedv1.FilerS3Port,
 			TargetPort: intstr.FromInt(seaweedv1.FilerS3Port),
-		})
-	}
-	if m.Spec.Filer.IAM {
-		iamPort := getIAMPort(m)
-		ports = append(ports, corev1.ServicePort{
-			Name:       "filer-iam",
-			Protocol:   corev1.Protocol("TCP"),
-			Port:       iamPort,
-			TargetPort: intstr.FromInt(int(iamPort)),
 		})
 	}
 	if m.Spec.Filer.MetricsPort != nil {

@@ -20,6 +20,12 @@ func (r *SeaweedReconciler) ensureIAM(seaweedCR *seaweedv1.Seaweed) (done bool, 
 		return false, ctrl.Result{}, nil
 	}
 
+	// Log deprecation warning for standalone IAM
+	r.Log.Info("WARNING: Standalone IAM is deprecated. IAM is now embedded in S3 by default. "+
+		"Consider removing the 'iam' section and using embedded IAM (enabled by default when S3 is enabled). "+
+		"Set filer.iam=false to explicitly disable embedded IAM if needed.",
+		"namespace", seaweedCR.Namespace, "name", seaweedCR.Name)
+
 	if done, result, err = r.ensureIAMService(seaweedCR); done {
 		return
 	}

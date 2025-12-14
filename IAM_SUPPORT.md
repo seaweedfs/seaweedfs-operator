@@ -1,21 +1,22 @@
 # IAM Service Support in SeaweedFS Operator
 
-This document describes the IAM (Identity and Access Management) service support that has been added to the SeaweedFS Operator.
+This document describes the IAM (Identity and Access Management) service support in the SeaweedFS Operator.
 
 ## Overview
 
-The SeaweedFS Operator now supports deploying IAM services in two ways:
+Starting from SeaweedFS version X.X.X, the IAM API is now **embedded in the S3 server by default**. This follows the pattern used by MinIO and Ceph RGW, providing a simpler deployment model where both S3 and IAM APIs are available on the same port.
 
-1. **Standalone IAM Service**: Deploy IAM as a separate service with its own pods
-2. **Embedded IAM**: Run IAM service embedded within the filer pods
+### Key Changes
 
-This addresses [Issue #137](https://github.com/seaweedfs/seaweedfs-operator/issues/137) by providing flexible IAM deployment options that match SeaweedFS's architecture.
+- **IAM is embedded in S3 by default**: When S3 is enabled, IAM API is automatically available on the same port (8333)
+- **Standalone IAM is deprecated**: The separate `weed iam` command and standalone IAM StatefulSet are deprecated
+- **Simplified deployment**: Single port for both S3 and IAM operations
 
 ## Configuration Options
 
-### Standalone IAM Service
+### Embedded IAM (Recommended)
 
-To deploy IAM as a standalone service, configure the `iam` section in your Seaweed CRD:
+IAM is enabled by default when S3 is enabled. No additional configuration needed:
 
 ```yaml
 apiVersion: seaweed.seaweedfs.com/v1
@@ -31,26 +32,31 @@ spec:
     replicas: 1
   filer:
     replicas: 1
-    s3: true
-
-  # Standalone IAM service
-  iam:
-    replicas: 1
-    port: 8111  # Optional: defaults to 8111
-    resources:
-      requests:
-        memory: "64Mi"
-        cpu: "50m"
-      limits:
-        memory: "128Mi"
-        cpu: "100m"
-    service:
-      type: ClusterIP
+    s3:
+      enabled: true
+    # iam: true  # Optional - IAM is enabled by default when S3 is enabled
 ```
 
-### Embedded IAM Service
+The IAM API is accessible on the same port as S3 (8333).
 
-To run IAM embedded with the filer, enable the `iam` flag in the filer spec:
+### Disabling Embedded IAM
+
+To disable embedded IAM (if you want S3-only without IAM):
+
+```yaml
+filer:
+  replicas: 1
+  s3:
+    enabled: true
+  iam: false  # Explicitly disable embedded IAM
+```
+
+### Standalone IAM (Deprecated)
+
+> ⚠️ **DEPRECATED**: Standalone IAM is deprecated and will be removed in a future release.
+> Please migrate to embedded IAM (see above).
+
+For backward compatibility, you can still deploy standalone IAM:
 
 ```yaml
 apiVersion: seaweed.seaweedfs.com/v1
@@ -64,247 +70,90 @@ spec:
     replicas: 1
   volume:
     replicas: 1
-
-  # Filer with embedded IAM
   filer:
     replicas: 1
-    s3: true
-    iam: true  # Enable embedded IAM
+    s3:
+      enabled: true
+    iam: false  # Disable embedded IAM when using standalone
 
-  # Optional: Configure IAM port (applies to both standalone and embedded)
+  # DEPRECATED: Standalone IAM service
   iam:
+    replicas: 1
     port: 8111
 ```
 
 ## API Reference
 
-### IAMSpec
-
-The `IAMSpec` defines the configuration for standalone IAM services:
+### FilerSpec.IAM
 
 ```go
-type IAMSpec struct {
-    ComponentSpec               `json:",inline"`
-    corev1.ResourceRequirements `json:",inline"`
-
-    // The desired ready replicas
-    Replicas int32        `json:"replicas"`
-    Service  *ServiceSpec `json:"service,omitempty"`
-
-    // Config in raw toml string
-    Config *string `json:"config,omitempty"`
-
-    // MetricsPort is the port that the prometheus metrics export listens on
-    MetricsPort *int32 `json:"metricsPort,omitempty"`
-
-    // Port for IAM service (default: 8111)
-    Port *int32 `json:"port,omitempty"`
-}
+// IAM enables/disables IAM API embedded in S3 server.
+// When S3 is enabled, IAM is enabled by default (on the same S3 port).
+// Set to false to explicitly disable embedded IAM.
+// +kubebuilder:default:=true
+IAM bool `json:"iam,omitempty"`
 ```
 
-### FilerSpec Updates
+### IAMSpec (Deprecated)
 
-The `FilerSpec` has been updated to support embedded IAM:
-
-```go
-type FilerSpec struct {
-    // ... existing fields ...
-
-    // Enable IAM service embedded with filer (alternative to standalone IAM)
-    IAM bool `json:"iam,omitempty"`
-}
-```
-
-## Deployment Scenarios
-
-### Scenario 1: Standalone IAM for Multi-Service Architecture
-
-Use standalone IAM when you want to:
-- Scale IAM independently from filer
-- Share IAM across multiple filer instances
-- Have dedicated resources for IAM operations
-
-```yaml
-iam:
-  replicas: 2  # Scale IAM independently
-  port: 8111
-  resources:
-    requests:
-      memory: "128Mi"
-      cpu: "100m"
-```
-
-### Scenario 2: Embedded IAM for Simplified Deployment
-
-Use embedded IAM when you want to:
-- Minimize the number of pods
-- Keep IAM close to the filer for performance
-- Simplify network configuration
-
-```yaml
-filer:
-  replicas: 1
-  s3: true
-  iam: true  # IAM runs in the same pod as filer
-```
-
-## Generated Resources
-
-### Standalone IAM
-
-When you configure a standalone IAM service, the operator creates:
-
-- **StatefulSet**: `<seaweed-name>-iam`
-- **Service**: `<seaweed-name>-iam`
-- **ConfigMap**: `<seaweed-name>-iam` (if config is provided)
-
-### Embedded IAM
-
-When you enable embedded IAM:
-
-- IAM runs within the existing filer pods
-- IAM port is exposed through the filer service
-- IAM arguments are added to the filer startup command
+The standalone IAM configuration is deprecated. Use embedded IAM instead.
 
 ## Service Discovery
 
-### Standalone IAM
+### Embedded IAM (Recommended)
 
-The IAM service is accessible at:
-- Internal: `<seaweed-name>-iam.<namespace>.svc.cluster.local:8111`
-- Port: 8111 (default) or custom port specified in spec
+The IAM API is accessible through the filer S3 service:
+- **Internal**: `<seaweed-name>-filer.<namespace>.svc.cluster.local:8333`
+- **Port**: 8333 (same as S3)
 
-### Embedded IAM
+### Standalone IAM (Deprecated)
 
-The IAM service is accessible through the filer service:
-- Internal: `<seaweed-name>-filer.<namespace>.svc.cluster.local:8111`
-- Port: 8111 (default) or custom port specified in spec
-
-## Networking
-
-### Default Ports
-
-- **IAM HTTP**: 8111
-- **Filer HTTP**: 8888
-- **Filer S3**: 8333
-
-### Port Configuration
-
-You can customize the IAM port:
-
-```yaml
-iam:
-  port: 9111  # Custom IAM port
-```
-
-This port setting applies to both standalone and embedded IAM services.
-
-## Monitoring
-
-IAM services support metrics export. Configure the metrics port:
-
-```yaml
-iam:
-  metricsPort: 9090
-```
+- **Internal**: `<seaweed-name>-iam.<namespace>.svc.cluster.local:8111`
+- **Port**: 8111
 
 ## Migration Guide
 
-### From No IAM to Standalone IAM
+### From Standalone IAM to Embedded IAM
 
-1. Add the `iam` section to your Seaweed CRD
-2. Apply the updated configuration
-3. The operator will create the IAM resources
+1. Remove the `iam:` section from your Seaweed CRD
+2. Ensure `filer.s3.enabled: true`
+3. Optionally set `filer.iam: true` (this is the default when S3 is enabled)
+4. Apply the updated configuration
+5. Update your clients to use the S3 port (8333) for IAM operations
 
-### From No IAM to Embedded IAM
-
-1. Add `iam: true` to your filer spec
-2. Apply the updated configuration
-3. The operator will update the filer statefulset to include IAM
-
-### From Embedded to Standalone IAM
-
-1. Set `filer.iam: false`
-2. Add the `iam` section for standalone configuration
-3. Apply the configuration
-4. The operator will create standalone IAM and update filer
-
-## Troubleshooting
-
-### IAM Service Not Starting
-
-Check the following:
-
-1. **Filer Dependency**: IAM requires a running filer service
-2. **Master Connection**: Ensure IAM can connect to master servers
-3. **Resource Limits**: Verify sufficient CPU/memory allocation
-
-```bash
-# Check IAM pod logs
-kubectl logs -f <seaweed-name>-iam-0
-
-# Check filer connectivity
-kubectl exec -it <seaweed-name>-iam-0 -- weed shell
+**Before (deprecated):**
+```yaml
+filer:
+  replicas: 1
+  s3:
+    enabled: true
+iam:
+  replicas: 1
+  port: 8111
 ```
 
-### Port Conflicts
-
-If you encounter port conflicts:
-
-1. Check existing services in the namespace
-2. Customize the IAM port in the spec
-3. Ensure the port is not used by other services
-
-### Configuration Issues
-
-For configuration problems:
-
-1. Verify the CRD syntax
-2. Check operator logs for reconciliation errors
-3. Validate resource requirements
-
-## Testing
-
-The IAM implementation includes comprehensive test coverage:
-
-### Running Tests
-
-```bash
-# Run IAM-specific API tests
-go test -v -run "IAM" ./api/v1
-
-# Run IAM controller unit tests
-go test -v -run "TestCreateIAM|TestBuildIAM|TestLabelsForIAM" ./internal/controller
-
-# Run embedded IAM tests
-go test -v -run "Filer.*IAM|IAM.*Filer" ./internal/controller
-
-# Run all IAM tests
-go test -v -run "IAM" ./...
+**After (recommended):**
+```yaml
+filer:
+  replicas: 1
+  s3:
+    enabled: true
+  # iam: true  # Default when S3 is enabled
 ```
-
-### Test Coverage
-
-The implementation includes:
-- **42 test cases** covering all IAM functionality
-- Unit tests for StatefulSet and Service creation
-- Integration tests for embedded IAM with filer
-- API validation tests for CRD specifications
-- Error condition and edge case testing
 
 ## Examples
 
 Complete examples are available in the `config/samples/` directory:
 
-- `seaweed_v1_seaweed_with_iam_standalone.yaml`: Standalone IAM service
-- `seaweed_v1_seaweed_with_iam_embedded.yaml`: Embedded IAM service
+- `seaweed_v1_seaweed_with_iam_embedded.yaml`: Embedded IAM (recommended)
+- `seaweed_v1_seaweed_with_iam_standalone.yaml`: Standalone IAM (deprecated)
 
-### Quick Start Example
+### Quick Start
 
-Deploy SeaweedFS with standalone IAM:
+Deploy SeaweedFS with embedded IAM (recommended):
 
 ```bash
-kubectl apply -f config/samples/seaweed_v1_seaweed_with_iam_standalone.yaml
+kubectl apply -f config/samples/seaweed_v1_seaweed_with_iam_embedded.yaml
 ```
 
 Verify deployment:
@@ -313,85 +162,77 @@ Verify deployment:
 # Check all resources
 kubectl get seaweed,statefulset,service,pod
 
-# Test IAM endpoint
-kubectl port-forward svc/seaweed-sample-iam 8111:8111
-curl http://localhost:8111/
+# Test S3/IAM endpoint (both on same port)
+kubectl port-forward svc/seaweed-sample-filer 8333:8333
+
+# S3 operations
+aws --endpoint-url http://localhost:8333 s3 ls
+
+# IAM operations (same endpoint)
+aws --endpoint-url http://localhost:8333 iam list-users
 ```
 
-## Architecture Details
+## Architecture
 
-### Command Line Integration
+### Embedded IAM
 
-#### Standalone IAM
-The operator generates the following command for standalone IAM:
-
-```bash
-weed -logtostderr=true iam \
-  -master=<master-peers> \
-  -filer=<filer-service>:8888 \  # Default filer port, configurable via FilerHTTPPort
-  -port=8111 \
-  -metricsPort=9090
+```
+┌─────────────────────────────────────────────┐
+│                Filer Pod                     │
+│  ┌────────────────────────────────────────┐ │
+│  │           weed filer -s3               │ │
+│  │  ┌──────────────────────────────────┐  │ │
+│  │  │  S3 API Server (port 8333)       │  │ │
+│  │  │  ├── S3 Operations (GET/PUT/...)  │  │ │
+│  │  │  └── IAM Operations (POST /)      │  │ │
+│  │  └──────────────────────────────────┘  │ │
+│  └────────────────────────────────────────┘ │
+└─────────────────────────────────────────────┘
 ```
 
-#### Embedded IAM
-For embedded IAM, the filer command includes:
+### Standalone IAM (Deprecated)
 
-```bash
-weed -logtostderr=true filer \
-  -port=8888 \
-  -s3 \
-  -iam \
-  -iam.port=8111 \
-  -master=<master-peers>
+```
+┌──────────────────────┐    ┌──────────────────────┐
+│     Filer Pod        │    │      IAM Pod         │
+│  ┌────────────────┐  │    │  ┌────────────────┐  │
+│  │ weed filer -s3 │  │    │  │   weed iam     │  │
+│  │   port 8333    │  │    │  │   port 8111    │  │
+│  └────────────────┘  │    │  └────────────────┘  │
+└──────────────────────┘    └──────────────────────┘
 ```
 
-### Resource Management
+## Benefits of Embedded IAM
 
-The operator creates the following Kubernetes resources:
+1. **Simpler deployment**: Single service, single port
+2. **Reduced resource usage**: No separate IAM pods
+3. **Consistent with industry standards**: Matches MinIO and Ceph RGW patterns
+4. **Automatic scaling**: IAM scales with S3/filer instances
 
-#### Standalone IAM
-- `StatefulSet/<name>-iam`: Manages IAM pods
-- `Service/<name>-iam`: Exposes IAM HTTP endpoint
-- `ConfigMap/<name>-iam`: Configuration (if specified)
+## Troubleshooting
 
-#### Embedded IAM
-- Modifies existing `StatefulSet/<name>-filer`: Adds IAM flags
-- Modifies existing `Service/<name>-filer`: Exposes IAM port
+### IAM Requests Returning 404
 
-## Security Considerations
-
-1. **Network Policies**: Consider implementing network policies to restrict IAM access
-2. **RBAC**: Configure appropriate RBAC for IAM operations
-3. **TLS**: Enable TLS for production deployments
-4. **Secrets**: Store IAM configuration securely using Kubernetes secrets
-
-## Performance Tuning
-
-### Resource Allocation
-
-For production deployments, consider:
-
+Ensure S3 is enabled:
 ```yaml
-iam:
-  replicas: 2  # For high availability
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "200m"
-    limits:
-      memory: "512Mi"
-      cpu: "500m"
+filer:
+  s3:
+    enabled: true
 ```
 
-### Scaling Guidelines
+### IAM Disabled When Expected
 
-- **Standalone IAM**: Scale based on IAM request volume
-- **Embedded IAM**: Scale with filer instances
-- **Resource ratio**: Typically 1:4 ratio of IAM to filer resources
+Check if `filer.iam` is explicitly set to `false`. Remove or set to `true`.
+
+### Standalone IAM Deprecation Warning
+
+If you see deprecation warnings in operator logs, migrate to embedded IAM by:
+1. Removing the `iam:` section
+2. Ensuring S3 is enabled
 
 ## Further Reading
 
 - [SeaweedFS IAM Documentation](https://github.com/seaweedfs/seaweedfs/wiki/IAM)
 - [SeaweedFS S3 API Documentation](https://github.com/seaweedfs/seaweedfs/wiki/Amazon-S3-API)
-- [Kubernetes Operator Pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)
-- [Original Issue #137](https://github.com/seaweedfs/seaweedfs-operator/issues/137)
+- [MinIO IAM](https://min.io/product/identity-and-access-management)
+- [Ceph RGW IAM](https://docs.ceph.com/en/latest/radosgw/)

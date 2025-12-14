@@ -228,17 +228,25 @@ type FilerSpec struct {
 	MaxMB *int32 `json:"maxMB,omitempty"`
 	// S3 configuration for the filer
 	S3 *S3Config `json:"s3,omitempty"`
-	// Enable IAM service embedded with filer (alternative to standalone IAM)
+	// IAM enables/disables IAM API embedded in S3 server.
+	// When S3 is enabled, IAM is enabled by default (on the same S3 port).
+	// Set to false to explicitly disable embedded IAM.
+	// Note: The standalone IAM server is deprecated in favor of embedded IAM.
+	// +kubebuilder:default:=true
 	IAM bool `json:"iam,omitempty"`
 }
 
-// IAMSpec is the spec for IAM servers
+// IAMSpec is the spec for standalone IAM servers.
+// DEPRECATED: Standalone IAM is deprecated. IAM is now embedded in the S3 server by default.
+// When S3 is enabled, IAM API is automatically available on the same port (FilerS3Port).
+// Use filer.iam=false to disable embedded IAM if needed.
 type IAMSpec struct {
 	ComponentSpec               `json:",inline"`
 	corev1.ResourceRequirements `json:",inline"`
 
 	// The desired ready replicas
 	// +kubebuilder:validation:Minimum=1
+	// DEPRECATED: Standalone IAM replicas are deprecated. Use embedded IAM in S3 instead.
 	Replicas int32        `json:"replicas"`
 	Service  *ServiceSpec `json:"service,omitempty"`
 
@@ -251,6 +259,7 @@ type IAMSpec struct {
 	// IAM-specific settings
 
 	// Port for IAM service (default: 8111)
+	// DEPRECATED: When using embedded IAM, the IAM API is on the same port as S3.
 	Port *int32 `json:"port,omitempty"`
 }
 

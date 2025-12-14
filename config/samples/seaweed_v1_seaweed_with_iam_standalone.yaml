@@ -1,3 +1,10 @@
+# DEPRECATED: Standalone IAM is deprecated in favor of embedded IAM in S3
+# Please use seaweed_v1_seaweed_with_iam_embedded.yaml instead
+# 
+# IAM is now embedded in S3 by default (on the same port as S3: 8333),
+# following the pattern used by MinIO and Ceph RGW.
+#
+# This file is kept for backward compatibility only.
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Seaweed
 metadata:
@@ -21,12 +28,15 @@ spec:
     replicas: 1
 
   # Filer servers with S3
+  # Note: Disabling embedded IAM since we're using standalone IAM
   filer:
     replicas: 1
     s3:
       enabled: true
+    iam: false  # Disable embedded IAM when using standalone
 
-  # Standalone IAM service
+  # DEPRECATED: Standalone IAM service
+  # Consider using embedded IAM instead (remove this section and set filer.iam: true)
   iam:
     replicas: 1
     port: 8111

@@ -124,6 +124,162 @@ If you were previously using standalone IAM, simply:
 2. Ensure `filer.s3.enabled: true`
 3. Update clients to use the S3 port (8333) for IAM operations
 
+## OIDC Configuration
+
+The IAM service supports OIDC (OpenID Connect) authentication. Configuration is provided via ConfigMap or Secret.
+
+### Creating IAM Configuration
+
+Create a ConfigMap with your IAM configuration:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: seaweed-iam-config
+data:
+  iam.json: |
+    {
+      "sts": {
+        "tokenDuration": "1h",
+        "maxSessionLength": "12h",
+        "issuer": "seaweedfs-sts",
+        "signingKey": "your-base64-encoded-signing-key"
+      },
+      "providers": [
+        {
+          "name": "keycloak",
+          "type": "oidc",
+          "enabled": true,
+          "config": {
+            "issuer": "https://keycloak.example.com/realms/seaweedfs",
+            "clientId": "seaweedfs-s3",
+            "clientSecret": "optional-secret",
+            "jwksUri": "https://keycloak.example.com/realms/seaweedfs/protocol/openid-connect/certs",
+            "tlsCaCert": "/etc/seaweedfs/certs/ca.pem",
+            "tlsInsecureSkipVerify": false,
+            "roleMapping": {
+              "rules": [
+                { "claim": "groups", "value": "admins", "role": "arn:aws:iam::role/S3AdminRole" }
+              ],
+              "defaultRole": "arn:aws:iam::role/S3ReadOnlyRole"
+            }
+          }
+        }
+      ],
+      "policies": [...],
+      "roles": [...]
+    }
+```
+
+### TLS Configuration Options
+
+| Field | Description |
+|-------|-------------|
+| `tlsCaCert` | Path to CA certificate file for custom/self-signed certificates |
+| `tlsInsecureSkipVerify` | Skip TLS verification (development only, never use in production) |
+
+> [!NOTE]
+> The `clientSecret` field is optional and only required for confidential OIDC clients. Public clients (like single-page applications) can omit this field.
+
+### Complete Configuration Example
+
+Here's a complete example showing how to configure OIDC with custom CA certificates for embedded IAM (running within the filer):
+
+```yaml
+# Step 1: Create ConfigMap with IAM configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: seaweed-iam-config
+  namespace: default
+data:
+  iam.json: |
+    {
+      "sts": {
+        "tokenDuration": "1h",
+        "maxSessionLength": "12h",
+        "issuer": "seaweedfs-sts",
+        "signingKey": "your-base64-encoded-signing-key"
+      },
+      "providers": [
+        {
+          "name": "keycloak",
+          "type": "oidc",
+          "enabled": true,
+          "config": {
+            "issuer": "https://keycloak.example.com/realms/seaweedfs",
+            "clientId": "seaweedfs-s3",
+            "clientSecret": "optional-only-for-confidential-clients",
+            "jwksUri": "https://keycloak.example.com/realms/seaweedfs/protocol/openid-connect/certs",
+            "tlsCaCert": "/etc/seaweedfs/certs/ca.pem",
+            "tlsInsecureSkipVerify": false,
+            "roleMapping": {
+              "rules": [
+                { "claim": "groups", "value": "admins", "role": "arn:aws:iam::role/S3AdminRole" }
+              ],
+              "defaultRole": "arn:aws:iam::role/S3ReadOnlyRole"
+            }
+          }
+        }
+      ],
+      "policies": [...],
+      "roles": [...]
+    }
+---
+# Step 2: Create Secret with CA certificate (if using custom CA)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oidc-ca-cert
+  namespace: default
+type: Opaque
+data:
+  ca.pem: <base64-encoded-ca-cert>
+---
+# Step 3: Configure Seaweed CRD with embedded IAM
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-sample
+  namespace: default
+spec:
+  image: chrislusf/seaweedfs:latest
+  
+  master:
+    replicas: 1
+  
+  volume:
+    replicas: 1
+  
+  # Filer with embedded IAM and OIDC configuration
+  filer:
+    replicas: 1
+    s3:
+      enabled: true
+    # Mount both IAM config and CA certificate
+    volumeMounts:
+      - name: iam-config
+        mountPath: /etc/seaweedfs/iam
+      - name: oidc-ca
+        mountPath: /etc/seaweedfs/certs
+    volumes:
+      - name: iam-config
+        configMap:
+          name: seaweed-iam-config
+      - name: oidc-ca
+        secret:
+          secretName: oidc-ca-cert
+    # Configure S3 to use IAM config
+    s3Args:
+      - "-iam.config=/etc/seaweedfs/iam/iam.json"
+```
+
+> [!TIP]
+> If you don't need custom CA certificates, you can omit the `oidc-ca-cert` Secret and the corresponding volume mount. Simply remove `tlsCaCert` from the OIDC provider configuration.
+
+For more details on OIDC configuration, see the [SeaweedFS OIDC Integration Wiki](https://github.com/seaweedfs/seaweedfs/wiki/OIDC-Integration).
+
 ## Further Reading
 
 - [SeaweedFS IAM Documentation](https://github.com/seaweedfs/seaweedfs/wiki/IAM)

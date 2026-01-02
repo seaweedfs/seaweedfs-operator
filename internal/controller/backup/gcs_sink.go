@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.uber.org/zap"
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+	"go.uber.org/zap"
 )
 
 // GCSCredentialExtractor implements CredentialExtractor for GCS credentials

@@ -166,6 +166,37 @@ type MasterSpec struct {
 	ConcurrentStart *bool `json:"concurrentStart,omitempty"`
 }
 
+// VolumeSpec is the spec for volumes
+type VolumeSpec struct {
+	VolumeServerConfig `json:",inline"`
+
+	// The desired ready replicas
+	// +kubebuilder:validation:Minimum=0
+	Replicas int32 `json:"replicas"`
+
+	// Topology configuration for rack/datacenter-aware placement
+	// +kubebuilder:validation:Optional
+	Rack *string `json:"rack,omitempty"`
+	// +kubebuilder:validation:Optional
+	DataCenter *string `json:"dataCenter,omitempty"`
+}
+
+// VolumeTopologySpec defines a volume server group with specific topology placement
+// It inherits all fields from VolumeServerConfig but allows overriding them for topology-specific configuration
+type VolumeTopologySpec struct {
+	VolumeServerConfig `json:",inline"`
+
+	// The desired ready replicas for this topology group
+	// +kubebuilder:validation:Minimum=0
+	Replicas int32 `json:"replicas"`
+
+	// Topology configuration for this volume group (required for topology groups)
+	// +kubebuilder:validation:Required
+	Rack string `json:"rack"`
+	// +kubebuilder:validation:Required
+	DataCenter string `json:"dataCenter"`
+}
+
 // VolumeServerConfig contains common configuration for volume servers
 type VolumeServerConfig struct {
 	ComponentSpec               `json:",inline"`

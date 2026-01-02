@@ -239,3 +239,14 @@ func (r *SeaweedReconciler) createVolumeServerTopologyService(m *seaweedv1.Seawe
 
 	return dep
 }
+
+// getServiceSpec returns the topology-specific service spec if present, otherwise returns the cluster-level service spec
+func getServiceSpec(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *seaweedv1.ServiceSpec {
+	if topologySpec != nil && topologySpec.Service != nil {
+		return topologySpec.Service
+	}
+	if m.Spec.Volume != nil && m.Spec.Volume.Service != nil {
+		return m.Spec.Volume.Service
+	}
+	return nil
+}

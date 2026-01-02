@@ -15,7 +15,7 @@ import (
 
 func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	_ = context.Background()
-	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
+	_ = r.Log.With("seaweed", seaweedCR.Name)
 
 	if done, result, err = r.ensureFilerPeerService(seaweedCR); done {
 		return
@@ -45,7 +45,7 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 }
 
 func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-filer-statefulset", seaweedCR.Name)
+	log := r.Log.With("sw-filer-statefulset", seaweedCR.Name)
 
 	filerStatefulSet := r.createFilerStatefulSet(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, filerStatefulSet, r.Scheme); err != nil {
@@ -67,7 +67,7 @@ func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed)
 
 func (r *SeaweedReconciler) ensureFilerPeerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 
-	log := r.Log.WithValues("sw-filer-peer-service", seaweedCR.Name)
+	log := r.Log.With("sw-filer-peer-service", seaweedCR.Name)
 
 	filerPeerService := r.createFilerPeerService(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, filerPeerService, r.Scheme); err != nil {
@@ -82,7 +82,7 @@ func (r *SeaweedReconciler) ensureFilerPeerService(seaweedCR *seaweedv1.Seaweed)
 
 func (r *SeaweedReconciler) ensureFilerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 
-	log := r.Log.WithValues("sw-filer-service", seaweedCR.Name)
+	log := r.Log.With("sw-filer-service", seaweedCR.Name)
 
 	filerService := r.createFilerService(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, filerService, r.Scheme); err != nil {
@@ -96,7 +96,7 @@ func (r *SeaweedReconciler) ensureFilerService(seaweedCR *seaweedv1.Seaweed) (bo
 }
 
 func (r *SeaweedReconciler) ensureFilerConfigMap(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-filer-configmap", seaweedCR.Name)
+	log := r.Log.With("sw-filer-configmap", seaweedCR.Name)
 
 	filerConfigMap := r.createFilerConfigMap(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, filerConfigMap, r.Scheme); err != nil {
@@ -109,7 +109,7 @@ func (r *SeaweedReconciler) ensureFilerConfigMap(seaweedCR *seaweedv1.Seaweed) (
 }
 
 func (r *SeaweedReconciler) ensureFilerServiceMonitor(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-filer-servicemonitor", seaweedCR.Name)
+	log := r.Log.With("sw-filer-servicemonitor", seaweedCR.Name)
 
 	filerServiceMonitor := r.createFilerServiceMonitor(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, filerServiceMonitor, r.Scheme); err != nil {

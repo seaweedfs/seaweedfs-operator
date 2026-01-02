@@ -311,8 +311,8 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 	enableServiceLinks := false
 
 	var volumeCount int
-	if m.Spec.VolumeServerDiskCount != nil {
-		volumeCount = int(*m.Spec.VolumeServerDiskCount)
+	if m.Spec.Storage != nil && m.Spec.Storage.VolumeServerDiskCount > 0 {
+		volumeCount = int(m.Spec.Storage.VolumeServerDiskCount)
 	} else {
 		volumeCount = 1 // default value
 	}
@@ -350,7 +350,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 				Name: fmt.Sprintf("mount%d", i),
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
-				StorageClassName: getStorageClassName(m, topologySpec),
+				StorageClassName: getVolumeServerConfigValue(topologySpec.StorageClassName, getStorageClassName(m.Spec.Storage)),
 				AccessModes: []corev1.PersistentVolumeAccessMode{
 					corev1.ReadWriteOnce,
 				},
@@ -508,4 +508,34 @@ func getEnvVars(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec
 		return m.Spec.Volume.Env
 	}
 	return []corev1.EnvVar{}
+}
+
+// getVolumeServerConfigValue returns the topology-specific value if present, otherwise returns the cluster-level value
+func getVolumeServerConfigValue[T any](topologyValue *T, clusterValue *T) *T {
+	if topologyValue != nil {
+		return topologyValue
+	}
+	return clusterValue
+}
+
+// getMetricsPort returns the topology-specific metrics port if present, otherwise returns the cluster-level value
+func getMetricsPort(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *int32 {
+	if topologySpec != nil && topologySpec.MetricsPort != nil {
+		return topologySpec.MetricsPort
+	}
+	if m.Spec.Volume != nil && m.Spec.Volume.MetricsPort != nil {
+		return m.Spec.Volume.MetricsPort
+	}
+	return nil
+}
+
+// getResourceRequirements returns the topology-specific resource requirements if present, otherwise returns the cluster-level value
+func getResourceRequirements(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) corev1.ResourceRequirements {
+	if topologySpec != nil && (len(topologySpec.ResourceRequirements.Limits) > 0 || len(topologySpec.ResourceRequirements.Requests) > 0) {
+		return topologySpec.ResourceRequirements
+	}
+	if m.Spec.Volume != nil {
+		return m.Spec.Volume.ResourceRequirements
+	}
+	return corev1.ResourceRequirements{}
 }

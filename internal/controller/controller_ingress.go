@@ -20,7 +20,7 @@ func (r *SeaweedReconciler) ensureSeaweedIngress(seaweedCR *seaweedv1.Seaweed) (
 }
 
 func (r *SeaweedReconciler) ensureAllIngress(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-ingress", seaweedCR.Name)
+	log := r.Log.With("sw-ingress", seaweedCR.Name)
 
 	ingressService := r.createAllIngress(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, ingressService, r.Scheme); err != nil {
@@ -28,7 +28,7 @@ func (r *SeaweedReconciler) ensureAllIngress(seaweedCR *seaweedv1.Seaweed) (bool
 	}
 	_, err := r.CreateOrUpdateIngress(ingressService)
 
-	log.Debug("ensure ingress " + ingressService.Name)
+	log.Debugw("ensure ingress " + ingressService.Name)
 	return ReconcileResult(err)
 }
 

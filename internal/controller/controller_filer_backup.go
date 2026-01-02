@@ -14,7 +14,7 @@ import (
 )
 
 func (r *SeaweedReconciler) ensureFilerBackupServers(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
-	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
+	_ = r.Log.With("seaweed", seaweedCR.Name)
 
 	if done, result, err = r.ensureFilerBackupConfigMap(ctx, seaweedCR); done {
 		return
@@ -28,7 +28,7 @@ func (r *SeaweedReconciler) ensureFilerBackupServers(ctx context.Context, seawee
 }
 
 func (r *SeaweedReconciler) ensureFilerBackupStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-filer-backup-statefulset", seaweedCR.Name)
+	log := r.Log.With("sw-filer-backup-statefulset", seaweedCR.Name)
 
 	filerBackupStatefulSet := r.createFilerBackupStatefulSet(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, filerBackupStatefulSet, r.Scheme); err != nil {
@@ -49,7 +49,7 @@ func (r *SeaweedReconciler) ensureFilerBackupStatefulSet(seaweedCR *seaweedv1.Se
 }
 
 func (r *SeaweedReconciler) ensureFilerBackupConfigMap(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-filer-backup-configmap", seaweedCR.Name)
+	log := r.Log.With("sw-filer-backup-configmap", seaweedCR.Name)
 
 	filerBackupConfigMap := r.createFilerBackupConfigMap(ctx, seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, filerBackupConfigMap, r.Scheme); err != nil {

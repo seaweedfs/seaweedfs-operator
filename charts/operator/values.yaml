@@ -86,6 +86,22 @@ webhook:
   enabled: true
   # -- Webhook certificate secret name (defaults to webhook-server-cert)
   certificateSecretName: ""
+  # -- Pod security context for webhook jobs
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    fsGroup: 65532
+  # -- Container security context for webhook jobs
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+  # -- Init container configuration for waiting on webhook
+  initContainer:
+    image: curlimages/curl:8.5.0
 
 ## seaweedfs-operator containers' resource requests and limits.
 ## ref: http://kubernetes.io/docs/user-guide/compute-resources/

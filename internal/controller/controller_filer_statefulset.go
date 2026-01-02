@@ -22,12 +22,12 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 		if s3Config.ConfigSecret != nil && s3Config.ConfigSecret.Name != "" {
 			commands = append(commands, "-s3.config=/etc/sw/"+s3Config.ConfigSecret.Key)
 		}
-	}
-	if m.Spec.Filer.IAM {
-		commands = append(commands, "-iam")
-		// Use custom IAM port if specified, otherwise use default
-		iamPort := getIAMPort(m)
-		commands = append(commands, fmt.Sprintf("-iam.port=%d", iamPort))
+		// IAM is now embedded in S3 by default (enabled with -iam=true, which is the default)
+		// Only add -iam=false if explicitly disabled
+		if !m.Spec.Filer.IAM {
+			commands = append(commands, "-iam=false")
+		}
+		// Note: IAM API is available on the same port as S3 (FilerS3Port) when embedded
 	}
 	if m.Spec.Filer.MetricsPort != nil {
 		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Filer.MetricsPort))
@@ -54,13 +54,8 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			ContainerPort: seaweedv1.FilerS3Port,
 			Name:          "filer-s3",
 		})
-	}
-	if m.Spec.Filer.IAM {
-		iamPort := getIAMPort(m)
-		ports = append(ports, corev1.ContainerPort{
-			ContainerPort: iamPort,
-			Name:          "filer-iam",
-		})
+		// Note: IAM is now embedded in S3 by default (same port as S3)
+		// No separate IAM port needed when using embedded IAM
 	}
 	if m.Spec.Filer.MetricsPort != nil {
 		ports = append(ports, corev1.ContainerPort{

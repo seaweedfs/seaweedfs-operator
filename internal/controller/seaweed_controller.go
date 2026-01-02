@@ -70,11 +70,8 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	if seaweedCR.Spec.IAM != nil {
-		if done, result, err = r.ensureIAM(seaweedCR); done {
-			return result, err
-		}
-	}
+	// Note: Standalone IAM has been removed. IAM is now embedded in S3 by default.
+	// Use filer.s3.enabled=true to enable S3 with embedded IAM.
 
 	if done, result, err = r.ensureSeaweedIngress(seaweedCR); done {
 		return result, err

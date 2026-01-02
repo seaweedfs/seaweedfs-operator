@@ -202,7 +202,8 @@ spec:
       storage: 2Gi
   filer:
     replicas: 2
-    s3: true          # Enable S3 API
+    s3:
+      enabled: true   # Enable S3 API
     iam: true         # Enable embedded IAM
     config: |
       [leveldb2]

@@ -20,12 +20,15 @@ spec:
   volume:
     replicas: 1
 
-  # Filer servers with S3 and embedded IAM
+  # Filer servers with S3 and embedded IAM (recommended)
+  # IAM API is now embedded in S3 by default (on the same port as S3: 8333)
+  # This follows the pattern used by MinIO and Ceph RGW
   filer:
     replicas: 1
     s3:
       enabled: true
-    iam: true  # Enable IAM service embedded with filer
+    # iam: true  # Optional: IAM is enabled by default when S3 is enabled
+    #            # Set to false to explicitly disable embedded IAM
     requests:
       memory: "128Mi"
       cpu: "100m"
@@ -35,6 +38,5 @@ spec:
     service:
       type: ClusterIP
 
-  # Standalone IAM configuration (used for port setting when embedded)
-  iam:
-    port: 8111  # Custom port for IAM service
+  # Note: The IAM API is accessible on the same port as S3 (8333)
+  # No separate IAM service needed when using embedded IAM

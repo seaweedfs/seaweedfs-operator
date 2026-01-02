@@ -36,7 +36,7 @@ func (r *SeaweedReconciler) createFilerBackupConfigMap(ctx context.Context, m *s
 
 func (r *SeaweedReconciler) generateBackupConfig(ctx context.Context, m *seaweedv1.Seaweed) string {
 	var config strings.Builder
-	log := r.Log.With("generateBackupConfig", m.Name)
+	log := r.Log.WithValues("generateBackupConfig", m.Name)
 
 	// Create a secret getter that wraps the controller's getSecret method
 	secretGetter := backup.NewControllerSecretGetter(r.getSecret)

@@ -1734,6 +1734,9 @@ spec:
                     type: array
                   hostNetwork:
                     type: boolean
+                  iam:
+                    default: true
+                    type: boolean
                   imagePullPolicy:
                     type: string
                   imagePullSecrets:
@@ -1868,7 +1871,15 @@ spec:
                     default:
                       enabled: true
                     properties:
+                      configSecret:
+                        properties:
+                          key:
+                            type: string
+                          name:
+                            type: string
+                        type: object
                       enabled:
+                        default: false
                         type: boolean
                       identities:
                         items:

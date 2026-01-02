@@ -27,13 +27,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/go-logr/logr"
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
 // SeaweedReconciler reconciles a Seaweed object
 type SeaweedReconciler struct {
 	client.Client
-	Log    *zap.SugaredLogger
+	Log    logr.Logger
 	Scheme *runtime.Scheme
 }
 

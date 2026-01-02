@@ -17,7 +17,7 @@ import (
 
 func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	_ = context.Background()
-	_ = r.Log.With("seaweed", seaweedCR.Name)
+	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
 	if done, result, err = r.ensureMasterPeerService(seaweedCR); done {
 		return
@@ -126,7 +126,7 @@ func (r *SeaweedReconciler) ensureMasterConfigMap(seaweedCR *seaweedv1.Seaweed) 
 }
 
 func (r *SeaweedReconciler) ensureMasterService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.With("sw-master-service", seaweedCR.Name)
+	log := r.Log.WithValues("sw-master-service", seaweedCR.Name)
 
 	masterService := r.createMasterService(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, masterService, r.Scheme); err != nil {
@@ -152,7 +152,7 @@ func (r *SeaweedReconciler) ensureMasterPeerService(seaweedCR *seaweedv1.Seaweed
 }
 
 func (r *SeaweedReconciler) ensureMasterServiceMonitor(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.With("sw-master-servicemonitor", seaweedCR.Name)
+	log := r.Log.WithValues("sw-master-servicemonitor", seaweedCR.Name)
 
 	masterServiceMonitor := r.createMasterServiceMonitor(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, masterServiceMonitor, r.Scheme); err != nil {

@@ -230,10 +230,25 @@ type S3Identity struct {
 	Actions     []string       `json:"actions"`
 }
 
+// S3ConfigSecret defines the S3 configuration secret reference
+type S3ConfigSecret struct {
+	// Name of the secret containing S3 configuration
+	Name string `json:"name,omitempty"`
+
+	// Key in the secret for the configuration
+	Key string `json:"key,omitempty"`
+}
+
 // S3Config defines the S3 configuration
 type S3Config struct {
-	Enabled    bool         `json:"enabled,omitempty"`
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Identities defines S3 identities
 	Identities []S3Identity `json:"identities,omitempty"`
+
+	// ConfigSecret references a secret containing S3 configuration
+	ConfigSecret *S3ConfigSecret `json:"configSecret,omitempty"`
 }
 
 // FilerSpec is the spec for filers
@@ -262,6 +277,10 @@ type FilerSpec struct {
 	// S3 configuration
 	// +kubebuilder:default:={enabled:true}
 	S3 *S3Config `json:"s3,omitempty"`
+
+	// IAM is whether to enable IAM (embedded in S3 by default)
+	// +kubebuilder:default:=true
+	IAM bool `json:"iam,omitempty"`
 }
 
 // FilerBackupSpec is the spec for filer backups

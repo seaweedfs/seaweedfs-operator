@@ -14,7 +14,7 @@ import (
 
 func (r *SeaweedReconciler) ensureAdminServers(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	_ = context.Background()
-	_ = r.Log.With("seaweed", seaweedCR.Name)
+	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
 	if done, result, err = r.ensureAdminService(seaweedCR); done {
 		return
@@ -28,7 +28,7 @@ func (r *SeaweedReconciler) ensureAdminServers(seaweedCR *seaweedv1.Seaweed) (do
 }
 
 func (r *SeaweedReconciler) ensureAdminService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.With("sw-admin-service", seaweedCR.Name)
+	log := r.Log.WithValues("sw-admin-service", seaweedCR.Name)
 
 	adminService := r.createAdminService(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, adminService, r.Scheme); err != nil {
@@ -36,7 +36,7 @@ func (r *SeaweedReconciler) ensureAdminService(seaweedCR *seaweedv1.Seaweed) (bo
 	}
 	_, err := r.CreateOrUpdateService(adminService)
 
-	log.Debug("ensure admin service " + adminService.Name)
+	log.Info("ensure admin service " + adminService.Name)
 
 	return ReconcileResult(err)
 }
@@ -51,7 +51,7 @@ func labelsForAdmin(name string) map[string]string {
 }
 
 func (r *SeaweedReconciler) ensureAdminStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.With("sw-admin-statefulset", seaweedCR.Name)
+	log := r.Log.WithValues("sw-admin-statefulset", seaweedCR.Name)
 
 	adminStatefulSet := r.createAdminStatefulSet(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, adminStatefulSet, r.Scheme); err != nil {
@@ -68,6 +68,6 @@ func (r *SeaweedReconciler) ensureAdminStatefulSet(seaweedCR *seaweedv1.Seaweed)
 		return nil
 	})
 
-	log.Debug("ensure admin stateful set " + adminStatefulSet.Name)
+	log.Info("ensure admin stateful set " + adminStatefulSet.Name)
 	return ReconcileResult(err)
 }

@@ -20,8 +20,8 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 
 	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled {
 		commands = append(commands, "-s3")
-		if s3Config.ConfigSecret != nil && s3Config.ConfigSecret.Name != "" {
-			commands = append(commands, "-s3.config=/etc/sw/"+s3Config.ConfigSecret.Key)
+		if m.Spec.Filer.S3.ConfigSecret != nil && m.Spec.Filer.S3.ConfigSecret.Name != "" {
+			commands = append(commands, "-s3.config=/etc/sw/"+m.Spec.Filer.S3.ConfigSecret.Key)
 		}
 		// IAM is now embedded in S3 by default (enabled with -iam=true, which is the default)
 		// Only add -iam=false if explicitly disabled

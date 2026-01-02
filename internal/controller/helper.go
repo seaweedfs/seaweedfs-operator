@@ -148,67 +148,30 @@ func filterContainerResources(resources corev1.ResourceRequirements) corev1.Reso
 	return filtered
 }
 
-// getStorageClassName returns the storage class name with fallback logic
-func getStorageClassName(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *string {
-	if topologySpec != nil && topologySpec.StorageClassName != nil {
-		return topologySpec.StorageClassName
+// resolveStorageClassName returns the component-specific storage class name if set,
+// otherwise falls back to the global storage class name
+func resolveStorageClassName(globalStorageClassName, componentStorageClassName *string) *string {
+	if componentStorageClassName != nil {
+		return componentStorageClassName
 	}
-	if m.Spec.Volume != nil && m.Spec.Volume.StorageClassName != nil {
-		return m.Spec.Volume.StorageClassName
+	return globalStorageClassName
+}
+
+// resolveMetricsPort returns the metrics port for a component
+// if the global metrics is enabled, it returns the global metrics port
+// otherwise it returns the component-specific metrics port
+func resolveMetricsPort(m *seaweedv1.Seaweed, componentMetricsPort *int32) *int32 {
+	if m.Spec.Metrics != nil && m.Spec.Metrics.Enabled {
+		if m.Spec.Metrics.MetricsPort != nil {
+			return m.Spec.Metrics.MetricsPort
+		}
+
+		var defaultMetricsPort int32 = 5555
+
+		return &defaultMetricsPort
+	} else if componentMetricsPort != nil {
+		return componentMetricsPort
 	}
+
 	return nil
-}
-
-// getResourceRequirements returns the resource requirements with fallback logic
-func getResourceRequirements(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) corev1.ResourceRequirements {
-	// Start with base resources from spec.volume, if available
-	resources := corev1.ResourceRequirements{}
-	if m.Spec.Volume != nil {
-		resources = m.Spec.Volume.ResourceRequirements
-	}
-
-	// If no topology spec, return base
-	if topologySpec == nil {
-		return resources
-	}
-
-	// Override with topology-specific resources if they are provided
-	if len(topologySpec.ResourceRequirements.Requests) > 0 {
-		resources.Requests = topologySpec.ResourceRequirements.Requests
-	}
-	if len(topologySpec.ResourceRequirements.Limits) > 0 {
-		resources.Limits = topologySpec.ResourceRequirements.Limits
-	}
-
-	return resources
-}
-
-// getMetricsPort returns the metrics port with fallback logic
-func getMetricsPort(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *int32 {
-	if topologySpec != nil && topologySpec.MetricsPort != nil {
-		return topologySpec.MetricsPort
-	}
-	if m.Spec.Volume != nil && m.Spec.Volume.MetricsPort != nil {
-		return m.Spec.Volume.MetricsPort
-	}
-	return nil
-}
-
-// getServiceSpec returns the service spec with fallback logic
-func getServiceSpec(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *seaweedv1.ServiceSpec {
-	if topologySpec != nil && topologySpec.Service != nil {
-		return topologySpec.Service
-	}
-	if m.Spec.Volume != nil && m.Spec.Volume.Service != nil {
-		return m.Spec.Volume.Service
-	}
-	return nil
-}
-
-// getVolumeServerConfigValue returns volume server config values with fallback logic
-func getVolumeServerConfigValue[T any](topologyValue, volumeValue *T) *T {
-	if topologyValue != nil {
-		return topologyValue
-	}
-	return volumeValue
 }

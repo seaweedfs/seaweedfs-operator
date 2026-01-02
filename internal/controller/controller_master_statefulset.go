@@ -35,8 +35,10 @@ func buildMasterStartupScript(m *seaweedv1.Seaweed) string {
 		command = append(command, fmt.Sprintf("-defaultReplication=%s", *spec.DefaultReplication))
 	}
 
-	if m.Spec.Master.MetricsPort != nil {
-		command = append(command, fmt.Sprintf("-metricsPort=%d", *m.Spec.Master.MetricsPort))
+	metricsPort := resolveMetricsPort(m, m.Spec.Master.MetricsPort)
+
+	if metricsPort != nil {
+		command = append(command, fmt.Sprintf("-metricsPort=%d", *metricsPort))
 	}
 
 	command = append(command, fmt.Sprintf("-ip=$(POD_NAME).%s-master-peer.%s", m.Name, m.Namespace))
@@ -57,12 +59,16 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 			Name:          "master-grpc",
 		},
 	}
-	if m.Spec.Master.MetricsPort != nil {
+
+	metricsPort := resolveMetricsPort(m, m.Spec.Master.MetricsPort)
+
+	if metricsPort != nil {
 		ports = append(ports, corev1.ContainerPort{
-			ContainerPort: *m.Spec.Master.MetricsPort,
+			ContainerPort: *metricsPort,
 			Name:          "master-metrics",
 		})
 	}
+
 	replicas := m.Spec.Master.Replicas
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false

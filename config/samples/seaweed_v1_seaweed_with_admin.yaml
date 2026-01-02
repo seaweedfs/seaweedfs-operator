@@ -1,0 +1,76 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-sample
+spec:
+  image: chrislusf/seaweedfs:latest
+  version: "3.0"
+  
+  # Global metrics configuration
+  metrics:
+    enabled: true
+    metricsPort: 5555
+  
+  master:
+    replicas: 3
+    service:
+      type: ClusterIP
+  
+  volume:
+    replicas: 3
+    service:
+      type: ClusterIP
+  
+  filer:
+    replicas: 1
+    service:
+      type: ClusterIP
+    s3: true
+  
+  # Admin UI configuration
+  admin:
+    replicas: 1
+    port: 23646  # Default admin port
+    adminUser: "admin"
+    adminPassword: "admin123"  # In production, use a secret reference
+    masters: ""  # Will auto-discover from cluster
+    dataDir: "/data/admin"  # Directory for admin configuration and data
+    
+    # Use secret reference for password instead of plain text
+    # adminPasswordSecretRef:
+    #   name: "admin-password-secret"
+    #   key: "password"
+
+    # Service configuration
+    service:
+      type: LoadBalancer  # Or ClusterIP for internal access
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    
+    # Persistence for admin data
+    persistence:
+      enabled: true
+      mountPath: "/data"
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
+    
+    # Resource requirements
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+    
+    # Component-specific settings
+    nodeSelector:
+      kubernetes.io/os: linux
+    
+    tolerations:
+      - key: "node-role.kubernetes.io/master"
+        operator: "Exists"
+        effect: "NoSchedule" 

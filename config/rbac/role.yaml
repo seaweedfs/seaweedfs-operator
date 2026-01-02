@@ -8,6 +8,8 @@ rules:
   - ""
   resources:
   - configmaps
+  - persistentvolumeclaims
+  - secrets
   - services
   verbs:
   - create
@@ -24,6 +26,7 @@ rules:
   verbs:
   - get
   - list
+  - watch
 - apiGroups:
   - apps
   resources:
@@ -50,8 +53,21 @@ rules:
   - update
   - watch
 - apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - seaweed.seaweedfs.com
   resources:
+  - bucketclaims
   - seaweeds
   verbs:
   - create
@@ -64,6 +80,7 @@ rules:
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:
+  - bucketclaims/status
   - seaweeds/status
   verbs:
   - get

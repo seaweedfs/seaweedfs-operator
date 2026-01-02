@@ -24,12 +24,15 @@ func (r *SeaweedReconciler) createMasterPeerService(m *seaweedv1.Seaweed) *corev
 			TargetPort: intstr.FromInt(seaweedv1.MasterGRPCPort),
 		},
 	}
-	if m.Spec.Master.MetricsPort != nil {
+
+	metricsPort := resolveMetricsPort(m, m.Spec.Master.MetricsPort)
+
+	if metricsPort != nil {
 		ports = append(ports, corev1.ServicePort{
 			Name:       "master-metrics",
 			Protocol:   corev1.Protocol("TCP"),
-			Port:       *m.Spec.Master.MetricsPort,
-			TargetPort: intstr.FromInt(int(*m.Spec.Master.MetricsPort)),
+			Port:       *metricsPort,
+			TargetPort: intstr.FromInt(int(*metricsPort)),
 		})
 	}
 
@@ -70,12 +73,15 @@ func (r *SeaweedReconciler) createMasterService(m *seaweedv1.Seaweed) *corev1.Se
 			TargetPort: intstr.FromInt(seaweedv1.MasterGRPCPort),
 		},
 	}
-	if m.Spec.Master.MetricsPort != nil {
+
+	metricsPort := resolveMetricsPort(m, m.Spec.Master.MetricsPort)
+
+	if metricsPort != nil {
 		ports = append(ports, corev1.ServicePort{
 			Name:       "master-metrics",
 			Protocol:   corev1.Protocol("TCP"),
-			Port:       *m.Spec.Master.MetricsPort,
-			TargetPort: intstr.FromInt(int(*m.Spec.Master.MetricsPort)),
+			Port:       *metricsPort,
+			TargetPort: intstr.FromInt(int(*metricsPort)),
 		})
 	}
 

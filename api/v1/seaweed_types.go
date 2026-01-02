@@ -32,7 +32,8 @@ const (
 	MasterHTTPPort = 9333
 	VolumeHTTPPort = 8444
 	FilerHTTPPort  = 8888
-	FilerS3Port    = 8333 // S3 port (IAM API is also available on this port when S3 is enabled)
+	FilerS3Port    = 8333
+	AdminHTTPPort  = 23646
 
 	MasterGRPCPort = MasterHTTPPort + GRPCPortDelta
 	VolumeGRPCPort = VolumeHTTPPort + GRPCPortDelta
@@ -44,14 +45,14 @@ type SeaweedSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// MetricsAddress is Prometheus gateway address
-	MetricsAddress string `json:"metricsAddress,omitempty"`
-
 	// Image
 	Image string `json:"image,omitempty"`
 
 	// Version
 	Version string `json:"version,omitempty"`
+
+	// Metrics configuration for all components
+	Metrics *MetricsSpec `json:"metrics,omitempty"`
 
 	// Master
 	Master *MasterSpec `json:"master,omitempty"`
@@ -67,9 +68,11 @@ type SeaweedSpec struct {
 	// Filer
 	Filer *FilerSpec `json:"filer,omitempty"`
 
-	// Note: Standalone IAM has been removed. IAM is now embedded in S3 by default.
-	// When filer.s3.enabled=true, IAM API is available on the same S3 port.
-	// Use filer.iam=false to disable embedded IAM if needed.
+	// FilerBackup
+	FilerBackup *FilerBackupSpec `json:"filerBackup,omitempty"`
+
+	// Admin UI
+	Admin *AdminSpec `json:"admin,omitempty"`
 
 	// SchedulerName of pods
 	SchedulerName string `json:"schedulerName,omitempty"`
@@ -106,11 +109,28 @@ type SeaweedSpec struct {
 	// Template.
 	StatefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType `json:"statefulSetUpdateStrategy,omitempty"`
 
-	// +kubebuilder:validation:Type=integer
-	VolumeServerDiskCount *int32 `json:"volumeServerDiskCount,omitempty"`
+	// Storage configuration for all components
+	Storage *StorageSpec `json:"storage,omitempty"`
 
-	// Ingresses
+	// Host suffix (base domain) for ingresses of components
 	HostSuffix *string `json:"hostSuffix,omitempty"`
+}
+
+type MetricsSpec struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// MetricsPort is the port that the prometheus metrics export listens on
+	// +kubebuilder:default:=5555
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
+}
+
+type StorageSpec struct {
+	// StorageClassName is the name of the StorageClass to use for all components
+	StorageClassName *string `json:"storageClassName,omitempty"`
+
+	// VolumeServerDiskCount is the number of disks to use for volume servers
+	VolumeServerDiskCount int32 `json:"volumeServerDiskCount,omitempty"`
 }
 
 // SeaweedStatus defines the observed state of Seaweed
@@ -146,27 +166,7 @@ type MasterSpec struct {
 	ConcurrentStart *bool `json:"concurrentStart,omitempty"`
 }
 
-// VolumeServerConfig contains common configuration for volume servers
-type VolumeServerConfig struct {
-	ComponentSpec               `json:",inline"`
-	corev1.ResourceRequirements `json:",inline"`
-
-	Service          *ServiceSpec `json:"service,omitempty"`
-	StorageClassName *string      `json:"storageClassName,omitempty"`
-
-	// MetricsPort is the port that the prometheus metrics export listens on
-	MetricsPort *int32 `json:"metricsPort,omitempty"`
-
-	// Volume-specific settings
-	CompactionMBps      *int32 `json:"compactionMBps,omitempty"`
-	FileSizeLimitMB     *int32 `json:"fileSizeLimitMB,omitempty"`
-	FixJpgOrientation   *bool  `json:"fixJpgOrientation,omitempty"`
-	IdleTimeout         *int32 `json:"idleTimeout,omitempty"`
-	MaxVolumeCounts     *int32 `json:"maxVolumeCounts,omitempty"`
-	MinFreeSpacePercent *int32 `json:"minFreeSpacePercent,omitempty"`
-}
-
-// VolumeSpec is the spec for volume servers
+// VolumeSpec is the spec for volumes
 type VolumeSpec struct {
 	VolumeServerConfig `json:",inline"`
 
@@ -197,11 +197,58 @@ type VolumeTopologySpec struct {
 	DataCenter string `json:"dataCenter"`
 }
 
-// S3Config defines the S3 configuration with identities
+// VolumeServerConfig contains common configuration for volume servers
+type VolumeServerConfig struct {
+	ComponentSpec               `json:",inline"`
+	corev1.ResourceRequirements `json:",inline"`
+
+	Service          *ServiceSpec `json:"service,omitempty"`
+	StorageClassName *string      `json:"storageClassName,omitempty"`
+
+	// MetricsPort is the port that the prometheus metrics export listens on
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
+
+	// Volume-specific settings
+	CompactionMBps      *int32 `json:"compactionMBps,omitempty"`
+	FileSizeLimitMB     *int32 `json:"fileSizeLimitMB,omitempty"`
+	FixJpgOrientation   *bool  `json:"fixJpgOrientation,omitempty"`
+	IdleTimeout         *int32 `json:"idleTimeout,omitempty"`
+	MaxVolumeCounts     *int32 `json:"maxVolumeCounts,omitempty"`
+	MinFreeSpacePercent *int32 `json:"minFreeSpacePercent,omitempty"`
+}
+
+// S3Credential defines an S3 credential
+type S3Credential struct {
+	AccessKey string `json:"accessKey"`
+	SecretKey string `json:"secretKey"`
+}
+
+// S3Identity defines an identity with credentials and allowed actions
+type S3Identity struct {
+	Name        string         `json:"name"`
+	Credentials []S3Credential `json:"credentials,omitempty"`
+	Actions     []string       `json:"actions"`
+}
+
+// S3ConfigSecret defines the S3 configuration secret reference
+type S3ConfigSecret struct {
+	// Name of the secret containing S3 configuration
+	Name string `json:"name,omitempty"`
+
+	// Key in the secret for the configuration
+	Key string `json:"key,omitempty"`
+}
+
+// S3Config defines the S3 configuration
 type S3Config struct {
-	// +kubebuilder:default:=true
-	Enabled      bool                      `json:"enabled,omitempty"`
-	ConfigSecret *corev1.SecretKeySelector `json:"configSecret,omitempty"`
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Identities defines S3 identities
+	Identities []S3Identity `json:"identities,omitempty"`
+
+	// ConfigSecret references a secret containing S3 configuration
+	ConfigSecret *S3ConfigSecret `json:"configSecret,omitempty"`
 }
 
 // FilerSpec is the spec for filers
@@ -226,13 +273,338 @@ type FilerSpec struct {
 	// Filer-specific settings
 
 	MaxMB *int32 `json:"maxMB,omitempty"`
-	// S3 configuration for the filer
+
+	// S3 configuration
+	// +kubebuilder:default:={enabled:true}
 	S3 *S3Config `json:"s3,omitempty"`
-	// IAM enables/disables IAM API embedded in S3 server.
-	// When S3 is enabled, IAM is enabled by default (on the same S3 port: 8333).
-	// Set to false to explicitly disable embedded IAM.
+
+	// IAM is whether to enable IAM (embedded in S3 by default)
 	// +kubebuilder:default:=true
 	IAM bool `json:"iam,omitempty"`
+}
+
+// FilerBackupSpec is the spec for filer backups
+type FilerBackupSpec struct {
+	ComponentSpec               `json:",inline"`
+	corev1.ResourceRequirements `json:",inline"`
+
+	// The desired ready replicas
+	// +kubebuilder:validation:Minimum=1
+	Replicas int32        `json:"replicas"`
+	Service  *ServiceSpec `json:"service,omitempty"`
+
+	// Config in raw toml string
+	Config *string `json:"config,omitempty"`
+
+	// Persistence mounts a volume for local filer data
+	Persistence *PersistenceSpec `json:"persistence,omitempty"`
+
+	// Filer-specific settings
+
+	MaxMB *int32 `json:"maxMB,omitempty"`
+
+	// Backup-specific settings
+
+	// Sink configuration for backup destinations
+	Sink *SinkConfig `json:"sink,omitempty"`
+}
+
+// AdminSpec is the spec for admin UI
+type AdminSpec struct {
+	ComponentSpec               `json:",inline"`
+	corev1.ResourceRequirements `json:",inline"`
+
+	// The desired ready replicas
+	// +kubebuilder:validation:Minimum=1
+	Replicas int32        `json:"replicas"`
+	Service  *ServiceSpec `json:"service,omitempty"`
+
+	// Admin server port
+	// +kubebuilder:default:=23646
+	Port *int32 `json:"port,omitempty"`
+
+	// Comma-separated master servers (if empty, will be auto-discovered from cluster)
+	Masters string `json:"masters,omitempty"`
+
+	// Directory to store admin configuration and data files
+	DataDir string `json:"dataDir,omitempty"`
+
+	// Admin interface username
+	// +kubebuilder:default:="admin"
+	AdminUser string `json:"adminUser,omitempty"`
+
+	// Admin interface password (if empty, auth is disabled)
+	AdminPassword string `json:"adminPassword,omitempty"`
+
+	// Admin password secret reference (alternative to AdminPassword)
+	AdminPasswordSecretRef *AdminPasswordSecretRef `json:"adminPasswordSecretRef,omitempty"`
+
+	// Persistence mounts a volume for admin data
+	Persistence *PersistenceSpec `json:"persistence,omitempty"`
+
+	// TLS configuration for HTTPS
+	TLS *AdminTLSSpec `json:"tls,omitempty"`
+}
+
+// AdminPasswordSecretRef defines admin password secret reference
+type AdminPasswordSecretRef struct {
+	// Name of the secret
+	Name string `json:"name,omitempty"`
+
+	// Key in the secret containing the password
+	Key string `json:"key,omitempty"`
+}
+
+// AdminTLSSpec defines TLS configuration for admin UI
+type AdminTLSSpec struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Certificate secret reference
+	CertificateSecretRef *AdminCertificateSecretRef `json:"certificateSecretRef,omitempty"`
+
+	// Certificate file path (if not using secret)
+	CertFile string `json:"certFile,omitempty"`
+
+	// Key file path (if not using secret)
+	KeyFile string `json:"keyFile,omitempty"`
+
+	// CA certificate file path (optional, for mutual TLS)
+	CAFile string `json:"caFile,omitempty"`
+}
+
+// AdminCertificateSecretRef defines certificate secret reference
+type AdminCertificateSecretRef struct {
+	// Name of the secret
+	Name string `json:"name,omitempty"`
+
+	// Mapping of the configuration key to the secret key
+	Mapping AdminCertificateSecretRefMapping `json:"mapping,omitempty"`
+}
+
+type AdminCertificateSecretRefMapping struct {
+	Cert string `json:"cert,omitempty"`
+	Key  string `json:"key,omitempty"`
+	CA   string `json:"ca,omitempty"`
+}
+
+// SinkConfig defines the backup sink configuration
+type SinkConfig struct {
+	// Local sink configuration
+	Local *LocalSinkConfig `json:"local,omitempty"`
+
+	// Filer sink configuration
+	Filer *FilerSinkConfig `json:"filer,omitempty"`
+
+	// S3 sink configuration
+	S3 *S3SinkConfig `json:"s3,omitempty"`
+
+	// Google Cloud Storage sink configuration
+	GoogleCloudStorage *GoogleCloudStorageSinkConfig `json:"googleCloudStorage,omitempty"`
+
+	// Azure sink configuration
+	Azure *AzureSinkConfig `json:"azure,omitempty"`
+
+	// Backblaze sink configuration
+	Backblaze *BackblazeSinkConfig `json:"backblaze,omitempty"`
+}
+
+// LocalSinkConfig defines local file system sink configuration
+type LocalSinkConfig struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Directory where backups will be stored
+	Directory string `json:"directory,omitempty"`
+
+	// Whether to use incremental backup mode
+	// +kubebuilder:default:=false
+	IsIncremental bool `json:"isIncremental,omitempty"`
+}
+
+// FilerSinkConfig defines filer sink configuration
+type FilerSinkConfig struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// gRPC address of the target filer
+	GRPCAddress string `json:"grpcAddress,omitempty"`
+
+	// Directory where backups will be stored
+	Directory string `json:"directory,omitempty"`
+
+	// Replication setting
+	Replication string `json:"replication,omitempty"`
+
+	// Collection setting
+	Collection string `json:"collection,omitempty"`
+
+	// TTL in seconds
+	TTLSec int32 `json:"ttlSec,omitempty"`
+
+	// Whether to use incremental backup mode
+	// +kubebuilder:default:=false
+	IsIncremental bool `json:"isIncremental,omitempty"`
+}
+
+// S3SinkConfig defines S3 sink configuration
+type S3SinkConfig struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// AWS access key ID (if empty, loads from shared credentials file)
+	AWSAccessKeyID string `json:"awsAccessKeyID,omitempty"`
+
+	// AWS secret access key (if empty, loads from shared credentials file)
+	AWSSecretAccessKey string `json:"awsSecretAccessKey,omitempty"`
+
+	// AWS credentials secret reference
+	AWSCredentialsSecretRef *AWSCredentialsSecretRef `json:"awsCredentialsSecretRef,omitempty"`
+
+	// AWS region
+	Region string `json:"region,omitempty"`
+
+	// S3 bucket name
+	Bucket string `json:"bucket,omitempty"`
+
+	// Destination directory in the bucket
+	Directory string `json:"directory,omitempty"`
+
+	// Custom S3 endpoint
+	Endpoint string `json:"endpoint,omitempty"`
+
+	// Whether to use incremental backup mode
+	// +kubebuilder:default:=false
+	IsIncremental bool `json:"isIncremental,omitempty"`
+}
+
+type AWSCredentialsSecretRef struct {
+	// Name of the secret
+	Name string `json:"name,omitempty"`
+
+	// Mapping of the configuration key to the secret key
+	Mapping AWSCredentialsSecretRefMapping `json:"mapping,omitempty"`
+}
+
+type AWSCredentialsSecretRefMapping struct {
+	AWSAccessKeyID     string `json:"awsAccessKeyID,omitempty"`
+	AWSSecretAccessKey string `json:"awsSecretAccessKey,omitempty"`
+}
+
+// AzureCredentialsSecretRef defines Azure credentials secret reference
+type AzureCredentialsSecretRef struct {
+	// Name of the secret
+	Name string `json:"name,omitempty"`
+
+	// Mapping of the configuration key to the secret key
+	Mapping AzureCredentialsSecretRefMapping `json:"mapping,omitempty"`
+}
+
+type AzureCredentialsSecretRefMapping struct {
+	AccountName string `json:"accountName,omitempty"`
+	AccountKey  string `json:"accountKey,omitempty"`
+}
+
+// GoogleCloudStorageCredentialsSecretRef defines Google Cloud Storage credentials secret reference
+type GoogleCloudStorageCredentialsSecretRef struct {
+	// Name of the secret
+	Name string `json:"name,omitempty"`
+
+	// Mapping of the configuration key to the secret key
+	Mapping GoogleCloudStorageCredentialsSecretRefMapping `json:"mapping,omitempty"`
+}
+
+type GoogleCloudStorageCredentialsSecretRefMapping struct {
+	GoogleApplicationCredentials string `json:"googleApplicationCredentials,omitempty"`
+}
+
+// BackblazeCredentialsSecretRef defines Backblaze B2 credentials secret reference
+type BackblazeCredentialsSecretRef struct {
+	// Name of the secret
+	Name string `json:"name,omitempty"`
+
+	// Mapping of the configuration key to the secret key
+	Mapping BackblazeCredentialsSecretRefMapping `json:"mapping,omitempty"`
+}
+
+type BackblazeCredentialsSecretRefMapping struct {
+	B2AccountID            string `json:"b2AccountID,omitempty"`
+	B2MasterApplicationKey string `json:"b2MasterApplicationKey,omitempty"`
+}
+
+// GoogleCloudStorageSinkConfig defines Google Cloud Storage sink configuration
+type GoogleCloudStorageSinkConfig struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Path to Google application credentials JSON file
+	GoogleApplicationCredentials string `json:"googleApplicationCredentials,omitempty"`
+
+	// Google Cloud Storage credentials secret reference
+	GoogleCloudStorageCredentialsSecretRef *GoogleCloudStorageCredentialsSecretRef `json:"googleCloudStorageCredentialsSecretRef,omitempty"`
+
+	// GCS bucket name
+	Bucket string `json:"bucket,omitempty"`
+
+	// Destination directory in the bucket
+	Directory string `json:"directory,omitempty"`
+
+	// Whether to use incremental backup mode
+	// +kubebuilder:default:=false
+	IsIncremental bool `json:"isIncremental,omitempty"`
+}
+
+// AzureSinkConfig defines Azure Blob Storage sink configuration
+type AzureSinkConfig struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Azure storage account name
+	AccountName string `json:"accountName,omitempty"`
+
+	// Azure storage account key
+	AccountKey string `json:"accountKey,omitempty"`
+
+	// Azure credentials secret reference
+	AzureCredentialsSecretRef *AzureCredentialsSecretRef `json:"azureCredentialsSecretRef,omitempty"`
+
+	// Azure container name
+	Container string `json:"container,omitempty"`
+
+	// Destination directory in the container
+	Directory string `json:"directory,omitempty"`
+
+	// Whether to use incremental backup mode
+	// +kubebuilder:default:=false
+	IsIncremental bool `json:"isIncremental,omitempty"`
+}
+
+// BackblazeSinkConfig defines Backblaze B2 sink configuration
+type BackblazeSinkConfig struct {
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// B2 account ID
+	B2AccountID string `json:"b2AccountID,omitempty"`
+
+	// B2 master application key
+	B2MasterApplicationKey string `json:"b2MasterApplicationKey,omitempty"`
+
+	// Backblaze B2 credentials secret reference
+	BackblazeCredentialsSecretRef *BackblazeCredentialsSecretRef `json:"backblazeCredentialsSecretRef,omitempty"`
+
+	// B2 region
+	B2Region string `json:"b2Region,omitempty"`
+
+	// B2 bucket name
+	Bucket string `json:"bucket,omitempty"`
+
+	// Destination directory in the bucket
+	Directory string `json:"directory,omitempty"`
+
+	// Whether to use incremental backup mode
+	// +kubebuilder:default:=false
+	IsIncremental bool `json:"isIncremental,omitempty"`
 }
 
 // ComponentSpec is the base spec of each component, the fields should always accessed by the Basic<Component>Spec() method to respect the cluster-level properties
@@ -383,6 +755,167 @@ type SeaweedList struct {
 	Items           []Seaweed `json:"items"`
 }
 
+// BucketClaimSpec defines the desired state of BucketClaim
+type BucketClaimSpec struct {
+	// BucketName is the name of the bucket to be created
+	// +kubebuilder:validation:Required
+	BucketName string `json:"bucketName"`
+
+	// Region is the region of the bucket to be created
+	Region string `json:"region,omitempty"`
+
+	// Quota of the bucket to be created
+	Quota BucketQuota `json:"quota,omitempty"`
+
+	// Whether versioning is enabled
+	// +kubebuilder:default:=false
+	VersioningEnabled bool `json:"versioningEnabled,omitempty"`
+
+	// ObjectLock is the object lock configuration of the bucket to be created
+	ObjectLock BucketObjectLock `json:"objectLock,omitempty"`
+
+	// ClusterRef is a reference to the Seaweed cluster where the bucket should be created
+	// +kubebuilder:validation:Required
+	ClusterRef ClusterReference `json:"clusterRef"`
+
+	// Secret configuration for S3 credentials
+	Secret *BucketSecretSpec `json:"secret,omitempty"`
+}
+
+type BucketObjectLock struct {
+	// Enabled is whether object lock is enabled
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Mode is the mode of the object lock
+	// +kubebuilder:default:="GOVERNANCE"
+	Mode string `json:"mode,omitempty"`
+
+	// Duration is the duration of the object lock
+	Duration int32 `json:"duration,omitempty"`
+}
+
+// BucketQuota defines a quota for a bucket
+type BucketQuota struct {
+	// Size is the size of the quota
+	Size int64 `json:"size"`
+
+	// Unit is the unit of the quota
+	Unit string `json:"unit"`
+
+	// Enabled is whether the quota is enabled
+	Enabled bool `json:"enabled"`
+}
+
+// BucketSecretSpec defines the configuration for creating a secret with S3 credentials
+type BucketSecretSpec struct {
+	// Whether to create a secret with S3 credentials
+	// +kubebuilder:default:=true
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Name of the secret to create (if empty, will use bucket name)
+	Name string `json:"name,omitempty"`
+
+	// Secret type to create
+	// +kubebuilder:default:="Opaque"
+	Type corev1.SecretType `json:"type,omitempty"`
+
+	// Additional labels to add to the secret
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// Additional annotations to add to the secret
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// ClusterReference defines a reference to a Seaweed cluster
+type ClusterReference struct {
+	// Name of the Seaweed cluster
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace of the Seaweed cluster (if empty, uses the same namespace as BucketClaim)
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// BucketClaimStatus defines the observed state of BucketClaim
+type BucketClaimStatus struct {
+	// Phase represents the current phase of the bucket claim
+	// +kubebuilder:validation:Enum=Pending;Creating;Ready;Failed
+	Phase BucketClaimPhase `json:"phase,omitempty"`
+
+	// Message provides additional information about the current phase
+	Message string `json:"message,omitempty"`
+
+	// Conditions represent the latest available observations of a bucket claim's current state
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// BucketInfo contains information about the created bucket
+	BucketInfo *BucketInfo `json:"bucketInfo,omitempty"`
+
+	// SecretInfo contains information about the created secret
+	SecretInfo *BucketSecretInfo `json:"secretInfo,omitempty"`
+
+	// LastUpdateTime is the timestamp of the last status update
+	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`
+}
+
+type BucketSecretInfo struct {
+	// Name of the created secret
+	Name string `json:"name,omitempty"`
+
+	// Namespace of the created secret
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// BucketClaimPhase represents the phase of a bucket claim
+type BucketClaimPhase string
+
+const (
+	// BucketClaimPhasePending indicates the bucket claim is pending
+	BucketClaimPhasePending BucketClaimPhase = "Pending"
+	// BucketClaimPhaseCreating indicates the bucket is being created
+	BucketClaimPhaseCreating BucketClaimPhase = "Creating"
+	// BucketClaimPhaseReady indicates the bucket is ready
+	BucketClaimPhaseReady BucketClaimPhase = "Ready"
+	// BucketClaimPhaseFailed indicates the bucket creation failed
+	BucketClaimPhaseFailed BucketClaimPhase = "Failed"
+)
+
+// BucketInfo contains information about a bucket
+type BucketInfo struct {
+	// Name of the bucket
+	Name string `json:"name,omitempty"`
+
+	// Creation timestamp
+	CreatedAt *metav1.Time `json:"createdAt,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Bucket",type="string",JSONPath=".spec.bucketName"
+// +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".spec.clusterRef.name"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+
+// BucketClaim is the Schema for the bucketclaims API
+type BucketClaim struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   BucketClaimSpec   `json:"spec,omitempty"`
+	Status BucketClaimStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+
+// BucketClaimList contains a list of BucketClaim
+type BucketClaimList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []BucketClaim `json:"items"`
+}
+
 func init() {
 	SchemeBuilder.Register(&Seaweed{}, &SeaweedList{})
+	SchemeBuilder.Register(&BucketClaim{}, &BucketClaimList{})
 }

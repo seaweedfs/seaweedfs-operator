@@ -19,7 +19,7 @@ type SeaweedAdmin struct {
 	Output     io.Writer
 }
 
-func NewSeaweedAdmin(masters string, output io.Writer) *SeaweedAdmin {
+func NewSeaweedAdmin(ctx context.Context, masters string, output io.Writer) *SeaweedAdmin {
 	var shellOptions shell.ShellOptions
 	shellOptions.GrpcDialOption = grpc.WithTransportCredentials(insecure.NewCredentials())
 	shellOptions.Masters = &masters
@@ -27,7 +27,7 @@ func NewSeaweedAdmin(masters string, output io.Writer) *SeaweedAdmin {
 	commandEnv := shell.NewCommandEnv(&shellOptions)
 	reg, _ := regexp.Compile(`'.*?'|".*?"|\S+`)
 
-	go commandEnv.MasterClient.KeepConnectedToMaster(context.Background())
+	go commandEnv.MasterClient.KeepConnectedToMaster(ctx)
 
 	return &SeaweedAdmin{
 		commandEnv: commandEnv,

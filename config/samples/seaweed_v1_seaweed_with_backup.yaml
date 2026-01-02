@@ -1,0 +1,74 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-with-backup
+  namespace: default
+spec:
+  # Add fields here
+  image: chrislusf/seaweedfs:latest
+  volumeServerDiskCount: 1
+  hostSuffix: seaweed.abcdefg.com
+  master:
+    replicas: 3
+    volumeSizeLimitMB: 1024
+  volume:
+    replicas: 1
+    requests:
+      storage: 2Gi
+  filer:
+    replicas: 2
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"
+  filerBackup:
+    replicas: 1
+    # Persistence for backup filer data
+    persistence:
+      enabled: true
+      mountPath: "/data/backup"
+      resources:
+        requests:
+          storage: "10Gi"
+    # Resource requirements
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+    # Sink configuration for backup destinations
+    sink:
+      # S3 backup configuration
+      s3:
+        enabled: true
+        region: "us-east-1"
+        bucket: "my-seaweedfs-backups"
+        directory: "/backups/seaweed1"
+        isIncremental: false
+      # Local backup configuration (alternative)
+      # local:
+      #   enabled: true
+      #   directory: "/data/local-backups"
+      #   isIncremental: false
+      # Google Cloud Storage backup configuration (alternative)
+      # googleCloudStorage:
+      #   enabled: true
+      #   bucket: "my-gcs-backup-bucket"
+      #   directory: "/backups"
+      #   googleApplicationCredentials: "/path/to/credentials.json"
+      #   isIncremental: false
+      # Azure backup configuration (alternative)
+      # azure:
+      #   enabled: true
+      #   accountName: "myazureaccount"
+      #   container: "backups"
+      #   directory: "/seaweed1"
+      #   isIncremental: false
+      # Backblaze backup configuration (alternative)
+      # backblaze:
+      #   enabled: true
+      #   b2AccountID: "your-account-id"
+      #   bucket: "my-backup-bucket"
+      #   directory: "/backups"
+      #   isIncremental: false 

@@ -17,10 +17,11 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.FilerHTTPPort))
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-filer-peer.%s", m.Name, m.Namespace))
 	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m)))
-	if s3Config := m.Spec.Filer.S3; s3Config != nil && s3Config.Enabled {
+
+	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled {
 		commands = append(commands, "-s3")
-		if s3Config.ConfigSecret != nil && s3Config.ConfigSecret.Name != "" {
-			commands = append(commands, "-s3.config=/etc/sw/"+s3Config.ConfigSecret.Key)
+		if m.Spec.Filer.S3.ConfigSecret != nil && m.Spec.Filer.S3.ConfigSecret.Name != "" {
+			commands = append(commands, "-s3.config=/etc/sw/"+m.Spec.Filer.S3.ConfigSecret.Key)
 		}
 		// IAM is now embedded in S3 by default (enabled with -iam=true, which is the default)
 		// Only add -iam=false if explicitly disabled
@@ -29,8 +30,11 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 		}
 		// Note: IAM API is available on the same port as S3 (FilerS3Port) when embedded
 	}
-	if m.Spec.Filer.MetricsPort != nil {
-		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Filer.MetricsPort))
+
+	metricsPort := resolveMetricsPort(m, m.Spec.Filer.MetricsPort)
+
+	if metricsPort != nil {
+		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *metricsPort))
 	}
 
 	return strings.Join(commands, " ")
@@ -57,12 +61,16 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		// Note: IAM is now embedded in S3 by default (same port as S3)
 		// No separate IAM port needed when using embedded IAM
 	}
-	if m.Spec.Filer.MetricsPort != nil {
+
+	metricsPort := resolveMetricsPort(m, m.Spec.Filer.MetricsPort)
+
+	if metricsPort != nil {
 		ports = append(ports, corev1.ContainerPort{
-			ContainerPort: *m.Spec.Filer.MetricsPort,
+			ContainerPort: *metricsPort,
 			Name:          "filer-metrics",
 		})
 	}
+
 	replicas := int32(m.Spec.Filer.Replicas)
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
@@ -119,7 +127,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 				Spec: corev1.PersistentVolumeClaimSpec{
 					AccessModes:      m.Spec.Filer.Persistence.AccessModes,
 					Resources:        m.Spec.Filer.Persistence.Resources,
-					StorageClassName: m.Spec.Filer.Persistence.StorageClassName,
+					StorageClassName: resolveStorageClassName(m.Spec.Storage.StorageClassName, m.Spec.Filer.Persistence.StorageClassName),
 					Selector:         m.Spec.Filer.Persistence.Selector,
 					VolumeName:       m.Spec.Filer.Persistence.VolumeName,
 					VolumeMode:       m.Spec.Filer.Persistence.VolumeMode,

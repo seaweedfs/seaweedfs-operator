@@ -157,7 +157,9 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 							},
 						},
 					},
-					VolumeServerDiskCount: func() *int32 { v := int32(1); return &v }(),
+					Storage: &seaweedv1.StorageSpec{
+						VolumeServerDiskCount: 1,
+					},
 				},
 			}
 		})

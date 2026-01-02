@@ -1,0 +1,13 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: BucketClaim
+metadata:
+  name: example-bucket-claim
+  namespace: default
+spec:
+  # Name of the bucket to be created
+  bucketName: "example-bucket"
+  
+  # Reference to the Seaweed cluster where the bucket should be created
+  clusterRef:
+    name: "example-seaweed-cluster"
+    # namespace: "default"  # Optional, defaults to the same namespace as BucketClaim

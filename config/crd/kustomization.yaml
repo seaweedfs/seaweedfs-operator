@@ -3,6 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/seaweed.seaweedfs.com_seaweeds.yaml
+- bases/seaweed.seaweedfs.com_bucketclaims.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

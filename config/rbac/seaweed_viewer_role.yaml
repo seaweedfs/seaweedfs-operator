@@ -18,3 +18,17 @@ rules:
   - seaweeds/status
   verbs:
   - get
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - bucketclaims
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - bucketclaims/status
+  verbs:
+  - get

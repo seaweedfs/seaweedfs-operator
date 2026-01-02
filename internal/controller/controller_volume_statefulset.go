@@ -6,6 +6,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -75,15 +76,18 @@ func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string) string 
 		commands = append(commands, "-max=0")
 	}
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-volume-peer.%s", m.Name, m.Namespace))
+
 	if m.Spec.HostSuffix != nil && *m.Spec.HostSuffix != "" {
 		commands = append(commands, fmt.Sprintf("-publicUrl=$(POD_NAME).%s", *m.Spec.HostSuffix))
 	}
+
 	commands = append(commands, fmt.Sprintf("-mserver=%s", getMasterPeersString(m)))
 	commands = append(commands, fmt.Sprintf("-dir=%s", strings.Join(dirs, ",")))
 
-	// Configure metrics port
-	if m.Spec.Volume.MetricsPort != nil {
-		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Volume.MetricsPort))
+	metricsPort := resolveMetricsPort(m, m.Spec.Volume.MetricsPort)
+
+	if metricsPort != nil {
+		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *metricsPort))
 	}
 
 	// Configure topology placement
@@ -114,6 +118,14 @@ func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string) string 
 	return strings.Join(commands, " ")
 }
 
+// getStorageClassName safely gets the storage class name from the storage spec
+func getStorageClassName(storage *seaweedv1.StorageSpec) *string {
+	if storage != nil {
+		return storage.StorageClassName
+	}
+	return nil
+}
+
 func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForVolumeServer(m.Name)
 	annotations := m.Spec.Volume.Annotations
@@ -127,26 +139,36 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 			Name:          "volume-grpc",
 		},
 	}
-	if m.Spec.Volume.MetricsPort != nil {
+
+	metricsPort := resolveMetricsPort(m, m.Spec.Volume.MetricsPort)
+
+	if metricsPort != nil {
 		ports = append(ports, corev1.ContainerPort{
-			ContainerPort: *m.Spec.Volume.MetricsPort,
+			ContainerPort: *metricsPort,
 			Name:          "volume-metrics",
 		})
 	}
-	replicas := int32(m.Spec.Volume.Replicas)
+	replicas := m.Spec.Volume.Replicas
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
 
+	// Set default storage configuration if not specified
 	var volumeCount int
-	if m.Spec.VolumeServerDiskCount != nil {
-		volumeCount = int(*m.Spec.VolumeServerDiskCount)
+	if m.Spec.Storage != nil {
+		volumeCount = int(m.Spec.Storage.VolumeServerDiskCount)
 	} else {
-		volumeCount = 1 // default value
+		// Default to 1 disk if storage spec is not provided
+		volumeCount = 1
 	}
-	volumeRequests := corev1.ResourceList{}
+
+	// Set default storage request if not specified
+	var volumeRequests corev1.ResourceList
 	if m.Spec.Volume.Requests != nil {
-		if storageRequest, ok := m.Spec.Volume.Requests[corev1.ResourceStorage]; ok {
-			volumeRequests[corev1.ResourceStorage] = storageRequest
+		volumeRequests = m.Spec.Volume.Requests
+	} else {
+		// Default to 4Gi if no requests specified
+		volumeRequests = corev1.ResourceList{
+			corev1.ResourceStorage: resource.MustParse("4Gi"),
 		}
 	}
 
@@ -155,6 +177,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 	var volumes []corev1.Volume
 	var persistentVolumeClaims []corev1.PersistentVolumeClaim
 	var dirs []string
+
 	for i := 0; i < volumeCount; i++ {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      fmt.Sprintf("mount%d", i),
@@ -175,7 +198,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 				Name: fmt.Sprintf("mount%d", i),
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
-				StorageClassName: m.Spec.Volume.StorageClassName,
+				StorageClassName: resolveStorageClassName(getStorageClassName(m.Spec.Storage), m.Spec.Volume.StorageClassName),
 				AccessModes: []corev1.PersistentVolumeAccessMode{
 					corev1.ReadWriteOnce,
 				},
@@ -288,8 +311,8 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 	enableServiceLinks := false
 
 	var volumeCount int
-	if m.Spec.VolumeServerDiskCount != nil {
-		volumeCount = int(*m.Spec.VolumeServerDiskCount)
+	if m.Spec.Storage != nil && m.Spec.Storage.VolumeServerDiskCount > 0 {
+		volumeCount = int(m.Spec.Storage.VolumeServerDiskCount)
 	} else {
 		volumeCount = 1 // default value
 	}
@@ -327,7 +350,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 				Name: fmt.Sprintf("mount%d", i),
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
-				StorageClassName: getStorageClassName(m, topologySpec),
+				StorageClassName: getVolumeServerConfigValue(topologySpec.StorageClassName, getStorageClassName(m.Spec.Storage)),
 				AccessModes: []corev1.PersistentVolumeAccessMode{
 					corev1.ReadWriteOnce,
 				},
@@ -485,4 +508,34 @@ func getEnvVars(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec
 		return m.Spec.Volume.Env
 	}
 	return []corev1.EnvVar{}
+}
+
+// getVolumeServerConfigValue returns the topology-specific value if present, otherwise returns the cluster-level value
+func getVolumeServerConfigValue[T any](topologyValue *T, clusterValue *T) *T {
+	if topologyValue != nil {
+		return topologyValue
+	}
+	return clusterValue
+}
+
+// getMetricsPort returns the topology-specific metrics port if present, otherwise returns the cluster-level value
+func getMetricsPort(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *int32 {
+	if topologySpec != nil && topologySpec.MetricsPort != nil {
+		return topologySpec.MetricsPort
+	}
+	if m.Spec.Volume != nil && m.Spec.Volume.MetricsPort != nil {
+		return m.Spec.Volume.MetricsPort
+	}
+	return nil
+}
+
+// getResourceRequirements returns the topology-specific resource requirements if present, otherwise returns the cluster-level value
+func getResourceRequirements(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) corev1.ResourceRequirements {
+	if topologySpec != nil && (len(topologySpec.ResourceRequirements.Limits) > 0 || len(topologySpec.ResourceRequirements.Requests) > 0) {
+		return topologySpec.ResourceRequirements
+	}
+	if m.Spec.Volume != nil {
+		return m.Spec.Volume.ResourceRequirements
+	}
+	return corev1.ResourceRequirements{}
 }

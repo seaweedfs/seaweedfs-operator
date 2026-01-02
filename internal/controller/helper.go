@@ -62,6 +62,9 @@ func getMasterPeersString(m *seaweedv1.Seaweed) string {
 	return strings.Join(getMasterAddresses(m.Namespace, m.Name, m.Spec.Master.Replicas), ",")
 }
 
+// Note: IAM is now embedded in S3 by default (on the same port as S3: FilerS3Port).
+// The getIAMPort function has been removed since standalone IAM is no longer supported.
+
 func copyAnnotations(src map[string]string) map[string]string {
 	if src == nil {
 		return nil
@@ -71,6 +74,50 @@ func copyAnnotations(src map[string]string) map[string]string {
 		dst[k] = v
 	}
 	return dst
+}
+
+// mergeAnnotations merges cluster-level annotations with component-level annotations
+// Component-level annotations take precedence over cluster-level ones
+func mergeAnnotations(clusterAnnotations, componentAnnotations map[string]string) map[string]string {
+	if clusterAnnotations == nil && componentAnnotations == nil {
+		return nil
+	}
+
+	merged := map[string]string{}
+
+	// Add cluster-level annotations first
+	for k, v := range clusterAnnotations {
+		merged[k] = v
+	}
+
+	// Override with component-level annotations
+	for k, v := range componentAnnotations {
+		merged[k] = v
+	}
+
+	return merged
+}
+
+// mergeNodeSelector merges cluster-level nodeSelector with component-level nodeSelector
+// Component-level nodeSelector takes precedence over cluster-level ones
+func mergeNodeSelector(clusterNodeSelector, componentNodeSelector map[string]string) map[string]string {
+	if clusterNodeSelector == nil && componentNodeSelector == nil {
+		return nil
+	}
+
+	merged := map[string]string{}
+
+	// Add cluster-level nodeSelector first
+	for k, v := range clusterNodeSelector {
+		merged[k] = v
+	}
+
+	// Override with component-level nodeSelector
+	for k, v := range componentNodeSelector {
+		merged[k] = v
+	}
+
+	return merged
 }
 
 // filterContainerResources removes storage resources that are not valid for container specifications

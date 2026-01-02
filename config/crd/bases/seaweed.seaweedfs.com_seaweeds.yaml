@@ -1758,7 +1758,6 @@ spec:
                       x-kubernetes-int-or-string: true
                     type: object
                   maxMB:
-                    format: int32
                     type: integer
                   metricsPort:
                     format: int32
@@ -3372,7 +3371,6 @@ spec:
                   priorityClassName:
                     type: string
                   pulseSeconds:
-                    format: int32
                     type: integer
                   replicas:
                     format: int32
@@ -3427,7 +3425,6 @@ spec:
                   volumePreallocate:
                     type: boolean
                   volumeSizeLimitMB:
-                    format: int32
                     type: integer
                 required:
                 - replicas
@@ -3938,8 +3935,9 @@ spec:
                     - name
                     x-kubernetes-list-type: map
                   compactionMBps:
-                    format: int32
                     type: integer
+                  dataCenter:
+                    type: string
                   env:
                     items:
                       properties:
@@ -4007,14 +4005,12 @@ spec:
                       type: object
                     type: array
                   fileSizeLimitMB:
-                    format: int32
                     type: integer
                   fixJpgOrientation:
                     type: boolean
                   hostNetwork:
                     type: boolean
                   idleTimeout:
-                    format: int32
                     type: integer
                   imagePullPolicy:
                     type: string
@@ -4036,13 +4032,11 @@ spec:
                       x-kubernetes-int-or-string: true
                     type: object
                   maxVolumeCounts:
-                    format: int32
                     type: integer
                   metricsPort:
                     format: int32
                     type: integer
                   minFreeSpacePercent:
-                    format: int32
                     type: integer
                   nodeSelector:
                     additionalProperties:

@@ -20,6 +20,15 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 
 	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled {
 		commands = append(commands, "-s3")
+		if s3Config.ConfigSecret != nil && s3Config.ConfigSecret.Name != "" {
+			commands = append(commands, "-s3.config=/etc/sw/"+s3Config.ConfigSecret.Key)
+		}
+		// IAM is now embedded in S3 by default (enabled with -iam=true, which is the default)
+		// Only add -iam=false if explicitly disabled
+		if !m.Spec.Filer.IAM {
+			commands = append(commands, "-iam=false")
+		}
+		// Note: IAM API is available on the same port as S3 (FilerS3Port) when embedded
 	}
 
 	metricsPort := resolveMetricsPort(m, m.Spec.Filer.MetricsPort)
@@ -49,6 +58,8 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			ContainerPort: seaweedv1.FilerS3Port,
 			Name:          "filer-s3",
 		})
+		// Note: IAM is now embedded in S3 by default (same port as S3)
+		// No separate IAM port needed when using embedded IAM
 	}
 
 	metricsPort := resolveMetricsPort(m, m.Spec.Filer.MetricsPort)
@@ -84,6 +95,24 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			MountPath: "/etc/seaweedfs",
 		},
 	}
+
+	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled && m.Spec.Filer.S3.ConfigSecret != nil && m.Spec.Filer.S3.ConfigSecret.Name != "" {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "config-users",
+			ReadOnly:  true,
+			MountPath: "/etc/sw",
+		})
+		filerPodSpec.Volumes = append(filerPodSpec.Volumes,
+			corev1.Volume{
+				Name: "config-users",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: m.Spec.Filer.S3.ConfigSecret.Name,
+					},
+				},
+			})
+	}
+
 	var persistentVolumeClaims []corev1.PersistentVolumeClaim
 	if m.Spec.Filer.Persistence != nil && m.Spec.Filer.Persistence.Enabled {
 		claimName := m.Name + "-filer"

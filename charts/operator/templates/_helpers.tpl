@@ -83,3 +83,43 @@ Create the name of the service account to use
   {{- default "default" .Values.rbac.serviceAccount.name -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Mutating webhook path
+*/}}
+{{- define "seaweedfs-operator.mutatingWebhookPath" -}}/mutate-seaweed-seaweedfs-com-v1-seaweed{{- end -}}
+
+{{/*
+Validating webhook path
+*/}}
+{{- define "seaweedfs-operator.validatingWebhookPath" -}}/validate-seaweed-seaweedfs-com-v1-seaweed{{- end -}}
+
+{{/*
+Webhook Pod Security Context
+*/}}
+{{- define "seaweedfs-operator.webhookPodSecurityContext" -}}
+{{- with .Values.webhook.podSecurityContext }}
+securityContext:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end -}}
+
+{{/*
+Webhook Container Security Context
+*/}}
+{{- define "seaweedfs-operator.webhookContainerSecurityContext" -}}
+{{- with .Values.webhook.securityContext }}
+securityContext:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end -}}
+
+{{/*
+Webhook init container for waiting until webhook service is ready
+*/}}
+{{- define "seaweedfs-operator.webhookWaitInitContainer" -}}
+- name: wait-for-webhook
+  image: {{ .Values.webhook.initContainer.image }}
+  {{- include "seaweedfs-operator.webhookContainerSecurityContext" . | nindent 2 }}
+  command: ['sh', '-c', 'set -e; until curl -sk --fail --head --max-time 5 https://{{ include "seaweedfs-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc:443{{ .webhookPath }} >/dev/null; do echo waiting for webhook; sleep 1; done;']
+{{- end -}}

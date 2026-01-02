@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os/exec"
 	"strconv"
 	"time"
 
@@ -37,37 +36,7 @@ import (
 const namespace = "seaweedfs-operator-system"
 const deploymentName = "seaweedfs-operator-controller-manager"
 
-var _ = Describe("controller", Ordered, func() {
-	BeforeAll(func() {
-		var err error
-		By("prepare kind environment", func() {
-			cmd := exec.Command("make", "kind-prepare")
-			_, err = utils.Run(cmd)
-			ExpectWithOffset(1, err).NotTo(HaveOccurred())
-		})
-
-		By("upload latest image to kind cluster", func() {
-			cmd := exec.Command("make", "kind-load")
-			_, err = utils.Run(cmd)
-			ExpectWithOffset(1, err).NotTo(HaveOccurred())
-		})
-
-		By("deploy controller-manager", func() {
-			cmd := exec.Command("make", "deploy")
-			_, err = utils.Run(cmd)
-			ExpectWithOffset(1, err).NotTo(HaveOccurred())
-		})
-
-	})
-
-	AfterAll(func() {
-		var err error
-		By("cleanup", func() {
-			cmd := exec.Command("make", "undeploy")
-			_, err = utils.Run(cmd)
-			ExpectWithOffset(1, err).NotTo(HaveOccurred())
-		})
-	})
+var _ = Describe("controller", func() {
 
 	Context("Operator", func() {
 		It("should run successfully", func() {

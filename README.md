@@ -11,6 +11,7 @@ The difference to [seaweedfs-csi-driver](https://github.com/seaweedfs/seaweedfs-
 - [ ] Compatibility with [seaweedfs-csi-driver](https://github.com/seaweedfs/seaweedfs-csi-driver)
 - [x] Auto rolling upgrade and restart
 - [x] Ingress for volume server, filer and S3, to support HDFS, REST filer, S3 API and cross-cluster replication
+- [x] IAM (Identity and Access Management) service support for S3 API authentication and authorization
 - [ ] Support all major cloud Kubernetes: AWS, Google, Azure
 - [x] [Async backup](https://github.com/seaweedfs/seaweedfs/wiki/Async-Backup) to cloud storage: S3, Google Cloud Storage, Azure
 - [ ] Put warm data to cloud storage tier: S3, Google Cloud Storage, Azure
@@ -55,7 +56,7 @@ helm install seaweedfs-operator seaweedfs-operator/seaweedfs-operator
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Seaweed
 metadata:
-  name: seaweed1
+  name: seaweed-sample
   namespace: default
 spec:
   image: chrislusf/seaweedfs:latest
@@ -71,10 +72,17 @@ spec:
       storage: 2Gi
   filer:
     replicas: 2
+    s3:
+      enabled: true   # Enable S3 API
+    iam: true         # Enable embedded IAM
     config: |
       [leveldb2]
       enabled = true
       dir = "/data/filerldb2"
+  # Optional: Standalone IAM service
+  # iam:
+  #   replicas: 1
+  #   port: 8111
 ```
 
 For more examples, see the [wiki](https://github.com/nnstd/seaweedfs-operator/wiki).
@@ -95,6 +103,20 @@ make deploy
 
 # install example of CR
 kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
+
+# or install example with IAM support
+kubectl apply -f config/samples/seaweed_v1_seaweed_with_iam_standalone.yaml
+```
+
+### Testing IAM Functionality
+
+To test the IAM implementation:
+
+```bash
+# Run IAM-specific tests
+go test -v -run "IAM" ./api/v1
+go test -v -run "TestCreateIAM|TestBuildIAM|TestLabelsForIAM" ./internal/controller
+go test -v -run "Filer.*IAM|IAM.*Filer" ./internal/controller
 ```
 
 ### Update the Operator

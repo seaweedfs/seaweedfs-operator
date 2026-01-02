@@ -1,0 +1,168 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-tree-topology
+  namespace: default
+spec:
+  # SeaweedFS image
+  image: chrislusf/seaweedfs:latest
+  volumeServerDiskCount: 1
+
+  # Master configuration with 210 replication
+  master:
+    replicas: 3
+    volumeSizeLimitMB: 1024
+    # Set default replication to 210 (2 copies in different datacenters, 1 copy in different rack, 0 copies in same rack)
+    defaultReplication: "210"
+
+  # Default volume server configuration. Settings here are inherited by all topology groups.
+  # Set replicas to 0 to disable the simple volume group and only use volumeTopology.
+  volume:
+    replicas: 0
+    requests:
+      storage: "5Gi" # Default storage size, can be overridden per group
+      cpu: "500m"    # Default CPU request
+      memory: "1Gi"  # Default memory request
+    limits:
+      cpu: "1"       # Default CPU limit
+      memory: "2Gi"  # Default memory limit
+    metricsPort: 9323 # Default metrics port, can be overridden per group
+    # Default environment variables that all topology groups will inherit
+    env:
+      - name: WEED_VOLUME_MAX_VOLUMES
+        value: "50"
+
+  # Tree-structured topology configuration
+  # This creates a hierarchical deployment across multiple datacenters and racks
+  volumeTopology:
+    # Datacenter 1, Rack 1
+    dc1-rack1:
+      replicas: 3
+      rack: "rack1"
+      dataCenter: "dc1"
+      # Use node selector to ensure placement on appropriate nodes
+      nodeSelector:
+        topology.kubernetes.io/zone: "us-west-2a"
+        seaweedfs/datacenter: "dc1"
+        seaweedfs/rack: "rack1"
+      # Optional: Add specific tolerations for this topology group
+      tolerations:
+        - key: "datacenter"
+          operator: "Equal"
+          value: "dc1"
+          effect: "NoSchedule"
+      # Resource requirements specific to this topology group
+      requests:
+        storage: 10Gi
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+      metricsPort: 9324
+
+    # Datacenter 1, Rack 2
+    # This group inherits most settings from spec.volume but overrides storage size and adds nodeSelector
+    dc1-rack2:
+      replicas: 2
+      rack: "rack2"
+      dataCenter: "dc1"
+      nodeSelector:
+        topology.kubernetes.io/zone: "us-west-2b"
+        seaweedfs/datacenter: "dc1"
+        seaweedfs/rack: "rack2"
+      tolerations:
+        - key: "datacenter"
+          operator: "Equal"
+          value: "dc1"
+          effect: "NoSchedule"
+      # Override only storage size, other resource settings inherit from spec.volume
+      requests:
+        storage: 8Gi
+      metricsPort: 9325
+
+    # Datacenter 2, Rack 1
+    dc2-rack1:
+      replicas: 3
+      rack: "rack1"
+      dataCenter: "dc2"
+      nodeSelector:
+        topology.kubernetes.io/zone: "us-east-1a"
+        seaweedfs/datacenter: "dc2"
+        seaweedfs/rack: "rack1"
+      tolerations:
+        - key: "datacenter"
+          operator: "Equal"
+          value: "dc2"
+          effect: "NoSchedule"
+      requests:
+        storage: 15Gi
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+      # Use different storage class for this topology group
+      storageClassName: "fast-ssd"
+      metricsPort: 9326
+      # Volume-specific settings for this topology
+      compactionMBps: 100
+      maxVolumeCounts: 100
+
+    # Datacenter 2, Rack 2
+    dc2-rack2:
+      replicas: 2
+      rack: "rack2"
+      dataCenter: "dc2"
+      nodeSelector:
+        topology.kubernetes.io/zone: "us-east-1b"
+        seaweedfs/datacenter: "dc2"
+        seaweedfs/rack: "rack2"
+      tolerations:
+        - key: "datacenter"
+          operator: "Equal"
+          value: "dc2"
+          effect: "NoSchedule"
+      requests:
+        storage: 15Gi
+        cpu: "500m"
+        memory: "1.5Gi"
+      limits:
+        cpu: "1.5"
+        memory: "3Gi"
+      storageClassName: "fast-ssd"
+      metricsPort: 9327
+      compactionMBps: 80
+      maxVolumeCounts: 80
+
+  # Filer configuration
+  filer:
+    replicas: 2
+    s3:
+      enabled: true
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"
+
+      # Enable cross-datacenter replication
+      [replication]
+      dc1 = "dc1"
+      dc2 = "dc2"
+---
+# ServiceMonitor for monitoring all topology groups
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: seaweed-volume-topology
+  namespace: default
+  labels:
+    app: seaweedfs
+spec:
+  selector:
+    matchExpressions:
+    - key: seaweedfs/topology
+      operator: Exists
+  endpoints:
+  - port: volume-metrics
+    path: /metrics

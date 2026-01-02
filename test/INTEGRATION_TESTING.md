@@ -89,7 +89,7 @@ The integration tests create actual Seaweed resources with comprehensive resourc
 - Memory requests/limits are applied correctly
 - No storage resources leak into container specs
 
-#### Volume Container Resources  
+#### Volume Container Resources
 - CPU, memory, and ephemeral-storage resources are applied
 - **Critical**: `storage` resources are filtered out of container specs
 - Storage resources are used for PVC templates in StatefulSets
@@ -168,4 +168,4 @@ When modifying resource handling:
 3. **Test locally** with `make test-e2e` before submitting PRs
 4. **Verify multi-version compatibility** by testing with different Kubernetes versions
 
-The integration tests serve as both verification of fixes and regression prevention for future changes. 
+The integration tests serve as both verification of fixes and regression prevention for future changes.

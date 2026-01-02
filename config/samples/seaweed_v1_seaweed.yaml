@@ -15,8 +15,16 @@ spec:
     replicas: 1
     requests:
       storage: 2Gi
+    # Topology configuration for rack/datacenter-aware placement
+    rack: "rack1"
+    dataCenter: "dc1"
   filer:
     replicas: 2
+    s3:
+      enabled: true
+      configSecret:
+        name: test-secret
+        key: seaweedfs_s3_config.json
     config: |
       [leveldb2]
       enabled = true

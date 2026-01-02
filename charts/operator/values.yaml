@@ -30,7 +30,7 @@ image:
   # -- Specify a imagePullPolicy
   ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
   ## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
 
   ## Specify credentials to authorize in docker registry or set existing secrets in pullSecrets
   # credentials:
@@ -91,12 +91,41 @@ webhook:
 ## ref: http://kubernetes.io/docs/user-guide/compute-resources/
 resources:
   limits:
-    # -- seaweedfs-operator containers' cpu limit (maximum allowes CPU)
+    # -- seaweedfs-operator containers' cpu limit (maximum allowed CPU)
     cpu: 500m
-    # -- seaweedfs-operator containers' memory limit (maximum allowes memory)
+    # -- seaweedfs-operator containers' memory limit (maximum allowed memory)
     memory: 500Mi
   requests:
     # -- seaweedfs-operator containers' cpu request (how much is requested by default)
     cpu: 100m
     # -- seaweedfs-operator containers' memory request (how much is requested by default)
     memory: 50Mi
+
+## Security context for pods
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+
+## Security context for containers
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+
+## Node labels for pod assignment
+## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+nodeSelector: {}
+
+## Tolerations for pod assignment
+## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+tolerations: []
+
+## Affinity for pod assignment
+## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
+affinity: {}

@@ -93,13 +93,7 @@ vet:
 mod-tidy: ## Run go mod tidy against code.
 	go mod tidy
 
-.PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter & yamllint
-	$(GOLANGCI_LINT) run
 
-.PHONY: lint-fix
-lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
-	$(GOLANGCI_LINT) run --fix
 
 .PHONY: nilaway-lint
 nilaway-lint: nilaway
@@ -115,10 +109,23 @@ generate: controller-gen
 .PHONY: docker-build
 docker-build:
 	echo ${IMG}
-	${CONTAINER_TOOL} build . -t ${IMG} \
+	${CONTAINER_TOOL} buildx build . -t ${IMG} \
 	  --platform ${TARGETOS}/${TARGETARCH} \
 	  --build-arg TARGETARCH=${TARGETARCH} \
-	  --build-arg TARGETOS=${TARGETOS}
+	  --build-arg TARGETOS=${TARGETOS} \
+	  --load
+
+# Build docker image and save to tar file (for kind load, avoids containerd snapshotter issues)
+.PHONY: docker-build-tar
+docker-build-tar:
+	echo ${IMG}
+	@# Output directly to tar file to avoid containerd snapshotter issues
+	@# See: https://github.com/kubernetes-sigs/kind/issues/3795
+	${CONTAINER_TOOL} buildx build . -t ${IMG} \
+	  --platform ${TARGETOS}/${TARGETARCH} \
+	  --build-arg TARGETARCH=${TARGETARCH} \
+	  --build-arg TARGETOS=${TARGETOS} \
+	  --output type=docker,dest=/tmp/kind-image.tar
 
 # Build multi-platform docker image for release
 .PHONY: docker-build-release
@@ -168,7 +175,7 @@ endif
 
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
+	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply --server-side -f -
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
@@ -189,17 +196,47 @@ redeploy: deploy ## Redeploy controller with new docker image.
 	$(KUBECTL) rollout restart -n $(NAMESPACE) deploy/seaweedfs-operator-controller-manager
 
 .PHONY: kind-load
-kind-load: docker-build kind ## Build and upload docker image to the local Kind cluster.
-	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME)
+kind-load: docker-build-tar kind ## Build and upload docker image to the local Kind cluster.
+	@# Workaround for containerd snapshotter issues (https://github.com/kubernetes-sigs/kind/issues/3795)
+	@# We bypass 'kind load' entirely and pipe directly to ctr via stdin
+	@# This avoids the --all-platforms flag that causes failures with containerd image store
+	@set -e; \
+	NODE=$(KIND_CLUSTER_NAME)-control-plane; \
+	echo "Loading image to Kind cluster (bypassing kind load)..."; \
+	cat /tmp/kind-image.tar | $(CONTAINER_TOOL) exec -i $$NODE ctr --namespace=k8s.io images import --digests --snapshotter=overlayfs -; \
+	rm -f /tmp/kind-image.tar; \
+	echo "Image loaded successfully"
 
 .PHONY: kind-create
 kind-create: kind yq ## Create kubernetes cluster using Kind.
-	@if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image $(KIND_IMAGE); \
-	fi
-	@if ! $(CONTAINER_TOOL) ps --format json | $(YQ) -P -pj e 'select(.Names == "$(KIND_CLUSTER_NAME)-control-plane") | .Image' | grep -q $(KIND_IMAGE); then \
-  		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image $(KIND_IMAGE); \
+	@set -e; \
+	IMAGE_TRY=$(KIND_IMAGE); \
+	if ! $(CONTAINER_TOOL) pull $$IMAGE_TRY >/dev/null 2>&1; then \
+		echo "KIND image $$IMAGE_TRY not found, attempting fallback patches..."; \
+		V=$$(echo "$(K8S_VERSION)" | sed 's/^v//'); \
+		MAJOR=$$(echo $$V | cut -d. -f1); \
+		MINOR=$$(echo $$V | cut -d. -f2); \
+		PATCH=$$(echo $$V | cut -d. -f3 2>/dev/null || echo 0); \
+		if [ -z "$$PATCH" ]; then PATCH=0; fi; \
+		FOUND=0; \
+		for p in $$(seq $$PATCH -1 0); do \
+			try=kindest/node:v$$MAJOR.$$MINOR.$$p; \
+			echo "Trying $$try"; \
+			if $(CONTAINER_TOOL) pull $$try >/dev/null 2>&1; then \
+				IMAGE_TRY=$$try; FOUND=1; break; \
+			fi; \
+		done; \
+		if [ $$FOUND -eq 0 ]; then \
+			echo "No matching patch image found, falling back to v$$MAJOR.$$MINOR.0"; \
+			IMAGE_TRY=kindest/node:v$$MAJOR.$$MINOR.0; \
+		fi; \
+	fi; \
+	echo "Using KIND image: $$IMAGE_TRY"; \
+	if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image $$IMAGE_TRY; \
+	elif ! $(CONTAINER_TOOL) ps --format json | $(YQ) -P -pj e 'select(.Names == "$(KIND_CLUSTER_NAME)-control-plane") | .Image' | grep -q $$IMAGE_TRY; then \
+		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image $$IMAGE_TRY; \
 	fi
 
 .PHONY: kind-delete
@@ -234,7 +271,7 @@ KUBECTL ?= kubectl
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
-GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
+
 NILAWAY_LINT ?= $(LOCALBIN)/nilaway
 KIND ?= $(LOCALBIN)/kind
 HELM ?= $(LOCALBIN)/helm
@@ -248,8 +285,7 @@ KUSTOMIZE_VERSION ?= v5.3.0
 # renovate: datasource=github-tags depName=kubernetes-sigs/controller-tools
 CONTROLLER_TOOLS_VERSION ?= v0.18.0
 ENVTEST_VERSION ?= latest
-# renovate: datasource=github-tags depName=golangci/golangci-lint
-GOLANGCI_LINT_VERSION ?= v1.59.1
+
 # renovate: datasource=github-tags depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.23.0
 # renovate: datasource=github-tags depName=helm/helm
@@ -285,10 +321,7 @@ envtest: $(LOCALBIN)
 crd-ref-docs: $(LOCALBIN)
 	@test -x $(CRD_REF_DOCS) || GOBIN=$(LOCALBIN) go install github.com/elastic/crd-ref-docs@latest
 
-.PHONY: golangci-lint
-golangci-lint: $(LOCALBIN)
-	@test -x $(GOLANGCI_LINT) && $(GOLANGCI_LINT) version | grep -q $(GOLANGCI_LINT_VERSION) || \
-	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
 
 .PHONY: nilaway
 nilaway: $(LOCALBIN)

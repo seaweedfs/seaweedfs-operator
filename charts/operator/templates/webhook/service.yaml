@@ -13,6 +13,6 @@ spec:
       port: 443
       targetPort: webhook-server
   selector:
-    app: {{ include "seaweedfs-operator.fullname" . }}
+    {{- include "seaweedfs-operator.selectorLabels" . | nindent 4 }}
 
 {{- end }}

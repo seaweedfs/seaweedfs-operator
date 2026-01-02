@@ -11,12 +11,12 @@ webhooks:
       name: webhook-service
       namespace: {{ .Release.Namespace }}
       port: 443
-      path: /validate-seaweed-seaweedfs-com-v1-seaweed
+      path: {{ include "seaweedfs-operator.validatingWebhookPath" . }}
   name: vseaweed.kb.io
+  failurePolicy: Fail
   sideEffects: None
   admissionReviewVersions:
   - v1
-  - v1beta1
   rules:
   - apiGroups:
     - seaweed.seaweedfs.com

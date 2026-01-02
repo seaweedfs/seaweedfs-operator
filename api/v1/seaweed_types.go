@@ -60,6 +60,11 @@ type SeaweedSpec struct {
 	// Volume
 	Volume *VolumeSpec `json:"volume,omitempty"`
 
+	// VolumeTopology defines multiple volume server groups with topology-aware placement
+	// This allows defining volume servers across different datacenters and racks in a tree structure
+	// +kubebuilder:validation:Optional
+	VolumeTopology map[string]*VolumeTopologySpec `json:"volumeTopology,omitempty"`
+
 	// Filer
 	Filer *FilerSpec `json:"filer,omitempty"`
 
@@ -161,23 +166,18 @@ type MasterSpec struct {
 	ConcurrentStart *bool `json:"concurrentStart,omitempty"`
 }
 
-// VolumeSpec is the spec for volume servers
-type VolumeSpec struct {
+// VolumeServerConfig contains common configuration for volume servers
+type VolumeServerConfig struct {
 	ComponentSpec               `json:",inline"`
 	corev1.ResourceRequirements `json:",inline"`
 
-	// The desired ready replicas
-	// +kubebuilder:validation:Minimum=1
-	Replicas int32        `json:"replicas"`
-	Service  *ServiceSpec `json:"service,omitempty"`
-
-	StorageClassName *string `json:"storageClassName,omitempty"`
+	Service          *ServiceSpec `json:"service,omitempty"`
+	StorageClassName *string      `json:"storageClassName,omitempty"`
 
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
 	// Volume-specific settings
-
 	CompactionMBps      *int32 `json:"compactionMBps,omitempty"`
 	FileSizeLimitMB     *int32 `json:"fileSizeLimitMB,omitempty"`
 	FixJpgOrientation   *bool  `json:"fixJpgOrientation,omitempty"`

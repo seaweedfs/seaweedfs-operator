@@ -80,7 +80,7 @@ jobs:
 
   build-docker-and-release:
     needs: build-binaries
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       contents: write
       packages: write

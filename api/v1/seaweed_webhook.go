@@ -33,6 +33,10 @@ import (
 var seaweedlog *zap.SugaredLogger
 
 func (r *Seaweed) SetupWebhookWithManager(mgr ctrl.Manager) error {
+	if seaweedlog == nil {
+		logger, _ := zap.NewProduction()
+		seaweedlog = logger.Sugar()
+	}
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(r).
 		Complete()

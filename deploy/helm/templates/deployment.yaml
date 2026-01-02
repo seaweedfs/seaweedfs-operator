@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "seaweedfs-operator.fullname" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "seaweedfs-operator.labels" . | nindent 4 }}
     {{- with .Values.commonLabels }}

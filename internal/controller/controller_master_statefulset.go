@@ -87,6 +87,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 		},
 	}
 	masterPodSpec.EnableServiceLinks = &enableServiceLinks
+	masterPodSpec.Subdomain = m.Name + "-master-peer"
 	masterPodSpec.Containers = []corev1.Container{{
 		Name:            "master",
 		Image:           m.Spec.Image,

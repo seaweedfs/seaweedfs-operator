@@ -152,6 +152,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		})
 	}
 	filerPodSpec.EnableServiceLinks = &enableServiceLinks
+	filerPodSpec.Subdomain = m.Name + "-filer-peer"
 	filerPodSpec.Containers = []corev1.Container{{
 		Name:            "filer",
 		Image:           m.Spec.Image,

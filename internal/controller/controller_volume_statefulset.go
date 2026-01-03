@@ -212,6 +212,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 
 	volumePodSpec := m.BaseVolumeSpec().BuildPodSpec()
 	volumePodSpec.EnableServiceLinks = &enableServiceLinks
+	volumePodSpec.Subdomain = m.Name + "-volume-peer"
 	volumePodSpec.Containers = []corev1.Container{{
 		Name:            "volume",
 		Image:           m.Spec.Image,
@@ -365,6 +366,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 	// Build pod spec based on topology configuration
 	volumePodSpec := buildTopologyPodSpec(m, topologySpec)
 	volumePodSpec.EnableServiceLinks = &enableServiceLinks
+	volumePodSpec.Subdomain = m.Name + "-volume-peer"
 	volumePodSpec.Containers = []corev1.Container{{
 		Name:            "volume",
 		Image:           m.Spec.Image,

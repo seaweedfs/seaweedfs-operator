@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	masterPeerAddressPattern = "%s-master-%d.%s-master-peer.%s:9333"
+	masterPeerAddressPattern = "%s-master-%d.%s-master-peer.%s.svc.cluster.local:9333"
 )
 
 var (

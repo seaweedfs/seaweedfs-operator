@@ -5,7 +5,7 @@
 
 This [Kubernetes Operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) is made to easily deploy SeaweedFS onto your Kubernetes cluster.
 
-The operator manages the complete SeaweedFS infrastructure on Kubernetes, including Master servers, Volume servers, Filer services, and IAM (Identity and Access Management) services. This provides a scalable, resilient distributed file system with S3-compatible API and built-in authentication.
+The operator manages the complete SeaweedFS infrastructure on Kubernetes, including Master servers, Volume servers, and Filer services with S3-compatible API and embedded IAM (Identity and Access Management). This provides a scalable, resilient distributed file system with built-in authentication.
 
 The difference to [seaweedfs-csi-driver](https://github.com/seaweedfs/seaweedfs-csi-driver) is that the infrastructure (SeaweedFS) itself runs on Kubernetes as well (Master, Filer, Volume-Servers) and can as such easily scale with it as you need. It is also by far more resilent to failures then a simple systemD service in regards to handling crashing services or accidental deletes.
 
@@ -174,12 +174,9 @@ For detailed configuration options and examples, see the sample configurations i
 
 ### IAM Support
 
-The operator now supports IAM (Identity and Access Management) for S3 API authentication. IAM can be deployed in two ways:
+The operator supports IAM (Identity and Access Management) for S3 API authentication. IAM is **embedded in the S3 server by default** and runs on the same port (8333) as the S3 API. This follows the pattern used by MinIO and Ceph RGW.
 
-- **Standalone IAM Service**: Deploy IAM as a separate service
-- **Embedded IAM**: Run IAM embedded within filer pods
-
-For complete IAM configuration details, examples, and deployment scenarios, see [IAM_SUPPORT.md](./IAM_SUPPORT.md).
+For complete IAM configuration details, OIDC setup, and troubleshooting, see [IAM_SUPPORT.md](./IAM_SUPPORT.md).
 
 ### Example Configuration
 
@@ -203,21 +200,17 @@ spec:
   filer:
     replicas: 2
     s3:
-      enabled: true   # Enable S3 API
-    iam: true         # Enable embedded IAM
+      enabled: true   # Enable S3 API (IAM is enabled by default)
+    # iam: true       # Optional: IAM is enabled by default when S3 is enabled
     config: |
       [leveldb2]
       enabled = true
       dir = "/data/filerldb2"
-  # Optional: Standalone IAM service
-  # iam:
-  #   replicas: 1
-  #   port: 8111
 ```
 
-For more examples including standalone IAM configurations, see the `config/samples/` directory:
-- `seaweed_v1_seaweed_with_iam_standalone.yaml`
-- `seaweed_v1_seaweed_with_iam_embedded.yaml`
+For more examples, see the `config/samples/` directory:
+- `seaweed_v1_seaweed_with_iam_embedded.yaml` - S3 with embedded IAM
+- `seaweed_v1_seaweed.yaml` - Basic deployment
 
 ## Maintenance and Uninstallation
 
@@ -240,19 +233,20 @@ make deploy
 # install example of CR
 kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 
-# or install example with IAM support
-kubectl apply -f config/samples/seaweed_v1_seaweed_with_iam_standalone.yaml
+# or install example with S3 and embedded IAM
+kubectl apply -f config/samples/seaweed_v1_seaweed_with_iam_embedded.yaml
 ```
 
 ### Testing IAM Functionality
 
-To test the IAM implementation:
+To test the embedded IAM implementation:
 
 ```bash
 # Run IAM-specific tests
-go test -v -run "IAM" ./api/v1
-go test -v -run "TestCreateIAM|TestBuildIAM|TestLabelsForIAM" ./internal/controller
 go test -v -run "Filer.*IAM|IAM.*Filer" ./internal/controller
+
+# Run all tests
+make test
 ```
 
 ### Update the Operator

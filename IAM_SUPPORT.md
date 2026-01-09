@@ -4,7 +4,7 @@ This document describes the IAM (Identity and Access Management) service support
 
 ## Overview
 
-The IAM API is **embedded in the S3 server** and available on the same port (8333) as the S3 API. This provides a simplified deployment model where both APIs are served together.
+The IAM API is **embedded in the S3 server** (which runs within the filer pod) and is available on the same port (8333) as the S3 API. This provides a simplified deployment model where both APIs are served together.
 
 ## Configuration
 
@@ -33,16 +33,16 @@ spec:
 
 The IAM API is accessible on the same port as S3 (8333).
 
-### Disabling Embedded IAM
+### Disabling IAM
 
-To run S3 without IAM:
+To run S3 without IAM, set `iam: false` in the filer spec:
 
 ```yaml
 filer:
   replicas: 1
   s3:
     enabled: true
-  iam: false  # Explicitly disable embedded IAM
+  iam: false  # Disable IAM (IAM is enabled by default when S3 is enabled)
 ```
 
 ## API Reference
@@ -52,16 +52,16 @@ filer:
 ```go
 // IAM enables/disables IAM API embedded in S3 server.
 // When S3 is enabled, IAM is enabled by default (on the same S3 port: 8333).
-// Set to false to explicitly disable embedded IAM.
+// Set to false to explicitly disable IAM.
 // +kubebuilder:default:=true
 IAM bool `json:"iam,omitempty"`
 ```
 
 ## Service Discovery
 
-The IAM API is accessible through the filer S3 service:
+The IAM API is accessible through the filer's S3 service:
 - **Internal**: `<seaweed-name>-filer.<namespace>.svc.cluster.local:8333`
-- **Port**: 8333 (same as S3)
+- **Port**: 8333 (S3 port - IAM API is embedded in the S3 server)
 
 ## Networking
 
@@ -108,13 +108,13 @@ aws --endpoint-url http://localhost:8333 iam list-users
 
 ```
 ┌─────────────────────────────────────────────┐
-│                Filer Pod                     │
+│            Filer Pod                         │
 │  ┌────────────────────────────────────────┐ │
-│  │           weed filer -s3               │ │
+│  │     weed filer -s3 (default: -iam)     │ │
 │  │  ┌──────────────────────────────────┐  │ │
-│  │  │  S3 API Server (port 8333)       │  │ │
-│  │  │  ├── S3 Operations (GET/PUT/...)  │  │ │
-│  │  │  └── IAM Operations (POST /)      │  │ │
+│  │  │  S3 Server (port 8333)           │  │ │
+│  │  │  ├── S3 API (GET/PUT/DELETE)      │  │ │
+│  │  │  └── IAM API (embedded)           │  │ │
 │  │  └──────────────────────────────────┘  │ │
 │  └────────────────────────────────────────┘ │
 └─────────────────────────────────────────────┘
@@ -122,7 +122,7 @@ aws --endpoint-url http://localhost:8333 iam list-users
 
 ### Command Line Integration
 
-For embedded IAM, the filer command includes:
+For embedded IAM, the filer command includes the `-s3` flag, which enables both S3 and IAM by default:
 
 ```bash
 weed -logtostderr=true filer \
@@ -130,9 +130,9 @@ weed -logtostderr=true filer \
   -s3 \
   -s3.port=8333 \
   -master=<master-peers>
+# IAM is enabled by default when -s3 is present
+# To disable: add -iam=false
 ```
-
-IAM is automatically enabled when `-s3` flag is present (unless explicitly disabled with `-iam=false`).
 
 ## Benefits
 
@@ -273,7 +273,7 @@ Check the following:
 
 1. **S3 Enabled**: IAM requires S3 to be enabled (`filer.s3.enabled: true`)
 2. **IAM Not Disabled**: Ensure `filer.iam` is not explicitly set to `false`
-3. **Port Access**: Verify you're accessing port 8333 (not 8888)
+3. **Port Access**: Verify you're accessing port 8333 (S3 port, not filer HTTP port 8888)
 
 ```bash
 # Check filer pod logs

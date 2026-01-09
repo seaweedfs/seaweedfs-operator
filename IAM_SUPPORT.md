@@ -4,10 +4,7 @@ This document describes the IAM (Identity and Access Management) service support
 
 ## Overview
 
-The IAM API is now **embedded in the S3 server by default**. This follows the pattern used by MinIO and Ceph RGW, providing a simpler deployment model where both S3 and IAM APIs are available on the same port (8333).
-
-> [!IMPORTANT]
-> **Standalone IAM has been removed** as of December 2025. IAM is now only available as an embedded service within the S3 server. This simplifies deployment and reduces resource overhead.
+The IAM API is **embedded in the S3 server** and available on the same port (8333) as the S3 API. This provides a simplified deployment model where both APIs are served together.
 
 ## Configuration
 
@@ -141,9 +138,8 @@ IAM is automatically enabled when `-s3` flag is present (unless explicitly disab
 
 1. **Simple deployment**: Single service, single port
 2. **Reduced resource usage**: No separate IAM pods
-3. **Industry standard**: Matches MinIO and Ceph RGW patterns
-4. **Automatic scaling**: IAM scales with S3/filer instances
-5. **Simplified networking**: One endpoint for both S3 and IAM operations
+3. **Automatic scaling**: IAM scales with S3/filer instances
+4. **Simplified networking**: One endpoint for both S3 and IAM operations
 
 ## OIDC Configuration
 
@@ -333,42 +329,7 @@ filer:
 - **High availability**: Deploy at least 2 filer replicas
 - **Resource allocation**: IAM adds minimal overhead to S3 server
 
-## Migration from Standalone IAM
 
-> [!WARNING]
-> If you were using standalone IAM in an older version of the operator, you need to migrate to embedded IAM.
-
-### Migration Steps
-
-1. **Update your Seaweed CRD**: Remove the `iam:` section
-2. **Ensure S3 is enabled**: Set `filer.s3.enabled: true`
-3. **Update client endpoints**: Change IAM endpoint from port 8111 to port 8333
-4. **Apply the changes**: `kubectl apply -f your-seaweed.yaml`
-5. **Verify**: Test both S3 and IAM operations on port 8333
-
-Example migration:
-
-**Before (Old - Standalone IAM):**
-```yaml
-spec:
-  filer:
-    replicas: 1
-    s3:
-      enabled: true
-  iam:
-    replicas: 1
-    port: 8111
-```
-
-**After (New - Embedded IAM):**
-```yaml
-spec:
-  filer:
-    replicas: 1
-    s3:
-      enabled: true
-    # iam: true  # Default, no need to specify
-```
 
 ## Testing
 

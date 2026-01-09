@@ -174,7 +174,7 @@ For detailed configuration options and examples, see the sample configurations i
 
 ### IAM Support
 
-The operator supports IAM (Identity and Access Management) for S3 API authentication. IAM is **embedded in the S3 server by default** and runs on the same port (8333) as the S3 API. This follows the pattern used by MinIO and Ceph RGW.
+The operator supports IAM (Identity and Access Management) for S3 API authentication. IAM is **embedded in the S3 server** and runs on the same port (8333) as the S3 API.
 
 For complete IAM configuration details, OIDC setup, and troubleshooting, see [IAM_SUPPORT.md](./IAM_SUPPORT.md).
 

@@ -85,11 +85,11 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 		ImagePullPolicy: m.BaseMasterSpec().ImagePullPolicy(),
 		Env:             append(m.BaseMasterSpec().Env(), kubernetesEnvVars...),
 		Resources:       filterContainerResources(m.Spec.Master.ResourceRequirements),
-		VolumeMounts: append([]corev1.VolumeMount{{
+		VolumeMounts: mergeVolumeMounts([]corev1.VolumeMount{{
 			Name:      "master-config",
 			ReadOnly:  true,
 			MountPath: "/etc/seaweedfs",
-		}}, m.BaseMasterSpec().VolumeMounts()...),
+		}}, m.BaseMasterSpec().VolumeMounts()),
 		Command: []string{
 			"/bin/sh",
 			"-ec",

@@ -229,7 +229,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 			SuccessThreshold:    1,
 			FailureThreshold:    6,
 		},
-		VolumeMounts: append(volumeMounts, m.BaseVolumeSpec().VolumeMounts()...),
+		VolumeMounts: mergeVolumeMounts(volumeMounts, m.BaseVolumeSpec().VolumeMounts()),
 	}}
 	volumePodSpec.Volumes = append(volumePodSpec.Volumes, volumes...)
 

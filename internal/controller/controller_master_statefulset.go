@@ -68,18 +68,16 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 	enableServiceLinks := false
 
 	masterPodSpec := m.BaseMasterSpec().BuildPodSpec()
-	masterPodSpec.Volumes = []corev1.Volume{
-		{
-			Name: "master-config",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: m.Name + "-master",
-					},
+	masterPodSpec.Volumes = append(masterPodSpec.Volumes, corev1.Volume{
+		Name: "master-config",
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: m.Name + "-master",
 				},
 			},
 		},
-	}
+	})
 	masterPodSpec.EnableServiceLinks = &enableServiceLinks
 	masterPodSpec.Containers = []corev1.Container{{
 		Name:            "master",
@@ -87,13 +85,11 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 		ImagePullPolicy: m.BaseMasterSpec().ImagePullPolicy(),
 		Env:             append(m.BaseMasterSpec().Env(), kubernetesEnvVars...),
 		Resources:       filterContainerResources(m.Spec.Master.ResourceRequirements),
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      "master-config",
-				ReadOnly:  true,
-				MountPath: "/etc/seaweedfs",
-			},
-		},
+		VolumeMounts: mergeVolumeMounts([]corev1.VolumeMount{{
+			Name:      "master-config",
+			ReadOnly:  true,
+			MountPath: "/etc/seaweedfs",
+		}}, m.BaseMasterSpec().VolumeMounts()),
 		Command: []string{
 			"/bin/sh",
 			"-ec",

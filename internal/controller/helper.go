@@ -212,3 +212,19 @@ func getVolumeServerConfigValue[T any](topologyValue, volumeValue *T) *T {
 	}
 	return volumeValue
 }
+
+func mergeVolumeMounts(base, override []corev1.VolumeMount) []corev1.VolumeMount {
+	m := make(map[string]struct{})
+	for _, vm := range override {
+		m[vm.MountPath] = struct{}{}
+	}
+
+	merged := make([]corev1.VolumeMount, 0, len(base)+len(override))
+	for _, vm := range base {
+		if _, exists := m[vm.MountPath]; !exists {
+			merged = append(merged, vm)
+		}
+	}
+	merged = append(merged, override...)
+	return merged
+}

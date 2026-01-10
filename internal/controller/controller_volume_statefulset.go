@@ -229,9 +229,9 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 			SuccessThreshold:    1,
 			FailureThreshold:    6,
 		},
-		VolumeMounts: volumeMounts,
+		VolumeMounts: mergeVolumeMounts(volumeMounts, m.BaseVolumeSpec().VolumeMounts()),
 	}}
-	volumePodSpec.Volumes = volumes
+	volumePodSpec.Volumes = append(volumePodSpec.Volumes, volumes...)
 
 	dep := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{

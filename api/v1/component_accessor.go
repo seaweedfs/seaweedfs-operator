@@ -24,6 +24,8 @@ type ComponentAccessor interface {
 	Env() []corev1.EnvVar
 	TerminationGracePeriodSeconds() *int64
 	StatefulSetUpdateStrategy() appsv1.StatefulSetUpdateStrategyType
+	Volumes() []corev1.Volume
+	VolumeMounts() []corev1.VolumeMount
 }
 
 type componentAccessorImpl struct {
@@ -145,6 +147,10 @@ func (a *componentAccessorImpl) DNSPolicy() corev1.DNSPolicy {
 	return dnsPolicy
 }
 
+func (a *componentAccessorImpl) Volumes() []corev1.Volume {
+	return a.ComponentSpec.Volumes
+}
+
 func (a *componentAccessorImpl) BuildPodSpec() corev1.PodSpec {
 	spec := corev1.PodSpec{
 		SchedulerName: a.SchedulerName(),
@@ -153,6 +159,7 @@ func (a *componentAccessorImpl) BuildPodSpec() corev1.PodSpec {
 		HostNetwork:   a.HostNetwork(),
 		RestartPolicy: corev1.RestartPolicyAlways,
 		Tolerations:   a.Tolerations(),
+		Volumes:       a.Volumes(),
 	}
 	if a.PriorityClassName() != nil {
 		spec.PriorityClassName = *a.PriorityClassName()
@@ -172,6 +179,10 @@ func (a *componentAccessorImpl) Env() []corev1.EnvVar {
 
 func (a *componentAccessorImpl) TerminationGracePeriodSeconds() *int64 {
 	return a.ComponentSpec.TerminationGracePeriodSeconds
+}
+
+func (a *componentAccessorImpl) VolumeMounts() []corev1.VolumeMount {
+	return a.ComponentSpec.VolumeMounts
 }
 
 func buildSeaweedComponentAccessor(spec *SeaweedSpec, componentSpec *ComponentSpec) ComponentAccessor {

@@ -68,18 +68,16 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 	enableServiceLinks := false
 
 	filerPodSpec := m.BaseFilerSpec().BuildPodSpec()
-	filerPodSpec.Volumes = []corev1.Volume{
-		{
-			Name: "filer-config",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: m.Name + "-filer",
-					},
+	filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
+		Name: "filer-config",
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: m.Name + "-filer",
 				},
 			},
 		},
-	}
+	})
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      "filer-config",
@@ -150,7 +148,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		ImagePullPolicy: m.BaseFilerSpec().ImagePullPolicy(),
 		Env:             append(m.BaseFilerSpec().Env(), kubernetesEnvVars...),
 		Resources:       filterContainerResources(m.Spec.Filer.ResourceRequirements),
-		VolumeMounts:    volumeMounts,
+		VolumeMounts:    append(volumeMounts, m.BaseFilerSpec().VolumeMounts()...),
 		Command: []string{
 			"/bin/sh",
 			"-ec",

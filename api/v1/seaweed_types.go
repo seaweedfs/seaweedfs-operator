@@ -288,6 +288,12 @@ type ComponentSpec struct {
 	// employed to update Pods in the StatefulSet when a revision is made to
 	// Template.
 	StatefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType `json:"statefulSetUpdateStrategy,omitempty"`
+
+	// Volumes of the component. Merged into the volumes created by the operator if non-empty
+	Volumes []corev1.Volume `json:"volumes,omitempty"`
+
+	// VolumeMounts of the component. Merged into the volumeMounts created by the operator if non-empty
+	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 }
 
 // ServiceSpec is a subset of the original k8s spec

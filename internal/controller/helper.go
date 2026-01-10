@@ -219,7 +219,7 @@ func mergeVolumeMounts(base, override []corev1.VolumeMount) []corev1.VolumeMount
 		m[vm.MountPath] = struct{}{}
 	}
 
-	merged := make([]corev1.VolumeMount, len(base)+len(override))
+	merged := make([]corev1.VolumeMount, 0, len(base)+len(override))
 	for _, vm := range base {
 		if _, exists := m[vm.MountPath]; !exists {
 			merged = append(merged, vm)

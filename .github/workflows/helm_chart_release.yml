@@ -96,7 +96,7 @@ jobs:
         run: |
           # Checkout gh-pages branch
           git fetch origin gh-pages:gh-pages || true
-          git checkout gh-pages || git checkout --orphan gh-pages
+          git checkout -f gh-pages || git checkout --orphan gh-pages
 
           # Ensure helm directory exists
           mkdir -p helm

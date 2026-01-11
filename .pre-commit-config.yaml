@@ -54,8 +54,8 @@ repos:
 #      entry: sh -c "make helm-docs-run"
 #      language: system
 #      require_serial: true
-#    - id: make-helm-crd-copy
-#      name: make-helm-crd-copy
-#      entry: sh -c "make helm-crd-copy"
-#      language: system
-#      require_serial: true
+    - id: make-helm-crd-copy
+      name: make-helm-crd-copy
+      entry: sh -c "make helm-crd-copy"
+      language: system
+      require_serial: true

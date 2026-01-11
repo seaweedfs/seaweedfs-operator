@@ -12,7 +12,7 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
+func buildFilerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	commands := []string{"weed", "-logtostderr=true", "filer"}
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.FilerHTTPPort))
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-filer-peer.%s", m.Name, m.Namespace))
@@ -32,6 +32,7 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed) string {
 	if m.Spec.Filer.MetricsPort != nil {
 		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Filer.MetricsPort))
 	}
+	commands = append(commands, extraArgs...)
 
 	return strings.Join(commands, " ")
 }
@@ -152,7 +153,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		Command: []string{
 			"/bin/sh",
 			"-ec",
-			buildFilerStartupScript(m),
+			buildFilerStartupScript(m, m.BaseFilerSpec().ExtraArgs()...),
 		},
 		Ports: ports,
 		ReadinessProbe: &corev1.Probe{

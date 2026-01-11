@@ -66,7 +66,7 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 	return strings.Join(commands, " ")
 }
 
-func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string) string {
+func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string, extraArgs ...string) string {
 	commands := []string{"weed", "-logtostderr=true", "volume"}
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
 	if m.Spec.Volume.MaxVolumeCounts != nil && *m.Spec.Volume.MaxVolumeCounts > 0 {
@@ -110,6 +110,7 @@ func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string) string 
 	if m.Spec.Volume.MinFreeSpacePercent != nil {
 		commands = append(commands, fmt.Sprintf("-minFreeSpacePercent=%d", *m.Spec.Volume.MinFreeSpacePercent))
 	}
+	commands = append(commands, extraArgs...)
 
 	return strings.Join(commands, " ")
 }

@@ -26,6 +26,7 @@ type ComponentAccessor interface {
 	StatefulSetUpdateStrategy() appsv1.StatefulSetUpdateStrategyType
 	Volumes() []corev1.Volume
 	VolumeMounts() []corev1.VolumeMount
+	ExtraArgs() []string
 }
 
 type componentAccessorImpl struct {
@@ -183,6 +184,10 @@ func (a *componentAccessorImpl) TerminationGracePeriodSeconds() *int64 {
 
 func (a *componentAccessorImpl) VolumeMounts() []corev1.VolumeMount {
 	return a.ComponentSpec.VolumeMounts
+}
+
+func (a *componentAccessorImpl) ExtraArgs() []string {
+	return a.ComponentSpec.ExtraArgs
 }
 
 func buildSeaweedComponentAccessor(spec *SeaweedSpec, componentSpec *ComponentSpec) ComponentAccessor {

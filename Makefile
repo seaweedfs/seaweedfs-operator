@@ -68,6 +68,9 @@ manifests: controller-gen
 	@# Fix invalid OpenAPI format fields (int32/int64 are not valid in OpenAPI v3)
 	@perl -i -pe 's/\s+format: int32\n//g; s/\s+format: int64\n//g' config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml
 
+helm-crd-copy: generate manifests kustomize
+	$(KUSTOMIZE) build config/crd >| deploy/helm/crds/seaweed.seaweedfs.com_seaweeds.yaml
+
 # Run go fmt against code
 fmt:
 	go fmt ./...

@@ -53,9 +53,12 @@ type BucketClaimReconciler struct {
 
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=bucketclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=bucketclaims/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=bucketclaims/finalizers,verbs=update
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+
+const bucketClaimFinalizer = "bucketclaim.seaweed.seaweedfs.com/finalizer"
 
 //#region Reconcile
 
@@ -83,8 +86,36 @@ func (r *BucketClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Check if the BucketClaim is being deleted
 	if !bucketClaim.DeletionTimestamp.IsZero() {
-		log.Debug("bucketclaim is being deleted, cleaning up bucket")
-		return r.handleDeletion(ctx, bucketClaim)
+		// The object is being deleted
+		if containsString(bucketClaim.GetFinalizers(), bucketClaimFinalizer) {
+			// Our finalizer is present, so lets handle cleanup
+			log.Debug("bucketclaim is being deleted, running finalizer cleanup")
+			if err := r.handleDeletion(ctx, bucketClaim); err != nil {
+				// If deletion fails, return error so we can retry
+				log.Errorw("failed to handle deletion", "error", err)
+				return ctrl.Result{}, err
+			}
+
+			// Remove our finalizer from the list and update it.
+			bucketClaim.SetFinalizers(removeString(bucketClaim.GetFinalizers(), bucketClaimFinalizer))
+			if err := r.Update(ctx, bucketClaim); err != nil {
+				log.Errorw("failed to remove finalizer", "error", err)
+				return ctrl.Result{}, err
+			}
+			log.Debug("finalizer removed, bucketclaim cleanup completed")
+		}
+		// Stop reconciliation as the item is being deleted
+		return ctrl.Result{}, nil
+	}
+
+	// Add finalizer if it doesn't exist
+	if !containsString(bucketClaim.GetFinalizers(), bucketClaimFinalizer) {
+		bucketClaim.SetFinalizers(append(bucketClaim.GetFinalizers(), bucketClaimFinalizer))
+		if err := r.Update(ctx, bucketClaim); err != nil {
+			log.Errorw("failed to add finalizer", "error", err)
+			return ctrl.Result{}, err
+		}
+		log.Debug("finalizer added to bucketclaim")
 	}
 
 	// Handle bucket creation/update
@@ -260,28 +291,28 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 //#region handleDeletion
 
 // handleDeletion handles bucket deletion when BucketClaim is being deleted
-func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim *seaweedv1.BucketClaim) (ctrl.Result, error) {
+func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim *seaweedv1.BucketClaim) error {
 	log := r.Log.With("bucketclaim", bucketClaim.Name)
 
 	// Get the referenced Seaweed cluster
 	seaweedCluster, err := r.getSeaweedCluster(ctx, bucketClaim)
 	if err != nil {
 		log.Errorw("failed to get seaweed cluster for deletion", "error", err)
-		return ctrl.Result{}, err
+		return err
 	}
 
 	// Get admin service
 	adminService, err := r.getAdminService(seaweedCluster)
 	if err != nil {
 		log.Errorw("failed to get admin service for deletion", "error", err)
-		return ctrl.Result{}, err
+		return err
 	}
 
 	// Delete the bucket
 	err = r.deleteBucket(adminService, bucketClaim.Spec.BucketName)
 	if err != nil {
 		log.Errorw("failed to delete bucket", "error", err)
-		// Don't return error to avoid blocking deletion
+		// Don't return error to avoid blocking deletion if bucket doesn't exist
 	}
 
 	// Delete the S3 user if credentials secret is enabled
@@ -289,7 +320,7 @@ func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim 
 		err = r.deleteS3User(bucketClaim, seaweedCluster)
 		if err != nil {
 			log.Errorw("failed to delete S3 user", "error", err)
-			// Don't return error to avoid blocking deletion
+			return fmt.Errorf("failed to delete S3 user: %w", err)
 		}
 	}
 
@@ -298,11 +329,12 @@ func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim 
 		err = r.deleteS3CredentialsSecret(ctx, bucketClaim)
 		if err != nil {
 			log.Errorw("failed to delete S3 credentials secret", "error", err)
+			return fmt.Errorf("failed to delete S3 credentials secret: %w", err)
 		}
 	}
 
 	log.Debug("bucket deletion completed")
-	return ctrl.Result{}, nil
+	return nil
 }
 
 //#endregion
@@ -898,6 +930,31 @@ func (c cleanupRunnable) Start(ctx context.Context) error {
 	// Stop the cleanup goroutine when context is cancelled
 	c.reconciler.stopCleanupGoroutine()
 	return nil
+}
+
+//#endregion
+
+//#region Helper functions for finalizers
+
+// containsString checks if a slice contains a string
+func containsString(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+// removeString removes a string from a slice
+func removeString(slice []string, s string) []string {
+	var result []string
+	for _, item := range slice {
+		if item != s {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 //#endregion

@@ -80,6 +80,12 @@ rules:
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:
+  - bucketclaims/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
   - bucketclaims/status
   - seaweeds/status
   verbs:

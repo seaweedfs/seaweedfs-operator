@@ -7,9 +7,6 @@ import (
 
 	"github.com/seaweedfs/seaweedfs/weed/cluster"
 	"github.com/seaweedfs/seaweedfs/weed/credential"
-	_ "github.com/seaweedfs/seaweedfs/weed/credential/filer_etc"
-	_ "github.com/seaweedfs/seaweedfs/weed/credential/memory"
-	_ "github.com/seaweedfs/seaweedfs/weed/credential/postgres"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -157,33 +154,33 @@ func (s *AdminServer) ensureCredentialManager() error {
 		return nil
 	}
 
-	// Get filer address for credential manager configuration
-	filerAddr := s.GetFilerAddress()
-	if filerAddr == "" {
-		return fmt.Errorf("no filer available for credential manager")
-	}
-
-	// Create credential manager with filer_etc store (empty string defaults to filer_etc)
+	// Create credential manager with default store (empty string uses default)
 	credentialManager, err := credential.NewCredentialManagerWithDefaults("")
 	if err != nil {
 		return fmt.Errorf("failed to initialize credential manager: %w", err)
 	}
 
-	// Configure the filer client for the credential store
-	// The credential manager's store should be a filer_etc store
-	// We need to set the filer address on it
-	store := credentialManager.GetStore()
-	if filerEtcStore, ok := store.(interface {
-		SetFilerClient(string, grpc.DialOption)
-	}); ok {
-		filerEtcStore.SetFilerClient(filerAddr, s.grpcDialOption)
-		s.log.Debugw("Configured filer_etc credential store", "filer", filerAddr)
-	} else {
-		return fmt.Errorf("credential store does not support SetFilerClient method")
+	// For stores that need filer address function, configure them
+	// This follows the upstream implementation pattern
+	if store := credentialManager.GetStore(); store != nil {
+		if filerFuncSetter, ok := store.(interface {
+			SetFilerAddressFunc(func() pb.ServerAddress, grpc.DialOption)
+		}); ok {
+			// Configure the filer address function to dynamically return the current active filer
+			// This function will be called each time credentials need to be loaded/saved,
+			// so it will automatically use whatever filer is currently available (HA-aware)
+			filerFuncSetter.SetFilerAddressFunc(func() pb.ServerAddress {
+				return pb.ServerAddress(s.GetFilerAddress())
+			}, s.grpcDialOption)
+			s.log.Debugw("Credential store configured with dynamic filer address function", "store", store.GetName())
+		} else {
+			s.log.Debugw("Credential store does not support filer address function", "store", store.GetName())
+			// This is not an error - some stores may not need filer address
+		}
 	}
 
 	s.credentialManager = credentialManager
-	s.log.Debugw("Initialized credential manager", "filer", filerAddr)
+	s.log.Debugw("Initialized credential manager", "store", credentialManager.GetStore().GetName())
 
 	return nil
 }

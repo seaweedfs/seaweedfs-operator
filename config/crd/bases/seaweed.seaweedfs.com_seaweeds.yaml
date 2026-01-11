@@ -994,6 +994,7 @@ spec:
                     items:
                       type: string
                     type: array
+                    x-kubernetes-list-type: atomic
                   hostNetwork:
                     type: boolean
                   iam:
@@ -2504,6 +2505,7 @@ spec:
                     items:
                       type: string
                     type: array
+                    x-kubernetes-list-type: atomic
                   garbageThreshold:
                     type: string
                   hostNetwork:
@@ -3921,6 +3923,7 @@ spec:
                     items:
                       type: string
                     type: array
+                    x-kubernetes-list-type: atomic
                   fileSizeLimitMB:
                     type: integer
                   fixJpgOrientation:
@@ -5318,6 +5321,7 @@ spec:
                       items:
                         type: string
                       type: array
+                      x-kubernetes-list-type: atomic
                     fileSizeLimitMB:
                       type: integer
                     fixJpgOrientation:

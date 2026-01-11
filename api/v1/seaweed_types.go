@@ -296,6 +296,7 @@ type ComponentSpec struct {
 	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 
 	// ExtraArgs are additional command line arguments passed to the component container
+	// +listType=atomic
 	ExtraArgs []string `json:"extraArgs,omitempty"`
 }
 

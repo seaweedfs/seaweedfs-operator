@@ -62,6 +62,7 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 	if minFreeSpacePercent != nil {
 		commands = append(commands, fmt.Sprintf("-minFreeSpacePercent=%d", *minFreeSpacePercent))
 	}
+	commands = append(commands, topologySpec.ExtraArgs...)
 
 	return strings.Join(commands, " ")
 }
@@ -199,7 +200,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 		Command: []string{
 			"/bin/sh",
 			"-ec",
-			buildVolumeServerStartupScript(m, dirs),
+			buildVolumeServerStartupScript(m, dirs, m.BaseVolumeSpec().ExtraArgs()...),
 		},
 		Ports: ports,
 		ReadinessProbe: &corev1.Probe{

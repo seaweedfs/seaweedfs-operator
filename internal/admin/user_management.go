@@ -11,8 +11,9 @@ import (
 
 // CreateObjectStoreUser creates a new user using the credential manager
 func (s *AdminServer) CreateObjectStoreUser(req CreateUserRequest) (*ObjectStoreUser, error) {
-	if s.credentialManager == nil {
-		return nil, fmt.Errorf("credential manager not available")
+	// Ensure credential manager is initialized
+	if err := s.ensureCredentialManager(); err != nil {
+		return nil, fmt.Errorf("credential manager not available: %w", err)
 	}
 
 	ctx := context.Background()
@@ -81,8 +82,9 @@ func (s *AdminServer) CreateObjectStoreUser(req CreateUserRequest) (*ObjectStore
 
 // UpdateObjectStoreUser updates an existing user
 func (s *AdminServer) UpdateObjectStoreUser(username string, req UpdateUserRequest) (*ObjectStoreUser, error) {
-	if s.credentialManager == nil {
-		return nil, fmt.Errorf("credential manager not available")
+	// Ensure credential manager is initialized
+	if err := s.ensureCredentialManager(); err != nil {
+		return nil, fmt.Errorf("credential manager not available: %w", err)
 	}
 
 	ctx := context.Background()
@@ -150,8 +152,9 @@ func (s *AdminServer) UpdateObjectStoreUser(username string, req UpdateUserReque
 
 // DeleteObjectStoreUser deletes a user using the credential manager
 func (s *AdminServer) DeleteObjectStoreUser(username string) error {
-	if s.credentialManager == nil {
-		return fmt.Errorf("credential manager not available")
+	// Ensure credential manager is initialized
+	if err := s.ensureCredentialManager(); err != nil {
+		return fmt.Errorf("credential manager not available: %w", err)
 	}
 
 	ctx := context.Background()
@@ -170,8 +173,9 @@ func (s *AdminServer) DeleteObjectStoreUser(username string) error {
 
 // GetObjectStoreUserDetails returns detailed information about a user
 func (s *AdminServer) GetObjectStoreUserDetails(username string) (*UserDetails, error) {
-	if s.credentialManager == nil {
-		return nil, fmt.Errorf("credential manager not available")
+	// Ensure credential manager is initialized
+	if err := s.ensureCredentialManager(); err != nil {
+		return nil, fmt.Errorf("credential manager not available: %w", err)
 	}
 
 	ctx := context.Background()
@@ -209,8 +213,9 @@ func (s *AdminServer) GetObjectStoreUserDetails(username string) (*UserDetails, 
 
 // CreateAccessKey creates a new access key for a user
 func (s *AdminServer) CreateAccessKey(username string) (*AccessKeyInfo, error) {
-	if s.credentialManager == nil {
-		return nil, fmt.Errorf("credential manager not available")
+	// Ensure credential manager is initialized
+	if err := s.ensureCredentialManager(); err != nil {
+		return nil, fmt.Errorf("credential manager not available: %w", err)
 	}
 
 	ctx := context.Background()
@@ -255,8 +260,9 @@ func (s *AdminServer) CreateAccessKey(username string) (*AccessKeyInfo, error) {
 
 // DeleteAccessKey deletes an access key for a user
 func (s *AdminServer) DeleteAccessKey(username, accessKeyId string) error {
-	if s.credentialManager == nil {
-		return fmt.Errorf("credential manager not available")
+	// Ensure credential manager is initialized
+	if err := s.ensureCredentialManager(); err != nil {
+		return fmt.Errorf("credential manager not available: %w", err)
 	}
 
 	ctx := context.Background()
@@ -278,8 +284,9 @@ func (s *AdminServer) DeleteAccessKey(username, accessKeyId string) error {
 
 // GetUserPolicies returns the policies for a user (actions)
 func (s *AdminServer) GetUserPolicies(username string) ([]string, error) {
-	if s.credentialManager == nil {
-		return nil, fmt.Errorf("credential manager not available")
+	// Ensure credential manager is initialized
+	if err := s.ensureCredentialManager(); err != nil {
+		return nil, fmt.Errorf("credential manager not available: %w", err)
 	}
 
 	ctx := context.Background()
@@ -298,8 +305,9 @@ func (s *AdminServer) GetUserPolicies(username string) ([]string, error) {
 
 // UpdateUserPolicies updates the policies (actions) for a user
 func (s *AdminServer) UpdateUserPolicies(username string, actions []string) error {
-	if s.credentialManager == nil {
-		return fmt.Errorf("credential manager not available")
+	// Ensure credential manager is initialized
+	if err := s.ensureCredentialManager(); err != nil {
+		return fmt.Errorf("credential manager not available: %w", err)
 	}
 
 	ctx := context.Background()

@@ -67,15 +67,8 @@ func NewAdminServer(masters string, log *zap.SugaredLogger) *AdminServer {
 		log:                  log,
 	}
 
-	// Initialize credential manager with defaults
-	credentialManager, err := credential.NewCredentialManagerWithDefaults("")
-	if err != nil {
-		log.Warnf("failed to initialize credential manager: %v", err)
-		// Continue without credential manager - will fall back to legacy approach
-	} else {
-		// Store the credential manager for later use
-		server.credentialManager = credentialManager
-	}
+	// Note: Credential manager initialization is deferred until first use
+	// to ensure filer address is available
 
 	return server
 }
@@ -156,4 +149,41 @@ func (s *AdminServer) getDiscoveredFilers() []string {
 // GetAllFilers returns all discovered filers
 func (s *AdminServer) GetAllFilers() []string {
 	return s.getDiscoveredFilers()
+}
+
+// ensureCredentialManager initializes the credential manager if not already done
+func (s *AdminServer) ensureCredentialManager() error {
+	if s.credentialManager != nil {
+		return nil
+	}
+
+	// Get filer address for credential manager configuration
+	filerAddr := s.GetFilerAddress()
+	if filerAddr == "" {
+		return fmt.Errorf("no filer available for credential manager")
+	}
+
+	// Create credential manager with filer_etc store (empty string defaults to filer_etc)
+	credentialManager, err := credential.NewCredentialManagerWithDefaults("")
+	if err != nil {
+		return fmt.Errorf("failed to initialize credential manager: %w", err)
+	}
+
+	// Configure the filer client for the credential store
+	// The credential manager's store should be a filer_etc store
+	// We need to set the filer address on it
+	store := credentialManager.GetStore()
+	if filerEtcStore, ok := store.(interface {
+		SetFilerClient(string, grpc.DialOption)
+	}); ok {
+		filerEtcStore.SetFilerClient(filerAddr, s.grpcDialOption)
+		s.log.Debugw("Configured filer_etc credential store", "filer", filerAddr)
+	} else {
+		return fmt.Errorf("credential store does not support SetFilerClient method")
+	}
+
+	s.credentialManager = credentialManager
+	s.log.Debugw("Initialized credential manager", "filer", filerAddr)
+
+	return nil
 }

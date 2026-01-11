@@ -12,7 +12,7 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-func buildMasterStartupScript(m *seaweedv1.Seaweed) string {
+func buildMasterStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	command := []string{"weed", "-logtostderr=true", "master"}
 	spec := m.Spec.Master
 	if spec.VolumePreallocate != nil && *spec.VolumePreallocate {
@@ -41,6 +41,7 @@ func buildMasterStartupScript(m *seaweedv1.Seaweed) string {
 
 	command = append(command, fmt.Sprintf("-ip=$(POD_NAME).%s-master-peer.%s", m.Name, m.Namespace))
 	command = append(command, fmt.Sprintf("-peers=%s", getMasterPeersString(m)))
+	command = append(command, extraArgs...)
 	return strings.Join(command, " ")
 }
 
@@ -93,7 +94,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 		Command: []string{
 			"/bin/sh",
 			"-ec",
-			buildMasterStartupScript(m),
+			buildMasterStartupScript(m, m.BaseMasterSpec().ExtraArgs()...),
 		},
 		Ports: ports,
 		ReadinessProbe: &corev1.Probe{

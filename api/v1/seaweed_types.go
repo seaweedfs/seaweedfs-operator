@@ -294,6 +294,10 @@ type ComponentSpec struct {
 
 	// VolumeMounts of the component. Merged into the volumeMounts created by the operator if non-empty
 	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
+
+	// ExtraArgs are additional command line arguments passed to the component container
+	// +listType=atomic
+	ExtraArgs []string `json:"extraArgs,omitempty"`
 }
 
 // ServiceSpec is a subset of the original k8s spec

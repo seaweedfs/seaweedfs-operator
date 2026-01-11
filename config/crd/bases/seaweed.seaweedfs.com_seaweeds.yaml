@@ -990,6 +990,10 @@ spec:
                       - name
                       type: object
                     type: array
+                  extraArgs:
+                    items:
+                      type: string
+                    type: array
                   hostNetwork:
                     type: boolean
                   iam:
@@ -2496,6 +2500,10 @@ spec:
                       - name
                       type: object
                     type: array
+                  extraArgs:
+                    items:
+                      type: string
+                    type: array
                   garbageThreshold:
                     type: string
                   hostNetwork:
@@ -3909,6 +3917,10 @@ spec:
                       - name
                       type: object
                     type: array
+                  extraArgs:
+                    items:
+                      type: string
+                    type: array
                   fileSizeLimitMB:
                     type: integer
                   fixJpgOrientation:
@@ -5301,6 +5313,10 @@ spec:
                         required:
                         - name
                         type: object
+                      type: array
+                    extraArgs:
+                      items:
+                        type: string
                       type: array
                     fileSizeLimitMB:
                       type: integer

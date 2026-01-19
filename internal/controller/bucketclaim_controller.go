@@ -204,6 +204,15 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 	// Get the referenced Seaweed cluster
 	seaweedCluster, err := r.getSeaweedCluster(ctx, bucketClaim)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			// Cluster not found yet - this is expected during initial deployment
+			// Set status to Pending and requeue to wait for the cluster
+			log.Infow("waiting for seaweed cluster to be created",
+				"clusterName", bucketClaim.Spec.ClusterRef.Name,
+				"clusterNamespace", bucketClaim.Spec.ClusterRef.Namespace)
+			return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhasePending,
+				fmt.Sprintf("Waiting for Seaweed cluster %s to be created", bucketClaim.Spec.ClusterRef.Name))
+		}
 		log.Errorw("failed to get seaweed cluster", "error", err)
 		return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to get Seaweed cluster: %v", err))
 	}
@@ -297,6 +306,12 @@ func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim 
 	// Get the referenced Seaweed cluster
 	seaweedCluster, err := r.getSeaweedCluster(ctx, bucketClaim)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			// Cluster doesn't exist - nothing to delete, allow finalizer removal
+			log.Infow("seaweed cluster not found, skipping bucket deletion",
+				"clusterName", bucketClaim.Spec.ClusterRef.Name)
+			return nil
+		}
 		log.Errorw("failed to get seaweed cluster for deletion", "error", err)
 		return err
 	}
@@ -430,8 +445,8 @@ func (r *BucketClaimReconciler) getSeaweedCluster(ctx context.Context, bucketCla
 		Name:      bucketClaim.Spec.ClusterRef.Name,
 	}, seaweedCluster)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get Seaweed cluster %s in namespace %s: %w",
-			bucketClaim.Spec.ClusterRef.Name, namespace, err)
+		// Return the raw error so callers can check errors.IsNotFound
+		return nil, err
 	}
 
 	return seaweedCluster, nil

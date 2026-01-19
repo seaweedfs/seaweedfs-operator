@@ -50,6 +50,12 @@ spec:
                 required:
                 - name
                 type: object
+              deletionPolicy:
+                default: Retain
+                enum:
+                - Retain
+                - Delete
+                type: string
               objectLock:
                 properties:
                   duration:

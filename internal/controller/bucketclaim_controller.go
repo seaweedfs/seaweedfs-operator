@@ -308,11 +308,15 @@ func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim 
 		return err
 	}
 
-	// Delete the bucket
-	err = r.deleteBucket(adminService, bucketClaim.Spec.BucketName)
-	if err != nil {
-		log.Errorw("failed to delete bucket", "error", err)
-		// Don't return error to avoid blocking deletion if bucket doesn't exist
+	// Delete the bucket only if deletionPolicy is "Delete"
+	if bucketClaim.Spec.DeletionPolicy == seaweedv1.BucketDeletionPolicyDelete {
+		err = r.deleteBucket(adminService, bucketClaim.Spec.BucketName)
+		if err != nil {
+			log.Errorw("failed to delete bucket", "error", err)
+			// Don't return error to avoid blocking deletion if bucket doesn't exist
+		}
+	} else {
+		log.Infow("retaining bucket due to deletionPolicy", "bucket", bucketClaim.Spec.BucketName)
 	}
 
 	// Delete the S3 user if credentials secret is enabled (default is true when secret is nil or enabled is true)

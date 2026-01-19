@@ -40,6 +40,14 @@ const (
 	FilerGRPCPort  = FilerHTTPPort + GRPCPortDelta
 )
 
+// BucketClaim deletion policy constants
+const (
+	// BucketDeletionPolicyRetain keeps the bucket when BucketClaim is deleted
+	BucketDeletionPolicyRetain = "Retain"
+	// BucketDeletionPolicyDelete deletes the bucket when BucketClaim is deleted
+	BucketDeletionPolicyDelete = "Delete"
+)
+
 // SeaweedSpec defines the desired state of Seaweed
 type SeaweedSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -780,6 +788,11 @@ type BucketClaimSpec struct {
 
 	// Secret configuration for S3 credentials
 	Secret *BucketSecretSpec `json:"secret,omitempty"`
+
+	// DeletionPolicy controls what happens to the bucket when the BucketClaim is deleted
+	// +kubebuilder:validation:Enum=Retain;Delete
+	// +kubebuilder:default:=Retain
+	DeletionPolicy string `json:"deletionPolicy,omitempty"`
 }
 
 type BucketObjectLock struct {

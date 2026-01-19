@@ -243,9 +243,9 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 			return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to get bucket info: %v", err))
 		}
 
-		// Create or update S3 credentials secret if enabled
+		// Create or update S3 credentials secret if enabled (default is true when secret is nil or enabled is true)
 		var secretInfo *seaweedv1.BucketSecretInfo
-		if bucketClaim.Spec.Secret != nil && bucketClaim.Spec.Secret.Enabled {
+		if bucketClaim.Spec.Secret == nil || bucketClaim.Spec.Secret.Enabled {
 			secretInfo, err = r.createS3CredentialsSecret(ctx, bucketClaim, seaweedCluster)
 			if err != nil {
 				log.Errorw("failed to create S3 credentials secret", "error", err)
@@ -272,9 +272,9 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 		return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to get bucket info: %v", err))
 	}
 
-	// Create S3 credentials secret if enabled
+	// Create S3 credentials secret if enabled (default is true when secret is nil or enabled is true)
 	var secretInfo *seaweedv1.BucketSecretInfo
-	if bucketClaim.Spec.Secret != nil && bucketClaim.Spec.Secret.Enabled {
+	if bucketClaim.Spec.Secret == nil || bucketClaim.Spec.Secret.Enabled {
 		secretInfo, err = r.createS3CredentialsSecret(ctx, bucketClaim, seaweedCluster)
 		if err != nil {
 			log.Errorw("failed to create S3 credentials secret", "error", err)
@@ -315,8 +315,8 @@ func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim 
 		// Don't return error to avoid blocking deletion if bucket doesn't exist
 	}
 
-	// Delete the S3 user if credentials secret is enabled
-	if bucketClaim.Spec.Secret != nil && bucketClaim.Spec.Secret.Enabled {
+	// Delete the S3 user if credentials secret is enabled (default is true when secret is nil or enabled is true)
+	if bucketClaim.Spec.Secret == nil || bucketClaim.Spec.Secret.Enabled {
 		err = r.deleteS3User(bucketClaim, seaweedCluster)
 		if err != nil {
 			log.Errorw("failed to delete S3 user", "error", err)
@@ -324,8 +324,8 @@ func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim 
 		}
 	}
 
-	// Delete the S3 credentials secret if enabled
-	if bucketClaim.Spec.Secret != nil && bucketClaim.Spec.Secret.Enabled {
+	// Delete the S3 credentials secret if enabled (default is true when secret is nil or enabled is true)
+	if bucketClaim.Spec.Secret == nil || bucketClaim.Spec.Secret.Enabled {
 		err = r.deleteS3CredentialsSecret(ctx, bucketClaim)
 		if err != nil {
 			log.Errorw("failed to delete S3 credentials secret", "error", err)
@@ -344,14 +344,16 @@ func (r *BucketClaimReconciler) handleDeletion(ctx context.Context, bucketClaim 
 func (r *BucketClaimReconciler) deleteS3CredentialsSecret(ctx context.Context, bucketClaim *seaweedv1.BucketClaim) error {
 	log := r.Log.With("bucketclaim", bucketClaim.Name)
 
-	if bucketClaim.Spec.Secret == nil || !bucketClaim.Spec.Secret.Enabled {
+	// Skip deletion only if secret is explicitly disabled
+	if bucketClaim.Spec.Secret != nil && !bucketClaim.Spec.Secret.Enabled {
 		log.Debug("credentials secret is not enabled, skipping deletion")
 		return nil
 	}
 
-	secretName := bucketClaim.Spec.Secret.Name
-	if secretName == "" {
-		secretName = bucketClaim.Spec.BucketName
+	// Default secret name to BucketClaim name
+	secretName := bucketClaim.Name
+	if bucketClaim.Spec.Secret != nil && bucketClaim.Spec.Secret.Name != "" {
+		secretName = bucketClaim.Spec.Secret.Name
 	}
 
 	err := r.Delete(ctx, &corev1.Secret{
@@ -558,7 +560,8 @@ func formatUsername(bucketClaim *seaweedv1.BucketClaim) string {
 func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, bucketClaim *seaweedv1.BucketClaim, seaweedCluster *seaweedv1.Seaweed) (*seaweedv1.BucketSecretInfo, error) {
 	log := r.Log.With("bucketclaim", bucketClaim.Name)
 
-	if bucketClaim.Spec.Secret == nil || !bucketClaim.Spec.Secret.Enabled {
+	// Skip creation only if secret is explicitly disabled
+	if bucketClaim.Spec.Secret != nil && !bucketClaim.Spec.Secret.Enabled {
 		return nil, nil
 	}
 
@@ -624,10 +627,10 @@ func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, b
 		}
 	}
 
-	// Determine secret name
-	secretName := bucketClaim.Spec.Secret.Name
-	if secretName == "" {
-		secretName = bucketClaim.Spec.BucketName
+	// Determine secret name (default to BucketClaim name)
+	secretName := bucketClaim.Name
+	if bucketClaim.Spec.Secret != nil && bucketClaim.Spec.Secret.Name != "" {
+		secretName = bucketClaim.Spec.Secret.Name
 	}
 
 	// Determine S3 endpoint
@@ -677,13 +680,13 @@ func (r *BucketClaimReconciler) createS3CredentialsSecret(ctx context.Context, b
 	}
 
 	// Add custom labels and annotations if specified
-	if bucketClaim.Spec.Secret.Labels != nil {
+	if bucketClaim.Spec.Secret != nil && bucketClaim.Spec.Secret.Labels != nil {
 		for k, v := range bucketClaim.Spec.Secret.Labels {
 			secret.Labels[k] = v
 		}
 	}
 
-	if bucketClaim.Spec.Secret.Annotations != nil {
+	if bucketClaim.Spec.Secret != nil && bucketClaim.Spec.Secret.Annotations != nil {
 		for k, v := range bucketClaim.Spec.Secret.Annotations {
 			secret.Annotations[k] = v
 		}

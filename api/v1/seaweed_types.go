@@ -120,8 +120,8 @@ type SeaweedSpec struct {
 	// Storage configuration for all components
 	Storage *StorageSpec `json:"storage,omitempty"`
 
-	// Host suffix (base domain) for ingresses of components
-	HostSuffix *string `json:"hostSuffix,omitempty"`
+	// Ingress configuration
+	Ingress *IngressSpec `json:"ingress,omitempty"`
 }
 
 type MetricsSpec struct {
@@ -131,6 +131,16 @@ type MetricsSpec struct {
 	// MetricsPort is the port that the prometheus metrics export listens on
 	// +kubebuilder:default:=5555
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
+}
+
+// IngressSpec defines the ingress configuration
+type IngressSpec struct {
+	// Whether to create ingress resources
+	// +kubebuilder:default:=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Host suffix (base domain) for ingresses of components
+	HostSuffix *string `json:"hostSuffix,omitempty"`
 }
 
 type StorageSpec struct {

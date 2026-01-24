@@ -26,8 +26,8 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 	}
 
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-volume-%s-peer.%s.svc.cluster.local", m.Name, topologyName, m.Namespace))
-	if m.Spec.HostSuffix != nil && *m.Spec.HostSuffix != "" {
-		commands = append(commands, fmt.Sprintf("-publicUrl=$(POD_NAME).%s", *m.Spec.HostSuffix))
+	if m.Spec.Ingress != nil && m.Spec.Ingress.HostSuffix != nil && *m.Spec.Ingress.HostSuffix != "" {
+		commands = append(commands, fmt.Sprintf("-publicUrl=$(POD_NAME).%s", *m.Spec.Ingress.HostSuffix))
 	}
 	commands = append(commands, fmt.Sprintf("-mserver=%s", getMasterPeersString(m)))
 	commands = append(commands, fmt.Sprintf("-dir=%s", strings.Join(dirs, ",")))
@@ -77,8 +77,8 @@ func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string) string 
 	}
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-volume-peer.%s.svc.cluster.local", m.Name, m.Namespace))
 
-	if m.Spec.HostSuffix != nil && *m.Spec.HostSuffix != "" {
-		commands = append(commands, fmt.Sprintf("-publicUrl=$(POD_NAME).%s", *m.Spec.HostSuffix))
+	if m.Spec.Ingress != nil && m.Spec.Ingress.HostSuffix != nil && *m.Spec.Ingress.HostSuffix != "" {
+		commands = append(commands, fmt.Sprintf("-publicUrl=$(POD_NAME).%s", *m.Spec.Ingress.HostSuffix))
 	}
 
 	commands = append(commands, fmt.Sprintf("-mserver=%s", getMasterPeersString(m)))

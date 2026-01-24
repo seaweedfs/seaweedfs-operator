@@ -10,7 +10,8 @@ import (
 
 func (r *SeaweedReconciler) ensureSeaweedIngress(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 
-	if seaweedCR.Spec.HostSuffix != nil && len(*seaweedCR.Spec.HostSuffix) != 0 {
+	if seaweedCR.Spec.Ingress != nil && seaweedCR.Spec.Ingress.Enabled &&
+		seaweedCR.Spec.Ingress.HostSuffix != nil && len(*seaweedCR.Spec.Ingress.HostSuffix) != 0 {
 		if done, result, err = r.ensureAllIngress(seaweedCR); done {
 			return
 		}

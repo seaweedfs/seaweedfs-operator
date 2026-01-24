@@ -2798,8 +2798,6 @@ spec:
                 type: object
               hostNetwork:
                 type: boolean
-              hostSuffix:
-                type: string
               image:
                 type: string
               imagePullPolicy:
@@ -2813,6 +2811,14 @@ spec:
                   type: object
                   x-kubernetes-map-type: atomic
                 type: array
+              ingress:
+                properties:
+                  enabled:
+                    default: false
+                    type: boolean
+                  hostSuffix:
+                    type: string
+                type: object
               master:
                 properties:
                   affinity:

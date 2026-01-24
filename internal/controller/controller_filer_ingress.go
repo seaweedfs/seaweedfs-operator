@@ -25,7 +25,7 @@ func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1
 			// TLS:   ingressSpec.TLS,
 			Rules: []networkingv1.IngressRule{
 				{
-					Host: "filer." + *m.Spec.HostSuffix,
+					Host: "filer." + *m.Spec.Ingress.HostSuffix,
 					IngressRuleValue: networkingv1.IngressRuleValue{
 						HTTP: &networkingv1.HTTPIngressRuleValue{
 							Paths: []networkingv1.HTTPIngressPath{
@@ -46,7 +46,7 @@ func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1
 					},
 				},
 				{
-					Host: "s3." + *m.Spec.HostSuffix,
+					Host: "s3." + *m.Spec.Ingress.HostSuffix,
 					IngressRuleValue: networkingv1.IngressRuleValue{
 						HTTP: &networkingv1.HTTPIngressRuleValue{
 							Paths: []networkingv1.HTTPIngressPath{
@@ -71,31 +71,57 @@ func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1
 	}
 
 	// add ingress for volume servers
-	if m.Spec.Volume == nil {
-		return dep
-	}
-	for i := 0; i < int(m.Spec.Volume.Replicas); i++ {
-		dep.Spec.Rules = append(dep.Spec.Rules, networkingv1.IngressRule{
-			Host: fmt.Sprintf("%s-volume-%d.%s", m.Name, i, *m.Spec.HostSuffix),
-			IngressRuleValue: networkingv1.IngressRuleValue{
-				HTTP: &networkingv1.HTTPIngressRuleValue{
-					Paths: []networkingv1.HTTPIngressPath{
-						{
-							Path:     "/",
-							PathType: &pathType,
-							Backend: networkingv1.IngressBackend{
-								Service: &networkingv1.IngressServiceBackend{
-									Name: fmt.Sprintf("%s-volume-%d", m.Name, i),
-									Port: networkingv1.ServiceBackendPort{
-										Number: seaweedv1.VolumeHTTPPort,
+	if m.Spec.Volume != nil {
+		for i := 0; i < int(m.Spec.Volume.Replicas); i++ {
+			dep.Spec.Rules = append(dep.Spec.Rules, networkingv1.IngressRule{
+				Host: fmt.Sprintf("%s-volume-%d.%s", m.Name, i, *m.Spec.Ingress.HostSuffix),
+				IngressRuleValue: networkingv1.IngressRuleValue{
+					HTTP: &networkingv1.HTTPIngressRuleValue{
+						Paths: []networkingv1.HTTPIngressPath{
+							{
+								Path:     "/",
+								PathType: &pathType,
+								Backend: networkingv1.IngressBackend{
+									Service: &networkingv1.IngressServiceBackend{
+										Name: fmt.Sprintf("%s-volume-%d", m.Name, i),
+										Port: networkingv1.ServiceBackendPort{
+											Number: seaweedv1.VolumeHTTPPort,
+										},
 									},
 								},
 							},
 						},
 					},
 				},
-			},
-		})
+			})
+		}
+	}
+
+	// add ingress for volume topology servers
+	for topologyName, topologySpec := range m.Spec.VolumeTopology {
+		for i := 0; i < int(topologySpec.Replicas); i++ {
+			dep.Spec.Rules = append(dep.Spec.Rules, networkingv1.IngressRule{
+				Host: fmt.Sprintf("%s-volume-%s-%d.%s", m.Name, topologyName, i, *m.Spec.Ingress.HostSuffix),
+				IngressRuleValue: networkingv1.IngressRuleValue{
+					HTTP: &networkingv1.HTTPIngressRuleValue{
+						Paths: []networkingv1.HTTPIngressPath{
+							{
+								Path:     "/",
+								PathType: &pathType,
+								Backend: networkingv1.IngressBackend{
+									Service: &networkingv1.IngressServiceBackend{
+										Name: fmt.Sprintf("%s-volume-%s-%d", m.Name, topologyName, i),
+										Port: networkingv1.ServiceBackendPort{
+											Number: seaweedv1.VolumeHTTPPort,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			})
+		}
 	}
 
 	// Set master instance as the owner and controller

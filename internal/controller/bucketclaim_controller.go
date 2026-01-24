@@ -252,9 +252,21 @@ func (r *BucketClaimReconciler) handleReconciliation(ctx context.Context, bucket
 			return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to get bucket info: %v", err))
 		}
 
-		// Create or update S3 credentials secret if enabled (default is true when secret is nil or enabled is true)
+		// Validate S3 user exists in filer's identity.json and recreate if missing
 		var secretInfo *seaweedv1.BucketSecretInfo
 		if bucketClaim.Spec.Secret == nil || bucketClaim.Spec.Secret.Enabled {
+			userMissing, err := r.ensureS3UserExists(bucketClaim, seaweedCluster)
+			if err != nil {
+				log.Errorw("failed to validate S3 user", "error", err)
+				return r.updateStatus(ctx, bucketClaim, seaweedv1.BucketClaimPhaseFailed, fmt.Sprintf("Failed to validate S3 user: %v", err))
+			}
+
+			if userMissing {
+				// User was deleted externally, recreate credentials
+				log.Infow("recreating S3 user and credentials", "bucket", bucketClaim.Spec.BucketName)
+			}
+
+			// Create or update S3 credentials secret (this will create user if missing)
 			secretInfo, err = r.createS3CredentialsSecret(ctx, bucketClaim, seaweedCluster)
 			if err != nil {
 				log.Errorw("failed to create S3 credentials secret", "error", err)
@@ -573,6 +585,40 @@ func convertQuotaToBytes(size int64, unit string) int64 {
 
 func formatUsername(bucketClaim *seaweedv1.BucketClaim) string {
 	return fmt.Sprintf("claim-%s-%s", bucketClaim.Namespace, bucketClaim.Name)
+}
+
+// ensureS3UserExists validates that the S3 user exists in filer's identity.json
+// and recreates it if missing. Returns true if user was recreated.
+func (r *BucketClaimReconciler) ensureS3UserExists(bucketClaim *seaweedv1.BucketClaim, seaweedCluster *seaweedv1.Seaweed) (bool, error) {
+	log := r.Log.With("bucketclaim", bucketClaim.Name)
+
+	// Skip validation if secret is explicitly disabled
+	if bucketClaim.Spec.Secret != nil && !bucketClaim.Spec.Secret.Enabled {
+		return false, nil
+	}
+
+	// Get admin server for S3 user management
+	adminServiceURL := fmt.Sprintf("http://%s-admin.%s.svc.cluster.local:%d", seaweedCluster.Name, seaweedCluster.Namespace, seaweedv1.AdminHTTPPort)
+	adminServer, err := r.getAdminServer(adminServiceURL)
+	if err != nil {
+		return false, fmt.Errorf("failed to get admin server: %w", err)
+	}
+
+	username := formatUsername(bucketClaim)
+
+	// Check if user exists in filer's identity.json
+	_, err = adminServer.GetObjectStoreUserDetails(username)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			// User doesn't exist - needs to be recreated
+			log.Infow("S3 user not found in filer, will recreate", "username", username)
+			return true, nil
+		}
+		return false, fmt.Errorf("failed to check S3 user existence: %w", err)
+	}
+
+	log.Debugw("S3 user exists in filer", "username", username)
+	return false, nil
 }
 
 // createS3CredentialsSecret creates a Kubernetes secret with S3 credentials

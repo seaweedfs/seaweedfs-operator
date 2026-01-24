@@ -18,7 +18,7 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
 
 	// Configure max volume counts with fallback
-	maxVolumeCounts := getVolumeServerConfigValue(topologySpec.MaxVolumeCounts, m.Spec.Volume.MaxVolumeCounts)
+	maxVolumeCounts := getVolumeServerConfigValue(topologySpec.MaxVolumeCounts, getVolumeSpecField(m, func(v *seaweedv1.VolumeSpec) *int32 { return v.MaxVolumeCounts }))
 	if maxVolumeCounts != nil {
 		commands = append(commands, fmt.Sprintf("-max=%d", *maxVolumeCounts))
 	} else {
@@ -43,23 +43,23 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 	commands = append(commands, fmt.Sprintf("-dataCenter=%s", topologySpec.DataCenter))
 
 	// Add volume server configuration parameters with fallback
-	compactionMBps := getVolumeServerConfigValue(topologySpec.CompactionMBps, m.Spec.Volume.CompactionMBps)
+	compactionMBps := getVolumeServerConfigValue(topologySpec.CompactionMBps, getVolumeSpecField(m, func(v *seaweedv1.VolumeSpec) *int32 { return v.CompactionMBps }))
 	if compactionMBps != nil {
 		commands = append(commands, fmt.Sprintf("-compactionMBps=%d", *compactionMBps))
 	}
-	fileSizeLimitMB := getVolumeServerConfigValue(topologySpec.FileSizeLimitMB, m.Spec.Volume.FileSizeLimitMB)
+	fileSizeLimitMB := getVolumeServerConfigValue(topologySpec.FileSizeLimitMB, getVolumeSpecField(m, func(v *seaweedv1.VolumeSpec) *int32 { return v.FileSizeLimitMB }))
 	if fileSizeLimitMB != nil {
 		commands = append(commands, fmt.Sprintf("-fileSizeLimitMB=%d", *fileSizeLimitMB))
 	}
-	fixJpgOrientation := getVolumeServerConfigValue(topologySpec.FixJpgOrientation, m.Spec.Volume.FixJpgOrientation)
+	fixJpgOrientation := getVolumeServerConfigValue(topologySpec.FixJpgOrientation, getVolumeSpecField(m, func(v *seaweedv1.VolumeSpec) *bool { return v.FixJpgOrientation }))
 	if fixJpgOrientation != nil {
 		commands = append(commands, fmt.Sprintf("-fixJpgOrientation=%t", *fixJpgOrientation))
 	}
-	idleTimeout := getVolumeServerConfigValue(topologySpec.IdleTimeout, m.Spec.Volume.IdleTimeout)
+	idleTimeout := getVolumeServerConfigValue(topologySpec.IdleTimeout, getVolumeSpecField(m, func(v *seaweedv1.VolumeSpec) *int32 { return v.IdleTimeout }))
 	if idleTimeout != nil {
 		commands = append(commands, fmt.Sprintf("-idleTimeout=%d", *idleTimeout))
 	}
-	minFreeSpacePercent := getVolumeServerConfigValue(topologySpec.MinFreeSpacePercent, m.Spec.Volume.MinFreeSpacePercent)
+	minFreeSpacePercent := getVolumeServerConfigValue(topologySpec.MinFreeSpacePercent, getVolumeSpecField(m, func(v *seaweedv1.VolumeSpec) *int32 { return v.MinFreeSpacePercent }))
 	if minFreeSpacePercent != nil {
 		commands = append(commands, fmt.Sprintf("-minFreeSpacePercent=%d", *minFreeSpacePercent))
 	}
@@ -518,6 +518,14 @@ func getVolumeServerConfigValue[T any](topologyValue *T, clusterValue *T) *T {
 		return topologyValue
 	}
 	return clusterValue
+}
+
+// getVolumeSpecField safely extracts a field from VolumeSpec, returning nil if Volume is nil
+func getVolumeSpecField[T any](m *seaweedv1.Seaweed, getter func(*seaweedv1.VolumeSpec) *T) *T {
+	if m.Spec.Volume == nil {
+		return nil
+	}
+	return getter(m.Spec.Volume)
 }
 
 // getMetricsPort returns the topology-specific metrics port if present, otherwise returns the cluster-level value

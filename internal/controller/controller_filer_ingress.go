@@ -71,6 +71,9 @@ func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1
 	}
 
 	// add ingress for volume servers
+	if m.Spec.Volume == nil {
+		return dep
+	}
 	for i := 0; i < int(m.Spec.Volume.Replicas); i++ {
 		dep.Spec.Rules = append(dep.Spec.Rules, networkingv1.IngressRule{
 			Host: fmt.Sprintf("%s-volume-%d.%s", m.Name, i, *m.Spec.HostSuffix),

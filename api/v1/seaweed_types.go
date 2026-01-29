@@ -118,6 +118,11 @@ type SeaweedStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
+	// ObservedGeneration is the most recent generation observed for this Seaweed cluster.
+	// It corresponds to the cluster's generation, which is updated on mutation of the cluster's spec.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// Conditions represent the latest available observations of the Seaweed cluster's state
 	// +optional
 	// +listType=map

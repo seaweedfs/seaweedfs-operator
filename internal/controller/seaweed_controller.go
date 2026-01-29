@@ -167,6 +167,7 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	}
 
 	// Update status
+	seaweedCR.Status.ObservedGeneration = seaweedCR.Generation
 	seaweedCR.Status.Master = masterStatus
 	seaweedCR.Status.Volume = volumeStatus
 	if seaweedCR.Spec.Filer != nil {
@@ -176,15 +177,14 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		seaweedCR.Status.Filer = seaweedv1.ComponentStatus{}
 	}
 
-	// Build informative status message
-	parts := []string{
+	// Build informative status message (for NotReady condition)
+	notReadyMessage := strings.Join([]string{
 		fmt.Sprintf("Master: %d/%d ready", masterStatus.ReadyReplicas, masterStatus.Replicas),
 		fmt.Sprintf("Volume: %d/%d ready", volumeStatus.ReadyReplicas, volumeStatus.Replicas),
-	}
+	}, ", ")
 	if seaweedCR.Spec.Filer != nil {
-		parts = append(parts, fmt.Sprintf("Filer: %d/%d ready", filerStatus.ReadyReplicas, filerStatus.Replicas))
+		notReadyMessage += fmt.Sprintf(", Filer: %d/%d ready", filerStatus.ReadyReplicas, filerStatus.Replicas)
 	}
-	readyMessage := strings.Join(parts, ", ")
 
 	// Update conditions
 	readyCondition := metav1.Condition{
@@ -192,13 +192,13 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		Status:             metav1.ConditionFalse,
 		ObservedGeneration: seaweedCR.Generation,
 		Reason:             "NotReady",
-		Message:            readyMessage,
+		Message:            notReadyMessage,
 	}
 
 	if isReady {
 		readyCondition.Status = metav1.ConditionTrue
 		readyCondition.Reason = "Ready"
-		readyCondition.Message = readyMessage
+		readyCondition.Message = "Seaweed cluster is ready"
 	}
 
 	// Use idiomatic Kubernetes helper to manage conditions

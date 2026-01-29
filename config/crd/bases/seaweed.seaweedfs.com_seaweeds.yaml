@@ -6250,6 +6250,8 @@ spec:
                     minimum: 0
                     type: integer
                 type: object
+              observedGeneration:
+                type: integer
               volume:
                 properties:
                   readyReplicas:

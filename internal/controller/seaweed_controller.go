@@ -158,12 +158,14 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	}
 
 	// Determine if cluster is ready
-	isReady := masterStatus.ReadyReplicas == masterStatus.Replicas &&
-		volumeStatus.ReadyReplicas == volumeStatus.Replicas &&
-		masterStatus.Replicas > 0 && volumeStatus.Replicas > 0
+	// Master must have replicas and all must be ready
+	isReady := masterStatus.Replicas > 0 && masterStatus.ReadyReplicas == masterStatus.Replicas
+	// Volume is ready if disabled (0 replicas) or all configured replicas are ready
+	isReady = isReady && (volumeStatus.Replicas == 0 || volumeStatus.ReadyReplicas == volumeStatus.Replicas)
 
+	// Filer is checked only if enabled
 	if seaweedCR.Spec.Filer != nil {
-		isReady = isReady && filerStatus.ReadyReplicas == filerStatus.Replicas && filerStatus.Replicas > 0
+		isReady = isReady && (filerStatus.Replicas == 0 || filerStatus.ReadyReplicas == filerStatus.Replicas)
 	}
 
 	// Update status

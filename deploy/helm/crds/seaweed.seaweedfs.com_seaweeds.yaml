@@ -6234,22 +6234,28 @@ spec:
               filer:
                 properties:
                   readyReplicas:
+                    minimum: 0
                     type: integer
                   replicas:
+                    minimum: 0
                     type: integer
                 type: object
               master:
                 properties:
                   readyReplicas:
+                    minimum: 0
                     type: integer
                   replicas:
+                    minimum: 0
                     type: integer
                 type: object
               volume:
                 properties:
                   readyReplicas:
+                    minimum: 0
                     type: integer
                   replicas:
+                    minimum: 0
                     type: integer
                 type: object
             type: object

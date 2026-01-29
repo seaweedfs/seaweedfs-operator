@@ -169,26 +169,42 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		seaweedCR.Status.Filer = seaweedv1.ComponentStatus{}
 	}
 
+	// Build informative status message
+	readyMessage := fmt.Sprintf(
+		"Master: %d/%d ready, Volume: %d/%d ready",
+		masterStatus.ReadyReplicas, masterStatus.Replicas,
+		volumeStatus.ReadyReplicas, volumeStatus.Replicas,
+	)
+	if seaweedCR.Spec.Filer != nil {
+		readyMessage += fmt.Sprintf(", Filer: %d/%d ready", filerStatus.ReadyReplicas, filerStatus.Replicas)
+	}
+
 	// Update conditions
 	readyCondition := metav1.Condition{
 		Type:               "Ready",
 		Status:             metav1.ConditionFalse,
 		ObservedGeneration: seaweedCR.Generation,
 		Reason:             "NotReady",
-		Message:            "Seaweed cluster is not ready",
+		Message:            readyMessage,
 	}
 
 	if isReady {
 		readyCondition.Status = metav1.ConditionTrue
 		readyCondition.Reason = "Ready"
-		readyCondition.Message = "Seaweed cluster is ready"
+		readyCondition.Message = readyMessage
 	}
 
 	// Use idiomatic Kubernetes helper to manage conditions
 	meta.SetStatusCondition(&seaweedCR.Status.Conditions, readyCondition)
 
-	// Update the status
+	// Update the status, handling conflicts gracefully
 	if err := r.Status().Update(ctx, seaweedCR); err != nil {
+		// Handle conflicts gracefully: they often occur due to concurrent status updates.
+		if errors.IsConflict(err) {
+			log.V(2).Info("Conflict while updating Seaweed status; will retry on next reconciliation")
+			// Do not treat conflict as a hard error to avoid unnecessary requeues.
+			return nil
+		}
 		return err
 	}
 
@@ -201,7 +217,9 @@ func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *s
 
 	switch component {
 	case "master":
-		return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-master", seaweedCR.Spec.Master.Replicas)
+		if seaweedCR.Spec.Master != nil {
+			return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-master", seaweedCR.Spec.Master.Replicas)
+		}
 	case "volume":
 		return r.getVolumeStatus(ctx, seaweedCR)
 	case "filer":

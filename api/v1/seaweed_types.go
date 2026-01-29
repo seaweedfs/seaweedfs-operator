@@ -140,9 +140,11 @@ type SeaweedStatus struct {
 // ComponentStatus represents the status of a seaweedfs component
 type ComponentStatus struct {
 	// Total number of desired replicas
+	// +kubebuilder:validation:Minimum=0
 	Replicas int32 `json:"replicas,omitempty"`
 
 	// Total number of ready replicas
+	// +kubebuilder:validation:Minimum=0
 	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
 }
 

@@ -117,6 +117,40 @@ type SeaweedSpec struct {
 type SeaweedStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	// ObservedGeneration is the most recent generation observed for this Seaweed cluster.
+	// It corresponds to the cluster's generation, which is updated on mutation of the cluster's spec.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// Conditions represent the latest available observations of the Seaweed cluster's state
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Master component status
+	// +optional
+	Master ComponentStatus `json:"master,omitempty"`
+
+	// Volume component status
+	// +optional
+	Volume ComponentStatus `json:"volume,omitempty"`
+
+	// Filer component status
+	// +optional
+	Filer ComponentStatus `json:"filer,omitempty"`
+}
+
+// ComponentStatus represents the status of a seaweedfs component
+type ComponentStatus struct {
+	// Total number of desired replicas
+	// +kubebuilder:validation:Minimum=0
+	Replicas int32 `json:"replicas,omitempty"`
+
+	// Total number of ready replicas
+	// +kubebuilder:validation:Minimum=0
+	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
 }
 
 // MasterSpec is the spec for masters

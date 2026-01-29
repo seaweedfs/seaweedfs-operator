@@ -4,7 +4,7 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
   creationTimestamp: null
-  name: {{ include "seaweedfs-operator.fullname" . }}-validating-webhook-configuration
+  name: {{ include "seaweedfs-operator.validatingWebhookName" . }}
   labels:
     {{- include "seaweedfs-operator.labels" . | nindent 4 }}
 webhooks:

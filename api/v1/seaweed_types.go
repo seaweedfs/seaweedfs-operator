@@ -120,6 +120,8 @@ type SeaweedStatus struct {
 
 	// Conditions represent the latest available observations of the Seaweed cluster's state
 	// +optional
+	// +listType=map
+	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// Master component status

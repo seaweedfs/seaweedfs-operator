@@ -162,6 +162,9 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	seaweedCR.Status.Volume = volumeStatus
 	if seaweedCR.Spec.Filer != nil {
 		seaweedCR.Status.Filer = filerStatus
+	} else {
+		// Clear stale filer status when filer is disabled
+		seaweedCR.Status.Filer = seaweedv1.ComponentStatus{}
 	}
 
 	// Update conditions
@@ -227,6 +230,9 @@ func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *s
 	// Count ready pods by checking the Ready condition
 	readyCount := int32(0)
 	for _, pod := range podList.Items {
+		if pod.Status.Phase != corev1.PodRunning {
+			continue
+		}
 		for _, condition := range pod.Status.Conditions {
 			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
 				readyCount++

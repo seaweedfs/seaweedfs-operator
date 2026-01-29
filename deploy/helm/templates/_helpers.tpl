@@ -123,3 +123,19 @@ Webhook init container for waiting until webhook service is ready
   {{- include "seaweedfs-operator.webhookContainerSecurityContext" . | nindent 2 }}
   command: ['sh', '-c', 'set -e; until curl -sk --fail --head --max-time 5 https://{{ include "seaweedfs-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc:443{{ .webhookPath }} >/dev/null; do echo waiting for webhook; sleep 1; done;']
 {{- end -}}
+
+{{/*
+Mutating webhook configuration name
+*/}}
+{{- define "seaweedfs-operator.mutatingWebhookName" -}}
+{{- $suffix := "-mutating-webhook-configuration" -}}
+{{- printf "%s%s" (include "seaweedfs-operator.fullname" . | trunc (int (sub 63 (len $suffix))) | trimSuffix "-") $suffix -}}
+{{- end -}}
+
+{{/*
+Validating webhook configuration name
+*/}}
+{{- define "seaweedfs-operator.validatingWebhookName" -}}
+{{- $suffix := "-validating-webhook-configuration" -}}
+{{- printf "%s%s" (include "seaweedfs-operator.fullname" . | trunc (int (sub 63 (len $suffix))) | trimSuffix "-") $suffix -}}
+{{- end -}}

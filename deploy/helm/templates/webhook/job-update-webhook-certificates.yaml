@@ -51,7 +51,7 @@ spec:
         {{- include "seaweedfs-operator.webhookContainerSecurityContext" . | nindent 8 }}
         args:
           - patch
-          - --webhook-name=mutating-webhook-configuration
+          - --webhook-name={{ include "seaweedfs-operator.mutatingWebhookName" . }}
           - --namespace=$(POD_NAMESPACE)
           - --patch-mutating=true
           - --patch-validating=false
@@ -86,7 +86,7 @@ spec:
         {{- include "seaweedfs-operator.webhookContainerSecurityContext" . | nindent 8 }}
         args:
           - patch
-          - --webhook-name=validating-webhook-configuration
+          - --webhook-name={{ include "seaweedfs-operator.validatingWebhookName" . }}
           - --namespace=$(POD_NAMESPACE)
           - --patch-mutating=false
           - --patch-validating=true

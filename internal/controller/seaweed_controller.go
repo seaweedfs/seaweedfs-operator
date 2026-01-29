@@ -21,7 +21,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -83,6 +85,12 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
+	// Update status
+	if err := r.updateStatus(ctx, seaweedCR); err != nil {
+		log.Error(err, "Failed to update Seaweed status")
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
 
@@ -110,4 +118,143 @@ func (r *SeaweedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&seaweedv1.Seaweed{}).
 		Complete(r)
+}
+
+func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweedv1.Seaweed) error {
+	log := r.Log.WithValues("seaweed", seaweedCR.Name)
+
+	// Get master statefulset status
+	masterStatus, err := r.getComponentStatus(ctx, seaweedCR, "master")
+	if err != nil {
+		log.Error(err, "Failed to get master status")
+	}
+
+	// Get volume statefulset status
+	volumeStatus, err := r.getComponentStatus(ctx, seaweedCR, "volume")
+	if err != nil {
+		log.Error(err, "Failed to get volume status")
+	}
+
+	// Get filer statefulset status (if enabled)
+	var filerStatus seaweedv1.ComponentStatus
+	if seaweedCR.Spec.Filer != nil {
+		filerStatus, err = r.getComponentStatus(ctx, seaweedCR, "filer")
+		if err != nil {
+			log.Error(err, "Failed to get filer status")
+		}
+	}
+
+	// Determine if cluster is ready
+	isReady := masterStatus.ReadyReplicas == masterStatus.Replicas &&
+		volumeStatus.ReadyReplicas == volumeStatus.Replicas &&
+		masterStatus.Replicas > 0 && volumeStatus.Replicas > 0
+
+	if seaweedCR.Spec.Filer != nil {
+		isReady = isReady && filerStatus.ReadyReplicas == filerStatus.Replicas && filerStatus.Replicas > 0
+	}
+
+	// Update status
+	seaweedCR.Status.Master = masterStatus
+	seaweedCR.Status.Volume = volumeStatus
+	if seaweedCR.Spec.Filer != nil {
+		seaweedCR.Status.Filer = filerStatus
+	}
+
+	// Update conditions
+	readyCondition := metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: seaweedCR.Generation,
+		LastTransitionTime: metav1.Now(),
+		Reason:             "NotReady",
+		Message:            "Seaweed cluster is not ready",
+	}
+
+	if isReady {
+		readyCondition.Status = metav1.ConditionTrue
+		readyCondition.Reason = "Ready"
+		readyCondition.Message = "Seaweed cluster is ready"
+	}
+
+	// Update or append the Ready condition
+	conditionUpdated := false
+	for i, condition := range seaweedCR.Status.Conditions {
+		if condition.Type == "Ready" {
+			// Only update if status changed
+			if condition.Status != readyCondition.Status {
+				seaweedCR.Status.Conditions[i] = readyCondition
+			} else {
+				// Keep the old LastTransitionTime if status hasn't changed
+				readyCondition.LastTransitionTime = condition.LastTransitionTime
+				seaweedCR.Status.Conditions[i] = readyCondition
+			}
+			conditionUpdated = true
+			break
+		}
+	}
+	if !conditionUpdated {
+		seaweedCR.Status.Conditions = append(seaweedCR.Status.Conditions, readyCondition)
+	}
+
+	// Update the status
+	if err := r.Status().Update(ctx, seaweedCR); err != nil {
+		return err
+	}
+
+	log.Info("Updated Seaweed status", "ready", isReady)
+	return nil
+}
+
+func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *seaweedv1.Seaweed, component string) (seaweedv1.ComponentStatus, error) {
+	var status seaweedv1.ComponentStatus
+	var labels map[string]string
+	var desiredReplicas int32
+
+	switch component {
+	case "master":
+		labels = labelsForMaster(seaweedCR.Name)
+		desiredReplicas = seaweedCR.Spec.Master.Replicas
+	case "volume":
+		labels = labelsForVolumeServer(seaweedCR.Name)
+		if seaweedCR.Spec.Volume != nil {
+			desiredReplicas = seaweedCR.Spec.Volume.Replicas
+		}
+	case "filer":
+		labels = labelsForFiler(seaweedCR.Name)
+		if seaweedCR.Spec.Filer != nil {
+			desiredReplicas = seaweedCR.Spec.Filer.Replicas
+		}
+	}
+
+	status.Replicas = desiredReplicas
+
+	// Get pods for this component
+	podList := &corev1.PodList{}
+	listOpts := []client.ListOption{
+		client.InNamespace(seaweedCR.Namespace),
+		client.MatchingLabels(labels),
+	}
+	if err := r.List(ctx, podList, listOpts...); err != nil {
+		return status, err
+	}
+
+	// Count ready pods
+	readyCount := int32(0)
+	for _, pod := range podList.Items {
+		if pod.Status.Phase == corev1.PodRunning {
+			allReady := true
+			for _, containerStatus := range pod.Status.ContainerStatuses {
+				if !containerStatus.Ready {
+					allReady = false
+					break
+				}
+			}
+			if allReady && len(pod.Status.ContainerStatuses) > 0 {
+				readyCount++
+			}
+		}
+	}
+
+	status.ReadyReplicas = readyCount
+	return status, nil
 }

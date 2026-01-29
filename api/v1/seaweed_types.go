@@ -117,6 +117,31 @@ type SeaweedSpec struct {
 type SeaweedStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	// Conditions represent the latest available observations of the Seaweed cluster's state
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Master component status
+	// +optional
+	Master ComponentStatus `json:"master,omitempty"`
+
+	// Volume component status
+	// +optional
+	Volume ComponentStatus `json:"volume,omitempty"`
+
+	// Filer component status
+	// +optional
+	Filer ComponentStatus `json:"filer,omitempty"`
+}
+
+// ComponentStatus represents the status of a seaweedfs component
+type ComponentStatus struct {
+	// Total number of desired replicas
+	Replicas int32 `json:"replicas,omitempty"`
+
+	// Total number of ready replicas
+	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
 }
 
 // MasterSpec is the spec for masters

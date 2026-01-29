@@ -35,6 +35,12 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
+const (
+	ComponentMaster = "master"
+	ComponentVolume = "volume"
+	ComponentFiler  = "filer"
+)
+
 // SeaweedReconciler reconciles a Seaweed object
 type SeaweedReconciler struct {
 	client.Client
@@ -128,14 +134,14 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	log := r.Log.WithValues("seaweed", seaweedCR.Name)
 
 	// Get master statefulset status
-	masterStatus, err := r.getComponentStatus(ctx, seaweedCR, "master")
+	masterStatus, err := r.getComponentStatus(ctx, seaweedCR, ComponentMaster)
 	if err != nil {
 		log.Error(err, "Failed to get master status")
 		return err
 	}
 
 	// Get volume statefulset status
-	volumeStatus, err := r.getComponentStatus(ctx, seaweedCR, "volume")
+	volumeStatus, err := r.getComponentStatus(ctx, seaweedCR, ComponentVolume)
 	if err != nil {
 		log.Error(err, "Failed to get volume status")
 		return err
@@ -144,7 +150,7 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	// Get filer statefulset status (if enabled)
 	var filerStatus seaweedv1.ComponentStatus
 	if seaweedCR.Spec.Filer != nil {
-		filerStatus, err = r.getComponentStatus(ctx, seaweedCR, "filer")
+		filerStatus, err = r.getComponentStatus(ctx, seaweedCR, ComponentFiler)
 		if err != nil {
 			log.Error(err, "Failed to get filer status")
 			return err
@@ -215,13 +221,13 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 
 func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *seaweedv1.Seaweed, component string) (seaweedv1.ComponentStatus, error) {
 	switch component {
-	case "master":
+	case ComponentMaster:
 		if seaweedCR.Spec.Master != nil {
 			return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-master", seaweedCR.Spec.Master.Replicas)
 		}
-	case "volume":
+	case ComponentVolume:
 		return r.getVolumeStatus(ctx, seaweedCR)
-	case "filer":
+	case ComponentFiler:
 		if seaweedCR.Spec.Filer != nil {
 			return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-filer", seaweedCR.Spec.Filer.Replicas)
 		}
@@ -267,8 +273,10 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 	}
 
 	// Check volume topology groups
-	for topologyName := range seaweedCR.Spec.VolumeTopology {
-		topologySpec := seaweedCR.Spec.VolumeTopology[topologyName]
+	for topologyName, topologySpec := range seaweedCR.Spec.VolumeTopology {
+		if topologySpec == nil {
+			continue
+		}
 		statefulSetName := fmt.Sprintf("%s-volume-%s", seaweedCR.Name, topologyName)
 		topologyStatus, err := r.getStatefulSetStatus(ctx, seaweedCR.Namespace, statefulSetName, topologySpec.Replicas)
 		if err != nil {

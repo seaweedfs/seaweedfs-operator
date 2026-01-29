@@ -128,12 +128,14 @@ Webhook init container for waiting until webhook service is ready
 Mutating webhook configuration name
 */}}
 {{- define "seaweedfs-operator.mutatingWebhookName" -}}
-{{- printf "%s-mutating-webhook-configuration" (include "seaweedfs-operator.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- $suffix := "-mutating-webhook-configuration" -}}
+{{- printf "%s%s" (include "seaweedfs-operator.fullname" . | trunc (int (sub 63 (len $suffix))) | trimSuffix "-") $suffix -}}
 {{- end -}}
 
 {{/*
 Validating webhook configuration name
 */}}
 {{- define "seaweedfs-operator.validatingWebhookName" -}}
-{{- printf "%s-validating-webhook-configuration" (include "seaweedfs-operator.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- $suffix := "-validating-webhook-configuration" -}}
+{{- printf "%s%s" (include "seaweedfs-operator.fullname" . | trunc (int (sub 63 (len $suffix))) | trimSuffix "-") $suffix -}}
 {{- end -}}

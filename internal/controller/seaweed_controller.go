@@ -23,6 +23,7 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -127,12 +128,14 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	masterStatus, err := r.getComponentStatus(ctx, seaweedCR, "master")
 	if err != nil {
 		log.Error(err, "Failed to get master status")
+		return err
 	}
 
 	// Get volume statefulset status
 	volumeStatus, err := r.getComponentStatus(ctx, seaweedCR, "volume")
 	if err != nil {
 		log.Error(err, "Failed to get volume status")
+		return err
 	}
 
 	// Get filer statefulset status (if enabled)
@@ -141,6 +144,7 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		filerStatus, err = r.getComponentStatus(ctx, seaweedCR, "filer")
 		if err != nil {
 			log.Error(err, "Failed to get filer status")
+			return err
 		}
 	}
 
@@ -165,7 +169,6 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		Type:               "Ready",
 		Status:             metav1.ConditionFalse,
 		ObservedGeneration: seaweedCR.Generation,
-		LastTransitionTime: metav1.Now(),
 		Reason:             "NotReady",
 		Message:            "Seaweed cluster is not ready",
 	}
@@ -176,25 +179,8 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		readyCondition.Message = "Seaweed cluster is ready"
 	}
 
-	// Update or append the Ready condition
-	conditionUpdated := false
-	for i, condition := range seaweedCR.Status.Conditions {
-		if condition.Type == "Ready" {
-			// Only update if status changed
-			if condition.Status != readyCondition.Status {
-				seaweedCR.Status.Conditions[i] = readyCondition
-			} else {
-				// Keep the old LastTransitionTime if status hasn't changed
-				readyCondition.LastTransitionTime = condition.LastTransitionTime
-				seaweedCR.Status.Conditions[i] = readyCondition
-			}
-			conditionUpdated = true
-			break
-		}
-	}
-	if !conditionUpdated {
-		seaweedCR.Status.Conditions = append(seaweedCR.Status.Conditions, readyCondition)
-	}
+	// Use idiomatic Kubernetes helper to manage conditions
+	meta.SetStatusCondition(&seaweedCR.Status.Conditions, readyCondition)
 
 	// Update the status
 	if err := r.Status().Update(ctx, seaweedCR); err != nil {
@@ -238,19 +224,13 @@ func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *s
 		return status, err
 	}
 
-	// Count ready pods
+	// Count ready pods by checking the Ready condition
 	readyCount := int32(0)
 	for _, pod := range podList.Items {
-		if pod.Status.Phase == corev1.PodRunning {
-			allReady := true
-			for _, containerStatus := range pod.Status.ContainerStatuses {
-				if !containerStatus.Ready {
-					allReady = false
-					break
-				}
-			}
-			if allReady && len(pod.Status.ContainerStatuses) > 0 {
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
 				readyCount++
+				break
 			}
 		}
 	}

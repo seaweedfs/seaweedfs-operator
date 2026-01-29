@@ -18,14 +18,16 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -196,51 +198,72 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 
 func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *seaweedv1.Seaweed, component string) (seaweedv1.ComponentStatus, error) {
 	var status seaweedv1.ComponentStatus
-	var labels map[string]string
-	var desiredReplicas int32
 
 	switch component {
 	case "master":
-		labels = labelsForMaster(seaweedCR.Name)
-		desiredReplicas = seaweedCR.Spec.Master.Replicas
+		return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-master", seaweedCR.Spec.Master.Replicas)
 	case "volume":
-		labels = labelsForVolumeServer(seaweedCR.Name)
-		if seaweedCR.Spec.Volume != nil {
-			desiredReplicas = seaweedCR.Spec.Volume.Replicas
-		}
+		return r.getVolumeStatus(ctx, seaweedCR)
 	case "filer":
-		labels = labelsForFiler(seaweedCR.Name)
 		if seaweedCR.Spec.Filer != nil {
-			desiredReplicas = seaweedCR.Spec.Filer.Replicas
+			return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-filer", seaweedCR.Spec.Filer.Replicas)
 		}
+		return status, nil
 	}
 
-	status.Replicas = desiredReplicas
+	return status, nil
+}
 
-	// Get pods for this component
-	podList := &corev1.PodList{}
-	listOpts := []client.ListOption{
-		client.InNamespace(seaweedCR.Namespace),
-		client.MatchingLabels(labels),
+func (r *SeaweedReconciler) getStatefulSetStatus(ctx context.Context, namespace, name string, desiredReplicas int32) (seaweedv1.ComponentStatus, error) {
+	status := seaweedv1.ComponentStatus{
+		Replicas: desiredReplicas,
 	}
-	if err := r.List(ctx, podList, listOpts...); err != nil {
+
+	// Get the StatefulSet
+	statefulSet := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, statefulSet); err != nil {
+		if errors.IsNotFound(err) {
+			// StatefulSet not yet created
+			return status, nil
+		}
 		return status, err
 	}
 
-	// Count ready pods by checking the Ready condition
-	readyCount := int32(0)
-	for _, pod := range podList.Items {
-		if pod.Status.Phase != corev1.PodRunning {
-			continue
+	// Use StatefulSet's ready replica count
+	status.ReadyReplicas = statefulSet.Status.ReadyReplicas
+	return status, nil
+}
+
+func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (seaweedv1.ComponentStatus, error) {
+	status := seaweedv1.ComponentStatus{}
+
+	// Aggregate volume status from base spec and topology groups
+	totalDesiredReplicas := int32(0)
+	totalReadyReplicas := int32(0)
+
+	// Check base volume spec
+	if seaweedCR.Spec.Volume != nil {
+		baseStatus, err := r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-volume", seaweedCR.Spec.Volume.Replicas)
+		if err != nil {
+			return status, err
 		}
-		for _, condition := range pod.Status.Conditions {
-			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-				readyCount++
-				break
-			}
-		}
+		totalDesiredReplicas += baseStatus.Replicas
+		totalReadyReplicas += baseStatus.ReadyReplicas
 	}
 
-	status.ReadyReplicas = readyCount
+	// Check volume topology groups
+	for topologyName := range seaweedCR.Spec.VolumeTopology {
+		topologySpec := seaweedCR.Spec.VolumeTopology[topologyName]
+		statefulSetName := fmt.Sprintf("%s-volume-%s", seaweedCR.Name, topologyName)
+		topologyStatus, err := r.getStatefulSetStatus(ctx, seaweedCR.Namespace, statefulSetName, topologySpec.Replicas)
+		if err != nil {
+			return status, err
+		}
+		totalDesiredReplicas += topologyStatus.Replicas
+		totalReadyReplicas += topologyStatus.ReadyReplicas
+	}
+
+	status.Replicas = totalDesiredReplicas
+	status.ReadyReplicas = totalReadyReplicas
 	return status, nil
 }

@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -170,14 +171,14 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	}
 
 	// Build informative status message
-	readyMessage := fmt.Sprintf(
-		"Master: %d/%d ready, Volume: %d/%d ready",
-		masterStatus.ReadyReplicas, masterStatus.Replicas,
-		volumeStatus.ReadyReplicas, volumeStatus.Replicas,
-	)
-	if seaweedCR.Spec.Filer != nil {
-		readyMessage += fmt.Sprintf(", Filer: %d/%d ready", filerStatus.ReadyReplicas, filerStatus.Replicas)
+	parts := []string{
+		fmt.Sprintf("Master: %d/%d ready", masterStatus.ReadyReplicas, masterStatus.Replicas),
+		fmt.Sprintf("Volume: %d/%d ready", volumeStatus.ReadyReplicas, volumeStatus.Replicas),
 	}
+	if seaweedCR.Spec.Filer != nil {
+		parts = append(parts, fmt.Sprintf("Filer: %d/%d ready", filerStatus.ReadyReplicas, filerStatus.Replicas))
+	}
+	readyMessage := strings.Join(parts, ", ")
 
 	// Update conditions
 	readyCondition := metav1.Condition{
@@ -213,8 +214,6 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 }
 
 func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *seaweedv1.Seaweed, component string) (seaweedv1.ComponentStatus, error) {
-	var status seaweedv1.ComponentStatus
-
 	switch component {
 	case "master":
 		if seaweedCR.Spec.Master != nil {
@@ -226,10 +225,8 @@ func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *s
 		if seaweedCR.Spec.Filer != nil {
 			return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-filer", seaweedCR.Spec.Filer.Replicas)
 		}
-		return status, nil
 	}
-
-	return status, nil
+	return seaweedv1.ComponentStatus{}, nil
 }
 
 func (r *SeaweedReconciler) getStatefulSetStatus(ctx context.Context, namespace, name string, desiredReplicas int32) (seaweedv1.ComponentStatus, error) {

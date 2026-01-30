@@ -119,7 +119,6 @@ func (r *SeaweedReconciler) createVolumeServerService(m *seaweedv1.Seaweed, i in
 
 func (r *SeaweedReconciler) createVolumeServerTopologyPeerService(m *seaweedv1.Seaweed, topologyName string) *corev1.Service {
 	labels := labelsForVolumeServerTopology(m.Name, topologyName)
-	labels["seaweedfs/service-role"] = "peer"
 	ports := []corev1.ServicePort{
 		{
 			Name:       "volume-http",

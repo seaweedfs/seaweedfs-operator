@@ -290,6 +290,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 
 func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.Seaweed, topologyName string, topologySpec *seaweedv1.VolumeTopologySpec) *appsv1.StatefulSet {
 	labels := labelsForVolumeServerTopology(m.Name, topologyName)
+	labels["seaweedfs/service-role"] = "peer"
 	annotations := mergeAnnotations(m.Spec.Annotations, topologySpec.Annotations)
 	ports := []corev1.ContainerPort{
 		{

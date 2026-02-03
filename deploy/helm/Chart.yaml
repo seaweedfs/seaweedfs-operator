@@ -2,7 +2,7 @@ apiVersion: v2
 name: seaweedfs-operator
 description: A Helm chart for the seaweedfs-operator
 type: application
-version: 0.1.12
+version: 0.1.13
 appVersion: "1.0.11"
 maintainers:
   - name: chrislusf

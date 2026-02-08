@@ -62,6 +62,15 @@ func getMasterPeersString(m *seaweedv1.Seaweed) string {
 	return strings.Join(getMasterAddresses(m.Namespace, m.Name, m.Spec.Master.Replicas), ",")
 }
 
+// getMQBrokerServiceAddress returns the MQ broker service address for agent connection
+func getMQBrokerServiceAddress(m *seaweedv1.Seaweed) string {
+	port := seaweedv1.MQBrokerGRPCPort
+	if m.Spec.MessageQueue.Broker.Port != nil {
+		port = int(*m.Spec.MessageQueue.Broker.Port)
+	}
+	return fmt.Sprintf("%s-mq-broker.%s.svc.cluster.local:%d", m.Name, m.Namespace, port)
+}
+
 // Note: IAM is now embedded in S3 by default (on the same port as S3: FilerS3Port).
 // The getIAMPort function has been removed since standalone IAM is no longer supported.
 

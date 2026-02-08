@@ -38,6 +38,10 @@ const (
 	MasterGRPCPort = MasterHTTPPort + GRPCPortDelta
 	VolumeGRPCPort = VolumeHTTPPort + GRPCPortDelta
 	FilerGRPCPort  = FilerHTTPPort + GRPCPortDelta
+
+	// Message Queue ports
+	MQBrokerGRPCPort = 17777
+	MQAgentGRPCPort  = 16777
 )
 
 // BucketClaim deletion policy constants
@@ -81,6 +85,9 @@ type SeaweedSpec struct {
 
 	// Admin UI
 	Admin *AdminSpec `json:"admin,omitempty"`
+
+	// Message Queue (broker and agent)
+	MessageQueue *MessageQueueSpec `json:"messageQueue,omitempty"`
 
 	// SchedulerName of pods
 	SchedulerName string `json:"schedulerName,omitempty"`
@@ -389,6 +396,60 @@ type AdminTLSSpec struct {
 
 	// CA certificate file path (optional, for mutual TLS)
 	CAFile string `json:"caFile,omitempty"`
+}
+
+// MessageQueueSpec is the spec for message queue components
+type MessageQueueSpec struct {
+	// Broker is the message queue broker configuration
+	Broker *MessageQueueBrokerSpec `json:"broker,omitempty"`
+
+	// Agent is the message queue agent configuration
+	Agent *MessageQueueAgentSpec `json:"agent,omitempty"`
+}
+
+// MessageQueueBrokerSpec is the spec for message queue brokers
+type MessageQueueBrokerSpec struct {
+	ComponentSpec               `json:",inline"`
+	corev1.ResourceRequirements `json:",inline"`
+
+	// The desired ready replicas
+	// +kubebuilder:validation:Minimum=1
+	Replicas int32        `json:"replicas"`
+	Service  *ServiceSpec `json:"service,omitempty"`
+
+	// MetricsPort is the port that the prometheus metrics export listens on
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
+
+	// Port is the gRPC port for the broker
+	// +kubebuilder:default:=17777
+	Port *int32 `json:"port,omitempty"`
+
+	// FilerGroup is the filer group to use for message queue storage
+	FilerGroup *string `json:"filerGroup,omitempty"`
+
+	// DataCenter is the data center name for topology-aware placement
+	DataCenter *string `json:"dataCenter,omitempty"`
+
+	// Rack is the rack name for topology-aware placement
+	Rack *string `json:"rack,omitempty"`
+}
+
+// MessageQueueAgentSpec is the spec for message queue agents
+type MessageQueueAgentSpec struct {
+	ComponentSpec               `json:",inline"`
+	corev1.ResourceRequirements `json:",inline"`
+
+	// The desired ready replicas
+	// +kubebuilder:validation:Minimum=1
+	Replicas int32        `json:"replicas"`
+	Service  *ServiceSpec `json:"service,omitempty"`
+
+	// MetricsPort is the port that the prometheus metrics export listens on
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
+
+	// Port is the gRPC port for the agent
+	// +kubebuilder:default:=16777
+	Port *int32 `json:"port,omitempty"`
 }
 
 // AdminCertificateSecretRef defines certificate secret reference

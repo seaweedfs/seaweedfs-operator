@@ -213,3 +213,13 @@ func (s *Seaweed) BaseVolumeSpec() ComponentAccessor {
 func (s *Seaweed) BaseAdminSpec() ComponentAccessor {
 	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Admin.ComponentSpec)
 }
+
+// BaseMessageQueueBrokerSpec provides merged spec of message queue brokers
+func (s *Seaweed) BaseMessageQueueBrokerSpec() ComponentAccessor {
+	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.MessageQueue.Broker.ComponentSpec)
+}
+
+// BaseMessageQueueAgentSpec provides merged spec of message queue agents
+func (s *Seaweed) BaseMessageQueueAgentSpec() ComponentAccessor {
+	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.MessageQueue.Agent.ComponentSpec)
+}

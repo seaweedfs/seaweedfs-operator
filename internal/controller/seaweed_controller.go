@@ -86,6 +86,20 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
+	if seaweedCR.Spec.MessageQueue != nil {
+		if seaweedCR.Spec.MessageQueue.Broker != nil {
+			if done, result, err = r.ensureMQBrokerServers(seaweedCR); done {
+				return result, err
+			}
+		}
+
+		if seaweedCR.Spec.MessageQueue.Agent != nil {
+			if done, result, err = r.ensureMQAgentServers(seaweedCR); done {
+				return result, err
+			}
+		}
+	}
+
 	if done, result, err = r.ensureSeaweedIngress(seaweedCR); done {
 		return result, err
 	}

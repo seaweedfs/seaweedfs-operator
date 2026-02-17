@@ -11,11 +11,15 @@ metadata:
 spec:
   template:
     spec:
+      {{ if or .Values.image.credentials .Values.image.pullSecrets }}
+      imagePullSecrets:
+        - name: {{ include "seaweedfs-operator.pullSecretName" . }}
+      {{ end }}
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
       {{- include "seaweedfs-operator.webhookPodSecurityContext" . | nindent 6 }}
       containers:
       - name: certgen
-        image: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v20231011-8b53cabe0
+        image: {{ .Values.webhook.certgen.registry }}/{{ .Values.webhook.certgen.repository }}:{{ .Values.webhook.certgen.tag }}
         {{- include "seaweedfs-operator.webhookContainerSecurityContext" . | nindent 8 }}
         args:
           - create
@@ -41,13 +45,17 @@ metadata:
 spec:
   template:
     spec:
+      {{ if or .Values.image.credentials .Values.image.pullSecrets }}
+      imagePullSecrets:
+        - name: {{ include "seaweedfs-operator.pullSecretName" . }}
+      {{ end }}
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
       {{- include "seaweedfs-operator.webhookPodSecurityContext" . | nindent 6 }}
       initContainers:
       {{- include "seaweedfs-operator.webhookWaitInitContainer" (dict "Chart" .Chart "Values" .Values "Release" .Release "webhookPath" (include "seaweedfs-operator.mutatingWebhookPath" .)) | nindent 8 }}
       containers:
       - name: certgen
-        image: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v20231011-8b53cabe0
+        image: {{ .Values.webhook.certgen.registry }}/{{ .Values.webhook.certgen.repository }}:{{ .Values.webhook.certgen.tag }}
         {{- include "seaweedfs-operator.webhookContainerSecurityContext" . | nindent 8 }}
         args:
           - patch
@@ -76,13 +84,17 @@ metadata:
 spec:
   template:
     spec:
+      {{ if or .Values.image.credentials .Values.image.pullSecrets }}
+      imagePullSecrets:
+        - name: {{ include "seaweedfs-operator.pullSecretName" . }}
+      {{ end }}
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
       {{- include "seaweedfs-operator.webhookPodSecurityContext" . | nindent 6 }}
       initContainers:
       {{- include "seaweedfs-operator.webhookWaitInitContainer" (dict "Chart" .Chart "Values" .Values "Release" .Release "webhookPath" (include "seaweedfs-operator.validatingWebhookPath" .)) | nindent 8 }}
       containers:
       - name: certgen
-        image: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v20231011-8b53cabe0
+        image: {{ .Values.webhook.certgen.registry }}/{{ .Values.webhook.certgen.repository }}:{{ .Values.webhook.certgen.tag }}
         {{- include "seaweedfs-operator.webhookContainerSecurityContext" . | nindent 8 }}
         args:
           - patch

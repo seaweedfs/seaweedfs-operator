@@ -112,6 +112,10 @@ webhook:
       - ALL
     readOnlyRootFilesystem: true
     runAsNonRoot: true
+  certgen:
+    registry: registry.k8s.io
+    repository: ingress-nginx/kube-webhook-certgen
+    tag: v20231011-8b53cabe0
 
 ## seaweedfs-operator containers' resource requests and limits.
 ## ref: http://kubernetes.io/docs/user-guide/compute-resources/

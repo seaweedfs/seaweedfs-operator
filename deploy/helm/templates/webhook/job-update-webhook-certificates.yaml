@@ -45,6 +45,10 @@ metadata:
 spec:
   template:
     spec:
+      {{ if or .Values.image.credentials .Values.image.pullSecrets }}
+      imagePullSecrets:
+        - name: {{ include "seaweedfs-operator.pullSecretName" . }}
+      {{ end }}
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
       {{- include "seaweedfs-operator.webhookPodSecurityContext" . | nindent 6 }}
       initContainers:
@@ -80,6 +84,10 @@ metadata:
 spec:
   template:
     spec:
+      {{ if or .Values.image.credentials .Values.image.pullSecrets }}
+      imagePullSecrets:
+        - name: {{ include "seaweedfs-operator.pullSecretName" . }}
+      {{ end }}
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
       {{- include "seaweedfs-operator.webhookPodSecurityContext" . | nindent 6 }}
       initContainers:

@@ -29,10 +29,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 )
 
 const (
@@ -44,8 +47,9 @@ const (
 // SeaweedReconciler reconciles a Seaweed object
 type SeaweedReconciler struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	Log      logr.Logger
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=get;list;watch;create;update;patch;delete
@@ -291,4 +295,26 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 	status.Replicas = totalDesiredReplicas
 	status.ReadyReplicas = totalReadyReplicas
 	return status, nil
+}
+
+func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(seaweedCR *seaweedv1.Seaweed, existing, desired *appsv1.StatefulSet) {
+	if apiequality.Semantic.DeepEqual(existing.Spec.VolumeClaimTemplates, desired.Spec.VolumeClaimTemplates) {
+		return
+	}
+
+	if len(existing.Spec.VolumeClaimTemplates) == 0 {
+		// Only update if it was previously empty, as VolumeClaimTemplates is immutable
+		existing.Spec.VolumeClaimTemplates = desired.Spec.VolumeClaimTemplates
+		return
+	}
+
+	// Templates differ and existing is not empty. VolumeClaimTemplates are immutable.
+	r.Log.Info("VolumeClaimTemplates differ and are immutable. Please delete the StatefulSet to apply changes.",
+		"statefulset", existing.Name,
+		"namespace", existing.Namespace)
+
+	if r.Recorder != nil {
+		r.Recorder.Eventf(seaweedCR, corev1.EventTypeWarning, "VolumeClaimTemplatesMismatch",
+			"VolumeClaimTemplates are immutable. Please delete the %s StatefulSet to apply changes.", existing.Name)
+	}
 }

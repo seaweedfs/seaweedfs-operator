@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -58,13 +57,7 @@ func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed)
 		existingStatefulSet.Spec.Template.ObjectMeta = desiredStatefulSet.Spec.Template.ObjectMeta
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 
-		if !apiequality.Semantic.DeepEqual(existingStatefulSet.Spec.VolumeClaimTemplates, desiredStatefulSet.Spec.VolumeClaimTemplates) {
-			if len(existingStatefulSet.Spec.VolumeClaimTemplates) == 0 {
-				existingStatefulSet.Spec.VolumeClaimTemplates = desiredStatefulSet.Spec.VolumeClaimTemplates
-			} else {
-				log.Info("VolumeClaimTemplates differ and are immutable. Please delete the StatefulSet to apply changes.")
-			}
-		}
+		r.reconcileVolumeClaimTemplates(seaweedCR, existingStatefulSet, desiredStatefulSet)
 		return nil
 	})
 	log.Info("ensure filer stateful set " + filerStatefulSet.Name)

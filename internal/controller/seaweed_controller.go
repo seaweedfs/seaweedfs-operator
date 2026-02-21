@@ -57,6 +57,7 @@ type SeaweedReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=extensions,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;
@@ -302,13 +303,7 @@ func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(seaweedCR *seaweedv1.S
 		return
 	}
 
-	if len(existing.Spec.VolumeClaimTemplates) == 0 {
-		// Only update if it was previously empty, as VolumeClaimTemplates is immutable
-		existing.Spec.VolumeClaimTemplates = desired.Spec.VolumeClaimTemplates
-		return
-	}
-
-	// Templates differ and existing is not empty. VolumeClaimTemplates are immutable.
+	// Templates differ. VolumeClaimTemplates are immutable on existing StatefulSets.
 	r.Log.Info("VolumeClaimTemplates differ and are immutable. Please delete the StatefulSet to apply changes.",
 		"statefulset", existing.Name,
 		"namespace", existing.Namespace)

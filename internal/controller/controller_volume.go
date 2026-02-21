@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -63,9 +64,12 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.S
 		existingStatefulSet.Spec.Template.ObjectMeta = desiredStatefulSet.Spec.Template.ObjectMeta
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 
-		if len(existingStatefulSet.Spec.VolumeClaimTemplates) == 0 && len(desiredStatefulSet.Spec.VolumeClaimTemplates) > 0 {
-			// Only update if it was previously empty, as VolumeClaimTemplates is immutable
-			existingStatefulSet.Spec.VolumeClaimTemplates = desiredStatefulSet.Spec.VolumeClaimTemplates
+		if !apiequality.Semantic.DeepEqual(existingStatefulSet.Spec.VolumeClaimTemplates, desiredStatefulSet.Spec.VolumeClaimTemplates) {
+			if len(existingStatefulSet.Spec.VolumeClaimTemplates) == 0 {
+				existingStatefulSet.Spec.VolumeClaimTemplates = desiredStatefulSet.Spec.VolumeClaimTemplates
+			} else {
+				log.Info("VolumeClaimTemplates differ and are immutable. Please delete the StatefulSet to apply changes.")
+			}
 		}
 		return nil
 	})
@@ -189,9 +193,12 @@ func (r *SeaweedReconciler) ensureVolumeServerTopologyStatefulSet(seaweedCR *sea
 		existingStatefulSet.Spec.Template.ObjectMeta = desiredStatefulSet.Spec.Template.ObjectMeta
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 
-		if len(existingStatefulSet.Spec.VolumeClaimTemplates) == 0 && len(desiredStatefulSet.Spec.VolumeClaimTemplates) > 0 {
-			// Only update if it was previously empty, as VolumeClaimTemplates is immutable
-			existingStatefulSet.Spec.VolumeClaimTemplates = desiredStatefulSet.Spec.VolumeClaimTemplates
+		if !apiequality.Semantic.DeepEqual(existingStatefulSet.Spec.VolumeClaimTemplates, desiredStatefulSet.Spec.VolumeClaimTemplates) {
+			if len(existingStatefulSet.Spec.VolumeClaimTemplates) == 0 {
+				existingStatefulSet.Spec.VolumeClaimTemplates = desiredStatefulSet.Spec.VolumeClaimTemplates
+			} else {
+				log.Info("VolumeClaimTemplates differ and are immutable. Please delete the StatefulSet to apply changes.")
+			}
 		}
 		return nil
 	})

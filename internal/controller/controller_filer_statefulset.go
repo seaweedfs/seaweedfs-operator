@@ -129,16 +129,17 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 					DataSource:       m.Spec.Filer.Persistence.DataSource,
 				},
 			})
-		}
-		filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
-			Name: claimName,
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: claimName,
-					ReadOnly:  false,
+		} else {
+			filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
+				Name: claimName,
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: claimName,
+						ReadOnly:  false,
+					},
 				},
-			},
-		})
+			})
+		}
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      claimName,
 			ReadOnly:  false,

@@ -111,12 +111,16 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			claimName = *m.Spec.Filer.Persistence.ExistingClaim
 		}
 		if m.Spec.Filer.Persistence.ExistingClaim == nil {
+			accessModes := m.Spec.Filer.Persistence.AccessModes
+			if len(accessModes) == 0 {
+				accessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
+			}
 			persistentVolumeClaims = append(persistentVolumeClaims, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: claimName,
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes:      m.Spec.Filer.Persistence.AccessModes,
+					AccessModes:      accessModes,
 					Resources:        m.Spec.Filer.Persistence.Resources,
 					StorageClassName: m.Spec.Filer.Persistence.StorageClassName,
 					Selector:         m.Spec.Filer.Persistence.Selector,

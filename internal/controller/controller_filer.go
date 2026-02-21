@@ -56,6 +56,7 @@ func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed)
 		existingStatefulSet.Spec.Replicas = desiredStatefulSet.Spec.Replicas
 		existingStatefulSet.Spec.Template.ObjectMeta = desiredStatefulSet.Spec.Template.ObjectMeta
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
+		existingStatefulSet.Spec.VolumeClaimTemplates = desiredStatefulSet.Spec.VolumeClaimTemplates
 		return nil
 	})
 	log.Info("ensure filer stateful set " + filerStatefulSet.Name)

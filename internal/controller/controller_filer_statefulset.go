@@ -111,12 +111,16 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			claimName = *m.Spec.Filer.Persistence.ExistingClaim
 		}
 		if m.Spec.Filer.Persistence.ExistingClaim == nil {
+			accessModes := m.Spec.Filer.Persistence.AccessModes
+			if len(accessModes) == 0 {
+				accessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
+			}
 			persistentVolumeClaims = append(persistentVolumeClaims, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: claimName,
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes:      m.Spec.Filer.Persistence.AccessModes,
+					AccessModes:      accessModes,
 					Resources:        m.Spec.Filer.Persistence.Resources,
 					StorageClassName: m.Spec.Filer.Persistence.StorageClassName,
 					Selector:         m.Spec.Filer.Persistence.Selector,
@@ -125,16 +129,17 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 					DataSource:       m.Spec.Filer.Persistence.DataSource,
 				},
 			})
-		}
-		filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
-			Name: claimName,
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: claimName,
-					ReadOnly:  false,
+		} else {
+			filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
+				Name: claimName,
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: claimName,
+						ReadOnly:  false,
+					},
 				},
-			},
-		})
+			})
+		}
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      claimName,
 			ReadOnly:  false,

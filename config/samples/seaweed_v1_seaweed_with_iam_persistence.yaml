@@ -1,0 +1,37 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-iam-persistence
+spec:
+  image: chrislusf/seaweedfs:latest
+  volumeServerDiskCount: 1
+  master:
+    replicas: 3
+  volume:
+    replicas: 3
+    requests:
+      storage: 2Gi
+  filer:
+    replicas: 2
+    # Enable persistence for the filer to store IAM metadata persistently
+    persistence:
+      enabled: true
+      storageClassName: standard # Replace with your storage class
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 2Gi
+    # Ensure IAM is enabled and write access is allowed
+    # -iam enables the IAM API (embedded in S3)
+    # -s3.iam.readOnly=false explicitly allows write access (essential for creating users/policies via API)
+    extraArgs:
+      - "-iam"
+      - "-s3.iam.readOnly=false"
+    s3:
+      enabled: true
+    iam: true
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"

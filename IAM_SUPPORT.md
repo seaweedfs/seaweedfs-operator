@@ -77,6 +77,7 @@ The IAM API is accessible through the filer's S3 service:
 Complete examples are available in the `config/samples/` directory:
 
 - `seaweed_v1_seaweed_with_iam_embedded.yaml`: Embedded IAM configuration
+- `seaweed_v1_seaweed_with_iam_persistence.yaml`: IAM write access and persistence configuration
 
 ### Quick Start
 
@@ -359,6 +360,54 @@ make test
 # Run specific IAM-related tests
 go test -v -run "Filer.*IAM|IAM.*Filer" ./internal/controller
 ```
+
+## IAM Write Access with Persistence
+
+By default, the IAM configuration in the S3 server is stored in memory and lost on restart. To make IAM changes persistent (e.g., when creating users or policies via the API), you must enable filer persistence and ensure correctly configured flags.
+
+The following example shows how to enable persistence and allow write access to the IAM API:
+
+```yaml
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed1
+spec:
+  image: chrislusf/seaweedfs:latest
+  volumeServerDiskCount: 1
+  hostSuffix: seaweed.example.com
+  master:
+    replicas: 3
+  volume:
+    replicas: 3
+    requests:
+      storage: 2Gi
+  filer:
+    replicas: 2
+    # Important: Enable persistence for the filer to store IAM metadata
+    persistence:
+      enabled: true
+      storageClassName: standard # Use your storage class
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 2Gi
+    # Important: Ensure IAM is enabled and write access is allowed
+    extraArgs:
+      - "-iam"
+      - "-s3.iam.readOnly=false"
+    s3:
+      enabled: true
+    iam: true
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"
+```
+
+> [!NOTE]
+> Setting `-s3.iam.readOnly=false` is necessary if you intend to use the IAM API to create users or policies dynamically.
 
 ## Further Reading
 

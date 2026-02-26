@@ -77,6 +77,7 @@ The IAM API is accessible through the filer's S3 service:
 Complete examples are available in the `config/samples/` directory:
 
 - `seaweed_v1_seaweed_with_iam_embedded.yaml`: Embedded IAM configuration
+- `seaweed_v1_seaweed_with_iam_persistence.yaml`: IAM write access and persistence configuration
 
 ### Quick Start
 

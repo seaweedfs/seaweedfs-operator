@@ -43,6 +43,11 @@ import (
 // handle this by requeueing immediately rather than treating it as an error.
 var ErrStatefulSetDeleted = fmt.Errorf("StatefulSet deleted for VolumeClaimTemplates update")
 
+// ErrUnsupportedVolumeClaimTemplatesChange is returned when VolumeClaimTemplates
+// are modified in a way that cannot be safely auto-applied (e.g. removal or
+// in-place mutation). The operator logs the issue but leaves existing PVCs intact.
+var ErrUnsupportedVolumeClaimTemplatesChange = fmt.Errorf("unsupported VolumeClaimTemplates change")
+
 const (
 	ComponentMaster = "master"
 	ComponentVolume = "volume"
@@ -308,20 +313,34 @@ func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(ctx context.Context, s
 		return nil
 	}
 
-	// VolumeClaimTemplates are immutable on existing StatefulSets.
-	// Delete the StatefulSet so it gets recreated with the correct templates on the next reconcile.
-	r.Log.Info("VolumeClaimTemplates changed, deleting StatefulSet for recreation",
+	// Only auto-delete for the empty→non-empty transition (adding persistence).
+	// Removal or in-place mutation of VolumeClaimTemplates could destroy existing
+	// PVCs, so we refuse those and ask the user to handle it manually.
+	if len(existing.Spec.VolumeClaimTemplates) == 0 && len(desired.Spec.VolumeClaimTemplates) > 0 {
+		r.Log.Info("VolumeClaimTemplates added, deleting StatefulSet for recreation",
+			"statefulset", existing.Name,
+			"namespace", existing.Namespace)
+
+		if r.Recorder != nil {
+			r.Recorder.Eventf(seaweedCR, corev1.EventTypeNormal, "VolumeClaimTemplatesChanged",
+				"Deleting StatefulSet %s to add VolumeClaimTemplates", existing.Name)
+		}
+
+		if err := r.Delete(ctx, existing); err != nil {
+			return fmt.Errorf("failed to delete StatefulSet %s for VolumeClaimTemplates update: %w", existing.Name, err)
+		}
+
+		return ErrStatefulSetDeleted
+	}
+
+	r.Log.Info("VolumeClaimTemplates differ but cannot be auto-applied. Delete the StatefulSet manually to apply changes.",
 		"statefulset", existing.Name,
 		"namespace", existing.Namespace)
 
 	if r.Recorder != nil {
-		r.Recorder.Eventf(seaweedCR, corev1.EventTypeNormal, "VolumeClaimTemplatesChanged",
-			"Deleting StatefulSet %s to apply VolumeClaimTemplates changes", existing.Name)
+		r.Recorder.Eventf(seaweedCR, corev1.EventTypeWarning, "VolumeClaimTemplatesMismatch",
+			"VolumeClaimTemplates on %s differ but cannot be auto-applied. Delete the StatefulSet manually to apply changes.", existing.Name)
 	}
 
-	if err := r.Delete(ctx, existing); err != nil {
-		return fmt.Errorf("failed to delete StatefulSet %s for VolumeClaimTemplates update: %w", existing.Name, err)
-	}
-
-	return ErrStatefulSetDeleted
+	return ErrUnsupportedVolumeClaimTemplatesChange
 }

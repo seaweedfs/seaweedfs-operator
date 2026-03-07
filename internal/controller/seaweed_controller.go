@@ -38,6 +38,11 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 )
 
+// ErrStatefulSetDeleted is a sentinel error returned when a StatefulSet is
+// deleted to apply immutable VolumeClaimTemplates changes. Callers should
+// handle this by requeueing immediately rather than treating it as an error.
+var ErrStatefulSetDeleted = fmt.Errorf("StatefulSet deleted for VolumeClaimTemplates update")
+
 const (
 	ComponentMaster = "master"
 	ComponentVolume = "volume"
@@ -77,12 +82,12 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return result, err
 	}
 
-	if done, result, err = r.ensureVolumeServers(seaweedCR); done {
+	if done, result, err = r.ensureVolumeServers(ctx, seaweedCR); done {
 		return result, err
 	}
 
 	if seaweedCR.Spec.Filer != nil {
-		if done, result, err = r.ensureFilerServers(seaweedCR); done {
+		if done, result, err = r.ensureFilerServers(ctx, seaweedCR); done {
 			return result, err
 		}
 	}
@@ -298,18 +303,40 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 	return status, nil
 }
 
-func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(seaweedCR *seaweedv1.Seaweed, existing, desired *appsv1.StatefulSet) {
+func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(ctx context.Context, seaweedCR *seaweedv1.Seaweed, existing, desired *appsv1.StatefulSet) error {
 	if apiequality.Semantic.DeepEqual(existing.Spec.VolumeClaimTemplates, desired.Spec.VolumeClaimTemplates) {
-		return
+		return nil
 	}
 
-	// Templates differ. VolumeClaimTemplates are immutable on existing StatefulSets.
-	r.Log.Info("VolumeClaimTemplates differ and are immutable. Please delete the StatefulSet to apply changes.",
+	// Only auto-delete for the empty→non-empty transition (adding persistence).
+	// Removal or in-place mutation of VolumeClaimTemplates could destroy existing
+	// PVCs, so we refuse those and ask the user to handle it manually.
+	if len(existing.Spec.VolumeClaimTemplates) == 0 && len(desired.Spec.VolumeClaimTemplates) > 0 {
+		r.Log.Info("VolumeClaimTemplates added, deleting StatefulSet for recreation",
+			"statefulset", existing.Name,
+			"namespace", existing.Namespace)
+
+		if r.Recorder != nil {
+			r.Recorder.Eventf(seaweedCR, corev1.EventTypeNormal, "VolumeClaimTemplatesChanged",
+				"Deleting StatefulSet %s to add VolumeClaimTemplates", existing.Name)
+		}
+
+		if err := r.Delete(ctx, existing); err != nil {
+			return fmt.Errorf("failed to delete StatefulSet %s for VolumeClaimTemplates update: %w", existing.Name, err)
+		}
+
+		return ErrStatefulSetDeleted
+	}
+
+	// Warn but don't fail reconciliation — this requires manual intervention.
+	r.Log.Info("VolumeClaimTemplates differ but cannot be auto-applied. Delete the StatefulSet manually to apply changes.",
 		"statefulset", existing.Name,
 		"namespace", existing.Namespace)
 
 	if r.Recorder != nil {
 		r.Recorder.Eventf(seaweedCR, corev1.EventTypeWarning, "VolumeClaimTemplatesMismatch",
-			"VolumeClaimTemplates are immutable. Please delete the %s StatefulSet to apply changes.", existing.Name)
+			"VolumeClaimTemplates on %s differ but cannot be auto-applied. Delete the StatefulSet manually to apply changes.", existing.Name)
 	}
+
+	return nil
 }

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -13,8 +14,7 @@ import (
 	label "github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
 )
 
-func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
-	_ = context.Background()
+func (r *SeaweedReconciler) ensureFilerServers(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
 	if done, result, err = r.ensureFilerPeerService(seaweedCR); done {
@@ -29,7 +29,7 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 		return
 	}
 
-	if done, result, err = r.ensureFilerStatefulSet(seaweedCR); done {
+	if done, result, err = r.ensureFilerStatefulSet(ctx, seaweedCR); done {
 		return
 	}
 
@@ -42,7 +42,7 @@ func (r *SeaweedReconciler) ensureFilerServers(seaweedCR *seaweedv1.Seaweed) (do
 	return
 }
 
-func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+func (r *SeaweedReconciler) ensureFilerStatefulSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-filer-statefulset", seaweedCR.Name)
 
 	filerStatefulSet := r.createFilerStatefulSet(seaweedCR)
@@ -57,9 +57,12 @@ func (r *SeaweedReconciler) ensureFilerStatefulSet(seaweedCR *seaweedv1.Seaweed)
 		existingStatefulSet.Spec.Template.ObjectMeta = desiredStatefulSet.Spec.Template.ObjectMeta
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 
-		r.reconcileVolumeClaimTemplates(seaweedCR, existingStatefulSet, desiredStatefulSet)
-		return nil
+		return r.reconcileVolumeClaimTemplates(ctx, seaweedCR, existingStatefulSet, desiredStatefulSet)
 	})
+	if errors.Is(err, ErrStatefulSetDeleted) {
+		log.Info("filer StatefulSet deleted for VolumeClaimTemplates update, requeueing")
+		return true, ctrl.Result{Requeue: true}, nil
+	}
 	log.Info("ensure filer stateful set " + filerStatefulSet.Name)
 	return ReconcileResult(err)
 }

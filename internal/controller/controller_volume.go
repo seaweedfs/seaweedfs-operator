@@ -63,8 +63,7 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.S
 		existingStatefulSet.Spec.Template.ObjectMeta = desiredStatefulSet.Spec.Template.ObjectMeta
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 
-		r.reconcileVolumeClaimTemplates(seaweedCR, existingStatefulSet, desiredStatefulSet)
-		return nil
+		return r.reconcileVolumeClaimTemplates(seaweedCR, existingStatefulSet, desiredStatefulSet)
 	})
 
 	log.Info("ensure volume stateful set " + volumeServerStatefulSet.Name)
@@ -186,8 +185,7 @@ func (r *SeaweedReconciler) ensureVolumeServerTopologyStatefulSet(seaweedCR *sea
 		existingStatefulSet.Spec.Template.ObjectMeta = desiredStatefulSet.Spec.Template.ObjectMeta
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 
-		r.reconcileVolumeClaimTemplates(seaweedCR, existingStatefulSet, desiredStatefulSet)
-		return nil
+		return r.reconcileVolumeClaimTemplates(seaweedCR, existingStatefulSet, desiredStatefulSet)
 	})
 
 	log.Info("ensure volume topology stateful set " + volumeServerStatefulSet.Name)

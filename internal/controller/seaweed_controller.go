@@ -298,18 +298,25 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 	return status, nil
 }
 
-func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(seaweedCR *seaweedv1.Seaweed, existing, desired *appsv1.StatefulSet) {
+func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(seaweedCR *seaweedv1.Seaweed, existing, desired *appsv1.StatefulSet) error {
 	if apiequality.Semantic.DeepEqual(existing.Spec.VolumeClaimTemplates, desired.Spec.VolumeClaimTemplates) {
-		return
+		return nil
 	}
 
-	// Templates differ. VolumeClaimTemplates are immutable on existing StatefulSets.
-	r.Log.Info("VolumeClaimTemplates differ and are immutable. Please delete the StatefulSet to apply changes.",
+	// VolumeClaimTemplates are immutable on existing StatefulSets.
+	// Delete the StatefulSet so it gets recreated with the correct templates on the next reconcile.
+	r.Log.Info("VolumeClaimTemplates changed, deleting StatefulSet for recreation",
 		"statefulset", existing.Name,
 		"namespace", existing.Namespace)
 
 	if r.Recorder != nil {
-		r.Recorder.Eventf(seaweedCR, corev1.EventTypeWarning, "VolumeClaimTemplatesMismatch",
-			"VolumeClaimTemplates are immutable. Please delete the %s StatefulSet to apply changes.", existing.Name)
+		r.Recorder.Eventf(seaweedCR, corev1.EventTypeNormal, "VolumeClaimTemplatesChanged",
+			"Deleting StatefulSet %s to apply VolumeClaimTemplates changes", existing.Name)
 	}
+
+	if err := r.Delete(context.TODO(), existing); err != nil {
+		return fmt.Errorf("failed to delete StatefulSet %s for VolumeClaimTemplates update: %w", existing.Name, err)
+	}
+
+	return fmt.Errorf("StatefulSet %s deleted for VolumeClaimTemplates update, will recreate on next reconcile", existing.Name)
 }

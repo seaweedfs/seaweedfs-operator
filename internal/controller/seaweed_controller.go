@@ -38,6 +38,11 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 )
 
+// ErrStatefulSetDeleted is a sentinel error returned when a StatefulSet is
+// deleted to apply immutable VolumeClaimTemplates changes. Callers should
+// handle this by requeueing immediately rather than treating it as an error.
+var ErrStatefulSetDeleted = fmt.Errorf("StatefulSet deleted for VolumeClaimTemplates update")
+
 const (
 	ComponentMaster = "master"
 	ComponentVolume = "volume"
@@ -77,12 +82,12 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return result, err
 	}
 
-	if done, result, err = r.ensureVolumeServers(seaweedCR); done {
+	if done, result, err = r.ensureVolumeServers(ctx, seaweedCR); done {
 		return result, err
 	}
 
 	if seaweedCR.Spec.Filer != nil {
-		if done, result, err = r.ensureFilerServers(seaweedCR); done {
+		if done, result, err = r.ensureFilerServers(ctx, seaweedCR); done {
 			return result, err
 		}
 	}
@@ -298,7 +303,7 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 	return status, nil
 }
 
-func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(seaweedCR *seaweedv1.Seaweed, existing, desired *appsv1.StatefulSet) error {
+func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(ctx context.Context, seaweedCR *seaweedv1.Seaweed, existing, desired *appsv1.StatefulSet) error {
 	if apiequality.Semantic.DeepEqual(existing.Spec.VolumeClaimTemplates, desired.Spec.VolumeClaimTemplates) {
 		return nil
 	}
@@ -314,9 +319,9 @@ func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(seaweedCR *seaweedv1.S
 			"Deleting StatefulSet %s to apply VolumeClaimTemplates changes", existing.Name)
 	}
 
-	if err := r.Delete(context.TODO(), existing); err != nil {
+	if err := r.Delete(ctx, existing); err != nil {
 		return fmt.Errorf("failed to delete StatefulSet %s for VolumeClaimTemplates update: %w", existing.Name, err)
 	}
 
-	return fmt.Errorf("StatefulSet %s deleted for VolumeClaimTemplates update, will recreate on next reconcile", existing.Name)
+	return ErrStatefulSetDeleted
 }

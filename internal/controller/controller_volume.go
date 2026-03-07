@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -13,13 +14,12 @@ import (
 	label "github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
 )
 
-func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
-	_ = context.Background()
+func (r *SeaweedReconciler) ensureVolumeServers(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
 	// Check if using topology-aware volume deployment
 	if len(seaweedCR.Spec.VolumeTopology) > 0 {
-		return r.ensureVolumeServersWithTopology(seaweedCR)
+		return r.ensureVolumeServersWithTopology(ctx, seaweedCR)
 	}
 
 	// Fallback to single volume server group (legacy behavior)
@@ -35,7 +35,7 @@ func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (d
 		return
 	}
 
-	if done, result, err = r.ensureVolumeServerStatefulSet(seaweedCR); done {
+	if done, result, err = r.ensureVolumeServerStatefulSet(ctx, seaweedCR); done {
 		return
 	}
 
@@ -48,7 +48,7 @@ func (r *SeaweedReconciler) ensureVolumeServers(seaweedCR *seaweedv1.Seaweed) (d
 	return
 }
 
-func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-volume-statefulset", seaweedCR.Name)
 
 	volumeServerStatefulSet := r.createVolumeServerStatefulSet(seaweedCR)
@@ -63,8 +63,12 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(seaweedCR *seaweedv1.S
 		existingStatefulSet.Spec.Template.ObjectMeta = desiredStatefulSet.Spec.Template.ObjectMeta
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 
-		return r.reconcileVolumeClaimTemplates(seaweedCR, existingStatefulSet, desiredStatefulSet)
+		return r.reconcileVolumeClaimTemplates(ctx, seaweedCR, existingStatefulSet, desiredStatefulSet)
 	})
+	if errors.Is(err, ErrStatefulSetDeleted) {
+		log.Info("volume StatefulSet deleted for VolumeClaimTemplates update, requeueing")
+		return true, ctrl.Result{Requeue: true}, nil
+	}
 
 	log.Info("ensure volume stateful set " + volumeServerStatefulSet.Name)
 	return ReconcileResult(err)
@@ -123,7 +127,7 @@ func (r *SeaweedReconciler) ensureVolumeServerServiceMonitor(seaweedCR *seaweedv
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureVolumeServersWithTopology(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
+func (r *SeaweedReconciler) ensureVolumeServersWithTopology(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	log := r.Log.WithValues("seaweed-topology", seaweedCR.Name)
 
 	for topologyName, topologySpec := range seaweedCR.Spec.VolumeTopology {
@@ -137,7 +141,7 @@ func (r *SeaweedReconciler) ensureVolumeServersWithTopology(seaweedCR *seaweedv1
 			return
 		}
 
-		if done, result, err = r.ensureVolumeServerTopologyStatefulSet(seaweedCR, topologyName, topologySpec); done {
+		if done, result, err = r.ensureVolumeServerTopologyStatefulSet(ctx, seaweedCR, topologyName, topologySpec); done {
 			return
 		}
 
@@ -170,7 +174,7 @@ func labelsForVolumeServerTopology(name, topology string) map[string]string {
 	}
 }
 
-func (r *SeaweedReconciler) ensureVolumeServerTopologyStatefulSet(seaweedCR *seaweedv1.Seaweed, topologyName string, topologySpec *seaweedv1.VolumeTopologySpec) (bool, ctrl.Result, error) {
+func (r *SeaweedReconciler) ensureVolumeServerTopologyStatefulSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed, topologyName string, topologySpec *seaweedv1.VolumeTopologySpec) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-volume-topology-statefulset", seaweedCR.Name, "topology", topologyName)
 
 	volumeServerStatefulSet := r.createVolumeServerTopologyStatefulSet(seaweedCR, topologyName, topologySpec)
@@ -185,8 +189,12 @@ func (r *SeaweedReconciler) ensureVolumeServerTopologyStatefulSet(seaweedCR *sea
 		existingStatefulSet.Spec.Template.ObjectMeta = desiredStatefulSet.Spec.Template.ObjectMeta
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 
-		return r.reconcileVolumeClaimTemplates(seaweedCR, existingStatefulSet, desiredStatefulSet)
+		return r.reconcileVolumeClaimTemplates(ctx, seaweedCR, existingStatefulSet, desiredStatefulSet)
 	})
+	if errors.Is(err, ErrStatefulSetDeleted) {
+		log.Info("volume topology StatefulSet deleted for VolumeClaimTemplates update, requeueing", "topology", topologyName)
+		return true, ctrl.Result{Requeue: true}, nil
+	}
 
 	log.Info("ensure volume topology stateful set " + volumeServerStatefulSet.Name)
 	return ReconcileResult(err)

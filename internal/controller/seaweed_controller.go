@@ -43,11 +43,6 @@ import (
 // handle this by requeueing immediately rather than treating it as an error.
 var ErrStatefulSetDeleted = fmt.Errorf("StatefulSet deleted for VolumeClaimTemplates update")
 
-// ErrUnsupportedVolumeClaimTemplatesChange is returned when VolumeClaimTemplates
-// are modified in a way that cannot be safely auto-applied (e.g. removal or
-// in-place mutation). The operator logs the issue but leaves existing PVCs intact.
-var ErrUnsupportedVolumeClaimTemplatesChange = fmt.Errorf("unsupported VolumeClaimTemplates change")
-
 const (
 	ComponentMaster = "master"
 	ComponentVolume = "volume"
@@ -333,6 +328,7 @@ func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(ctx context.Context, s
 		return ErrStatefulSetDeleted
 	}
 
+	// Warn but don't fail reconciliation — this requires manual intervention.
 	r.Log.Info("VolumeClaimTemplates differ but cannot be auto-applied. Delete the StatefulSet manually to apply changes.",
 		"statefulset", existing.Name,
 		"namespace", existing.Namespace)
@@ -342,5 +338,5 @@ func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(ctx context.Context, s
 			"VolumeClaimTemplates on %s differ but cannot be auto-applied. Delete the StatefulSet manually to apply changes.", existing.Name)
 	}
 
-	return ErrUnsupportedVolumeClaimTemplatesChange
+	return nil
 }

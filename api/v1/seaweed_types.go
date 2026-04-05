@@ -29,12 +29,12 @@ import (
 const (
 	GRPCPortDelta = 10000
 
-	MasterHTTPPort   = 9333
-	VolumeHTTPPort   = 8444
-	FilerHTTPPort    = 8888
-	FilerS3Port      = 8333 // S3 port (IAM API is also available on this port when S3 is enabled)
-	FilerIcebergPort = 8181 // Default Iceberg catalog REST API port
-	AdminHTTPPort    = 23646
+	MasterHTTPPort    = 9333
+	VolumeHTTPPort    = 8444
+	FilerHTTPPort     = 8888
+	FilerS3Port       = 8333 // S3 port (IAM API is also available on this port when S3 is enabled)
+	FilerIcebergPort  = 8181 // Default Iceberg catalog REST API port
+	AdminHTTPPort     = 23646
 	WorkerMetricsPort = 9101 // Default worker metrics port (only used when metricsPort is configured)
 
 	MasterGRPCPort = MasterHTTPPort + GRPCPortDelta

@@ -999,6 +999,16 @@ spec:
                   iam:
                     default: true
                     type: boolean
+                  iceberg:
+                    properties:
+                      enabled:
+                        default: true
+                        type: boolean
+                      port:
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                    type: object
                   imagePullPolicy:
                     type: string
                   imagePullSecrets:

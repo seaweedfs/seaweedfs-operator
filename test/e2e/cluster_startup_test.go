@@ -41,7 +41,7 @@ import (
 	"github.com/seaweedfs/seaweedfs-operator/test/utils"
 )
 
-var _ = Describe("SeaweedFS Cluster Startup", Ordered, func() {
+var _ = Describe("SeaweedFS Cluster Startup", Ordered, Label("integration"), func() {
 	var (
 		ctx           context.Context
 		k8sClient     client.Client

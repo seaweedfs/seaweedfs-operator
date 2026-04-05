@@ -26,7 +26,7 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 
 func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForAdmin(m.Name)
-	annotations := m.Spec.Admin.Annotations
+	annotations := m.BaseAdminSpec().Annotations()
 	ports := []corev1.ContainerPort{
 		{
 			ContainerPort: seaweedv1.AdminHTTPPort,

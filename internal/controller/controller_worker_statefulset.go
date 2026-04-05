@@ -45,7 +45,7 @@ func buildWorkerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string 
 
 func (r *SeaweedReconciler) createWorkerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForWorker(m.Name)
-	annotations := m.Spec.Worker.Annotations
+	annotations := m.BaseWorkerSpec().Annotations()
 	var ports []corev1.ContainerPort
 	if m.Spec.Worker.MetricsPort != nil {
 		ports = append(ports, corev1.ContainerPort{

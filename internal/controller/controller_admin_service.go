@@ -96,7 +96,9 @@ func (r *SeaweedReconciler) createAdminService(m *seaweedv1.Seaweed) *corev1.Ser
 
 	if m.Spec.Admin.Service != nil {
 		svcSpec := m.Spec.Admin.Service
-		dep.Annotations = copyAnnotations(svcSpec.Annotations)
+		for k, v := range svcSpec.Annotations {
+			dep.Annotations[k] = v
+		}
 
 		if svcSpec.Type != "" {
 			dep.Spec.Type = svcSpec.Type

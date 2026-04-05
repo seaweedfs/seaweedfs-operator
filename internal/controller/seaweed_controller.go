@@ -308,7 +308,7 @@ func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *s
 		}
 	case ComponentAdmin:
 		if seaweedCR.Spec.Admin != nil {
-			return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-admin", seaweedCR.Spec.Admin.Replicas)
+			return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-admin", 1)
 		}
 	case ComponentWorker:
 		if seaweedCR.Spec.Worker != nil {

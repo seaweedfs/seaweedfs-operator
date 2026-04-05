@@ -309,16 +309,12 @@ func (c *IcebergConfig) IcebergEffectivePort() int32 {
 	return FilerIcebergPort
 }
 
-// AdminSpec is the spec for the admin server
+// AdminSpec is the spec for the admin server (single instance)
 type AdminSpec struct {
 	ComponentSpec               `json:",inline"`
 	corev1.ResourceRequirements `json:",inline"`
 
-	// The desired ready replicas
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:default:=1
-	Replicas int32        `json:"replicas"`
-	Service  *ServiceSpec `json:"service,omitempty"`
+	Service *ServiceSpec `json:"service,omitempty"`
 
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`

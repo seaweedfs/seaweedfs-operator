@@ -50,7 +50,7 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			Name:          "admin-metrics",
 		})
 	}
-	replicas := int32(m.Spec.Admin.Replicas)
+	replicas := int32(1)
 	rollingUpdatePartition := int32(0)
 	enableServiceLinks := false
 

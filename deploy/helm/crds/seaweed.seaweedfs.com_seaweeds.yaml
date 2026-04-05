@@ -680,10 +680,6 @@ spec:
                     type: object
                   priorityClassName:
                     type: string
-                  replicas:
-                    default: 1
-                    minimum: 1
-                    type: integer
                   requests:
                     additionalProperties:
                       anyOf:
@@ -1501,8 +1497,6 @@ spec:
                       - name
                       type: object
                     type: array
-                required:
-                - replicas
                 type: object
               affinity:
                 properties:

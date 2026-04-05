@@ -28,6 +28,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -108,6 +109,13 @@ var _ = Describe("SeaweedFS Cluster Startup", Ordered, func() {
 				},
 				Volume: &seaweedv1.VolumeSpec{
 					Replicas: 1,
+					VolumeServerConfig: seaweedv1.VolumeServerConfig{
+						ResourceRequirements: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: resource.MustParse("2Gi"),
+							},
+						},
+					},
 				},
 				Filer: &seaweedv1.FilerSpec{
 					Replicas: 1,
@@ -116,8 +124,20 @@ var _ = Describe("SeaweedFS Cluster Startup", Ordered, func() {
 		}
 
 		By("creating the Seaweed resource")
-		Expect(k8sClient.Create(ctx, seaweed)).To(Succeed())
+		err := k8sClient.Create(ctx, seaweed)
+		if err != nil {
+			GinkgoWriter.Printf("FAILED to create Seaweed resource: %v\n", err)
+		}
+		Expect(err).NotTo(HaveOccurred())
 		GinkgoWriter.Printf("Seaweed resource created in namespace %s\n", testNamespace)
+
+		By("verifying the Seaweed resource exists")
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{
+				Name:      seaweedName,
+				Namespace: testNamespace,
+			}, seaweed)
+		}, time.Minute, time.Second*5).Should(Succeed())
 
 		By("waiting for master StatefulSet to have ready replicas")
 		Eventually(func() int32 {
@@ -127,6 +147,11 @@ var _ = Describe("SeaweedFS Cluster Startup", Ordered, func() {
 				Namespace: testNamespace,
 			}, sts)
 			if err != nil {
+				// Also log the CR status for debugging
+				sw := &seaweedv1.Seaweed{}
+				if getErr := k8sClient.Get(ctx, types.NamespacedName{Name: seaweedName, Namespace: testNamespace}, sw); getErr == nil {
+					GinkgoWriter.Printf("Seaweed CR generation=%d, conditions=%v\n", sw.Generation, sw.Status.Conditions)
+				}
 				GinkgoWriter.Printf("Waiting for master StatefulSet: %v\n", err)
 				return 0
 			}

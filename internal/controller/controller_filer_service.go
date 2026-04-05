@@ -41,12 +41,13 @@ func (r *SeaweedReconciler) createFilerPeerService(m *seaweedv1.Seaweed) *corev1
 			TargetPort: intstr.FromInt(int(*m.Spec.Filer.MetricsPort)),
 		})
 	}
-	if m.Spec.Filer.IcebergPort != nil {
+	if m.Spec.Filer.Iceberg != nil && m.Spec.Filer.Iceberg.Enabled {
+		icebergPort := m.Spec.Filer.Iceberg.IcebergEffectivePort()
 		ports = append(ports, corev1.ServicePort{
 			Name:       "filer-iceberg",
 			Protocol:   corev1.Protocol("TCP"),
-			Port:       *m.Spec.Filer.IcebergPort,
-			TargetPort: intstr.FromInt(int(*m.Spec.Filer.IcebergPort)),
+			Port:       icebergPort,
+			TargetPort: intstr.FromInt(int(icebergPort)),
 		})
 	}
 
@@ -102,12 +103,13 @@ func (r *SeaweedReconciler) createFilerService(m *seaweedv1.Seaweed) *corev1.Ser
 			TargetPort: intstr.FromInt(int(*m.Spec.Filer.MetricsPort)),
 		})
 	}
-	if m.Spec.Filer.IcebergPort != nil {
+	if m.Spec.Filer.Iceberg != nil && m.Spec.Filer.Iceberg.Enabled {
+		icebergPort := m.Spec.Filer.Iceberg.IcebergEffectivePort()
 		ports = append(ports, corev1.ServicePort{
 			Name:       "filer-iceberg",
 			Protocol:   corev1.Protocol("TCP"),
-			Port:       *m.Spec.Filer.IcebergPort,
-			TargetPort: intstr.FromInt(int(*m.Spec.Filer.IcebergPort)),
+			Port:       icebergPort,
+			TargetPort: intstr.FromInt(int(icebergPort)),
 		})
 	}
 

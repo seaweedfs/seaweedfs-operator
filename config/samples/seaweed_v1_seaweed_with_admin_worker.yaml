@@ -1,0 +1,37 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed1
+  namespace: default
+spec:
+  image: chrislusf/seaweedfs:latest
+  volumeServerDiskCount: 1
+  master:
+    replicas: 3
+    volumeSizeLimitMB: 1024
+  volume:
+    replicas: 1
+    requests:
+      storage: 2Gi
+  filer:
+    replicas: 2
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"
+  admin:
+    replicas: 1
+    persistence:
+      enabled: true
+      resources:
+        requests:
+          storage: 1Gi
+  worker:
+    replicas: 2
+    jobType: "all"
+    maxExecute: 4
+    persistence:
+      enabled: true
+      resources:
+        requests:
+          storage: 1Gi

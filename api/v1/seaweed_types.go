@@ -34,10 +34,13 @@ const (
 	FilerHTTPPort    = 8888
 	FilerS3Port      = 8333 // S3 port (IAM API is also available on this port when S3 is enabled)
 	FilerIcebergPort = 8181 // Default Iceberg catalog REST API port
+	AdminHTTPPort    = 23646
+	WorkerMetricsPort = 9101 // Default worker metrics port (only used when metricsPort is configured)
 
 	MasterGRPCPort = MasterHTTPPort + GRPCPortDelta
 	VolumeGRPCPort = VolumeHTTPPort + GRPCPortDelta
 	FilerGRPCPort  = FilerHTTPPort + GRPCPortDelta
+	AdminGRPCPort  = AdminHTTPPort + GRPCPortDelta
 )
 
 // SeaweedSpec defines the desired state of Seaweed
@@ -67,6 +70,12 @@ type SeaweedSpec struct {
 
 	// Filer
 	Filer *FilerSpec `json:"filer,omitempty"`
+
+	// Admin server for cluster management UI and worker coordination
+	Admin *AdminSpec `json:"admin,omitempty"`
+
+	// Worker processes that connect to admin server and execute background jobs
+	Worker *WorkerSpec `json:"worker,omitempty"`
 
 	// Note: Standalone IAM has been removed. IAM is now embedded in S3 by default.
 	// When filer.s3.enabled=true, IAM API is available on the same S3 port.
@@ -141,6 +150,14 @@ type SeaweedStatus struct {
 	// Filer component status
 	// +optional
 	Filer ComponentStatus `json:"filer,omitempty"`
+
+	// Admin component status
+	// +optional
+	Admin ComponentStatus `json:"admin,omitempty"`
+
+	// Worker component status
+	// +optional
+	Worker ComponentStatus `json:"worker,omitempty"`
 }
 
 // ComponentStatus represents the status of a seaweedfs component
@@ -290,6 +307,58 @@ func (c *IcebergConfig) IcebergEffectivePort() int32 {
 		return *c.Port
 	}
 	return FilerIcebergPort
+}
+
+// AdminSpec is the spec for the admin server
+type AdminSpec struct {
+	ComponentSpec               `json:",inline"`
+	corev1.ResourceRequirements `json:",inline"`
+
+	// The desired ready replicas
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default:=1
+	Replicas int32        `json:"replicas"`
+	Service  *ServiceSpec `json:"service,omitempty"`
+
+	// MetricsPort is the port that the prometheus metrics export listens on
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
+
+	// Persistence mounts a volume for admin data directory
+	Persistence *PersistenceSpec `json:"persistence,omitempty"`
+
+	// CredentialsSecret is a reference to a Secret containing admin credentials.
+	// The secret should have keys: adminUser, adminPassword, and optionally readOnlyUser, readOnlyPassword
+	CredentialsSecret *corev1.SecretKeySelector `json:"credentialsSecret,omitempty"`
+}
+
+// WorkerSpec is the spec for worker processes
+type WorkerSpec struct {
+	ComponentSpec               `json:",inline"`
+	corev1.ResourceRequirements `json:",inline"`
+
+	// The desired ready replicas
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default:=1
+	Replicas int32 `json:"replicas"`
+
+	// MetricsPort is the port that the prometheus metrics export listens on
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
+
+	// Persistence mounts a volume for worker working directory
+	Persistence *PersistenceSpec `json:"persistence,omitempty"`
+
+	// JobType specifies which job types or categories the worker should serve.
+	// Categories: "all", "default", "heavy". Can also specify explicit job type names.
+	// +kubebuilder:default:="all"
+	JobType *string `json:"jobType,omitempty"`
+
+	// MaxDetect is the max number of concurrent detection requests
+	// +kubebuilder:validation:Minimum=1
+	MaxDetect *int32 `json:"maxDetect,omitempty"`
+
+	// MaxExecute is the max number of concurrent execute requests
+	// +kubebuilder:validation:Minimum=1
+	MaxExecute *int32 `json:"maxExecute,omitempty"`
 }
 
 // ComponentSpec is the base spec of each component, the fields should always accessed by the Basic<Component>Spec() method to respect the cluster-level properties

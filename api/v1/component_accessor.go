@@ -220,3 +220,13 @@ func (s *Seaweed) BaseFilerSpec() ComponentAccessor {
 func (s *Seaweed) BaseVolumeSpec() ComponentAccessor {
 	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Volume.ComponentSpec)
 }
+
+// BaseAdminSpec provides merged spec of admin
+func (s *Seaweed) BaseAdminSpec() ComponentAccessor {
+	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Admin.ComponentSpec)
+}
+
+// BaseWorkerSpec provides merged spec of workers
+func (s *Seaweed) BaseWorkerSpec() ComponentAccessor {
+	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Worker.ComponentSpec)
+}

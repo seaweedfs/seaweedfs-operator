@@ -74,6 +74,10 @@ func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
 		}
 	}
 
+	if r.Spec.Worker != nil && r.Spec.Admin == nil {
+		errs = append(errs, errors.New("spec.worker requires spec.admin to be configured"))
+	}
+
 	return nil, utilerrors.NewAggregate(errs)
 }
 
@@ -81,7 +85,10 @@ func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
 func (r *Seaweed) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
 	seaweedlog.Info("validate update", "name", r.Name)
 
-	// TODO(user): fill in your validation logic upon object update.
+	if r.Spec.Worker != nil && r.Spec.Admin == nil {
+		return nil, errors.New("spec.worker requires spec.admin to be configured")
+	}
+
 	return nil, nil
 }
 

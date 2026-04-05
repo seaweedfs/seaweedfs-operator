@@ -47,6 +47,8 @@ const (
 	ComponentMaster = "master"
 	ComponentVolume = "volume"
 	ComponentFiler  = "filer"
+	ComponentAdmin  = "admin"
+	ComponentWorker = "worker"
 )
 
 // SeaweedReconciler reconciles a Seaweed object
@@ -65,6 +67,7 @@ type SeaweedReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=extensions,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;
 
 // Reconcile implements the reconciliation logic
@@ -94,6 +97,22 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Note: Standalone IAM has been removed. IAM is now embedded in S3 by default.
 	// Use filer.s3.enabled=true to enable S3 with embedded IAM.
+
+	if seaweedCR.Spec.Admin != nil {
+		if done, result, err = r.ensureAdminServers(seaweedCR); done {
+			return result, err
+		}
+	}
+
+	if seaweedCR.Spec.Worker != nil {
+		if seaweedCR.Spec.Admin == nil {
+			log.Info("Worker requires admin server to be configured, skipping worker reconciliation")
+		} else {
+			if done, result, err = r.ensureWorkers(ctx, seaweedCR); done {
+				return result, err
+			}
+		}
+	}
 
 	if done, result, err = r.ensureSeaweedIngress(seaweedCR); done {
 		return result, err
@@ -167,6 +186,26 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		}
 	}
 
+	// Get admin statefulset status (if enabled)
+	var adminStatus seaweedv1.ComponentStatus
+	if seaweedCR.Spec.Admin != nil {
+		adminStatus, err = r.getComponentStatus(ctx, seaweedCR, ComponentAdmin)
+		if err != nil {
+			log.Error(err, "Failed to get admin status")
+			return err
+		}
+	}
+
+	// Get worker statefulset status (if enabled)
+	var workerStatus seaweedv1.ComponentStatus
+	if seaweedCR.Spec.Worker != nil && seaweedCR.Spec.Admin != nil {
+		workerStatus, err = r.getComponentStatus(ctx, seaweedCR, ComponentWorker)
+		if err != nil {
+			log.Error(err, "Failed to get worker status")
+			return err
+		}
+	}
+
 	// Determine if cluster is ready
 	// Master must have replicas and all must be ready
 	isReady := masterStatus.Replicas > 0 && masterStatus.ReadyReplicas == masterStatus.Replicas
@@ -178,6 +217,16 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		isReady = isReady && (filerStatus.Replicas == 0 || filerStatus.ReadyReplicas == filerStatus.Replicas)
 	}
 
+	// Admin is checked only if enabled
+	if seaweedCR.Spec.Admin != nil {
+		isReady = isReady && (adminStatus.Replicas == 0 || adminStatus.ReadyReplicas == adminStatus.Replicas)
+	}
+
+	// Worker is checked only if enabled (requires admin)
+	if seaweedCR.Spec.Worker != nil && seaweedCR.Spec.Admin != nil {
+		isReady = isReady && (workerStatus.Replicas == 0 || workerStatus.ReadyReplicas == workerStatus.Replicas)
+	}
+
 	// Update status
 	seaweedCR.Status.ObservedGeneration = seaweedCR.Generation
 	seaweedCR.Status.Master = masterStatus
@@ -185,8 +234,17 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	if seaweedCR.Spec.Filer != nil {
 		seaweedCR.Status.Filer = filerStatus
 	} else {
-		// Clear stale filer status when filer is disabled
 		seaweedCR.Status.Filer = seaweedv1.ComponentStatus{}
+	}
+	if seaweedCR.Spec.Admin != nil {
+		seaweedCR.Status.Admin = adminStatus
+	} else {
+		seaweedCR.Status.Admin = seaweedv1.ComponentStatus{}
+	}
+	if seaweedCR.Spec.Worker != nil && seaweedCR.Spec.Admin != nil {
+		seaweedCR.Status.Worker = workerStatus
+	} else {
+		seaweedCR.Status.Worker = seaweedv1.ComponentStatus{}
 	}
 
 	// Build informative status message (for NotReady condition)
@@ -196,6 +254,12 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	}, ", ")
 	if seaweedCR.Spec.Filer != nil {
 		notReadyMessage += fmt.Sprintf(", Filer: %d/%d ready", filerStatus.ReadyReplicas, filerStatus.Replicas)
+	}
+	if seaweedCR.Spec.Admin != nil {
+		notReadyMessage += fmt.Sprintf(", Admin: %d/%d ready", adminStatus.ReadyReplicas, adminStatus.Replicas)
+	}
+	if seaweedCR.Spec.Worker != nil && seaweedCR.Spec.Admin != nil {
+		notReadyMessage += fmt.Sprintf(", Worker: %d/%d ready", workerStatus.ReadyReplicas, workerStatus.Replicas)
 	}
 
 	// Update conditions
@@ -242,6 +306,14 @@ func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *s
 	case ComponentFiler:
 		if seaweedCR.Spec.Filer != nil {
 			return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-filer", seaweedCR.Spec.Filer.Replicas)
+		}
+	case ComponentAdmin:
+		if seaweedCR.Spec.Admin != nil {
+			return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-admin", 1)
+		}
+	case ComponentWorker:
+		if seaweedCR.Spec.Worker != nil {
+			return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-worker", seaweedCR.Spec.Worker.Replicas)
 		}
 	}
 	return seaweedv1.ComponentStatus{}, nil

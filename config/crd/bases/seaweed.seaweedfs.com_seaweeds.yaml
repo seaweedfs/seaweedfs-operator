@@ -1001,6 +1001,8 @@ spec:
                     default: true
                     type: boolean
                   icebergPort:
+                    maximum: 65535
+                    minimum: 1
                     type: integer
                   imagePullPolicy:
                     type: string

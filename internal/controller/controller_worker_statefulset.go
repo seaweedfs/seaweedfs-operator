@@ -142,7 +142,7 @@ func (r *SeaweedReconciler) createWorkerStatefulSet(m *seaweedv1.Seaweed) *appsv
 			TimeoutSeconds:      3,
 			PeriodSeconds:       15,
 			SuccessThreshold:    1,
-			FailureThreshold:    100,
+			FailureThreshold:    6,
 		}
 		container.LivenessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{

@@ -41,15 +41,10 @@ func (in *AdminSpec) DeepCopyInto(out *AdminSpec) {
 		*out = new(int32)
 		**out = **in
 	}
-	if in.Persistence != nil {
-		in, out := &in.Persistence, &out.Persistence
-		*out = new(PersistenceSpec)
-		(*in).DeepCopyInto(*out)
-	}
 	if in.CredentialsSecret != nil {
 		in, out := &in.CredentialsSecret, &out.CredentialsSecret
-		*out = new(corev1.SecretKeySelector)
-		(*in).DeepCopyInto(*out)
+		*out = new(corev1.LocalObjectReference)
+		**out = **in
 	}
 }
 

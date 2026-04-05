@@ -482,15 +482,9 @@ spec:
                     x-kubernetes-list-type: map
                   credentialsSecret:
                     properties:
-                      key:
-                        type: string
                       name:
                         default: ""
                         type: string
-                      optional:
-                        type: boolean
-                    required:
-                    - key
                     type: object
                     x-kubernetes-map-type: atomic
                   env:
@@ -590,93 +584,6 @@ spec:
                   nodeSelector:
                     additionalProperties:
                       type: string
-                    type: object
-                  persistence:
-                    properties:
-                      accessModes:
-                        default:
-                        - ReadWriteOnce
-                        items:
-                          type: string
-                        type: array
-                      dataSource:
-                        properties:
-                          apiGroup:
-                            type: string
-                          kind:
-                            type: string
-                          name:
-                            type: string
-                        required:
-                        - kind
-                        - name
-                        type: object
-                        x-kubernetes-map-type: atomic
-                      enabled:
-                        default: false
-                        type: boolean
-                      existingClaim:
-                        type: string
-                      mountPath:
-                        default: /data
-                        type: string
-                      resources:
-                        default:
-                          requests:
-                            storage: 4Gi
-                        properties:
-                          limits:
-                            additionalProperties:
-                              anyOf:
-                              - type: integer
-                              - type: string
-                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                              x-kubernetes-int-or-string: true
-                            type: object
-                          requests:
-                            additionalProperties:
-                              anyOf:
-                              - type: integer
-                              - type: string
-                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                              x-kubernetes-int-or-string: true
-                            type: object
-                        type: object
-                      selector:
-                        properties:
-                          matchExpressions:
-                            items:
-                              properties:
-                                key:
-                                  type: string
-                                operator:
-                                  type: string
-                                values:
-                                  items:
-                                    type: string
-                                  type: array
-                                  x-kubernetes-list-type: atomic
-                              required:
-                              - key
-                              - operator
-                              type: object
-                            type: array
-                            x-kubernetes-list-type: atomic
-                          matchLabels:
-                            additionalProperties:
-                              type: string
-                            type: object
-                        type: object
-                        x-kubernetes-map-type: atomic
-                      storageClassName:
-                        type: string
-                      subPath:
-                        default: ""
-                        type: string
-                      volumeMode:
-                        type: string
-                      volumeName:
-                        type: string
                     type: object
                   priorityClassName:
                     type: string

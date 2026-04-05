@@ -98,7 +98,7 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Use filer.s3.enabled=true to enable S3 with embedded IAM.
 
 	if seaweedCR.Spec.Admin != nil {
-		if done, result, err = r.ensureAdminServers(ctx, seaweedCR); done {
+		if done, result, err = r.ensureAdminServers(seaweedCR); done {
 			return result, err
 		}
 	}

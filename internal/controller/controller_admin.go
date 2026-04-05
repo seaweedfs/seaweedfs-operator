@@ -1,8 +1,6 @@
 package controller
 
 import (
-	"context"
-
 	"k8s.io/apimachinery/pkg/runtime"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -13,7 +11,7 @@ import (
 	label "github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
 )
 
-func (r *SeaweedReconciler) ensureAdminServers(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
+func (r *SeaweedReconciler) ensureAdminServers(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
 	if done, result, err = r.ensureAdminPeerService(seaweedCR); done {
@@ -24,7 +22,7 @@ func (r *SeaweedReconciler) ensureAdminServers(ctx context.Context, seaweedCR *s
 		return
 	}
 
-	if done, result, err = r.ensureAdminStatefulSet(ctx, seaweedCR); done {
+	if done, result, err = r.ensureAdminStatefulSet(seaweedCR); done {
 		return
 	}
 
@@ -37,7 +35,7 @@ func (r *SeaweedReconciler) ensureAdminServers(ctx context.Context, seaweedCR *s
 	return
 }
 
-func (r *SeaweedReconciler) ensureAdminStatefulSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+func (r *SeaweedReconciler) ensureAdminStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-admin-statefulset", seaweedCR.Name)
 
 	adminStatefulSet := r.createAdminStatefulSet(seaweedCR)
@@ -52,7 +50,7 @@ func (r *SeaweedReconciler) ensureAdminStatefulSet(ctx context.Context, seaweedC
 		existingStatefulSet.Spec.Template.ObjectMeta = desiredStatefulSet.Spec.Template.ObjectMeta
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 
-		return r.reconcileVolumeClaimTemplates(ctx, seaweedCR, existingStatefulSet, desiredStatefulSet)
+		return nil
 	})
 	log.Info("ensure admin stateful set " + adminStatefulSet.Name)
 	return ReconcileResult(err)

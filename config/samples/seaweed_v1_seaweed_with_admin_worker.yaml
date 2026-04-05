@@ -19,13 +19,7 @@ spec:
       [leveldb2]
       enabled = true
       dir = "/data/filerldb2"
-  admin:
-    replicas: 1
-    persistence:
-      enabled: true
-      resources:
-        requests:
-          storage: 1Gi
+  admin: {}
   worker:
     replicas: 2
     jobType: "all"

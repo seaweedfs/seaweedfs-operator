@@ -309,7 +309,7 @@ func (c *IcebergConfig) IcebergEffectivePort() int32 {
 	return FilerIcebergPort
 }
 
-// AdminSpec is the spec for the admin server (single instance)
+// AdminSpec is the spec for the admin server (single instance, stateless)
 type AdminSpec struct {
 	ComponentSpec               `json:",inline"`
 	corev1.ResourceRequirements `json:",inline"`
@@ -319,12 +319,9 @@ type AdminSpec struct {
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
-	// Persistence mounts a volume for admin data directory
-	Persistence *PersistenceSpec `json:"persistence,omitempty"`
-
 	// CredentialsSecret is a reference to a Secret containing admin credentials.
 	// The secret should have keys: adminUser, adminPassword, and optionally readOnlyUser, readOnlyPassword
-	CredentialsSecret *corev1.SecretKeySelector `json:"credentialsSecret,omitempty"`
+	CredentialsSecret *corev1.LocalObjectReference `json:"credentialsSecret,omitempty"`
 }
 
 // WorkerSpec is the spec for worker processes

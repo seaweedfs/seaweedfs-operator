@@ -16,13 +16,6 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	commands := []string{"weed", "-logtostderr=true", "admin"}
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.AdminHTTPPort))
 	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m)))
-	if m.Spec.Admin.Persistence != nil && m.Spec.Admin.Persistence.Enabled {
-		mountPath := "/data"
-		if m.Spec.Admin.Persistence.MountPath != nil {
-			mountPath = *m.Spec.Admin.Persistence.MountPath
-		}
-		commands = append(commands, fmt.Sprintf("-dataDir=%s", mountPath))
-	}
 	if m.Spec.Admin.MetricsPort != nil {
 		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Admin.MetricsPort))
 	}
@@ -75,58 +68,6 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		})
 	}
 
-	var persistentVolumeClaims []corev1.PersistentVolumeClaim
-	if m.Spec.Admin.Persistence != nil && m.Spec.Admin.Persistence.Enabled {
-		claimName := m.Name + "-admin"
-		if m.Spec.Admin.Persistence.ExistingClaim != nil {
-			claimName = *m.Spec.Admin.Persistence.ExistingClaim
-		}
-		if m.Spec.Admin.Persistence.ExistingClaim == nil {
-			accessModes := m.Spec.Admin.Persistence.AccessModes
-			if len(accessModes) == 0 {
-				accessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
-			}
-			persistentVolumeClaims = append(persistentVolumeClaims, corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: claimName,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes:      accessModes,
-					Resources:        m.Spec.Admin.Persistence.Resources,
-					StorageClassName: m.Spec.Admin.Persistence.StorageClassName,
-					Selector:         m.Spec.Admin.Persistence.Selector,
-					VolumeName:       m.Spec.Admin.Persistence.VolumeName,
-					VolumeMode:       m.Spec.Admin.Persistence.VolumeMode,
-					DataSource:       m.Spec.Admin.Persistence.DataSource,
-				},
-			})
-		} else {
-			adminPodSpec.Volumes = append(adminPodSpec.Volumes, corev1.Volume{
-				Name: claimName,
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: claimName,
-						ReadOnly:  false,
-					},
-				},
-			})
-		}
-		mountPath := "/data"
-		if m.Spec.Admin.Persistence.MountPath != nil {
-			mountPath = *m.Spec.Admin.Persistence.MountPath
-		}
-		subPath := ""
-		if m.Spec.Admin.Persistence.SubPath != nil {
-			subPath = *m.Spec.Admin.Persistence.SubPath
-		}
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      claimName,
-			ReadOnly:  false,
-			MountPath: mountPath,
-			SubPath:   subPath,
-		})
-	}
-
 	adminPodSpec.EnableServiceLinks = &enableServiceLinks
 	adminPodSpec.Containers = []corev1.Container{{
 		Name:            "admin",
@@ -153,7 +94,7 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			TimeoutSeconds:      3,
 			PeriodSeconds:       15,
 			SuccessThreshold:    1,
-			FailureThreshold:    100,
+			FailureThreshold:    6,
 		},
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
@@ -196,7 +137,6 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 				},
 				Spec: adminPodSpec,
 			},
-			VolumeClaimTemplates: persistentVolumeClaims,
 		},
 	}
 	return dep

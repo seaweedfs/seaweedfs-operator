@@ -32,6 +32,9 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	if m.Spec.Filer.MetricsPort != nil {
 		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Filer.MetricsPort))
 	}
+	if m.Spec.Filer.Iceberg != nil && m.Spec.Filer.Iceberg.Enabled {
+		commands = append(commands, fmt.Sprintf("-icebergPort=%d", m.Spec.Filer.Iceberg.IcebergEffectivePort()))
+	}
 	commands = append(commands, extraArgs...)
 
 	return strings.Join(commands, " ")
@@ -62,6 +65,12 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		ports = append(ports, corev1.ContainerPort{
 			ContainerPort: *m.Spec.Filer.MetricsPort,
 			Name:          "filer-metrics",
+		})
+	}
+	if m.Spec.Filer.Iceberg != nil && m.Spec.Filer.Iceberg.Enabled {
+		ports = append(ports, corev1.ContainerPort{
+			ContainerPort: m.Spec.Filer.Iceberg.IcebergEffectivePort(),
+			Name:          "filer-iceberg",
 		})
 	}
 	replicas := int32(m.Spec.Filer.Replicas)

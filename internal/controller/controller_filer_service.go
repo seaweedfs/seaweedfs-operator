@@ -41,6 +41,15 @@ func (r *SeaweedReconciler) createFilerPeerService(m *seaweedv1.Seaweed) *corev1
 			TargetPort: intstr.FromInt(int(*m.Spec.Filer.MetricsPort)),
 		})
 	}
+	if m.Spec.Filer.Iceberg != nil && m.Spec.Filer.Iceberg.Enabled {
+		icebergPort := m.Spec.Filer.Iceberg.IcebergEffectivePort()
+		ports = append(ports, corev1.ServicePort{
+			Name:       "filer-iceberg",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       icebergPort,
+			TargetPort: intstr.FromInt(int(icebergPort)),
+		})
+	}
 
 	dep := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -92,6 +101,15 @@ func (r *SeaweedReconciler) createFilerService(m *seaweedv1.Seaweed) *corev1.Ser
 			Protocol:   corev1.Protocol("TCP"),
 			Port:       *m.Spec.Filer.MetricsPort,
 			TargetPort: intstr.FromInt(int(*m.Spec.Filer.MetricsPort)),
+		})
+	}
+	if m.Spec.Filer.Iceberg != nil && m.Spec.Filer.Iceberg.Enabled {
+		icebergPort := m.Spec.Filer.Iceberg.IcebergEffectivePort()
+		ports = append(ports, corev1.ServicePort{
+			Name:       "filer-iceberg",
+			Protocol:   corev1.Protocol("TCP"),
+			Port:       icebergPort,
+			TargetPort: intstr.FromInt(int(icebergPort)),
 		})
 	}
 

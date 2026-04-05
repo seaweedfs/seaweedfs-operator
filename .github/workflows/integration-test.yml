@@ -169,19 +169,26 @@ jobs:
         if: failure()
         run: |
           echo "=== Operator Manager Logs ==="
-          kubectl logs -n seaweedfs-operator-system deployment/seaweedfs-operator-controller-manager --tail=100 || true
+          kubectl logs -n seaweedfs-operator-system deployment/seaweedfs-operator-controller-manager --tail=200 || true
 
           echo "=== All Pods in operator namespace ==="
-          kubectl get pods -n seaweedfs-operator-system || true
+          kubectl get pods -n seaweedfs-operator-system -o wide || true
 
-          echo "=== All Pods in test namespace ==="
-          kubectl get pods -n test-resources || true
+          echo "=== All Pods in test namespaces ==="
+          kubectl get pods -n test-resources -o wide || true
+          kubectl get pods -n test-cluster-startup -o wide || true
+
+          echo "=== Pod logs in test-cluster-startup ==="
+          for pod in $(kubectl get pods -n test-cluster-startup -o name 2>/dev/null); do
+            echo "--- Logs for $pod ---"
+            kubectl logs -n test-cluster-startup "$pod" --tail=50 || true
+          done
 
           echo "=== Events ==="
-          kubectl get events --all-namespaces --sort-by='.lastTimestamp' --tail=50 || true
+          kubectl get events --all-namespaces --sort-by='.lastTimestamp' | tail -80 || true
 
           echo "=== StatefulSets ==="
-          kubectl get statefulsets --all-namespaces || true
+          kubectl get statefulsets --all-namespaces -o wide || true
 
           echo "=== Seaweed Resources ==="
           kubectl get seaweed --all-namespaces -o yaml || true

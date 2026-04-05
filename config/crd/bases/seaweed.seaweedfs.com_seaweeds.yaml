@@ -1000,6 +1000,8 @@ spec:
                   iam:
                     default: true
                     type: boolean
+                  icebergPort:
+                    type: integer
                   imagePullPolicy:
                     type: string
                   imagePullSecrets:

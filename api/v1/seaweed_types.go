@@ -29,10 +29,11 @@ import (
 const (
 	GRPCPortDelta = 10000
 
-	MasterHTTPPort = 9333
-	VolumeHTTPPort = 8444
-	FilerHTTPPort  = 8888
-	FilerS3Port    = 8333 // S3 port (IAM API is also available on this port when S3 is enabled)
+	MasterHTTPPort   = 9333
+	VolumeHTTPPort   = 8444
+	FilerHTTPPort    = 8888
+	FilerS3Port      = 8333 // S3 port (IAM API is also available on this port when S3 is enabled)
+	FilerIcebergPort = 8181 // Default Iceberg catalog REST API port
 
 	MasterGRPCPort = MasterHTTPPort + GRPCPortDelta
 	VolumeGRPCPort = VolumeHTTPPort + GRPCPortDelta
@@ -267,6 +268,11 @@ type FilerSpec struct {
 	// Set to false to explicitly disable embedded IAM.
 	// +kubebuilder:default:=true
 	IAM bool `json:"iam,omitempty"`
+
+	// IcebergPort enables the Iceberg catalog REST API on the specified port.
+	// When set, the filer will serve Iceberg catalog requests on this port.
+	// The default Iceberg port is 8181.
+	IcebergPort *int32 `json:"icebergPort,omitempty"`
 }
 
 // ComponentSpec is the base spec of each component, the fields should always accessed by the Basic<Component>Spec() method to respect the cluster-level properties

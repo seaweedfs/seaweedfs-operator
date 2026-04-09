@@ -448,6 +448,24 @@ var (
 	certManagerCRDMu        sync.RWMutex
 )
 
+// certManagerAvailableCached returns the cached probe result without
+// running the probe itself. When the probe has not yet run (for example
+// a reconcile for a TLS-disabled CR fires before any TLS-enabled CR has
+// been seen) this returns false, which is the safe default for pod
+// builders: they must NOT reference a Secret or ConfigMap the operator
+// has not reconciled yet.
+//
+// Component builders (helper.go:tlsVolumesAndMounts, tlsConfigDirArg)
+// use this instead of taking a reconciler handle so they stay pure
+// functions of the CR. ensureTLS is guaranteed to have run probeOnce
+// before any builder is called in the same reconcile, so by the time
+// the builders look at this, the cached value reflects reality.
+func certManagerAvailableCached() bool {
+	certManagerCRDMu.RLock()
+	defer certManagerCRDMu.RUnlock()
+	return certManagerCRDAvailable
+}
+
 // certManagerCRDAvailable probes once for the cert-manager Certificate kind.
 // Same pattern as serviceMonitorCRDAvailable: missing CRD is non-fatal.
 func (r *SeaweedReconciler) certManagerCRDAvailable(ctx context.Context) bool {

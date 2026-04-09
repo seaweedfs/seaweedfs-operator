@@ -26,12 +26,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 	"github.com/seaweedfs/seaweedfs-operator/test/utils"
@@ -41,63 +38,25 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 	var (
 		ctx           context.Context
 		k8sClient     client.Client
+		restCfg       *rest.Config
 		testNamespace = "test-resources"
 		seaweedName   = "test-seaweed-resources"
 	)
 
 	BeforeAll(func() {
 		ctx = context.Background()
+		k8sClient, restCfg = utils.NewE2EClient()
+		utils.EnsureNamespace(ctx, k8sClient, testNamespace)
+	})
 
-		// Set up scheme with Seaweed CRDs
-		scheme := runtime.NewScheme()
-		utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-		utilruntime.Must(seaweedv1.AddToScheme(scheme))
-
-		// Get Kubernetes client with proper scheme
-		cfg := config.GetConfigOrDie()
-		var err error
-		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
-		Expect(err).NotTo(HaveOccurred())
-
-		// Create test namespace
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNamespace,
-			},
-		}
-		err = k8sClient.Create(ctx, ns)
-		if err != nil {
-			// Namespace might already exist, try to get it
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: testNamespace}, ns)
-			if err != nil {
-				Expect(err).NotTo(HaveOccurred(), "Failed to create or get test namespace")
-			}
-		}
-
-		// Verify CRDs are installed by checking if we can list Seaweed resources
-		seaweedList := &seaweedv1.SeaweedList{}
-		err = k8sClient.List(ctx, seaweedList, client.InNamespace(testNamespace))
-		if err != nil {
-			GinkgoWriter.Printf("WARNING: Could not list Seaweed resources: %v\n", err)
-			GinkgoWriter.Printf("This might indicate CRDs are not installed in the cluster\n")
-			// Try to get CRD info
-			GinkgoWriter.Printf("Checking if Seaweed CRD exists in cluster...\n")
-		} else {
-			GinkgoWriter.Printf("SUCCESS: Can list Seaweed resources (found %d items)\n", len(seaweedList.Items))
-		}
-
-		// Wait briefly for controller to be ready to process requests
-		time.Sleep(5 * time.Second)
+	BeforeEach(func() {
+		DeferCleanup(func() {
+			utils.CollectDiagnostics(ctx, k8sClient, restCfg, testNamespace)
+		})
 	})
 
 	AfterAll(func() {
-		// Clean up test namespace
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNamespace,
-			},
-		}
-		_ = k8sClient.Delete(ctx, ns)
+		utils.DeleteNamespace(ctx, k8sClient, testNamespace)
 	})
 
 	Context("When deploying Seaweed with resource requirements", func() {
@@ -190,7 +149,7 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 			// Wait for the master statefulset to be created
 			GinkgoWriter.Printf("Waiting for StatefulSet %s-master to be created...\n", seaweedName)
 			Eventually(func() error {
-				clientset, err := utils.GetClientset(config.GetConfigOrDie())
+				clientset, err := utils.GetClientset(restCfg)
 				if err != nil {
 					GinkgoWriter.Printf("Failed to get clientset: %v\n", err)
 					return err
@@ -244,7 +203,7 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 
 			// Wait for the volume statefulset to be created
 			Eventually(func() error {
-				clientset, err := utils.GetClientset(config.GetConfigOrDie())
+				clientset, err := utils.GetClientset(restCfg)
 				if err != nil {
 					return err
 				}
@@ -286,7 +245,7 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 
 			// Wait for the filer statefulset to be created
 			Eventually(func() error {
-				clientset, err := utils.GetClientset(config.GetConfigOrDie())
+				clientset, err := utils.GetClientset(restCfg)
 				if err != nil {
 					return err
 				}
@@ -318,7 +277,7 @@ var _ = Describe("Resource Requirements Integration", Ordered, func() {
 
 			// Wait for the volume statefulset to be created and verify PVC template
 			Eventually(func() error {
-				clientset, err := utils.GetClientset(config.GetConfigOrDie())
+				clientset, err := utils.GetClientset(restCfg)
 				if err != nil {
 					return err
 				}

@@ -228,3 +228,57 @@ func mergeVolumeMounts(base, override []corev1.VolumeMount) []corev1.VolumeMount
 	merged = append(merged, override...)
 	return merged
 }
+
+// tlsVolumesAndMounts returns the set of pod volumes and container mounts
+// that wire the shared TLS Secret and security.toml ConfigMap into a
+// component pod. Returns empty slices when TLS is disabled — callers can
+// safely append unconditionally. Every component that speaks gRPC should
+// use this helper so the paths stay in sync with renderSecurityTOML.
+func tlsVolumesAndMounts(m *seaweedv1.Seaweed) ([]corev1.Volume, []corev1.VolumeMount) {
+	if !tlsEnabled(m) {
+		return nil, nil
+	}
+	volumes := []corev1.Volume{
+		{
+			Name: tlsVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: TLSServerSecretName(m),
+				},
+			},
+		},
+		{
+			Name: securityVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: SecurityConfigMapName(m),
+					},
+				},
+			},
+		},
+	}
+	mounts := []corev1.VolumeMount{
+		{
+			Name:      tlsVolumeName,
+			ReadOnly:  true,
+			MountPath: tlsMountPath,
+		},
+		{
+			Name:      securityVolumeName,
+			ReadOnly:  true,
+			MountPath: securityConfigMountPath,
+		},
+	}
+	return volumes, mounts
+}
+
+// tlsConfigDirArg returns the additional top-level `weed` flag that tells
+// viper to look in the security config mount path, or the empty string
+// when TLS is disabled.
+func tlsConfigDirArg(m *seaweedv1.Seaweed) string {
+	if !tlsEnabled(m) {
+		return ""
+	}
+	return "-config_dir=" + securityConfigMountPath
+}

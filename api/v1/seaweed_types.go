@@ -43,10 +43,44 @@ const (
 	AdminGRPCPort  = AdminHTTPPort + GRPCPortDelta
 )
 
+// TLSSpec controls mTLS between SeaweedFS components via cert-manager.
+// When Enabled, the operator provisions a cert-manager Certificate covering
+// every component's headless service and renders a security.toml ConfigMap
+// that wires mTLS into every gRPC endpoint. cert-manager must be installed
+// in the cluster — the operator will emit a condition on the Seaweed CR and
+// refuse to mount TLS if the cert-manager CRDs are missing.
+type TLSSpec struct {
+	// Enabled turns on mTLS. Defaults to false.
+	Enabled bool `json:"enabled,omitempty"`
+
+	// IssuerRef optionally references an existing cert-manager Issuer or
+	// ClusterIssuer to sign the server certificate. When empty the operator
+	// provisions a self-signed Issuer + CA Certificate + CA Issuer chain
+	// owned by the Seaweed CR, matching the default Helm chart behavior.
+	// +optional
+	IssuerRef *TLSIssuerRef `json:"issuerRef,omitempty"`
+}
+
+// TLSIssuerRef is a thin mirror of cert-manager's ObjectReference so the
+// operator's CRD does not take a hard import dependency on cert-manager types
+// for its own schema.
+type TLSIssuerRef struct {
+	Name string `json:"name"`
+	// +kubebuilder:default:=Issuer
+	// +kubebuilder:validation:Enum=Issuer;ClusterIssuer
+	Kind string `json:"kind,omitempty"`
+	// +kubebuilder:default:=cert-manager.io
+	Group string `json:"group,omitempty"`
+}
+
 // SeaweedSpec defines the desired state of Seaweed
 type SeaweedSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	// TLS configures mTLS between SeaweedFS components. See TLSSpec.
+	// +optional
+	TLS *TLSSpec `json:"tls,omitempty"`
 
 	// MetricsAddress is Prometheus gateway address
 	MetricsAddress string `json:"metricsAddress,omitempty"`

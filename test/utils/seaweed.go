@@ -60,12 +60,49 @@ func NewE2EClient() (client.Client, *rest.Config) {
 }
 
 // EnsureNamespace creates the namespace if it does not already exist.
-// Idempotent — safe to call from BeforeAll.
+// Idempotent — safe to call from BeforeAll. If a previous run left the
+// namespace in a terminating state, waits up to two minutes for it to
+// fully disappear before creating it, so a child resource Create does
+// not race against namespace finalization.
 func EnsureNamespace(ctx context.Context, c client.Client, name string) {
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		existing := &corev1.Namespace{}
+		err := c.Get(ctx, types.NamespacedName{Name: name}, existing)
+		if errors.IsNotFound(err) {
+			// Namespace is fully gone; safe to (re-)create.
+			break
+		}
+		Expect(err).NotTo(HaveOccurred(), "failed to get namespace %s", name)
+		// If it already exists and is Active, nothing to do.
+		if existing.Status.Phase == corev1.NamespaceActive {
+			return
+		}
+		// Terminating (or another intermediate phase): wait and retry.
+		if time.Now().After(deadline) {
+			Fail(fmt.Sprintf("namespace %s stuck in %s", name, existing.Status.Phase))
+		}
+		time.Sleep(2 * time.Second)
+	}
 	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
 	err := c.Create(ctx, ns)
 	if err != nil && !errors.IsAlreadyExists(err) {
 		Expect(err).NotTo(HaveOccurred(), "failed to create namespace %s", name)
+	}
+	// One more sanity loop: wait until the namespace is reported Active
+	// before returning so the first child resource Create does not fail
+	// with NamespaceTerminating.
+	deadline = time.Now().Add(30 * time.Second)
+	for {
+		existing := &corev1.Namespace{}
+		if err := c.Get(ctx, types.NamespacedName{Name: name}, existing); err == nil &&
+			existing.Status.Phase == corev1.NamespaceActive {
+			return
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 

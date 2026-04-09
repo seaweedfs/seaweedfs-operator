@@ -4766,6 +4766,27 @@ spec:
                 type: string
               statefulSetUpdateStrategy:
                 type: string
+              tls:
+                properties:
+                  enabled:
+                    type: boolean
+                  issuerRef:
+                    properties:
+                      group:
+                        default: cert-manager.io
+                        type: string
+                      kind:
+                        default: Issuer
+                        enum:
+                        - Issuer
+                        - ClusterIssuer
+                        type: string
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                type: object
               tolerations:
                 items:
                   properties:

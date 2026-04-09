@@ -13,7 +13,11 @@ import (
 )
 
 func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []string, topologyName string, topologySpec *seaweedv1.VolumeTopologySpec) string {
-	commands := []string{"weed", "-logtostderr=true", "volume"}
+	commands := []string{"weed", "-logtostderr=true"}
+	if arg := tlsConfigDirArg(m); arg != "" {
+		commands = append(commands, arg)
+	}
+	commands = append(commands, "volume")
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
 
 	// Configure max volume counts with fallback
@@ -68,7 +72,11 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 }
 
 func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string, extraArgs ...string) string {
-	commands := []string{"weed", "-logtostderr=true", "volume"}
+	commands := []string{"weed", "-logtostderr=true"}
+	if arg := tlsConfigDirArg(m); arg != "" {
+		commands = append(commands, arg)
+	}
+	commands = append(commands, "volume")
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
 	if m.Spec.Volume.MaxVolumeCounts != nil && *m.Spec.Volume.MaxVolumeCounts > 0 {
 		commands = append(commands, fmt.Sprintf("-max=%d", *m.Spec.Volume.MaxVolumeCounts))
@@ -191,6 +199,10 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 
 	volumePodSpec := m.BaseVolumeSpec().BuildPodSpec()
 	volumePodSpec.EnableServiceLinks = &enableServiceLinks
+	if tlsVols, tlsMounts := tlsVolumesAndMounts(m); len(tlsVols) > 0 {
+		volumes = append(volumes, tlsVols...)
+		volumeMounts = append(volumeMounts, tlsMounts...)
+	}
 	volumePodSpec.Containers = []corev1.Container{{
 		Name:            "volume",
 		Image:           m.Spec.Image,
@@ -344,6 +356,10 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 	// Build pod spec based on topology configuration
 	volumePodSpec := buildTopologyPodSpec(m, topologySpec)
 	volumePodSpec.EnableServiceLinks = &enableServiceLinks
+	if tlsVols, tlsMounts := tlsVolumesAndMounts(m); len(tlsVols) > 0 {
+		volumes = append(volumes, tlsVols...)
+		volumeMounts = append(volumeMounts, tlsMounts...)
+	}
 	volumePodSpec.Containers = []corev1.Container{{
 		Name:            "volume",
 		Image:           m.Spec.Image,

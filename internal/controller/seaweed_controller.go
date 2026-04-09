@@ -62,6 +62,7 @@ type SeaweedReconciler struct {
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
@@ -121,6 +122,10 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				return result, err
 			}
 		}
+	}
+
+	if done, result, err = r.ensureS3Gateway(ctx, seaweedCR); done {
+		return result, err
 	}
 
 	if done, result, err = r.ensureSeaweedIngress(seaweedCR); done {
@@ -223,6 +228,13 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		}
 	}
 
+	// Get standalone S3 gateway status (if enabled)
+	s3Status, err := r.getS3Status(ctx, seaweedCR)
+	if err != nil {
+		log.Error(err, "Failed to get S3 gateway status")
+		return err
+	}
+
 	// Determine if cluster is ready
 	// Master must have replicas and all must be ready
 	isReady := masterStatus.Replicas > 0 && masterStatus.ReadyReplicas == masterStatus.Replicas
@@ -244,6 +256,11 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		isReady = isReady && (workerStatus.Replicas == 0 || workerStatus.ReadyReplicas == workerStatus.Replicas)
 	}
 
+	// Standalone S3 gateway is checked only if enabled.
+	if seaweedCR.Spec.S3 != nil {
+		isReady = isReady && (s3Status.Replicas == 0 || s3Status.ReadyReplicas == s3Status.Replicas)
+	}
+
 	// Update status
 	seaweedCR.Status.ObservedGeneration = seaweedCR.Generation
 	seaweedCR.Status.Master = masterStatus
@@ -262,6 +279,11 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		seaweedCR.Status.Worker = workerStatus
 	} else {
 		seaweedCR.Status.Worker = seaweedv1.ComponentStatus{}
+	}
+	if seaweedCR.Spec.S3 != nil {
+		seaweedCR.Status.S3 = s3Status
+	} else {
+		seaweedCR.Status.S3 = seaweedv1.ComponentStatus{}
 	}
 
 	// Build informative status message (for NotReady condition)

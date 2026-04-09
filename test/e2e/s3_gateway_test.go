@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
@@ -74,8 +75,20 @@ var _ = Describe("Standalone S3 gateway", Ordered, func() {
 					Replicas:        1,
 					ConcurrentStart: &concurrentStart,
 				},
-				Volume: &seaweedv1.VolumeSpec{Replicas: 1},
-				Filer:  &seaweedv1.FilerSpec{Replicas: 1},
+				Volume: &seaweedv1.VolumeSpec{
+					Replicas: 1,
+					// k8s 1.34+ rejects VolumeClaimTemplates without a
+					// storage request; keep the test green across all
+					// matrix versions.
+					VolumeServerConfig: seaweedv1.VolumeServerConfig{
+						ResourceRequirements: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: resource.MustParse("1Gi"),
+							},
+						},
+					},
+				},
+				Filer: &seaweedv1.FilerSpec{Replicas: 1},
 				S3: &seaweedv1.S3GatewaySpec{
 					Replicas: replicas,
 					Ingress: &seaweedv1.IngressSpec{

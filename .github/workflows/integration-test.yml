@@ -158,10 +158,22 @@ jobs:
           KIND_CLUSTER_NAME: seaweedfs-operator-kind-${{ github.run_id }}
           IMG: ghcr.io/seaweedfs/seaweedfs-operator:test-${{ github.run_id }}
 
-      - name: Run integration tests
+      - name: Run render e2e tests
         run: |
-          # Run e2e tests (cluster startup test excluded - requires dedicated investigation)
-          go test ./test/e2e/ -v -ginkgo.v -ginkgo.progress -ginkgo.label-filter='!integration' -timeout 20m
+          # Fast lane: render/resource tests that don't need a running cluster.
+          # SKIP_E2E_ENV_SETUP tells the suite the env is already deployed by
+          # the preceding workflow steps.
+          SKIP_E2E_ENV_SETUP=1 go test ./test/e2e/ -v -ginkgo.v -ginkgo.progress -ginkgo.label-filter='!integration' -timeout 20m
+        env:
+          KIND_CLUSTER_NAME: seaweedfs-operator-kind-${{ github.run_id }}
+
+      - name: Run full-cluster integration test
+        # Full-cluster bring-up lives in a separate lane so the fast lane
+        # stays fast. We only run it on the "latest" matrix entry to keep
+        # CI time bounded.
+        if: matrix.k8s.attribute == 'latest'
+        run: |
+          SKIP_E2E_ENV_SETUP=1 go test ./test/e2e/ -v -ginkgo.v -ginkgo.progress -ginkgo.label-filter='integration' -timeout 20m
         env:
           KIND_CLUSTER_NAME: seaweedfs-operator-kind-${{ github.run_id }}
 

@@ -101,6 +101,11 @@ func (r *SeaweedReconciler) ensureFilerConfigMap(seaweedCR *seaweedv1.Seaweed) (
 	log := r.Log.WithValues("sw-filer-configmap", seaweedCR.Name)
 
 	filerConfigMap := r.createFilerConfigMap(seaweedCR)
+	if filerConfigMap == nil {
+		// No user-provided filer.toml — skip creation so the filer falls back
+		// to its built-in default store. See createFilerConfigMap for details.
+		return ReconcileResult(nil)
+	}
 	if err := controllerutil.SetControllerReference(seaweedCR, filerConfigMap, r.Scheme); err != nil {
 		return ReconcileResult(err)
 	}

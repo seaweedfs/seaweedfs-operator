@@ -61,7 +61,6 @@ func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
 	seaweedlog.Info("validate create", "name", r.Name)
 	errs := []error{}
 
-	// TODO(user): fill in your validation logic upon object creation.
 	if r.Spec.Master == nil {
 		errs = append(errs, errors.New("missing master spec"))
 	}
@@ -78,18 +77,52 @@ func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
 		errs = append(errs, errors.New("spec.worker requires spec.admin to be configured"))
 	}
 
-	return nil, utilerrors.NewAggregate(errs)
+	if err := r.validateS3Exclusivity(); err != nil {
+		errs = append(errs, err)
+	}
+
+	return r.s3DeprecationWarnings(), utilerrors.NewAggregate(errs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *Seaweed) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
 	seaweedlog.Info("validate update", "name", r.Name)
+	errs := []error{}
 
 	if r.Spec.Worker != nil && r.Spec.Admin == nil {
-		return nil, errors.New("spec.worker requires spec.admin to be configured")
+		errs = append(errs, errors.New("spec.worker requires spec.admin to be configured"))
+	}
+	if err := r.validateS3Exclusivity(); err != nil {
+		errs = append(errs, err)
 	}
 
-	return nil, nil
+	return r.s3DeprecationWarnings(), utilerrors.NewAggregate(errs)
+}
+
+// validateS3Exclusivity forbids setting both the standalone S3 gateway
+// (SeaweedSpec.S3) and the embedded filer S3 (FilerSpec.S3) on the same
+// CR. The two paths cannot safely share port 8333 between filer and a
+// standalone gateway on the same name, and supporting both in one CR
+// leads to ambiguous semantics for clients.
+func (r *Seaweed) validateS3Exclusivity() error {
+	standalone := r.Spec.S3 != nil
+	embedded := r.Spec.Filer != nil && r.Spec.Filer.S3 != nil && r.Spec.Filer.S3.Enabled
+	if standalone && embedded {
+		return errors.New("spec.s3 and spec.filer.s3.enabled cannot both be set; spec.filer.s3 is deprecated — migrate to the top-level spec.s3 standalone gateway")
+	}
+	return nil
+}
+
+// s3DeprecationWarnings surfaces admission.Warnings for the deprecated
+// embedded S3 path so users see them in `kubectl apply` output and in
+// `kubectl describe` without needing to dig through operator logs.
+func (r *Seaweed) s3DeprecationWarnings() admission.Warnings {
+	if r.Spec.Filer != nil && r.Spec.Filer.S3 != nil && r.Spec.Filer.S3.Enabled {
+		return admission.Warnings{
+			"spec.filer.s3 is deprecated and will be removed in a future release. Migrate to the top-level spec.s3 standalone gateway for independent scaling.",
+		}
+	}
+	return nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type

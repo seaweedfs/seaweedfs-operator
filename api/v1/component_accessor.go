@@ -230,3 +230,8 @@ func (s *Seaweed) BaseAdminSpec() ComponentAccessor {
 func (s *Seaweed) BaseWorkerSpec() ComponentAccessor {
 	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Worker.ComponentSpec)
 }
+
+// BaseS3Spec provides merged spec of the standalone S3 gateway
+func (s *Seaweed) BaseS3Spec() ComponentAccessor {
+	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.S3.ComponentSpec)
+}

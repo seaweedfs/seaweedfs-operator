@@ -149,6 +149,12 @@ type SeaweedSpec struct {
 	// Worker processes that connect to admin server and execute background jobs
 	Worker *WorkerSpec `json:"worker,omitempty"`
 
+	// S3 is a top-level, standalone S3 gateway running as a Deployment.
+	// Prefer this over FilerSpec.S3 for new clusters — embedded filer S3
+	// is deprecated and cannot be scaled independently of the filer.
+	// +optional
+	S3 *S3GatewaySpec `json:"s3,omitempty"`
+
 	// Note: Standalone IAM has been removed. IAM is now embedded in S3 by default.
 	// When filer.s3.enabled=true, IAM API is available on the same S3 port.
 	// Use filer.iam=false to disable embedded IAM if needed.
@@ -230,6 +236,10 @@ type SeaweedStatus struct {
 	// Worker component status
 	// +optional
 	Worker ComponentStatus `json:"worker,omitempty"`
+
+	// S3 standalone gateway status (SeaweedSpec.S3)
+	// +optional
+	S3 ComponentStatus `json:"s3,omitempty"`
 }
 
 // ComponentStatus represents the status of a seaweedfs component
@@ -330,10 +340,63 @@ type VolumeTopologySpec struct {
 }
 
 // S3Config defines the S3 configuration with identities
+//
+// Deprecated: S3 embedded in the filer cannot be scaled independently of the
+// filer and will be removed in a future release. Prefer SeaweedSpec.S3 for
+// new clusters.
 type S3Config struct {
 	// +kubebuilder:default:=true
 	Enabled      bool                      `json:"enabled,omitempty"`
 	ConfigSecret *corev1.SecretKeySelector `json:"configSecret,omitempty"`
+}
+
+// S3GatewaySpec defines a standalone S3 gateway Deployment that runs
+// independently of the filer StatefulSet. This is the preferred way to
+// expose S3 — it can scale separately, use its own resources, and live
+// behind its own Ingress.
+type S3GatewaySpec struct {
+	ComponentSpec               `json:",inline"`
+	corev1.ResourceRequirements `json:",inline"`
+
+	// The desired number of replicas. S3 is stateless — scale freely.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default:=1
+	Replicas int32 `json:"replicas"`
+
+	// Service is the k8s Service in front of the gateway pods.
+	// +optional
+	Service *ServiceSpec `json:"service,omitempty"`
+
+	// ConfigSecret references a Secret containing the S3 identities config
+	// (the equivalent of -s3.config on the weed binary). The Secret key is
+	// mounted at /etc/sw/<key>.
+	// +optional
+	ConfigSecret *corev1.SecretKeySelector `json:"configSecret,omitempty"`
+
+	// MetricsPort, if set, enables the Prometheus metrics listener on this
+	// port and causes the operator to provision a matching ServiceMonitor
+	// (when the Prometheus Operator CRD is available).
+	// +optional
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
+
+	// Port overrides the default S3 HTTP port (8333).
+	// +optional
+	Port *int32 `json:"port,omitempty"`
+
+	// DomainName is the suffix used for virtual-hosted-style buckets
+	// (`{bucket}.{domainName}`). Passed through to the weed s3 -domainName
+	// flag. See https://github.com/seaweedfs/seaweedfs/wiki/Amazon-S3-API.
+	// +optional
+	DomainName *string `json:"domainName,omitempty"`
+
+	// IAM enables/disables the embedded IAM API on the same port.
+	// Defaults to true, matching the filer-embedded S3 behavior.
+	// +kubebuilder:default:=true
+	IAM bool `json:"iam,omitempty"`
+
+	// Ingress configuration for the standalone S3 gateway.
+	// +optional
+	Ingress *IngressSpec `json:"ingress,omitempty"`
 }
 
 // IcebergConfig defines the Iceberg catalog REST API configuration

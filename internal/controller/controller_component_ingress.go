@@ -76,6 +76,16 @@ func (r *SeaweedReconciler) ensureComponentIngresses(ctx context.Context, m *sea
 	if m.Spec.Admin != nil && m.Spec.Admin.Ingress != nil && m.Spec.Admin.Ingress.Enabled {
 		wanted[m.Name+"-admin-ingress"] = desired{"admin", m.Name + "-admin", seaweedv1.AdminHTTPPort, m.Spec.Admin.Ingress}
 	}
+	// The standalone S3 gateway creates its Ingress through
+	// ensureComponentIngress (from controller_s3.go), but the resource
+	// lives under the same managed-by label, so this prune loop would
+	// otherwise reap it. Include it in the wanted set so that does
+	// not happen. The webhook already rejects setting both Spec.S3 and
+	// Spec.Filer.S3.Enabled, so the "s3" component name never has two
+	// sources.
+	if m.Spec.S3 != nil && m.Spec.S3.Ingress != nil && m.Spec.S3.Ingress.Enabled {
+		wanted[m.Name+"-s3-ingress"] = desired{"s3", m.Name + "-s3", s3EffectivePort(m), m.Spec.S3.Ingress}
+	}
 
 	// Upsert the desired set.
 	for _, d := range wanted {

@@ -17,7 +17,11 @@ func getAdminAddress(m *seaweedv1.Seaweed) string {
 }
 
 func buildWorkerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
-	commands := []string{"weed", "-logtostderr=true", "worker"}
+	commands := []string{"weed", "-logtostderr=true"}
+	if arg := tlsConfigDirArg(m); arg != "" {
+		commands = append(commands, arg)
+	}
+	commands = append(commands, "worker")
 	commands = append(commands, fmt.Sprintf("-admin=%s", getAdminAddress(m)))
 	if m.Spec.Worker.Persistence != nil && m.Spec.Worker.Persistence.Enabled {
 		mountPath := "/data"
@@ -111,6 +115,10 @@ func (r *SeaweedReconciler) createWorkerStatefulSet(m *seaweedv1.Seaweed) *appsv
 			MountPath: mountPath,
 			SubPath:   subPath,
 		})
+	}
+	if tlsVols, tlsMounts := tlsVolumesAndMounts(m); len(tlsVols) > 0 {
+		workerPodSpec.Volumes = append(workerPodSpec.Volumes, tlsVols...)
+		volumeMounts = append(volumeMounts, tlsMounts...)
 	}
 
 	container := corev1.Container{

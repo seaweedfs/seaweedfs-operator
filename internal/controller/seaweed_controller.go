@@ -68,6 +68,7 @@ type SeaweedReconciler struct {
 // +kubebuilder:rbac:groups=extensions,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;
 
 // Reconcile implements the reconciliation logic
@@ -78,6 +79,14 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	seaweedCR, done, result, err := r.findSeaweedCustomResourceInstance(ctx, log, req)
 	if done {
+		return result, err
+	}
+
+	// TLS must be reconciled first: component pod specs reference the
+	// server Secret and security ConfigMap names, and skipping these when
+	// cert-manager is absent is the difference between reconciling cleanly
+	// and crashlooping pods whose VolumeMounts can never be satisfied.
+	if done, result, err = r.ensureTLS(ctx, seaweedCR); done {
 		return result, err
 	}
 

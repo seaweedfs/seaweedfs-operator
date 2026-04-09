@@ -13,7 +13,13 @@ import (
 )
 
 func buildMasterStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
-	command := []string{"weed", "-logtostderr=true", "master"}
+	command := []string{"weed", "-logtostderr=true"}
+	if arg := tlsConfigDirArg(m); arg != "" {
+		// -config_dir is a top-level weed flag and must come before the
+		// subcommand.
+		command = append(command, arg)
+	}
+	command = append(command, "master")
 	spec := m.Spec.Master
 	if spec.VolumePreallocate != nil && *spec.VolumePreallocate {
 		command = append(command, "-volumePreallocate")
@@ -89,6 +95,10 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 			ReadOnly:  true,
 			MountPath: "/etc/seaweedfs",
 		})
+	}
+	if tlsVols, tlsMounts := tlsVolumesAndMounts(m); len(tlsVols) > 0 {
+		masterPodSpec.Volumes = append(masterPodSpec.Volumes, tlsVols...)
+		masterConfigMounts = append(masterConfigMounts, tlsMounts...)
 	}
 	masterPodSpec.EnableServiceLinks = &enableServiceLinks
 	masterPodSpec.Containers = []corev1.Container{{

@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
+
 	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -236,7 +239,20 @@ func (r *SeaweedReconciler) CreateOrUpdateConfigMap(configMap *corev1.ConfigMap)
 	return result.(*corev1.ConfigMap), nil
 }
 
+// CreateOrUpdateServiceMonitor upserts a ServiceMonitor, but treats a missing
+// monitoring.coreos.com CRD as a soft no-op. This lets the operator run
+// cleanly in clusters that do not have the Prometheus Operator installed
+// (e.g. a fresh Kind cluster) while still emitting ServiceMonitors wherever
+// the CRD is present.
+//
+// The result is cached after the first probe to avoid a per-reconcile
+// discovery call. If the CRD is installed later, the operator must be
+// restarted to pick it up — acceptable since installing Prometheus Operator
+// is a cluster-level event users rarely do without some redeploy.
 func (r *SeaweedReconciler) CreateOrUpdateServiceMonitor(serviceMonitor *monitorv1.ServiceMonitor) (*monitorv1.ServiceMonitor, error) {
+	if !r.serviceMonitorCRDAvailable() {
+		return nil, nil
+	}
 
 	result, err := r.CreateOrUpdate(serviceMonitor, func(existing, desired runtime.Object) error {
 		existingServiceMonitor := existing.(*monitorv1.ServiceMonitor)
@@ -253,6 +269,14 @@ func (r *SeaweedReconciler) CreateOrUpdateServiceMonitor(serviceMonitor *monitor
 		return nil
 	})
 	if err != nil {
+		// Defensive: if discovery raced or the CRD was removed after our
+		// probe, treat "no matches for kind" as non-fatal so the rest of
+		// reconciliation can still make progress.
+		if meta.IsNoMatchError(err) || runtime.IsNotRegisteredError(err) {
+			r.markServiceMonitorUnavailable()
+			klog.Warningf("ServiceMonitor CRD is no longer available; skipping metrics scrape config")
+			return nil, nil
+		}
 		return nil, err
 	}
 	return result.(*monitorv1.ServiceMonitor), nil
@@ -345,4 +369,53 @@ func IngressEqual(newIngress, oldIngres *networkingv1.Ingress) (bool, error) {
 		return apiequality.Semantic.DeepEqual(oldIngressSpec, newIngress.Spec), nil
 	}
 	return false, nil
+}
+
+// serviceMonitorCRDState caches the one-shot discovery result for the
+// monitoring.coreos.com/v1 ServiceMonitor kind. We probe on first use from
+// inside the reconcile loop — not at manager start — so a not-yet-installed
+// Prometheus Operator during an upgrade does not crash the operator boot.
+var (
+	serviceMonitorCRDOnce      sync.Once
+	serviceMonitorCRDAvailable bool
+	serviceMonitorCRDMu        sync.RWMutex
+)
+
+func (r *SeaweedReconciler) serviceMonitorCRDAvailable() bool {
+	serviceMonitorCRDOnce.Do(func() {
+		available := r.probeServiceMonitorCRD()
+		serviceMonitorCRDMu.Lock()
+		serviceMonitorCRDAvailable = available
+		serviceMonitorCRDMu.Unlock()
+		if !available {
+			klog.Warningf("monitoring.coreos.com/v1 ServiceMonitor CRD not found; ServiceMonitor creation will be skipped. Install the Prometheus Operator and restart the seaweed controller to enable metrics scraping.")
+		}
+	})
+	serviceMonitorCRDMu.RLock()
+	defer serviceMonitorCRDMu.RUnlock()
+	return serviceMonitorCRDAvailable
+}
+
+func (r *SeaweedReconciler) markServiceMonitorUnavailable() {
+	serviceMonitorCRDMu.Lock()
+	defer serviceMonitorCRDMu.Unlock()
+	serviceMonitorCRDAvailable = false
+}
+
+// probeServiceMonitorCRD attempts a List against the ServiceMonitor kind.
+// A NoMatchError (returned by the RESTMapper when the kind is unknown)
+// means the CRD is not installed. Any other error is treated as "unknown" —
+// we default to true so a transient API issue does not permanently disable
+// metrics scraping.
+func (r *SeaweedReconciler) probeServiceMonitorCRD() bool {
+	list := &monitorv1.ServiceMonitorList{}
+	err := r.List(context.TODO(), list, &client.ListOptions{Limit: 1})
+	if err == nil {
+		return true
+	}
+	if meta.IsNoMatchError(err) || runtime.IsNotRegisteredError(err) {
+		return false
+	}
+	klog.Warningf("ServiceMonitor CRD probe returned unexpected error (assuming available): %v", err)
+	return true
 }

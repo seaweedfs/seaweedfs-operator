@@ -24,6 +24,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
@@ -130,6 +131,29 @@ var _ = Describe("Standalone S3 gateway", Ordered, func() {
 		Expect(ing.Spec.Rules[0].Host).To(Equal("s3.seaweed.local"))
 		Expect(ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Name).To(Equal(seaweedName + "-s3"))
 		Expect(ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number).To(Equal(int32(8333)))
+
+		By("pruning the gateway when Spec.S3 is cleared")
+		live := &seaweedv1.Seaweed{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: seaweedName, Namespace: testNamespace}, live)).To(Succeed())
+		live.Spec.S3 = nil
+		Expect(k8sClient.Update(ctx, live)).To(Succeed())
+
+		Eventually(func() bool {
+			depGone := apierrors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      seaweedName + "-s3",
+				Namespace: testNamespace,
+			}, &appsv1.Deployment{}))
+			svcGone := apierrors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      seaweedName + "-s3",
+				Namespace: testNamespace,
+			}, &corev1.Service{}))
+			ingGone := apierrors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      seaweedName + "-s3-ingress",
+				Namespace: testNamespace,
+			}, &networkingv1.Ingress{}))
+			return depGone && svcGone && ingGone
+		}, 60*time.Second, time.Second).Should(BeTrue(),
+			"Deployment, Service, and Ingress should all be pruned after Spec.S3 is cleared")
 	})
 
 	// The spec.s3 + spec.filer.s3 mutual exclusion is enforced by the

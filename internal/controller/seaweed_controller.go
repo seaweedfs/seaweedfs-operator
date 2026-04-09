@@ -280,11 +280,12 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	} else {
 		seaweedCR.Status.Worker = seaweedv1.ComponentStatus{}
 	}
-	if seaweedCR.Spec.S3 != nil {
-		seaweedCR.Status.S3 = s3Status
-	} else {
-		seaweedCR.Status.S3 = seaweedv1.ComponentStatus{}
-	}
+	// Always write the live s3Status: when Spec.S3 is nil but a
+	// Deployment still exists (tear-down in progress) we want the CR to
+	// show the real replica counts rather than zero. getS3Status
+	// returns the empty ComponentStatus{} once the Deployment is gone,
+	// which matches the steady-state "no gateway" view.
+	seaweedCR.Status.S3 = s3Status
 
 	// Build informative status message (for NotReady condition)
 	notReadyMessage := strings.Join([]string{

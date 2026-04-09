@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"testing"
 
@@ -33,7 +34,21 @@ func TestE2E(t *testing.T) {
 	RunSpecs(t, "e2e suite")
 }
 
+// SKIP_E2E_ENV_SETUP tells the suite to assume Kind, CRDs, and the operator
+// are already deployed. Use this when iterating locally (and in CI, where
+// the workflow runs kind-prepare / kind-load / deploy as separate steps)
+// so the suite does not redundantly rebuild and redeploy. Any value other
+// than the empty string enables skipping.
+const skipEnvSetupEnv = "SKIP_E2E_ENV_SETUP"
+
 var _ = BeforeSuite(func() {
+	if os.Getenv(skipEnvSetupEnv) != "" {
+		fmt.Fprintf(GinkgoWriter,
+			"%s set; assuming Kind cluster, CRDs, and operator are already deployed\n",
+			skipEnvSetupEnv)
+		return
+	}
+
 	By("prepare kind environment", func() {
 		cmd := exec.Command("make", "kind-prepare")
 		_, err := utils.Run(cmd)
@@ -60,6 +75,9 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
+	if os.Getenv(skipEnvSetupEnv) != "" {
+		return
+	}
 	By("cleanup", func() {
 		cmd := exec.Command("make", "undeploy")
 		_, err := utils.Run(cmd)

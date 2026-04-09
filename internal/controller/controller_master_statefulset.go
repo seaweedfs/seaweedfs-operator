@@ -69,16 +69,27 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 	enableServiceLinks := false
 
 	masterPodSpec := m.BaseMasterSpec().BuildPodSpec()
-	masterPodSpec.Volumes = append(masterPodSpec.Volumes, corev1.Volume{
-		Name: "master-config",
-		VolumeSource: corev1.VolumeSource{
-			ConfigMap: &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{
-					Name: m.Name + "-master",
+	var masterConfigMounts []corev1.VolumeMount
+	// Only mount the master ConfigMap when the user supplied a master.toml,
+	// mirroring the filer fix: an empty /etc/seaweedfs/master.toml makes
+	// viper report the config as loaded and suppresses upstream defaults.
+	if m.Spec.Master.Config != nil {
+		masterPodSpec.Volumes = append(masterPodSpec.Volumes, corev1.Volume{
+			Name: "master-config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: m.Name + "-master",
+					},
 				},
 			},
-		},
-	})
+		})
+		masterConfigMounts = append(masterConfigMounts, corev1.VolumeMount{
+			Name:      "master-config",
+			ReadOnly:  true,
+			MountPath: "/etc/seaweedfs",
+		})
+	}
 	masterPodSpec.EnableServiceLinks = &enableServiceLinks
 	masterPodSpec.Containers = []corev1.Container{{
 		Name:            "master",
@@ -86,11 +97,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 		ImagePullPolicy: m.BaseMasterSpec().ImagePullPolicy(),
 		Env:             append(m.BaseMasterSpec().Env(), kubernetesEnvVars...),
 		Resources:       filterContainerResources(m.Spec.Master.ResourceRequirements),
-		VolumeMounts: mergeVolumeMounts([]corev1.VolumeMount{{
-			Name:      "master-config",
-			ReadOnly:  true,
-			MountPath: "/etc/seaweedfs",
-		}}, m.BaseMasterSpec().VolumeMounts()),
+		VolumeMounts:    mergeVolumeMounts(masterConfigMounts, m.BaseMasterSpec().VolumeMounts()),
 		Command: []string{
 			"/bin/sh",
 			"-ec",

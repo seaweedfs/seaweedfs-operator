@@ -112,6 +112,9 @@ func (r *SeaweedReconciler) ensureMasterConfigMap(seaweedCR *seaweedv1.Seaweed) 
 	log := r.Log.WithValues("sw-master-configmap", seaweedCR.Name)
 
 	masterConfigMap := r.createMasterConfigMap(seaweedCR)
+	if masterConfigMap == nil {
+		return ReconcileResult(nil)
+	}
 	if err := controllerutil.SetControllerReference(seaweedCR, masterConfigMap, r.Scheme); err != nil {
 		return ReconcileResult(err)
 	}

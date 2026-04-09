@@ -78,22 +78,26 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 	enableServiceLinks := false
 
 	filerPodSpec := m.BaseFilerSpec().BuildPodSpec()
-	filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
-		Name: "filer-config",
-		VolumeSource: corev1.VolumeSource{
-			ConfigMap: &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{
-					Name: m.Name + "-filer",
+	var volumeMounts []corev1.VolumeMount
+	// Only mount the filer ConfigMap when the user supplied a filer.toml.
+	// Mounting an empty /etc/seaweedfs/filer.toml makes the filer skip its
+	// default leveldb2 store and crashloop for lack of a backing store.
+	if m.Spec.Filer.Config != nil {
+		filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
+			Name: "filer-config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: m.Name + "-filer",
+					},
 				},
 			},
-		},
-	})
-	volumeMounts := []corev1.VolumeMount{
-		{
+		})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "filer-config",
 			ReadOnly:  true,
 			MountPath: "/etc/seaweedfs",
-		},
+		})
 	}
 
 	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled && m.Spec.Filer.S3.ConfigSecret != nil && m.Spec.Filer.S3.ConfigSecret.Name != "" {

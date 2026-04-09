@@ -20,8 +20,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
@@ -84,6 +86,18 @@ var _ = Describe("Per-component Ingress", Ordered, func() {
 				},
 				Volume: &seaweedv1.VolumeSpec{
 					Replicas: 1,
+					// k8s 1.34+ rejects VolumeClaimTemplates without a
+					// storage request; the operator's webhook catches
+					// this but the dev deploy runs with
+					// ENABLE_WEBHOOKS=false so we have to set it here
+					// to keep CI green across all matrix k8s versions.
+					VolumeServerConfig: seaweedv1.VolumeServerConfig{
+						ResourceRequirements: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: resource.MustParse("1Gi"),
+							},
+						},
+					},
 					Ingress: &seaweedv1.IngressSpec{
 						Enabled: true,
 						Host:    "volume.seaweed.local",

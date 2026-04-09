@@ -43,6 +43,44 @@ const (
 	AdminGRPCPort  = AdminHTTPPort + GRPCPortDelta
 )
 
+// IngressSpec is per-component Ingress configuration. When Enabled, the
+// operator creates a networking.k8s.io/v1 Ingress pointing at the
+// component's Service. This is independent of the legacy HostSuffix
+// all-in-one Ingress, which remains supported for backward compatibility.
+type IngressSpec struct {
+	// Enabled turns on Ingress generation for this component.
+	Enabled bool `json:"enabled,omitempty"`
+
+	// ClassName is the name of the IngressClass to use.
+	// +optional
+	ClassName *string `json:"className,omitempty"`
+
+	// Host is the hostname the Ingress listens on. Required when enabled.
+	// +optional
+	Host string `json:"host,omitempty"`
+
+	// Path under which the component is served. Defaults to "/".
+	// +kubebuilder:default:="/"
+	Path string `json:"path,omitempty"`
+
+	// Annotations to apply to the generated Ingress resource. Useful for
+	// setting controller-specific annotations (nginx.ingress.kubernetes.io/...
+	// etc.) without the operator needing to know about them.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// TLS is a pass-through of Ingress TLS config (hostnames + secret).
+	// +optional
+	TLS []IngressTLS `json:"tls,omitempty"`
+}
+
+// IngressTLS mirrors the networking.k8s.io/v1 IngressTLS fields we care
+// about, avoiding a direct schema dependency on k8s.io/api from the CRD.
+type IngressTLS struct {
+	Hosts      []string `json:"hosts,omitempty"`
+	SecretName string   `json:"secretName,omitempty"`
+}
+
 // TLSSpec controls mTLS between SeaweedFS components via cert-manager.
 // When Enabled, the operator provisions a cert-manager Certificate covering
 // every component's headless service and renders a security.toml ConfigMap
@@ -230,6 +268,10 @@ type MasterSpec struct {
 	DefaultReplication *string `json:"defaultReplication,omitempty"`
 	// only for testing
 	ConcurrentStart *bool `json:"concurrentStart,omitempty"`
+
+	// Ingress configuration for the master HTTP UI.
+	// +optional
+	Ingress *IngressSpec `json:"ingress,omitempty"`
 }
 
 // VolumeServerConfig contains common configuration for volume servers
@@ -265,6 +307,10 @@ type VolumeSpec struct {
 	Rack *string `json:"rack,omitempty"`
 	// +kubebuilder:validation:Optional
 	DataCenter *string `json:"dataCenter,omitempty"`
+
+	// Ingress configuration for the volume server HTTP port.
+	// +optional
+	Ingress *IngressSpec `json:"ingress,omitempty"`
 }
 
 // VolumeTopologySpec defines a volume server group with specific topology placement
@@ -332,6 +378,16 @@ type FilerSpec struct {
 
 	// Iceberg configuration for the Iceberg catalog REST API
 	Iceberg *IcebergConfig `json:"iceberg,omitempty"`
+
+	// Ingress configuration for the filer HTTP port.
+	// +optional
+	Ingress *IngressSpec `json:"ingress,omitempty"`
+
+	// S3Ingress configuration for the filer's embedded S3 gateway port.
+	// Only used when Filer.S3.Enabled is true. Separate from Ingress so
+	// S3 can live on a different hostname than the filer HTTP UI.
+	// +optional
+	S3Ingress *IngressSpec `json:"s3Ingress,omitempty"`
 }
 
 // IcebergEffectivePort returns the port to use for the Iceberg catalog REST API.
@@ -356,6 +412,10 @@ type AdminSpec struct {
 	// CredentialsSecret is a reference to a Secret containing admin credentials.
 	// The secret should have keys: adminUser, adminPassword, and optionally readOnlyUser, readOnlyPassword
 	CredentialsSecret *corev1.LocalObjectReference `json:"credentialsSecret,omitempty"`
+
+	// Ingress configuration for the admin UI HTTP port.
+	// +optional
+	Ingress *IngressSpec `json:"ingress,omitempty"`
 }
 
 // WorkerSpec is the spec for worker processes

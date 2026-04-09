@@ -127,6 +127,14 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return result, err
 	}
 
+	// Per-component Ingress (opt-in via ComponentSpec.Ingress). Runs
+	// after the legacy HostSuffix Ingress so that clusters using both
+	// still see their all-in-one Ingress updated first. Takes ctx
+	// because the prune step lists existing Ingresses.
+	if done, result, err = r.ensureComponentIngresses(ctx, seaweedCR); done {
+		return result, err
+	}
+
 	if false {
 		if done, result, err = r.maintenance(seaweedCR); done {
 			return result, err

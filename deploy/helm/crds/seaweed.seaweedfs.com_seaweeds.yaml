@@ -570,6 +570,33 @@ spec:
                       type: object
                       x-kubernetes-map-type: atomic
                     type: array
+                  ingress:
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      className:
+                        type: string
+                      enabled:
+                        type: boolean
+                      host:
+                        type: string
+                      path:
+                        default: /
+                        type: string
+                      tls:
+                        items:
+                          properties:
+                            hosts:
+                              items:
+                                type: string
+                              type: array
+                            secretName:
+                              type: string
+                          type: object
+                        type: array
+                    type: object
                   limits:
                     additionalProperties:
                       anyOf:
@@ -2399,6 +2426,33 @@ spec:
                       type: object
                       x-kubernetes-map-type: atomic
                     type: array
+                  ingress:
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      className:
+                        type: string
+                      enabled:
+                        type: boolean
+                      host:
+                        type: string
+                      path:
+                        default: /
+                        type: string
+                      tls:
+                        items:
+                          properties:
+                            hosts:
+                              items:
+                                type: string
+                              type: array
+                            secretName:
+                              type: string
+                          type: object
+                        type: array
+                    type: object
                   limits:
                     additionalProperties:
                       anyOf:
@@ -2533,6 +2587,33 @@ spec:
                       enabled:
                         default: true
                         type: boolean
+                    type: object
+                  s3Ingress:
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      className:
+                        type: string
+                      enabled:
+                        type: boolean
+                      host:
+                        type: string
+                      path:
+                        default: /
+                        type: string
+                      tls:
+                        items:
+                          properties:
+                            hosts:
+                              items:
+                                type: string
+                              type: array
+                            secretName:
+                              type: string
+                          type: object
+                        type: array
                     type: object
                   schedulerName:
                     type: string
@@ -3909,6 +3990,33 @@ spec:
                       type: object
                       x-kubernetes-map-type: atomic
                     type: array
+                  ingress:
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      className:
+                        type: string
+                      enabled:
+                        type: boolean
+                      host:
+                        type: string
+                      path:
+                        default: /
+                        type: string
+                      tls:
+                        items:
+                          properties:
+                            hosts:
+                              items:
+                                type: string
+                              type: array
+                            secretName:
+                              type: string
+                          type: object
+                        type: array
+                    type: object
                   limits:
                     additionalProperties:
                       anyOf:
@@ -5352,6 +5460,33 @@ spec:
                       type: object
                       x-kubernetes-map-type: atomic
                     type: array
+                  ingress:
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      className:
+                        type: string
+                      enabled:
+                        type: boolean
+                      host:
+                        type: string
+                      path:
+                        default: /
+                        type: string
+                      tls:
+                        items:
+                          properties:
+                            hosts:
+                              items:
+                                type: string
+                              type: array
+                            secretName:
+                              type: string
+                          type: object
+                        type: array
+                    type: object
                   limits:
                     additionalProperties:
                       anyOf:

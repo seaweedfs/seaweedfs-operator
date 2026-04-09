@@ -71,9 +71,16 @@ func EnsureNamespace(ctx context.Context, c client.Client, name string) {
 
 // DeleteNamespace issues a background delete. Callers typically defer this
 // from BeforeAll; tests do not wait for full deletion to keep runtime down.
+//
+// NotFound is swallowed because AfterAll often runs after the namespace
+// is already torn down (for example by a previous spec's cleanup). Any
+// other error is surfaced via Expect so a flaky teardown does not leave
+// stale state behind that would poison later runs in the same suite.
 func DeleteNamespace(ctx context.Context, c client.Client, name string) {
 	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
-	_ = c.Delete(ctx, ns)
+	if err := c.Delete(ctx, ns); err != nil && !errors.IsNotFound(err) {
+		Expect(err).NotTo(HaveOccurred(), "failed to delete namespace %s", name)
+	}
 }
 
 // WaitForSeaweedReady polls the Seaweed CR until its Ready condition is True

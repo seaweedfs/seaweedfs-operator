@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
@@ -142,5 +143,33 @@ var _ = Describe("Per-component Ingress", Ordered, func() {
 		Expect(*master.Spec.IngressClassName).To(Equal("nginx"))
 		Expect(master.Annotations).To(HaveKeyWithValue(
 			"nginx.ingress.kubernetes.io/backend-protocol", "HTTP"))
+
+		By("pruning per-component Ingresses when they are removed from spec")
+		// Re-fetch so we edit the latest resourceVersion.
+		live := &seaweedv1.Seaweed{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: seaweedName, Namespace: testNamespace}, live)).To(Succeed())
+		live.Spec.Master.Ingress = nil
+		live.Spec.Volume.Ingress = nil
+		// Keep filer.ingress so we can verify the prune is selective.
+		Expect(k8sClient.Update(ctx, live)).To(Succeed())
+
+		Eventually(func() bool {
+			masterGone := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      seaweedName + "-master-ingress",
+				Namespace: testNamespace,
+			}, &networkingv1.Ingress{})
+			volumeGone := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      seaweedName + "-volume-ingress",
+				Namespace: testNamespace,
+			}, &networkingv1.Ingress{})
+			return apierrors.IsNotFound(masterGone) && apierrors.IsNotFound(volumeGone)
+		}, 60*time.Second, time.Second).Should(BeTrue(),
+			"master and volume Ingresses should be pruned after opt-out")
+
+		By("confirming the filer Ingress survives the prune")
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      seaweedName + "-filer-ingress",
+			Namespace: testNamespace,
+		}, &networkingv1.Ingress{})).To(Succeed())
 	})
 })

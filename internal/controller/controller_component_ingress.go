@@ -25,49 +25,110 @@ You may obtain a copy of the License at
 package controller
 
 import (
+	"context"
+
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
+func isNotFoundErr(err error) bool { return apierrors.IsNotFound(err) }
+
+// componentIngressManagedByLabel is the label value the operator stamps on
+// every Ingress it reconciles under the per-component path. Used by the
+// prune step to find Ingresses it is responsible for without touching the
+// legacy HostSuffix all-in-one Ingress.
+const componentIngressManagedByLabel = "seaweedfs-operator-component"
+
 // ensureComponentIngresses reconciles one Ingress per component whose
-// IngressSpec.Enabled is true. Skipped entirely when nothing opts in.
-func (r *SeaweedReconciler) ensureComponentIngresses(m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+// IngressSpec.Enabled is true, and deletes any previously managed Ingress
+// that is no longer desired. Skipped entirely when no component opts in
+// AND no managed Ingress currently exists (the list+prune still runs in
+// that case to catch opt-out transitions).
+func (r *SeaweedReconciler) ensureComponentIngresses(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	// Desired Ingress set: maps Ingress name → reconcile args.
+	type desired struct {
+		component   string
+		serviceName string
+		servicePort int32
+		spec        *seaweedv1.IngressSpec
+	}
+	wanted := map[string]desired{}
 	if m.Spec.Master != nil && m.Spec.Master.Ingress != nil && m.Spec.Master.Ingress.Enabled {
-		if done, res, err := r.ensureComponentIngress(m, "master", m.Name+"-master",
-			seaweedv1.MasterHTTPPort, m.Spec.Master.Ingress); done {
-			return done, res, err
-		}
+		wanted[m.Name+"-master-ingress"] = desired{"master", m.Name + "-master", seaweedv1.MasterHTTPPort, m.Spec.Master.Ingress}
 	}
 	if m.Spec.Volume != nil && m.Spec.Volume.Ingress != nil && m.Spec.Volume.Ingress.Enabled {
-		if done, res, err := r.ensureComponentIngress(m, "volume", m.Name+"-volume",
-			seaweedv1.VolumeHTTPPort, m.Spec.Volume.Ingress); done {
-			return done, res, err
-		}
+		wanted[m.Name+"-volume-ingress"] = desired{"volume", m.Name + "-volume", seaweedv1.VolumeHTTPPort, m.Spec.Volume.Ingress}
 	}
 	if m.Spec.Filer != nil && m.Spec.Filer.Ingress != nil && m.Spec.Filer.Ingress.Enabled {
-		if done, res, err := r.ensureComponentIngress(m, "filer", m.Name+"-filer",
-			seaweedv1.FilerHTTPPort, m.Spec.Filer.Ingress); done {
-			return done, res, err
-		}
+		wanted[m.Name+"-filer-ingress"] = desired{"filer", m.Name + "-filer", seaweedv1.FilerHTTPPort, m.Spec.Filer.Ingress}
 	}
 	if m.Spec.Filer != nil && m.Spec.Filer.S3Ingress != nil && m.Spec.Filer.S3Ingress.Enabled &&
 		m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled {
-		if done, res, err := r.ensureComponentIngress(m, "s3", m.Name+"-filer",
-			seaweedv1.FilerS3Port, m.Spec.Filer.S3Ingress); done {
-			return done, res, err
-		}
+		wanted[m.Name+"-s3-ingress"] = desired{"s3", m.Name + "-filer", seaweedv1.FilerS3Port, m.Spec.Filer.S3Ingress}
 	}
 	if m.Spec.Admin != nil && m.Spec.Admin.Ingress != nil && m.Spec.Admin.Ingress.Enabled {
-		if done, res, err := r.ensureComponentIngress(m, "admin", m.Name+"-admin",
-			seaweedv1.AdminHTTPPort, m.Spec.Admin.Ingress); done {
+		wanted[m.Name+"-admin-ingress"] = desired{"admin", m.Name + "-admin", seaweedv1.AdminHTTPPort, m.Spec.Admin.Ingress}
+	}
+
+	// Upsert the desired set.
+	for _, d := range wanted {
+		if done, res, err := r.ensureComponentIngress(m, d.component, d.serviceName, d.servicePort, d.spec); done {
 			return done, res, err
 		}
 	}
+
+	// Prune any previously managed Ingress that is no longer desired.
+	// We scope the list to this CR instance + our managed-by marker so
+	// the legacy HostSuffix Ingress (labelled component=ingress rather
+	// than the per-component marker) is never touched.
+	existing := &networkingv1.IngressList{}
+	if err := r.List(ctx, existing,
+		client.InNamespace(m.Namespace),
+		client.MatchingLabels{
+			"app.kubernetes.io/instance":   m.Name,
+			"app.kubernetes.io/managed-by": componentIngressManagedByLabel,
+		},
+	); err != nil {
+		return ReconcileResult(err)
+	}
+	for i := range existing.Items {
+		ing := &existing.Items[i]
+		if _, keep := wanted[ing.Name]; keep {
+			continue
+		}
+		// Belt-and-braces: only delete if we own it, so an unrelated
+		// Ingress that happens to have our labels (unlikely but cheap
+		// to guard) is not accidentally reaped.
+		if !isOwnedBy(ing.OwnerReferences, m.UID) {
+			continue
+		}
+		r.Log.Info("pruning component ingress no longer in spec",
+			"seaweed", m.Name, "ingress", ing.Name)
+		if err := r.Delete(ctx, ing); err != nil && !isNotFoundErr(err) {
+			return ReconcileResult(err)
+		}
+	}
+
 	return ReconcileResult(nil)
+}
+
+// isOwnedBy reports whether any of the given owner references points at
+// the controller UID. Mirrors the "is this object mine" check the prune
+// loop needs without pulling in controller-runtime's ownership helpers.
+func isOwnedBy(refs []metav1.OwnerReference, uid types.UID) bool {
+	for _, r := range refs {
+		if r.UID == uid && r.Controller != nil && *r.Controller {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *SeaweedReconciler) ensureComponentIngress(m *seaweedv1.Seaweed, component, serviceName string, servicePort int32, spec *seaweedv1.IngressSpec) (bool, ctrl.Result, error) {
@@ -87,8 +148,13 @@ func buildComponentIngress(m *seaweedv1.Seaweed, component, serviceName string, 
 	if path == "" {
 		path = "/"
 	}
+	// The managed-by value is intentionally component-specific
+	// (seaweedfs-operator-component) rather than the generic
+	// "seaweedfs-operator" used elsewhere. This lets ensureComponentIngresses
+	// scope its prune List to Ingresses this code path owns without
+	// accidentally picking up the legacy HostSuffix all-in-one Ingress.
 	labels := map[string]string{
-		"app.kubernetes.io/managed-by": "seaweedfs-operator",
+		"app.kubernetes.io/managed-by": componentIngressManagedByLabel,
 		"app.kubernetes.io/name":       "seaweedfs",
 		"app.kubernetes.io/instance":   m.Name,
 		"app.kubernetes.io/component":  component,

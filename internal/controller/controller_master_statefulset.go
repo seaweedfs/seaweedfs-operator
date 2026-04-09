@@ -70,10 +70,10 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 
 	masterPodSpec := m.BaseMasterSpec().BuildPodSpec()
 	var masterConfigMounts []corev1.VolumeMount
-	// Only mount the master ConfigMap when the user supplied a master.toml,
-	// mirroring the filer fix: an empty /etc/seaweedfs/master.toml makes
-	// viper report the config as loaded and suppresses upstream defaults.
-	if m.Spec.Master.Config != nil {
+	// Only mount the master ConfigMap when the user supplied non-blank
+	// master.toml content. Mirrors the filer fix — see hasMasterConfig
+	// for why whitespace-only counts as "no override".
+	if hasMasterConfig(m) {
 		masterPodSpec.Volumes = append(masterPodSpec.Volumes, corev1.Volume{
 			Name: "master-config",
 			VolumeSource: corev1.VolumeSource{

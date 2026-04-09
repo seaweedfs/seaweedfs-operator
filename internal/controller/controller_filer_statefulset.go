@@ -79,10 +79,12 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 
 	filerPodSpec := m.BaseFilerSpec().BuildPodSpec()
 	var volumeMounts []corev1.VolumeMount
-	// Only mount the filer ConfigMap when the user supplied a filer.toml.
-	// Mounting an empty /etc/seaweedfs/filer.toml makes the filer skip its
-	// default leveldb2 store and crashloop for lack of a backing store.
-	if m.Spec.Filer.Config != nil {
+	// Only mount the filer ConfigMap when the user supplied non-blank
+	// filer.toml content. Mounting an empty /etc/seaweedfs/filer.toml
+	// makes the filer skip its default leveldb2 store and crashloop
+	// for lack of a backing store. hasFilerConfig keeps this in lock
+	// step with createFilerConfigMap.
+	if hasFilerConfig(m) {
 		filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
 			Name: "filer-config",
 			VolumeSource: corev1.VolumeSource{

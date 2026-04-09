@@ -157,7 +157,6 @@ func (r *SeaweedReconciler) deleteS3Gateway(ctx context.Context, m *seaweedv1.Se
 	return nil
 }
 
-
 func (r *SeaweedReconciler) ensureS3Service(m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	svc := r.buildS3Service(m)
 	if err := controllerutil.SetControllerReference(m, svc, r.Scheme); err != nil {
@@ -387,4 +386,3 @@ func (r *SeaweedReconciler) getS3Status(ctx context.Context, m *seaweedv1.Seawee
 	}
 	return status, nil
 }
-

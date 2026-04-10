@@ -13,7 +13,11 @@ import (
 )
 
 func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
-	commands := []string{"weed", "-logtostderr=true", "admin"}
+	commands := []string{"weed", "-logtostderr=true"}
+	if arg := tlsConfigDirArg(m); arg != "" {
+		commands = append(commands, arg)
+	}
+	commands = append(commands, "admin")
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.AdminHTTPPort))
 	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m)))
 	if m.Spec.Admin.MetricsPort != nil {
@@ -66,6 +70,10 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 				},
 			},
 		})
+	}
+	if tlsVols, tlsMounts := tlsVolumesAndMounts(m); len(tlsVols) > 0 {
+		adminPodSpec.Volumes = append(adminPodSpec.Volumes, tlsVols...)
+		volumeMounts = append(volumeMounts, tlsMounts...)
 	}
 
 	adminPodSpec.EnableServiceLinks = &enableServiceLinks

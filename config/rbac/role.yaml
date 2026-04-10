@@ -34,7 +34,21 @@ rules:
 - apiGroups:
   - apps
   resources:
+  - deployments
   - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - certificates
+  - issuers
   verbs:
   - create
   - delete

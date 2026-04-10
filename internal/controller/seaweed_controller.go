@@ -62,12 +62,14 @@ type SeaweedReconciler struct {
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=extensions,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;
 
 // Reconcile implements the reconciliation logic
@@ -78,6 +80,14 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	seaweedCR, done, result, err := r.findSeaweedCustomResourceInstance(ctx, log, req)
 	if done {
+		return result, err
+	}
+
+	// TLS must be reconciled first: component pod specs reference the
+	// server Secret and security ConfigMap names, and skipping these when
+	// cert-manager is absent is the difference between reconciling cleanly
+	// and crashlooping pods whose VolumeMounts can never be satisfied.
+	if done, result, err = r.ensureTLS(ctx, seaweedCR); done {
 		return result, err
 	}
 
@@ -114,7 +124,19 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
+	if done, result, err = r.ensureS3Gateway(ctx, seaweedCR); done {
+		return result, err
+	}
+
 	if done, result, err = r.ensureSeaweedIngress(seaweedCR); done {
+		return result, err
+	}
+
+	// Per-component Ingress (opt-in via ComponentSpec.Ingress). Runs
+	// after the legacy HostSuffix Ingress so that clusters using both
+	// still see their all-in-one Ingress updated first. Takes ctx
+	// because the prune step lists existing Ingresses.
+	if done, result, err = r.ensureComponentIngresses(ctx, seaweedCR); done {
 		return result, err
 	}
 
@@ -206,6 +228,13 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		}
 	}
 
+	// Get standalone S3 gateway status (if enabled)
+	s3Status, err := r.getS3Status(ctx, seaweedCR)
+	if err != nil {
+		log.Error(err, "Failed to get S3 gateway status")
+		return err
+	}
+
 	// Determine if cluster is ready
 	// Master must have replicas and all must be ready
 	isReady := masterStatus.Replicas > 0 && masterStatus.ReadyReplicas == masterStatus.Replicas
@@ -227,6 +256,11 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		isReady = isReady && (workerStatus.Replicas == 0 || workerStatus.ReadyReplicas == workerStatus.Replicas)
 	}
 
+	// Standalone S3 gateway is checked only if enabled.
+	if seaweedCR.Spec.S3 != nil {
+		isReady = isReady && (s3Status.Replicas == 0 || s3Status.ReadyReplicas == s3Status.Replicas)
+	}
+
 	// Update status
 	seaweedCR.Status.ObservedGeneration = seaweedCR.Generation
 	seaweedCR.Status.Master = masterStatus
@@ -246,6 +280,12 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	} else {
 		seaweedCR.Status.Worker = seaweedv1.ComponentStatus{}
 	}
+	// Always write the live s3Status: when Spec.S3 is nil but a
+	// Deployment still exists (tear-down in progress) we want the CR to
+	// show the real replica counts rather than zero. getS3Status
+	// returns the empty ComponentStatus{} once the Deployment is gone,
+	// which matches the steady-state "no gateway" view.
+	seaweedCR.Status.S3 = s3Status
 
 	// Build informative status message (for NotReady condition)
 	notReadyMessage := strings.Join([]string{

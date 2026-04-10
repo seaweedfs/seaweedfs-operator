@@ -13,7 +13,11 @@ import (
 )
 
 func buildFilerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
-	commands := []string{"weed", "-logtostderr=true", "filer"}
+	commands := []string{"weed", "-logtostderr=true"}
+	if arg := tlsConfigDirArg(m); arg != "" {
+		commands = append(commands, arg)
+	}
+	commands = append(commands, "filer")
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.FilerHTTPPort))
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-filer-peer.%s", m.Name, m.Namespace))
 	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m)))
@@ -100,6 +104,10 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			ReadOnly:  true,
 			MountPath: "/etc/seaweedfs",
 		})
+	}
+	if tlsVols, tlsMounts := tlsVolumesAndMounts(m); len(tlsVols) > 0 {
+		filerPodSpec.Volumes = append(filerPodSpec.Volumes, tlsVols...)
+		volumeMounts = append(volumeMounts, tlsMounts...)
 	}
 
 	if m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled && m.Spec.Filer.S3.ConfigSecret != nil && m.Spec.Filer.S3.ConfigSecret.Name != "" {

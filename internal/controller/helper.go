@@ -228,3 +228,73 @@ func mergeVolumeMounts(base, override []corev1.VolumeMount) []corev1.VolumeMount
 	merged = append(merged, override...)
 	return merged
 }
+
+// tlsEffective reports whether TLS should actually be wired into this
+// reconcile pass. In addition to the user's Spec.TLS.Enabled flag it
+// requires the cert-manager CRD probe to have succeeded — otherwise
+// the operator has not (and cannot) reconcile the Secret/ConfigMap
+// that the pod mounts would reference, so adding those mounts would
+// pin the pod in ContainerCreating with a missing-volume-source error.
+//
+// Keeping this gated on the cached probe means TLS.Enabled=true in a
+// cluster without cert-manager silently degrades to "no TLS" rather
+// than breaking the whole cluster — matching the soft no-op contract
+// documented on TLSSpec.
+func tlsEffective(m *seaweedv1.Seaweed) bool {
+	return tlsEnabled(m) && certManagerAvailableCached()
+}
+
+// tlsVolumesAndMounts returns the set of pod volumes and container mounts
+// that wire the shared TLS Secret and security.toml ConfigMap into a
+// component pod. Returns empty slices when TLS is disabled or the
+// cert-manager CRD probe has failed — callers can safely append
+// unconditionally. Every component that speaks gRPC should use this
+// helper so the paths stay in sync with renderSecurityTOML.
+func tlsVolumesAndMounts(m *seaweedv1.Seaweed) ([]corev1.Volume, []corev1.VolumeMount) {
+	if !tlsEffective(m) {
+		return nil, nil
+	}
+	volumes := []corev1.Volume{
+		{
+			Name: tlsVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: TLSServerSecretName(m),
+				},
+			},
+		},
+		{
+			Name: securityVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: SecurityConfigMapName(m),
+					},
+				},
+			},
+		},
+	}
+	mounts := []corev1.VolumeMount{
+		{
+			Name:      tlsVolumeName,
+			ReadOnly:  true,
+			MountPath: tlsMountPath,
+		},
+		{
+			Name:      securityVolumeName,
+			ReadOnly:  true,
+			MountPath: securityConfigMountPath,
+		},
+	}
+	return volumes, mounts
+}
+
+// tlsConfigDirArg returns the additional top-level `weed` flag that tells
+// viper to look in the security config mount path, or the empty string
+// when TLS is not effective (disabled by spec or cert-manager absent).
+func tlsConfigDirArg(m *seaweedv1.Seaweed) string {
+	if !tlsEffective(m) {
+		return ""
+	}
+	return "-config_dir=" + securityConfigMountPath
+}

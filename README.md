@@ -39,11 +39,13 @@ helm template seaweedfs-operator seaweedfs-operator/seaweedfs-operator
 
 Starting in chart version 0.1.15, the `seaweeds.seaweed.seaweedfs.com` CRD is shipped as a templated resource instead of living in `crds/`. This lets `helm upgrade` actually update it — the `crds/` directory is install-only in Helm 3.
 
-If you already have the chart installed, run these once before your next `helm upgrade` so Helm can take over the existing CRD:
+If you already have the chart installed, run these once before your next `helm upgrade` so Helm can take over the existing CRD. Look up your release name and namespace first — they must match exactly, or Helm will still refuse to adopt the CRD:
 
 ```bash
-RELEASE=seaweedfs-operator      # your release name
-NAMESPACE=seaweedfs-operator    # your release namespace
+helm list -A | grep seaweedfs-operator
+# Replace the two values below with the NAME and NAMESPACE you see above.
+RELEASE=<release-name>
+NAMESPACE=<release-namespace>
 kubectl label crd seaweeds.seaweed.seaweedfs.com app.kubernetes.io/managed-by=Helm --overwrite
 kubectl annotate crd seaweeds.seaweed.seaweedfs.com \
   meta.helm.sh/release-name=$RELEASE \

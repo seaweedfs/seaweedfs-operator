@@ -68,12 +68,12 @@ manifests: controller-gen
 	@# Fix invalid OpenAPI format fields (int32/int64 are not valid in OpenAPI v3)
 	@perl -i -pe 's/\s+format: int32\n//g; s/\s+format: int64\n//g' config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml
 
-helm-crd-copy: generate manifests kustomize
+helm-crd-copy: generate manifests kustomize yq
 	@# Render CRD into the Helm templates dir with helm.sh/resource-policy: keep so
 	@# `helm upgrade` actually updates the CRD. Helm does not upgrade CRDs placed in the
 	@# chart's crds/ directory (install-only by design), which is why we template it.
 	$(KUSTOMIZE) build config/crd | \
-		perl -pe 's|(\s+controller-gen\.kubebuilder\.io/version:.*)$$|$$1\n    helm.sh/resource-policy: keep|' \
+		$(YQ) '.metadata.annotations["helm.sh/resource-policy"] = "keep"' \
 		>| deploy/helm/templates/crd-seaweed.yaml
 
 # Run go fmt against code

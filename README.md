@@ -35,6 +35,27 @@ helm template seaweedfs-operator seaweedfs-operator/seaweedfs-operator
 
 > **Note**: For versions prior to 0.1.2, the legacy repository URL `https://seaweedfs.github.io/seaweedfs-operator/helm` can still be used, but new releases will only be published to the main repository URL above.
 
+#### Upgrading from chart versions <= 0.1.14
+
+Starting in chart version 0.1.15, the `seaweeds.seaweed.seaweedfs.com` CRD is shipped as a templated resource instead of living in `crds/`. This lets `helm upgrade` actually update it — the `crds/` directory is install-only in Helm 3.
+
+If you already have the chart installed, run these once before your next `helm upgrade` so Helm can take over the existing CRD. Look up your release name and namespace first — they must match exactly, or Helm will still refuse to adopt the CRD:
+
+```bash
+helm list -A | grep seaweedfs-operator
+# Replace the two values below with the NAME and NAMESPACE you see above.
+RELEASE=<release-name>
+NAMESPACE=<release-namespace>
+kubectl label crd seaweeds.seaweed.seaweedfs.com app.kubernetes.io/managed-by=Helm --overwrite
+kubectl annotate crd seaweeds.seaweed.seaweedfs.com \
+  meta.helm.sh/release-name=$RELEASE \
+  meta.helm.sh/release-namespace=$NAMESPACE --overwrite
+```
+
+The CRD is annotated with `helm.sh/resource-policy: keep`, so `helm uninstall` will leave it and your `Seaweed` resources in place.
+
+If the CRD is managed outside of this chart (e.g., installed cluster-wide via GitOps), set `--set crds.create=false` on install/upgrade so Helm does not try to own it. Note: `helm --skip-crds` has no effect here because the CRD lives in `templates/`, not `crds/`.
+
 ### FluxCD
 
 Add the following files to a new directory called `seaweedfs-operator` under your FluxCD GitRepository (publishing) directory.

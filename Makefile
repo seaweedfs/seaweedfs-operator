@@ -68,8 +68,17 @@ manifests: controller-gen
 	@# Fix invalid OpenAPI format fields (int32/int64 are not valid in OpenAPI v3)
 	@perl -i -pe 's/\s+format: int32\n//g; s/\s+format: int64\n//g' config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml
 
-helm-crd-copy: generate manifests kustomize
-	$(KUSTOMIZE) build config/crd >| deploy/helm/crds/seaweed.seaweedfs.com_seaweeds.yaml
+helm-crd-copy: generate manifests kustomize yq
+	@# Render CRD into the Helm templates dir with helm.sh/resource-policy: keep so
+	@# `helm upgrade` actually updates the CRD. Helm does not upgrade CRDs placed in the
+	@# chart's crds/ directory (install-only by design), which is why we template it.
+	@# Wrap in `{{- if .Values.crds.create }}` so users managing the CRD out-of-band
+	@# can opt out (templates/ ignores helm --skip-crds, unlike crds/).
+	@printf '%s\n' '{{- if .Values.crds.create -}}' >| deploy/helm/templates/crd-seaweed.yaml
+	$(KUSTOMIZE) build config/crd | \
+		$(YQ) '.metadata.annotations["helm.sh/resource-policy"] = "keep"' \
+		>> deploy/helm/templates/crd-seaweed.yaml
+	@printf '%s\n' '{{- end }}' >> deploy/helm/templates/crd-seaweed.yaml
 
 # Run go fmt against code
 fmt:
@@ -279,10 +288,14 @@ HELM_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/helm/helm/main/scripts
 
 .PHONY: kustomize
 kustomize: $(LOCALBIN)
-	@if test -x $(KUSTOMIZE) && ! $(KUSTOMIZE) version | grep -q $(KUSTOMIZE_VERSION); then \
+	@# `go install` avoids GitHub's anonymous-API rate limits that intermittently
+	@# break the upstream install_kustomize.sh script in CI. Use `go version -m`
+	@# to read the embedded module version because `kustomize version` reports
+	@# `(devel)` for binaries built with `go install`.
+	@if test -x $(KUSTOMIZE) && ! go version -m $(KUSTOMIZE) 2>/dev/null | grep -q "	mod	sigs.k8s.io/kustomize/kustomize/v5	$(KUSTOMIZE_VERSION)"; then \
 		rm -f $(KUSTOMIZE); \
 	fi
-	@test -x $(KUSTOMIZE) || { curl -Ss $(KUSTOMIZE_INSTALL_SCRIPT) | bash -s -- $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN); }
+	@test -x $(KUSTOMIZE) || GOBIN=$(LOCALBIN) go install sigs.k8s.io/kustomize/kustomize/v5@$(KUSTOMIZE_VERSION)
 
 .PHONY: controller-gen
 controller-gen: $(LOCALBIN)

@@ -20,6 +20,9 @@ func TestAdminHealthPath(t *testing.T) {
 		{"empty value", []string{"-urlPrefix="}, "/health"},
 		{"last occurrence wins", []string{"-urlPrefix=/a", "-urlPrefix=/b"}, "/b/health"},
 		{"prefix among other args", []string{"-foo=bar", "-urlPrefix=/x", "-baz"}, "/x/health"},
+		{"positional urlPrefix token ignored", []string{"urlPrefix=/nope"}, "/health"},
+		{"next token is a flag", []string{"-urlPrefix", "-port=8080"}, "/health"},
+		{"trailing bare flag", []string{"-urlPrefix"}, "/health"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

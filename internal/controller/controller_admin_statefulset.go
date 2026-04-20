@@ -38,14 +38,19 @@ func extractURLPrefix(extraArgs []string) string {
 	const flag = "urlPrefix"
 	var raw string
 	for i, a := range extraArgs {
+		if !strings.HasPrefix(a, "-") {
+			continue
+		}
 		name, value, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
 		if name != flag {
 			continue
 		}
 		if hasValue {
 			raw = value
-		} else if i+1 < len(extraArgs) {
+		} else if i+1 < len(extraArgs) && !strings.HasPrefix(extraArgs[i+1], "-") {
 			raw = extraArgs[i+1]
+		} else {
+			raw = ""
 		}
 	}
 	raw = strings.TrimSpace(raw)

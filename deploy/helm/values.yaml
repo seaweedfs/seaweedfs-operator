@@ -16,6 +16,13 @@ commonAnnotations: {}
 # -- Labels for all the deployed objects
 commonLabels: {}
 
+## Custom Resource Definitions managed by this chart
+crds:
+  # -- Install the Seaweed CRD as part of the release. Set to false when the
+  # CRD is managed out-of-band (e.g., cluster-scoped GitOps or a shared CRD
+  # across namespaces) so `helm install/upgrade` won't try to create or adopt it.
+  create: true
+
 ## Configure Kubernetes Rbac parameters
 rbac:
   serviceAccount:

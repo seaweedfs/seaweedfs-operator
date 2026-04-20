@@ -54,6 +54,8 @@ kubectl annotate crd seaweeds.seaweed.seaweedfs.com \
 
 The CRD is annotated with `helm.sh/resource-policy: keep`, so `helm uninstall` will leave it and your `Seaweed` resources in place.
 
+If the CRD is managed outside of this chart (e.g., installed cluster-wide via GitOps), set `--set crds.create=false` on install/upgrade so Helm does not try to own it. Note: `helm --skip-crds` has no effect here because the CRD lives in `templates/`, not `crds/`.
+
 ### FluxCD
 
 Add the following files to a new directory called `seaweedfs-operator` under your FluxCD GitRepository (publishing) directory.

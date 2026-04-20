@@ -72,9 +72,13 @@ helm-crd-copy: generate manifests kustomize yq
 	@# Render CRD into the Helm templates dir with helm.sh/resource-policy: keep so
 	@# `helm upgrade` actually updates the CRD. Helm does not upgrade CRDs placed in the
 	@# chart's crds/ directory (install-only by design), which is why we template it.
+	@# Wrap in `{{- if .Values.crds.create }}` so users managing the CRD out-of-band
+	@# can opt out (templates/ ignores helm --skip-crds, unlike crds/).
+	@printf '%s\n' '{{- if .Values.crds.create -}}' >| deploy/helm/templates/crd-seaweed.yaml
 	$(KUSTOMIZE) build config/crd | \
 		$(YQ) '.metadata.annotations["helm.sh/resource-policy"] = "keep"' \
-		>| deploy/helm/templates/crd-seaweed.yaml
+		>> deploy/helm/templates/crd-seaweed.yaml
+	@printf '%s\n' '{{- end }}' >> deploy/helm/templates/crd-seaweed.yaml
 
 # Run go fmt against code
 fmt:

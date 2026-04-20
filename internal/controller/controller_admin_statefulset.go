@@ -28,6 +28,64 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	return strings.Join(commands, " ")
 }
 
+// adminURLPrefix scans weed admin ExtraArgs for a -urlPrefix flag and returns
+// its value normalized to a leading slash with no trailing slash. The admin
+// server mounts every route — including `/health` and `/metrics` — behind
+// `http.StripPrefix(urlPrefix, r)` when this flag is set (see upstream
+// weed/command/admin.go), so any k8s probes or ServiceMonitor endpoints must
+// target the prefixed path or they will 404.
+//
+// Parsing follows the same semantics as upstream's fla9 parser (a clone of
+// Go's `flag` package): a string flag always consumes the next arg as its
+// value when the `=` form is not used, even if that next arg looks like
+// another flag. Only a bare flag at the very end of the slice has no value.
+// Returns "" when no prefix is configured.
+func adminURLPrefix(extraArgs []string) string {
+	const flag = "urlPrefix"
+	var (
+		raw   string
+		found bool
+	)
+	for i := 0; i < len(extraArgs); i++ {
+		a := extraArgs[i]
+		if !strings.HasPrefix(a, "-") {
+			continue
+		}
+		name, value, hasValue := strings.Cut(strings.TrimPrefix(strings.TrimPrefix(a, "--"), "-"), "=")
+		if name != flag {
+			continue
+		}
+		if hasValue {
+			raw, found = value, true
+			continue
+		}
+		if i+1 < len(extraArgs) {
+			i++
+			raw, found = extraArgs[i], true
+			continue
+		}
+		raw, found = "", true
+	}
+	if !found {
+		return ""
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if !strings.HasPrefix(raw, "/") {
+		raw = "/" + raw
+	}
+	return strings.TrimRight(raw, "/")
+}
+
+// adminRoutePath returns `route` prefixed with any `-urlPrefix` supplied via
+// the admin ExtraArgs. `route` must already start with a `/`.
+// See issue #204.
+func adminRoutePath(extraArgs []string, route string) string {
+	return adminURLPrefix(extraArgs) + route
+}
+
 func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForAdmin(m.Name)
 	annotations := m.BaseAdminSpec().Annotations()
@@ -76,6 +134,9 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		volumeMounts = append(volumeMounts, tlsMounts...)
 	}
 
+	extraArgs := m.BaseAdminSpec().ExtraArgs()
+	healthPath := adminRoutePath(extraArgs, "/health")
+
 	adminPodSpec.EnableServiceLinks = &enableServiceLinks
 	adminPodSpec.Containers = []corev1.Container{{
 		Name:            "admin",
@@ -87,13 +148,13 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		Command: []string{
 			"/bin/sh",
 			"-ec",
-			buildAdminStartupScript(m, m.BaseAdminSpec().ExtraArgs()...),
+			buildAdminStartupScript(m, extraArgs...),
 		},
 		Ports: ports,
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/health",
+					Path:   healthPath,
 					Port:   intstr.FromInt(seaweedv1.AdminHTTPPort),
 					Scheme: corev1.URISchemeHTTP,
 				},
@@ -107,7 +168,7 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/health",
+					Path:   healthPath,
 					Port:   intstr.FromInt(seaweedv1.AdminHTTPPort),
 					Scheme: corev1.URISchemeHTTP,
 				},

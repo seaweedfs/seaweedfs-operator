@@ -28,6 +28,42 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	return strings.Join(commands, " ")
 }
 
+// extractURLPrefix scans weed ExtraArgs for a -urlPrefix flag and returns
+// its value normalized to a leading slash with no trailing slash. The weed
+// admin server honors `-urlPrefix` (and its double-dash form) to mount its
+// routes — including `/health` — under that prefix, so probes must target
+// the prefixed path or the kubelet will fail them and restart the pod.
+// Returns "" when no prefix is configured.
+func extractURLPrefix(extraArgs []string) string {
+	const flag = "urlPrefix"
+	var raw string
+	for i, a := range extraArgs {
+		name, value, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		if name != flag {
+			continue
+		}
+		if hasValue {
+			raw = value
+		} else if i+1 < len(extraArgs) {
+			raw = extraArgs[i+1]
+		}
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if !strings.HasPrefix(raw, "/") {
+		raw = "/" + raw
+	}
+	return strings.TrimRight(raw, "/")
+}
+
+// adminHealthPath returns the probe path for the admin server, honoring any
+// -urlPrefix supplied via ExtraArgs (see issue #204).
+func adminHealthPath(extraArgs []string) string {
+	return extractURLPrefix(extraArgs) + "/health"
+}
+
 func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForAdmin(m.Name)
 	annotations := m.BaseAdminSpec().Annotations()
@@ -76,6 +112,9 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		volumeMounts = append(volumeMounts, tlsMounts...)
 	}
 
+	extraArgs := m.BaseAdminSpec().ExtraArgs()
+	healthPath := adminHealthPath(extraArgs)
+
 	adminPodSpec.EnableServiceLinks = &enableServiceLinks
 	adminPodSpec.Containers = []corev1.Container{{
 		Name:            "admin",
@@ -87,13 +126,13 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		Command: []string{
 			"/bin/sh",
 			"-ec",
-			buildAdminStartupScript(m, m.BaseAdminSpec().ExtraArgs()...),
+			buildAdminStartupScript(m, extraArgs...),
 		},
 		Ports: ports,
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/health",
+					Path:   healthPath,
 					Port:   intstr.FromInt(seaweedv1.AdminHTTPPort),
 					Scheme: corev1.URISchemeHTTP,
 				},
@@ -107,7 +146,7 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/health",
+					Path:   healthPath,
 					Port:   intstr.FromInt(seaweedv1.AdminHTTPPort),
 					Scheme: corev1.URISchemeHTTP,
 				},

@@ -288,10 +288,14 @@ HELM_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/helm/helm/main/scripts
 
 .PHONY: kustomize
 kustomize: $(LOCALBIN)
-	@if test -x $(KUSTOMIZE) && ! $(KUSTOMIZE) version | grep -q $(KUSTOMIZE_VERSION); then \
+	@# `go install` avoids GitHub's anonymous-API rate limits that intermittently
+	@# break the upstream install_kustomize.sh script in CI. Use `go version -m`
+	@# to read the embedded module version because `kustomize version` reports
+	@# `(devel)` for binaries built with `go install`.
+	@if test -x $(KUSTOMIZE) && ! go version -m $(KUSTOMIZE) 2>/dev/null | grep -q "	mod	sigs.k8s.io/kustomize/kustomize/v5	$(KUSTOMIZE_VERSION)"; then \
 		rm -f $(KUSTOMIZE); \
 	fi
-	@test -x $(KUSTOMIZE) || { curl -Ss $(KUSTOMIZE_INSTALL_SCRIPT) | bash -s -- $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN); }
+	@test -x $(KUSTOMIZE) || GOBIN=$(LOCALBIN) go install sigs.k8s.io/kustomize/kustomize/v5@$(KUSTOMIZE_VERSION)
 
 .PHONY: controller-gen
 controller-gen: $(LOCALBIN)

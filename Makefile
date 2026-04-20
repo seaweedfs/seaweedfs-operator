@@ -69,7 +69,12 @@ manifests: controller-gen
 	@perl -i -pe 's/\s+format: int32\n//g; s/\s+format: int64\n//g' config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml
 
 helm-crd-copy: generate manifests kustomize
-	$(KUSTOMIZE) build config/crd >| deploy/helm/crds/seaweed.seaweedfs.com_seaweeds.yaml
+	@# Render CRD into the Helm templates dir with helm.sh/resource-policy: keep so
+	@# `helm upgrade` actually updates the CRD. Helm does not upgrade CRDs placed in the
+	@# chart's crds/ directory (install-only by design), which is why we template it.
+	$(KUSTOMIZE) build config/crd | \
+		perl -pe 's|(\s+controller-gen\.kubebuilder\.io/version:.*)$$|$$1\n    helm.sh/resource-policy: keep|' \
+		>| deploy/helm/templates/crd-seaweed.yaml
 
 # Run go fmt against code
 fmt:

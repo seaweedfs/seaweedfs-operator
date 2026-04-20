@@ -41,7 +41,7 @@ func extractURLPrefix(extraArgs []string) string {
 		if !strings.HasPrefix(a, "-") {
 			continue
 		}
-		name, value, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		name, value, hasValue := strings.Cut(strings.TrimPrefix(strings.TrimPrefix(a, "--"), "-"), "=")
 		if name != flag {
 			continue
 		}

@@ -19,7 +19,7 @@ func (r *SeaweedReconciler) createAdminServiceMonitor(m *seaweedv1.Seaweed) *mon
 		Spec: monitorv1.ServiceMonitorSpec{
 			Endpoints: []monitorv1.Endpoint{
 				{
-					Path: "/metrics",
+					Path: adminRoutePath(m.BaseAdminSpec().ExtraArgs(), "/metrics"),
 					Port: "admin-metrics",
 				},
 			},

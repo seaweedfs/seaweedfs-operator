@@ -28,16 +28,26 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	return strings.Join(commands, " ")
 }
 
-// extractURLPrefix scans weed ExtraArgs for a -urlPrefix flag and returns
-// its value normalized to a leading slash with no trailing slash. The weed
-// admin server honors `-urlPrefix` (and its double-dash form) to mount its
-// routes — including `/health` — under that prefix, so probes must target
-// the prefixed path or the kubelet will fail them and restart the pod.
+// adminURLPrefix scans weed admin ExtraArgs for a -urlPrefix flag and returns
+// its value normalized to a leading slash with no trailing slash. The admin
+// server mounts every route — including `/health` and `/metrics` — behind
+// `http.StripPrefix(urlPrefix, r)` when this flag is set (see upstream
+// weed/command/admin.go), so any k8s probes or ServiceMonitor endpoints must
+// target the prefixed path or they will 404.
+//
+// Parsing follows the same semantics as upstream's fla9 parser (a clone of
+// Go's `flag` package): a string flag always consumes the next arg as its
+// value when the `=` form is not used, even if that next arg looks like
+// another flag. Only a bare flag at the very end of the slice has no value.
 // Returns "" when no prefix is configured.
-func extractURLPrefix(extraArgs []string) string {
+func adminURLPrefix(extraArgs []string) string {
 	const flag = "urlPrefix"
-	var raw string
-	for i, a := range extraArgs {
+	var (
+		raw   string
+		found bool
+	)
+	for i := 0; i < len(extraArgs); i++ {
+		a := extraArgs[i]
 		if !strings.HasPrefix(a, "-") {
 			continue
 		}
@@ -46,12 +56,18 @@ func extractURLPrefix(extraArgs []string) string {
 			continue
 		}
 		if hasValue {
-			raw = value
-		} else if i+1 < len(extraArgs) && !strings.HasPrefix(extraArgs[i+1], "-") {
-			raw = extraArgs[i+1]
-		} else {
-			raw = ""
+			raw, found = value, true
+			continue
 		}
+		if i+1 < len(extraArgs) {
+			i++
+			raw, found = extraArgs[i], true
+			continue
+		}
+		raw, found = "", true
+	}
+	if !found {
+		return ""
 	}
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -63,10 +79,11 @@ func extractURLPrefix(extraArgs []string) string {
 	return strings.TrimRight(raw, "/")
 }
 
-// adminHealthPath returns the probe path for the admin server, honoring any
-// -urlPrefix supplied via ExtraArgs (see issue #204).
-func adminHealthPath(extraArgs []string) string {
-	return extractURLPrefix(extraArgs) + "/health"
+// adminRoutePath returns `route` prefixed with any `-urlPrefix` supplied via
+// the admin ExtraArgs. `route` must already start with a `/`.
+// See issue #204.
+func adminRoutePath(extraArgs []string, route string) string {
+	return adminURLPrefix(extraArgs) + route
 }
 
 func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
@@ -118,7 +135,7 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 	}
 
 	extraArgs := m.BaseAdminSpec().ExtraArgs()
-	healthPath := adminHealthPath(extraArgs)
+	healthPath := adminRoutePath(extraArgs, "/health")
 
 	adminPodSpec.EnableServiceLinks = &enableServiceLinks
 	adminPodSpec.Containers = []corev1.Container{{

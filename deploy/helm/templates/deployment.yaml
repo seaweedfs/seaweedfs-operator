@@ -59,6 +59,7 @@ spec:
         - /manager
         args:
         - --leader-elect
+        - --metrics-bind-address=:{{ .Values.port.number }}
         env:
         {{- if eq .Values.webhook.enabled false }}
         - name: ENABLE_WEBHOOKS

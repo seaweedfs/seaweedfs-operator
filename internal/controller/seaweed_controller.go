@@ -353,7 +353,7 @@ func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *s
 		}
 	case ComponentWorker:
 		if seaweedCR.Spec.Worker != nil {
-			return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-worker", seaweedCR.Spec.Worker.Replicas)
+			return r.getDeploymentStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-worker", seaweedCR.Spec.Worker.Replicas)
 		}
 	}
 	return seaweedv1.ComponentStatus{}, nil
@@ -376,6 +376,23 @@ func (r *SeaweedReconciler) getStatefulSetStatus(ctx context.Context, namespace,
 
 	// Use StatefulSet's ready replica count
 	status.ReadyReplicas = statefulSet.Status.ReadyReplicas
+	return status, nil
+}
+
+func (r *SeaweedReconciler) getDeploymentStatus(ctx context.Context, namespace, name string, desiredReplicas int32) (seaweedv1.ComponentStatus, error) {
+	status := seaweedv1.ComponentStatus{
+		Replicas: desiredReplicas,
+	}
+
+	deployment := &appsv1.Deployment{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, deployment); err != nil {
+		if errors.IsNotFound(err) {
+			return status, nil
+		}
+		return status, err
+	}
+
+	status.ReadyReplicas = deployment.Status.ReadyReplicas
 	return status, nil
 }
 

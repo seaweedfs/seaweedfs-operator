@@ -3,9 +3,10 @@ package controller
 import (
 	"context"
 
-	"k8s.io/apimachinery/pkg/runtime"
-
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -16,11 +17,16 @@ import (
 func (r *SeaweedReconciler) ensureWorkers(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
-	if done, result, err = r.ensureWorkerPeerService(seaweedCR); done {
+	// Clean up resources left over from the StatefulSet era: the old
+	// StatefulSet and the headless peer Service. Without this, upgrading
+	// from a pre-Deployment operator version would leave duplicate worker
+	// pods running (StatefulSet + Deployment both selecting on the same
+	// labels), all registering with admin.
+	if done, result, err = r.cleanupLegacyWorkerStatefulSet(ctx, seaweedCR); done {
 		return
 	}
 
-	if done, result, err = r.ensureWorkerStatefulSet(ctx, seaweedCR); done {
+	if done, result, err = r.ensureWorkerDeployment(ctx, seaweedCR); done {
 		return
 	}
 
@@ -37,39 +43,32 @@ func (r *SeaweedReconciler) ensureWorkers(ctx context.Context, seaweedCR *seawee
 	return
 }
 
-func (r *SeaweedReconciler) ensureWorkerStatefulSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-worker-statefulset", seaweedCR.Name)
+func (r *SeaweedReconciler) ensureWorkerDeployment(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-worker-deployment", seaweedCR.Name)
 
-	workerStatefulSet := r.createWorkerStatefulSet(seaweedCR)
-	if err := controllerutil.SetControllerReference(seaweedCR, workerStatefulSet, r.Scheme); err != nil {
+	workerDeployment := r.createWorkerDeployment(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, workerDeployment, r.Scheme); err != nil {
 		return ReconcileResult(err)
 	}
-	_, err := r.CreateOrUpdate(workerStatefulSet, func(existing, desired runtime.Object) error {
-		existingStatefulSet := existing.(*appsv1.StatefulSet)
-		desiredStatefulSet := desired.(*appsv1.StatefulSet)
-
-		existingStatefulSet.Spec.Replicas = desiredStatefulSet.Spec.Replicas
-		existingStatefulSet.Spec.Template.ObjectMeta = desiredStatefulSet.Spec.Template.ObjectMeta
-		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
-
-		return r.reconcileVolumeClaimTemplates(ctx, seaweedCR, existingStatefulSet, desiredStatefulSet)
-	})
-	log.Info("ensure worker stateful set " + workerStatefulSet.Name)
+	_, err := r.CreateOrUpdateDeployment(workerDeployment)
+	log.Info("ensure worker deployment " + workerDeployment.Name)
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureWorkerPeerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-worker-peer-service", seaweedCR.Name)
-
-	workerPeerService := r.createWorkerPeerService(seaweedCR)
-	if err := controllerutil.SetControllerReference(seaweedCR, workerPeerService, r.Scheme); err != nil {
+// cleanupLegacyWorkerStatefulSet removes the StatefulSet + headless peer
+// Service that earlier operator versions created for workers. Safe to call
+// on every reconcile: both deletes are IsNotFound-tolerant.
+func (r *SeaweedReconciler) cleanupLegacyWorkerStatefulSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	name := seaweedCR.Name + "-worker"
+	sts := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: seaweedCR.Namespace}}
+	if err := r.Delete(ctx, sts); err != nil && !apierrors.IsNotFound(err) {
 		return ReconcileResult(err)
 	}
-
-	_, err := r.CreateOrUpdateService(workerPeerService)
-	log.Info("ensure worker peer service " + workerPeerService.Name)
-
-	return ReconcileResult(err)
+	peer := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name + "-peer", Namespace: seaweedCR.Namespace}}
+	if err := r.Delete(ctx, peer); err != nil && !apierrors.IsNotFound(err) {
+		return ReconcileResult(err)
+	}
+	return ReconcileResult(nil)
 }
 
 func (r *SeaweedReconciler) ensureWorkerService(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {

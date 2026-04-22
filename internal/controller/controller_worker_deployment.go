@@ -47,7 +47,7 @@ func buildWorkerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string 
 	return strings.Join(commands, " ")
 }
 
-func (r *SeaweedReconciler) createWorkerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
+func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1.Deployment {
 	labels := labelsForWorker(m.Name)
 	annotations := m.BaseWorkerSpec().Annotations()
 	var ports []corev1.ContainerPort
@@ -57,50 +57,13 @@ func (r *SeaweedReconciler) createWorkerStatefulSet(m *seaweedv1.Seaweed) *appsv
 			Name:          "worker-metrics",
 		})
 	}
-	replicas := int32(m.Spec.Worker.Replicas)
-	rollingUpdatePartition := int32(0)
+	replicas := m.Spec.Worker.Replicas
 	enableServiceLinks := false
 
 	workerPodSpec := m.BaseWorkerSpec().BuildPodSpec()
 
 	var volumeMounts []corev1.VolumeMount
-
-	var persistentVolumeClaims []corev1.PersistentVolumeClaim
 	if m.Spec.Worker.Persistence != nil && m.Spec.Worker.Persistence.Enabled {
-		claimName := m.Name + "-worker"
-		if m.Spec.Worker.Persistence.ExistingClaim != nil {
-			claimName = *m.Spec.Worker.Persistence.ExistingClaim
-		}
-		if m.Spec.Worker.Persistence.ExistingClaim == nil {
-			accessModes := m.Spec.Worker.Persistence.AccessModes
-			if len(accessModes) == 0 {
-				accessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
-			}
-			persistentVolumeClaims = append(persistentVolumeClaims, corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: claimName,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes:      accessModes,
-					Resources:        m.Spec.Worker.Persistence.Resources,
-					StorageClassName: m.Spec.Worker.Persistence.StorageClassName,
-					Selector:         m.Spec.Worker.Persistence.Selector,
-					VolumeName:       m.Spec.Worker.Persistence.VolumeName,
-					VolumeMode:       m.Spec.Worker.Persistence.VolumeMode,
-					DataSource:       m.Spec.Worker.Persistence.DataSource,
-				},
-			})
-		} else {
-			workerPodSpec.Volumes = append(workerPodSpec.Volumes, corev1.Volume{
-				Name: claimName,
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: claimName,
-						ReadOnly:  false,
-					},
-				},
-			})
-		}
 		mountPath := "/data"
 		if m.Spec.Worker.Persistence.MountPath != nil {
 			mountPath = *m.Spec.Worker.Persistence.MountPath
@@ -109,9 +72,32 @@ func (r *SeaweedReconciler) createWorkerStatefulSet(m *seaweedv1.Seaweed) *appsv
 		if m.Spec.Worker.Persistence.SubPath != nil {
 			subPath = *m.Spec.Worker.Persistence.SubPath
 		}
+		// Deployments cannot own per-replica PVCs (no VolumeClaimTemplates
+		// equivalent). Two supported modes:
+		//   - ExistingClaim set: mount that shared PVC (caller is
+		//     responsible for RWX if replicas > 1).
+		//   - Otherwise: fall back to emptyDir so -workingDir points at a
+		//     valid scratch path. Worker state is already ephemeral
+		//     (admin re-dispatches jobs after restart), so this is the
+		//     safer default than a shared RWO PVC.
+		volumeName := "worker-data"
+		if m.Spec.Worker.Persistence.ExistingClaim != nil {
+			workerPodSpec.Volumes = append(workerPodSpec.Volumes, corev1.Volume{
+				Name: volumeName,
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: *m.Spec.Worker.Persistence.ExistingClaim,
+					},
+				},
+			})
+		} else {
+			workerPodSpec.Volumes = append(workerPodSpec.Volumes, corev1.Volume{
+				Name:         volumeName,
+				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+			})
+		}
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      claimName,
-			ReadOnly:  false,
+			Name:      volumeName,
 			MountPath: mountPath,
 			SubPath:   subPath,
 		})
@@ -171,21 +157,13 @@ func (r *SeaweedReconciler) createWorkerStatefulSet(m *seaweedv1.Seaweed) *appsv
 	workerPodSpec.EnableServiceLinks = &enableServiceLinks
 	workerPodSpec.Containers = []corev1.Container{container}
 
-	dep := &appsv1.StatefulSet{
+	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      m.Name + "-worker",
 			Namespace: m.Namespace,
 		},
-		Spec: appsv1.StatefulSetSpec{
-			ServiceName:         m.Name + "-worker-peer",
-			PodManagementPolicy: appsv1.ParallelPodManagement,
-			Replicas:            &replicas,
-			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
-				Type: appsv1.RollingUpdateStatefulSetStrategyType,
-				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
-					Partition: &rollingUpdatePartition,
-				},
-			},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},
@@ -196,8 +174,6 @@ func (r *SeaweedReconciler) createWorkerStatefulSet(m *seaweedv1.Seaweed) *appsv
 				},
 				Spec: workerPodSpec,
 			},
-			VolumeClaimTemplates: persistentVolumeClaims,
 		},
 	}
-	return dep
 }

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -58,15 +59,38 @@ func (r *SeaweedReconciler) ensureWorkerDeployment(ctx context.Context, seaweedC
 // cleanupLegacyWorkerStatefulSet removes the StatefulSet + headless peer
 // Service that earlier operator versions created for workers. Safe to call
 // on every reconcile: both deletes are IsNotFound-tolerant.
+//
+// When a delete actually fires (i.e. the resource existed), we return
+// done=true with a short requeue so the API server can cascade the
+// StatefulSet's pod deletions before ensureWorkerDeployment runs. Without
+// the requeue, the new Deployment's selector briefly matches the
+// terminating StatefulSet pods — the Deployment scopes its own status to
+// its ReplicaSet so that part is fine, but those terminating pods keep
+// registering with admin as duplicate workers until GC completes.
 func (r *SeaweedReconciler) cleanupLegacyWorkerStatefulSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	name := seaweedCR.Name + "-worker"
+	deleted := false
+
 	sts := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: seaweedCR.Namespace}}
-	if err := r.Delete(ctx, sts); err != nil && !apierrors.IsNotFound(err) {
-		return ReconcileResult(err)
+	if err := r.Delete(ctx, sts); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return ReconcileResult(err)
+		}
+	} else {
+		deleted = true
 	}
+
 	peer := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name + "-peer", Namespace: seaweedCR.Namespace}}
-	if err := r.Delete(ctx, peer); err != nil && !apierrors.IsNotFound(err) {
-		return ReconcileResult(err)
+	if err := r.Delete(ctx, peer); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return ReconcileResult(err)
+		}
+	} else {
+		deleted = true
+	}
+
+	if deleted {
+		return true, ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 	}
 	return ReconcileResult(nil)
 }

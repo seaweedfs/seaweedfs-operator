@@ -125,21 +125,29 @@ var _ = Describe("Standalone S3 gateway", Ordered, func() {
 		Expect(joined).To(ContainSubstring("-port=8333"))
 
 		By("confirming the gateway Service exists and targets the Deployment")
+		// The reconciler creates the Deployment, Service, and Ingress in
+		// sequence within one pass, but on slower k8s matrix versions the
+		// Deployment Eventually can return before the Service/Ingress are
+		// created. Poll both, same cadence as the Deployment wait above.
 		svc := &corev1.Service{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{
-			Name:      seaweedName + "-s3",
-			Namespace: testNamespace,
-		}, svc)).To(Succeed())
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{
+				Name:      seaweedName + "-s3",
+				Namespace: testNamespace,
+			}, svc)
+		}, 60*time.Second, time.Second).Should(Succeed())
 		Expect(svc.Spec.Selector).To(HaveKeyWithValue("app.kubernetes.io/component", "s3"))
 		Expect(svc.Spec.Ports).NotTo(BeEmpty())
 		Expect(svc.Spec.Ports[0].Port).To(Equal(int32(8333)))
 
 		By("confirming the S3 Ingress was rendered")
 		ing := &networkingv1.Ingress{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{
-			Name:      seaweedName + "-s3-ingress",
-			Namespace: testNamespace,
-		}, ing)).To(Succeed())
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{
+				Name:      seaweedName + "-s3-ingress",
+				Namespace: testNamespace,
+			}, ing)
+		}, 60*time.Second, time.Second).Should(Succeed())
 		Expect(ing.Spec.Rules).To(HaveLen(1))
 		Expect(ing.Spec.Rules[0].Host).To(Equal("s3.seaweed.local"))
 		Expect(ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Name).To(Equal(seaweedName + "-s3"))

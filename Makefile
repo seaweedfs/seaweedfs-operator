@@ -197,23 +197,33 @@ kind-create: kind yq ## Create kubernetes cluster using Kind.
 	@set -e; \
 	IMAGE_TRY=$(KIND_IMAGE); \
 	if ! $(CONTAINER_TOOL) pull $$IMAGE_TRY >/dev/null 2>&1; then \
-		echo "KIND image $$IMAGE_TRY not found, attempting fallback patches..."; \
+		echo "KIND image $$IMAGE_TRY not found, searching for a published kindest/node..."; \
+		FAILED_IMAGE=$$IMAGE_TRY; \
 		V=$$(echo "$(K8S_VERSION)" | sed 's/^v//'); \
 		MAJOR=$$(echo $$V | cut -d. -f1); \
 		MINOR=$$(echo $$V | cut -d. -f2); \
 		PATCH=$$(echo $$V | cut -d. -f3 2>/dev/null || echo 0); \
+		if [ -z "$$MAJOR" ]; then MAJOR=1; fi; \
+		if [ -z "$$MINOR" ]; then MINOR=0; fi; \
 		if [ -z "$$PATCH" ]; then PATCH=0; fi; \
 		FOUND=0; \
-		for p in $$(seq $$PATCH -1 0); do \
-			try=kindest/node:v$$MAJOR.$$MINOR.$$p; \
-			echo "Trying $$try"; \
-			if $(CONTAINER_TOOL) pull $$try >/dev/null 2>&1; then \
-				IMAGE_TRY=$$try; FOUND=1; break; \
-			fi; \
+		MAX_MINOR_STEPBACK=3; \
+		for m_off in $$(seq 0 $$MAX_MINOR_STEPBACK); do \
+			m=$$(( MINOR - m_off )); \
+			if [ $$m -lt 0 ]; then break; fi; \
+			if [ $$m_off -eq 0 ]; then p_start=$$PATCH; else p_start=20; fi; \
+			for p in $$(seq $$p_start -1 0); do \
+				try=kindest/node:v$$MAJOR.$$m.$$p; \
+				if [ "$$try" = "$$FAILED_IMAGE" ]; then continue; fi; \
+				echo "Trying $$try"; \
+				if $(CONTAINER_TOOL) pull $$try >/dev/null 2>&1; then \
+					IMAGE_TRY=$$try; FOUND=1; break 2; \
+				fi; \
+			done; \
 		done; \
 		if [ $$FOUND -eq 0 ]; then \
-			echo "No matching patch image found, falling back to v$$MAJOR.$$MINOR.0"; \
-			IMAGE_TRY=kindest/node:v$$MAJOR.$$MINOR.0; \
+			echo "No published kindest/node image found within $$MAX_MINOR_STEPBACK minors of $$V" >&2; \
+			exit 1; \
 		fi; \
 	fi; \
 	echo "Using KIND image: $$IMAGE_TRY"; \

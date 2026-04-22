@@ -438,10 +438,11 @@ type SFTPSpec struct {
 	// +optional
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
-	// UserStoreSecret references a Secret containing the user database
-	// (`seaweedfs_sftp_config`). The named key is mounted at
-	// /etc/sw/seaweedfs_sftp_config and passed to weed via -userStoreFile.
-	// Omit to run the gateway without user auth (public mode).
+	// UserStoreSecret references a key inside a Secret that holds the
+	// user database file. Only the referenced key is projected into the
+	// pod (at /etc/sw/<key>), and that path is passed to weed via
+	// -userStoreFile. Omit to run the gateway without user auth
+	// (public mode).
 	// +optional
 	UserStoreSecret *corev1.SecretKeySelector `json:"userStoreSecret,omitempty"`
 

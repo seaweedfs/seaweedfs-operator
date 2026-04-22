@@ -218,12 +218,19 @@ func (r *SeaweedReconciler) buildSFTPDeployment(m *seaweedv1.Seaweed) *appsv1.De
 	podSpec := m.BaseSFTPSpec().BuildPodSpec()
 	var volumeMounts []corev1.VolumeMount
 
-	if m.Spec.SFTP.UserStoreSecret != nil && m.Spec.SFTP.UserStoreSecret.Name != "" {
+	if m.Spec.SFTP.UserStoreSecret != nil && m.Spec.SFTP.UserStoreSecret.Name != "" && m.Spec.SFTP.UserStoreSecret.Key != "" {
+		// Project only the referenced key: if the user points at a
+		// shared Secret with other keys in it, those stay out of the
+		// pod (least privilege).
 		podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
 			Name: "sftp-userstore",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: m.Spec.SFTP.UserStoreSecret.Name,
+					Items: []corev1.KeyToPath{{
+						Key:  m.Spec.SFTP.UserStoreSecret.Key,
+						Path: m.Spec.SFTP.UserStoreSecret.Key,
+					}},
 				},
 			},
 		})

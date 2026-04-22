@@ -235,3 +235,8 @@ func (s *Seaweed) BaseWorkerSpec() ComponentAccessor {
 func (s *Seaweed) BaseS3Spec() ComponentAccessor {
 	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.S3.ComponentSpec)
 }
+
+// BaseSFTPSpec provides merged spec of the standalone SFTP gateway
+func (s *Seaweed) BaseSFTPSpec() ComponentAccessor {
+	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.SFTP.ComponentSpec)
+}

@@ -128,6 +128,10 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return result, err
 	}
 
+	if done, result, err = r.ensureSFTPGateway(ctx, seaweedCR); done {
+		return result, err
+	}
+
 	if done, result, err = r.ensureSeaweedIngress(seaweedCR); done {
 		return result, err
 	}
@@ -235,6 +239,13 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		return err
 	}
 
+	// Get standalone SFTP gateway status (if enabled)
+	sftpStatus, err := r.getSFTPStatus(ctx, seaweedCR)
+	if err != nil {
+		log.Error(err, "Failed to get SFTP gateway status")
+		return err
+	}
+
 	// Determine if cluster is ready
 	// Master must have replicas and all must be ready
 	isReady := masterStatus.Replicas > 0 && masterStatus.ReadyReplicas == masterStatus.Replicas
@@ -259,6 +270,11 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	// Standalone S3 gateway is checked only if enabled.
 	if seaweedCR.Spec.S3 != nil {
 		isReady = isReady && (s3Status.Replicas == 0 || s3Status.ReadyReplicas == s3Status.Replicas)
+	}
+
+	// Standalone SFTP gateway is checked only if enabled.
+	if seaweedCR.Spec.SFTP != nil {
+		isReady = isReady && (sftpStatus.Replicas == 0 || sftpStatus.ReadyReplicas == sftpStatus.Replicas)
 	}
 
 	// Update status
@@ -286,6 +302,8 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	// returns the empty ComponentStatus{} once the Deployment is gone,
 	// which matches the steady-state "no gateway" view.
 	seaweedCR.Status.S3 = s3Status
+	// Same rationale as S3 above.
+	seaweedCR.Status.SFTP = sftpStatus
 
 	// Build informative status message (for NotReady condition)
 	notReadyMessage := strings.Join([]string{

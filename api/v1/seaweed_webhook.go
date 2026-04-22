@@ -80,6 +80,9 @@ func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
 	if err := r.validateS3Exclusivity(); err != nil {
 		errs = append(errs, err)
 	}
+	if err := r.validateSFTP(); err != nil {
+		errs = append(errs, err)
+	}
 
 	return r.s3DeprecationWarnings(), utilerrors.NewAggregate(errs)
 }
@@ -93,6 +96,9 @@ func (r *Seaweed) ValidateUpdate(old runtime.Object) (admission.Warnings, error)
 		errs = append(errs, errors.New("spec.worker requires spec.admin to be configured"))
 	}
 	if err := r.validateS3Exclusivity(); err != nil {
+		errs = append(errs, err)
+	}
+	if err := r.validateSFTP(); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -109,6 +115,16 @@ func (r *Seaweed) validateS3Exclusivity() error {
 	embedded := r.Spec.Filer != nil && r.Spec.Filer.S3 != nil && r.Spec.Filer.S3.Enabled
 	if standalone && embedded {
 		return errors.New("spec.s3 and spec.filer.s3.enabled cannot both be set; spec.filer.s3 is deprecated — migrate to the top-level spec.s3 standalone gateway")
+	}
+	return nil
+}
+
+// validateSFTP enforces that the standalone SFTP gateway has a filer in
+// the same CR to connect to. Without a filer the gateway would start but
+// fail every client request, so we reject at admission time.
+func (r *Seaweed) validateSFTP() error {
+	if r.Spec.SFTP != nil && r.Spec.Filer == nil {
+		return errors.New("spec.sftp requires spec.filer to be configured")
 	}
 	return nil
 }

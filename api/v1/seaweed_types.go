@@ -36,6 +36,7 @@ const (
 	FilerIcebergPort  = 8181 // Default Iceberg catalog REST API port
 	AdminHTTPPort     = 23646
 	WorkerMetricsPort = 9101 // Default worker metrics port (only used when metricsPort is configured)
+	SFTPPort          = 2222 // Default SFTP listen port
 
 	MasterGRPCPort = MasterHTTPPort + GRPCPortDelta
 	VolumeGRPCPort = VolumeHTTPPort + GRPCPortDelta
@@ -155,6 +156,12 @@ type SeaweedSpec struct {
 	// +optional
 	S3 *S3GatewaySpec `json:"s3,omitempty"`
 
+	// SFTP is a top-level, standalone SFTP gateway running as a Deployment.
+	// Requires spec.filer — the gateway dials the filer for its backing
+	// store and serves SSH clients on its configured port.
+	// +optional
+	SFTP *SFTPSpec `json:"sftp,omitempty"`
+
 	// Note: Standalone IAM has been removed. IAM is now embedded in S3 by default.
 	// When filer.s3.enabled=true, IAM API is available on the same S3 port.
 	// Use filer.iam=false to disable embedded IAM if needed.
@@ -240,6 +247,10 @@ type SeaweedStatus struct {
 	// S3 standalone gateway status (SeaweedSpec.S3)
 	// +optional
 	S3 ComponentStatus `json:"s3,omitempty"`
+
+	// SFTP standalone gateway status (SeaweedSpec.SFTP)
+	// +optional
+	SFTP ComponentStatus `json:"sftp,omitempty"`
 }
 
 // ComponentStatus represents the status of a seaweedfs component
@@ -395,6 +406,69 @@ type S3GatewaySpec struct {
 	IAM bool `json:"iam,omitempty"`
 
 	// Ingress configuration for the standalone S3 gateway.
+	// +optional
+	Ingress *IngressSpec `json:"ingress,omitempty"`
+}
+
+// SFTPSpec defines a standalone SFTP gateway Deployment. The SFTP server
+// dials the filer via the filer's in-cluster Service and serves SSH
+// clients on its configured port.
+type SFTPSpec struct {
+	ComponentSpec               `json:",inline"`
+	corev1.ResourceRequirements `json:",inline"`
+
+	// The desired number of replicas. SFTP is stateless — scale freely.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default:=1
+	Replicas int32 `json:"replicas"`
+
+	// Service is the k8s Service in front of the gateway pods.
+	// +optional
+	Service *ServiceSpec `json:"service,omitempty"`
+
+	// Port overrides the default SFTP port (2222).
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	Port *int32 `json:"port,omitempty"`
+
+	// MetricsPort, if set, enables the Prometheus metrics listener on
+	// this port and causes the operator to provision a matching
+	// ServiceMonitor (when the Prometheus Operator CRD is available).
+	// +optional
+	MetricsPort *int32 `json:"metricsPort,omitempty"`
+
+	// UserStoreSecret references a Secret containing the user database
+	// (`seaweedfs_sftp_config`). The named key is mounted at
+	// /etc/sw/seaweedfs_sftp_config and passed to weed via -userStoreFile.
+	// Omit to run the gateway without user auth (public mode).
+	// +optional
+	UserStoreSecret *corev1.SecretKeySelector `json:"userStoreSecret,omitempty"`
+
+	// HostKeysSecret references a Secret containing the SSH host keys
+	// the SFTP server presents to clients. The Secret is mounted
+	// read-only at /etc/sw/ssh. Omit to let the server generate an
+	// ephemeral host key on startup (clients will see a changed
+	// fingerprint on every pod restart — fine for dev, bad for prod).
+	// +optional
+	HostKeysSecret *corev1.LocalObjectReference `json:"hostKeysSecret,omitempty"`
+
+	// AuthMethods is passed to weed sftp -authMethods (e.g. "password",
+	// "publickey", or a comma-separated list). Omit to accept the
+	// server's defaults.
+	// +optional
+	AuthMethods *string `json:"authMethods,omitempty"`
+
+	// MaxAuthTries is passed to weed sftp -maxAuthTries.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxAuthTries *int32 `json:"maxAuthTries,omitempty"`
+
+	// Ingress configuration for the SFTP gateway. Note that plain SFTP
+	// (SSH over TCP) typically does not route through HTTP Ingress —
+	// prefer a LoadBalancer/NodePort Service for most clusters. This
+	// field is included for ingress controllers that support TCP
+	// passthrough (e.g. nginx with ssl-passthrough, Traefik TCP routers).
 	// +optional
 	Ingress *IngressSpec `json:"ingress,omitempty"`
 }

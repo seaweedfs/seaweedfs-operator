@@ -1,0 +1,42 @@
+---
+# Example: a Seaweed cluster with a standalone SFTP gateway.
+# The SFTP gateway is a stateless Deployment fronted by a single Service.
+# It dials the filer via its in-cluster Service, so spec.filer is required.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-sample-sftp
+spec:
+  image: chrislusf/seaweedfs:latest
+  master:
+    replicas: 3
+  volume:
+    replicas: 1
+    requests:
+      storage: 2Gi
+  filer:
+    replicas: 1
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"
+  sftp:
+    replicas: 1
+    # Port the SFTP server listens on (default 2222).
+    port: 2222
+    # Optional: Secret containing the SSH host keys (mounted at /etc/sw/ssh).
+    # Omit to let the server generate an ephemeral key on startup — clients
+    # will see a changed fingerprint on every pod restart (dev only).
+    # hostKeysSecret:
+    #   name: sftp-host-keys
+    # Optional: Secret containing the user database (mounted at
+    # /etc/sw/<key> and passed to weed as -userStoreFile). Omit to run
+    # in public/no-auth mode.
+    # userStoreSecret:
+    #   name: sftp-users
+    #   key: seaweedfs_sftp_config
+    # Expose via a LoadBalancer if you need to reach the SFTP server
+    # from outside the cluster (plain SFTP is SSH-over-TCP and does not
+    # route through HTTP Ingress in most setups).
+    service:
+      type: LoadBalancer

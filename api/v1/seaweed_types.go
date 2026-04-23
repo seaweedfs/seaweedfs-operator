@@ -548,7 +548,11 @@ type AdminSpec struct {
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
 	// CredentialsSecret is a reference to a Secret containing admin credentials.
-	// The secret should have keys: adminUser, adminPassword, and optionally readOnlyUser, readOnlyPassword
+	// The secret should have keys: adminUser, adminPassword, and optionally readOnlyUser, readOnlyPassword.
+	// Each value is forwarded to `weed admin` as `-<key>=<value>` at container
+	// start, with trailing newlines stripped. Values must not contain embedded
+	// newlines — the operator passes them through to weed's flag parser as-is
+	// and a multi-line value will be interpreted as a single malformed flag.
 	CredentialsSecret *corev1.LocalObjectReference `json:"credentialsSecret,omitempty"`
 
 	// Ingress configuration for the admin UI HTTP port.

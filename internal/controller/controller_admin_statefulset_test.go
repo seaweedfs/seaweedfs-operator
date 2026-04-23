@@ -56,13 +56,15 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		}
 	}
 
-	t.Run("no credentials secret leaves weed command unchanged", func(t *testing.T) {
+	t.Run("no credentials secret execs weed directly", func(t *testing.T) {
 		got := buildAdminStartupScript(baseSpec())
-		if strings.Contains(got, "/etc/sw/admin") || strings.Contains(got, "exec weed") {
+		if strings.Contains(got, "/etc/sw/admin") {
 			t.Fatalf("unexpected credential wiring in script: %q", got)
 		}
-		if !strings.HasPrefix(got, "weed -logtostderr=true admin ") {
-			t.Fatalf("expected plain weed command, got %q", got)
+		// `exec` is required so SIGTERM from the kubelet reaches weed
+		// instead of the /bin/sh wrapper.
+		if !strings.HasPrefix(got, "exec weed -logtostderr=true admin ") {
+			t.Fatalf("expected exec'd weed command, got %q", got)
 		}
 	})
 

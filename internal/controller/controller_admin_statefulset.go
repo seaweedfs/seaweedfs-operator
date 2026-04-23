@@ -37,12 +37,15 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 
 	weedCmd := strings.Join(commands, " ")
 
-	// When a CredentialsSecret is mounted, resolve each well-known key from
-	// the projected files into `-<key>=<value>` flags at container start, so
-	// weed admin boots with authentication enabled. Keys with no file on disk
-	// are skipped, keeping readOnlyUser/readOnlyPassword optional. Using
-	// `set --` keeps values with spaces or special characters quoted safely
-	// when they expand via `"$@"`.
+	// `exec` replaces the /bin/sh wrapper with the weed process so SIGTERM
+	// from the kubelet reaches weed directly and pod termination stays
+	// prompt. When a CredentialsSecret is mounted, resolve each well-known
+	// key from the projected files into `-<key>=<value>` flags at container
+	// start so weed admin boots with authentication enabled. Keys with no
+	// file on disk are skipped, keeping readOnlyUser/readOnlyPassword
+	// optional. The loop uses positional params (`set --` / `"$@"`) so
+	// credential values containing spaces or other shell metacharacters
+	// survive unsplit.
 	if m.Spec.Admin.CredentialsSecret != nil && m.Spec.Admin.CredentialsSecret.Name != "" {
 		preamble := "set --; " +
 			"for key in " + strings.Join(adminCredentialKeys, " ") + "; do " +
@@ -52,7 +55,7 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 		return preamble + "exec " + weedCmd + ` "$@"`
 	}
 
-	return weedCmd
+	return "exec " + weedCmd
 }
 
 // adminURLPrefix scans weed admin ExtraArgs for a -urlPrefix flag and returns

@@ -12,18 +12,54 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-// adminCredentialsMountPath is the in-pod directory where the admin
-// CredentialsSecret is projected by createAdminStatefulSet; each key in
-// the secret becomes a file named after the key.
-const adminCredentialsMountPath = "/etc/sw/admin"
+// adminCredentialEnvMappings maps each well-known key in the admin
+// CredentialsSecret to the env var that weed admin reads for it. weed admin
+// accepts credentials via env vars (see upstream weed/command/admin.go);
+// using them avoids a shell preamble and lets secret values contain any
+// bytes (spaces, newlines, quotes) without escaping concerns.
+// adminUser/adminPassword enable the login flow; readOnlyUser and
+// readOnlyPassword are optional view-only accounts.
+var adminCredentialEnvMappings = []struct {
+	secretKey string
+	envName   string
+}{
+	{"adminUser", "WEED_ADMIN_USER"},
+	{"adminPassword", "WEED_ADMIN_PASSWORD"},
+	{"readOnlyUser", "WEED_ADMIN_READONLY_USER"},
+	{"readOnlyPassword", "WEED_ADMIN_READONLY_PASSWORD"},
+}
 
-// adminCredentialKeys are the well-known keys that weed admin accepts as
-// `-<key>=<value>` flags. adminUser/adminPassword enable the login flow,
-// readOnlyUser/readOnlyPassword are optional read-only accounts.
-var adminCredentialKeys = []string{"adminUser", "adminPassword", "readOnlyUser", "readOnlyPassword"}
+// adminCredentialEnvVars projects the configured CredentialsSecret into the
+// env vars weed admin reads. Each mapping is marked optional so users can
+// supply only adminUser/adminPassword (or additionally the read-only pair)
+// without tripping pod startup on missing keys.
+func adminCredentialEnvVars(m *seaweedv1.Seaweed) []corev1.EnvVar {
+	if m.Spec.Admin.CredentialsSecret == nil || m.Spec.Admin.CredentialsSecret.Name == "" {
+		return nil
+	}
+	optional := true
+	envs := make([]corev1.EnvVar, 0, len(adminCredentialEnvMappings))
+	for _, mapping := range adminCredentialEnvMappings {
+		envs = append(envs, corev1.EnvVar{
+			Name: mapping.envName,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: m.Spec.Admin.CredentialsSecret.Name,
+					},
+					Key:      mapping.secretKey,
+					Optional: &optional,
+				},
+			},
+		})
+	}
+	return envs
+}
 
 func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
-	commands := []string{"weed", "-logtostderr=true"}
+	// `exec` replaces the /bin/sh wrapper with weed so SIGTERM from the
+	// kubelet reaches weed directly and termination stays prompt.
+	commands := []string{"exec", "weed", "-logtostderr=true"}
 	if arg := tlsConfigDirArg(m); arg != "" {
 		commands = append(commands, arg)
 	}
@@ -35,27 +71,7 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	}
 	commands = append(commands, extraArgs...)
 
-	weedCmd := strings.Join(commands, " ")
-
-	// `exec` replaces the /bin/sh wrapper with the weed process so SIGTERM
-	// from the kubelet reaches weed directly and pod termination stays
-	// prompt. When a CredentialsSecret is mounted, resolve each well-known
-	// key from the projected files into `-<key>=<value>` flags at container
-	// start so weed admin boots with authentication enabled. Keys with no
-	// file on disk are skipped, keeping readOnlyUser/readOnlyPassword
-	// optional. The loop uses positional params (`set --` / `"$@"`) so
-	// credential values containing spaces or other shell metacharacters
-	// survive unsplit.
-	if m.Spec.Admin.CredentialsSecret != nil && m.Spec.Admin.CredentialsSecret.Name != "" {
-		preamble := "set --; " +
-			"for key in " + strings.Join(adminCredentialKeys, " ") + "; do " +
-			`f="` + adminCredentialsMountPath + `/$key"; ` +
-			`[ -f "$f" ] && set -- "$@" "-$key=$(cat "$f")"; ` +
-			"done; "
-		return preamble + "exec " + weedCmd + ` "$@"`
-	}
-
-	return "exec " + weedCmd
+	return strings.Join(commands, " ")
 }
 
 // adminURLPrefix scans weed admin ExtraArgs for a -urlPrefix flag and returns
@@ -142,23 +158,6 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 	adminPodSpec := m.BaseAdminSpec().BuildPodSpec()
 
 	var volumeMounts []corev1.VolumeMount
-
-	// Mount credentials secret if provided
-	if m.Spec.Admin.CredentialsSecret != nil && m.Spec.Admin.CredentialsSecret.Name != "" {
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "admin-credentials",
-			ReadOnly:  true,
-			MountPath: adminCredentialsMountPath,
-		})
-		adminPodSpec.Volumes = append(adminPodSpec.Volumes, corev1.Volume{
-			Name: "admin-credentials",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: m.Spec.Admin.CredentialsSecret.Name,
-				},
-			},
-		})
-	}
 	if tlsVols, tlsMounts := tlsVolumesAndMounts(m); len(tlsVols) > 0 {
 		adminPodSpec.Volumes = append(adminPodSpec.Volumes, tlsVols...)
 		volumeMounts = append(volumeMounts, tlsMounts...)
@@ -167,12 +166,18 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 	extraArgs := m.BaseAdminSpec().ExtraArgs()
 	healthPath := adminRoutePath(extraArgs, "/health")
 
+	// Credentials from spec.admin.credentialsSecret are projected as env vars
+	// (WEED_ADMIN_USER / WEED_ADMIN_PASSWORD / WEED_ADMIN_READONLY_USER /
+	// WEED_ADMIN_READONLY_PASSWORD) which weed admin reads natively.
+	env := append(m.BaseAdminSpec().Env(), kubernetesEnvVars...)
+	env = append(env, adminCredentialEnvVars(m)...)
+
 	adminPodSpec.EnableServiceLinks = &enableServiceLinks
 	adminPodSpec.Containers = []corev1.Container{{
 		Name:            "admin",
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseAdminSpec().ImagePullPolicy(),
-		Env:             append(m.BaseAdminSpec().Env(), kubernetesEnvVars...),
+		Env:             env,
 		Resources:       filterContainerResources(m.Spec.Admin.ResourceRequirements),
 		VolumeMounts:    mergeVolumeMounts(volumeMounts, m.BaseAdminSpec().VolumeMounts()),
 		Command: []string{

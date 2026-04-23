@@ -46,6 +46,25 @@ func TestAdminRoutePath(t *testing.T) {
 }
 
 func TestBuildAdminStartupScript(t *testing.T) {
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+		Spec: seaweedv1.SeaweedSpec{
+			Master: &seaweedv1.MasterSpec{Replicas: 1},
+			Admin:  &seaweedv1.AdminSpec{},
+		},
+	}
+	got := buildAdminStartupScript(m, "-urlPrefix=/admin")
+	// `exec` must prefix weed so SIGTERM from the kubelet reaches weed
+	// instead of the /bin/sh wrapper.
+	if !strings.HasPrefix(got, "exec weed -logtostderr=true admin ") {
+		t.Fatalf("expected exec'd weed command, got %q", got)
+	}
+	if !strings.Contains(got, "-urlPrefix=/admin") {
+		t.Fatalf("expected extra args to be included, got %q", got)
+	}
+}
+
+func TestAdminCredentialEnvVars(t *testing.T) {
 	baseSpec := func() *seaweedv1.Seaweed {
 		return &seaweedv1.Seaweed{
 			ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
@@ -56,58 +75,49 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		}
 	}
 
-	t.Run("no credentials secret execs weed directly", func(t *testing.T) {
-		got := buildAdminStartupScript(baseSpec())
-		if strings.Contains(got, "/etc/sw/admin") {
-			t.Fatalf("unexpected credential wiring in script: %q", got)
-		}
-		// `exec` is required so SIGTERM from the kubelet reaches weed
-		// instead of the /bin/sh wrapper.
-		if !strings.HasPrefix(got, "exec weed -logtostderr=true admin ") {
-			t.Fatalf("expected exec'd weed command, got %q", got)
+	t.Run("no credentials secret yields no env vars", func(t *testing.T) {
+		if got := adminCredentialEnvVars(baseSpec()); got != nil {
+			t.Fatalf("expected nil env vars, got %+v", got)
 		}
 	})
 
-	t.Run("credentials secret injects credential flags via mount", func(t *testing.T) {
+	t.Run("empty secret name yields no env vars", func(t *testing.T) {
+		m := baseSpec()
+		m.Spec.Admin.CredentialsSecret = &corev1.LocalObjectReference{Name: ""}
+		if got := adminCredentialEnvVars(m); got != nil {
+			t.Fatalf("expected nil env vars, got %+v", got)
+		}
+	})
+
+	t.Run("credentials secret projects every key as optional secretKeyRef", func(t *testing.T) {
 		m := baseSpec()
 		m.Spec.Admin.CredentialsSecret = &corev1.LocalObjectReference{Name: "admin-creds"}
 
-		got := buildAdminStartupScript(m, "-urlPrefix=/admin")
-
-		// Preamble loops over every well-known key and appends `-<key>=<value>`
-		// only when the projected file exists.
-		for _, key := range adminCredentialKeys {
-			if !strings.Contains(got, key) {
-				t.Errorf("script missing key %q: %q", key, got)
+		got := adminCredentialEnvVars(m)
+		if len(got) != len(adminCredentialEnvMappings) {
+			t.Fatalf("expected %d env vars, got %d: %+v", len(adminCredentialEnvMappings), len(got), got)
+		}
+		for i, mapping := range adminCredentialEnvMappings {
+			ev := got[i]
+			if ev.Name != mapping.envName {
+				t.Errorf("env[%d]: got name %q, want %q", i, ev.Name, mapping.envName)
 			}
-		}
-		if !strings.Contains(got, `f="/etc/sw/admin/$key"`) {
-			t.Errorf("script missing mount-path file lookup: %q", got)
-		}
-		if !strings.Contains(got, `[ -f "$f" ] && set -- "$@" "-$key=$(cat "$f")"`) {
-			t.Errorf("script missing conditional flag append: %q", got)
-		}
-		// exec replaces the shell with weed so signals propagate, and the
-		// positional params populated by the loop must be expanded last.
-		if !strings.Contains(got, `exec weed -logtostderr=true admin `) {
-			t.Errorf("script missing exec'd weed command: %q", got)
-		}
-		if !strings.HasSuffix(got, ` "$@"`) {
-			t.Errorf("script must end by expanding credential flags via \"$@\": %q", got)
-		}
-		// Operator-supplied extra args must still appear before "$@" so the
-		// dynamic credential flags remain the final tokens.
-		if !strings.Contains(got, "-urlPrefix=/admin ") {
-			t.Errorf("script should include extra args before \"$@\": %q", got)
-		}
-	})
-
-	t.Run("empty secret name is treated as unset", func(t *testing.T) {
-		m := baseSpec()
-		m.Spec.Admin.CredentialsSecret = &corev1.LocalObjectReference{Name: ""}
-		got := buildAdminStartupScript(m)
-		if strings.Contains(got, "/etc/sw/admin") {
-			t.Fatalf("expected no credential wiring for empty secret name: %q", got)
+			if ev.ValueFrom == nil || ev.ValueFrom.SecretKeyRef == nil {
+				t.Fatalf("env[%d] (%s): missing SecretKeyRef", i, mapping.envName)
+			}
+			ref := ev.ValueFrom.SecretKeyRef
+			if ref.Name != "admin-creds" {
+				t.Errorf("env[%d]: secret name %q, want %q", i, ref.Name, "admin-creds")
+			}
+			if ref.Key != mapping.secretKey {
+				t.Errorf("env[%d]: secret key %q, want %q", i, ref.Key, mapping.secretKey)
+			}
+			// Every mapping is optional so users can supply only
+			// adminUser/adminPassword without pod startup failing on the
+			// missing read-only keys.
+			if ref.Optional == nil || !*ref.Optional {
+				t.Errorf("env[%d] (%s): SecretKeyRef.Optional must be true", i, mapping.envName)
+			}
 		}
 	})
 }

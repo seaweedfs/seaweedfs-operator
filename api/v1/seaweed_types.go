@@ -548,11 +548,13 @@ type AdminSpec struct {
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
 	// CredentialsSecret is a reference to a Secret containing admin credentials.
-	// The secret should have keys: adminUser, adminPassword, and optionally readOnlyUser, readOnlyPassword.
-	// Each value is forwarded to `weed admin` as `-<key>=<value>` at container
-	// start, with trailing newlines stripped. Values must not contain embedded
-	// newlines — the operator passes them through to weed's flag parser as-is
-	// and a multi-line value will be interpreted as a single malformed flag.
+	// The secret should have keys: adminUser, adminPassword, and optionally
+	// readOnlyUser, readOnlyPassword. Each key is projected into the admin
+	// pod as the env var weed admin reads for it — WEED_ADMIN_USER,
+	// WEED_ADMIN_PASSWORD, WEED_ADMIN_READONLY_USER, WEED_ADMIN_READONLY_PASSWORD
+	// respectively — using optional secretKeyRefs, so missing optional keys
+	// do not block pod startup. Secret updates require a pod restart to take
+	// effect.
 	CredentialsSecret *corev1.LocalObjectReference `json:"credentialsSecret,omitempty"`
 
 	// Ingress configuration for the admin UI HTTP port.

@@ -12,6 +12,16 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
+// adminCredentialsMountPath is the in-pod directory where the admin
+// CredentialsSecret is projected by createAdminStatefulSet; each key in
+// the secret becomes a file named after the key.
+const adminCredentialsMountPath = "/etc/sw/admin"
+
+// adminCredentialKeys are the well-known keys that weed admin accepts as
+// `-<key>=<value>` flags. adminUser/adminPassword enable the login flow,
+// readOnlyUser/readOnlyPassword are optional read-only accounts.
+var adminCredentialKeys = []string{"adminUser", "adminPassword", "readOnlyUser", "readOnlyPassword"}
+
 func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	commands := []string{"weed", "-logtostderr=true"}
 	if arg := tlsConfigDirArg(m); arg != "" {
@@ -25,7 +35,24 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	}
 	commands = append(commands, extraArgs...)
 
-	return strings.Join(commands, " ")
+	weedCmd := strings.Join(commands, " ")
+
+	// When a CredentialsSecret is mounted, resolve each well-known key from
+	// the projected files into `-<key>=<value>` flags at container start, so
+	// weed admin boots with authentication enabled. Keys with no file on disk
+	// are skipped, keeping readOnlyUser/readOnlyPassword optional. Using
+	// `set --` keeps values with spaces or special characters quoted safely
+	// when they expand via `"$@"`.
+	if m.Spec.Admin.CredentialsSecret != nil && m.Spec.Admin.CredentialsSecret.Name != "" {
+		preamble := "set --; " +
+			"for key in " + strings.Join(adminCredentialKeys, " ") + "; do " +
+			`f="` + adminCredentialsMountPath + `/$key"; ` +
+			`[ -f "$f" ] && set -- "$@" "-$key=$(cat "$f")"; ` +
+			"done; "
+		return preamble + "exec " + weedCmd + ` "$@"`
+	}
+
+	return weedCmd
 }
 
 // adminURLPrefix scans weed admin ExtraArgs for a -urlPrefix flag and returns
@@ -118,7 +145,7 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "admin-credentials",
 			ReadOnly:  true,
-			MountPath: "/etc/sw/admin",
+			MountPath: adminCredentialsMountPath,
 		})
 		adminPodSpec.Volumes = append(adminPodSpec.Volumes, corev1.Volume{
 			Name: "admin-credentials",

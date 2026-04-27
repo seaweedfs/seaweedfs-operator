@@ -115,6 +115,26 @@ securityContext:
 {{- end -}}
 
 {{/*
+Pod scheduling constraints (nodeSelector, affinity, tolerations) shared by
+the operator Deployment and the helm-managed webhook certificate Jobs so a
+single set of values controls where every operator-produced pod runs.
+*/}}
+{{- define "seaweedfs-operator.scheduling" -}}
+{{- with .Values.nodeSelector }}
+nodeSelector:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .Values.affinity }}
+affinity:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .Values.tolerations }}
+tolerations:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end -}}
+
+{{/*
 Webhook init container for waiting until webhook service is ready
 */}}
 {{- define "seaweedfs-operator.webhookWaitInitContainer" -}}

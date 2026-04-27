@@ -17,6 +17,7 @@ spec:
       {{ end }}
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
       {{- include "seaweedfs-operator.webhookPodSecurityContext" . | nindent 6 }}
+      {{- include "seaweedfs-operator.scheduling" . | nindent 6 }}
       containers:
       - name: certgen
         image: {{ .Values.webhook.certgen.registry }}/{{ .Values.webhook.certgen.repository }}:{{ .Values.webhook.certgen.tag }}
@@ -51,6 +52,7 @@ spec:
       {{ end }}
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
       {{- include "seaweedfs-operator.webhookPodSecurityContext" . | nindent 6 }}
+      {{- include "seaweedfs-operator.scheduling" . | nindent 6 }}
       initContainers:
       {{- include "seaweedfs-operator.webhookWaitInitContainer" (dict "Chart" .Chart "Values" .Values "Release" .Release "webhookPath" (include "seaweedfs-operator.mutatingWebhookPath" .)) | nindent 8 }}
       containers:
@@ -90,6 +92,7 @@ spec:
       {{ end }}
       serviceAccountName: {{ include "seaweedfs-operator.fullname" . }}-update-webhook-certificates
       {{- include "seaweedfs-operator.webhookPodSecurityContext" . | nindent 6 }}
+      {{- include "seaweedfs-operator.scheduling" . | nindent 6 }}
       initContainers:
       {{- include "seaweedfs-operator.webhookWaitInitContainer" (dict "Chart" .Chart "Values" .Values "Release" .Release "webhookPath" (include "seaweedfs-operator.validatingWebhookPath" .)) | nindent 8 }}
       containers:

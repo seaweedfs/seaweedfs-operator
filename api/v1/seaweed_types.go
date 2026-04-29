@@ -663,8 +663,15 @@ type ComponentSpec struct {
 	// otherwise unmanaged — the operator does not inject env vars, volumes,
 	// or probes into them. Reference any extra volumes through
 	// ComponentSpec.Volumes.
+	//
+	// The schema is preserved as opaque to keep the CRD small enough to
+	// install via `kubectl apply` (the inlined v1.Container schema would
+	// blow past the 256KB last-applied-configuration annotation limit
+	// when repeated across components). Validation happens at pod-create
+	// time instead of at CR admission.
 	// +optional
-	// +listType=atomic
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
 	Sidecars []corev1.Container `json:"sidecars,omitempty"`
 }
 

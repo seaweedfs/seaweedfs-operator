@@ -155,7 +155,7 @@ func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1
 	}
 
 	workerPodSpec.EnableServiceLinks = &enableServiceLinks
-	workerPodSpec.Containers = []corev1.Container{container}
+	workerPodSpec.Containers = append([]corev1.Container{container}, m.BaseWorkerSpec().Sidecars()...)
 
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

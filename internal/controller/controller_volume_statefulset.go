@@ -245,6 +245,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 		},
 		VolumeMounts: mergeVolumeMounts(volumeMounts, m.BaseVolumeSpec().VolumeMounts()),
 	}}
+	volumePodSpec.Containers = append(volumePodSpec.Containers, m.BaseVolumeSpec().Sidecars()...)
 	volumePodSpec.Volumes = append(volumePodSpec.Volumes, volumes...)
 
 	dep := &appsv1.StatefulSet{
@@ -402,6 +403,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 		},
 		VolumeMounts: volumeMounts,
 	}}
+	volumePodSpec.Containers = append(volumePodSpec.Containers, topologySpec.Sidecars...)
 	volumePodSpec.Volumes = volumes
 
 	dep := &appsv1.StatefulSet{

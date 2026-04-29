@@ -637,6 +637,8 @@ spec:
                       type:
                         type: string
                     type: object
+                  sidecars:
+                    x-kubernetes-preserve-unknown-fields: true
                   statefulSetUpdateStrategy:
                     type: string
                   terminationGracePeriodSeconds:
@@ -2631,6 +2633,8 @@ spec:
                       type:
                         type: string
                     type: object
+                  sidecars:
+                    x-kubernetes-preserve-unknown-fields: true
                   statefulSetUpdateStrategy:
                     type: string
                   terminationGracePeriodSeconds:
@@ -4062,6 +4066,8 @@ spec:
                       type:
                         type: string
                     type: object
+                  sidecars:
+                    x-kubernetes-preserve-unknown-fields: true
                   statefulSetUpdateStrategy:
                     type: string
                   terminationGracePeriodSeconds:
@@ -5499,6 +5505,8 @@ spec:
                       type:
                         type: string
                     type: object
+                  sidecars:
+                    x-kubernetes-preserve-unknown-fields: true
                   statefulSetUpdateStrategy:
                     type: string
                   terminationGracePeriodSeconds:
@@ -6922,6 +6930,8 @@ spec:
                       type:
                         type: string
                     type: object
+                  sidecars:
+                    x-kubernetes-preserve-unknown-fields: true
                   statefulSetUpdateStrategy:
                     type: string
                   terminationGracePeriodSeconds:
@@ -8395,6 +8405,8 @@ spec:
                       type:
                         type: string
                     type: object
+                  sidecars:
+                    x-kubernetes-preserve-unknown-fields: true
                   statefulSetUpdateStrategy:
                     type: string
                   storageClassName:
@@ -9793,6 +9805,8 @@ spec:
                         type:
                           type: string
                       type: object
+                    sidecars:
+                      x-kubernetes-preserve-unknown-fields: true
                     statefulSetUpdateStrategy:
                       type: string
                     storageClassName:
@@ -11259,6 +11273,8 @@ spec:
                     type: object
                   schedulerName:
                     type: string
+                  sidecars:
+                    x-kubernetes-preserve-unknown-fields: true
                   statefulSetUpdateStrategy:
                     type: string
                   terminationGracePeriodSeconds:

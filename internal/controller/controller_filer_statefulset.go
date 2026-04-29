@@ -213,6 +213,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			FailureThreshold:    6,
 		},
 	}}
+	filerPodSpec.Containers = append(filerPodSpec.Containers, m.BaseFilerSpec().Sidecars()...)
 
 	dep := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{

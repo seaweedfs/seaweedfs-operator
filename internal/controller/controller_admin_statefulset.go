@@ -215,6 +215,7 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			FailureThreshold:    6,
 		},
 	}}
+	adminPodSpec.Containers = append(adminPodSpec.Containers, m.BaseAdminSpec().Sidecars()...)
 
 	dep := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{

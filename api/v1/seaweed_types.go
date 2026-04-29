@@ -655,6 +655,24 @@ type ComponentSpec struct {
 	// ExtraArgs are additional command line arguments passed to the component container
 	// +listType=atomic
 	ExtraArgs []string `json:"extraArgs,omitempty"`
+
+	// Sidecars are additional containers run alongside the operator-managed
+	// container in each pod of this component. Use this to attach helpers
+	// like `weed filer.sync` next to a filer, or a log shipper next to any
+	// component. Sidecars share the pod's network and lifecycle but are
+	// otherwise unmanaged — the operator does not inject env vars, volumes,
+	// or probes into them. Reference any extra volumes through
+	// ComponentSpec.Volumes.
+	//
+	// The schema is preserved as opaque to keep the CRD small enough to
+	// install via `kubectl apply` (the inlined v1.Container schema would
+	// blow past the 256KB last-applied-configuration annotation limit
+	// when repeated across components). Validation happens at pod-create
+	// time instead of at CR admission.
+	// +optional
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Sidecars []corev1.Container `json:"sidecars,omitempty"`
 }
 
 // ServiceSpec is a subset of the original k8s spec

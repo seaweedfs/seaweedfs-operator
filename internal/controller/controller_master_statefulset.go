@@ -143,6 +143,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 			FailureThreshold:    6,
 		},
 	}}
+	masterPodSpec.Containers = append(masterPodSpec.Containers, m.BaseMasterSpec().Sidecars()...)
 
 	dep := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{

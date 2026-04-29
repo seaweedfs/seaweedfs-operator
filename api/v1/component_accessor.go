@@ -27,6 +27,7 @@ type ComponentAccessor interface {
 	Volumes() []corev1.Volume
 	VolumeMounts() []corev1.VolumeMount
 	ExtraArgs() []string
+	Sidecars() []corev1.Container
 }
 
 type componentAccessorImpl struct {
@@ -188,6 +189,10 @@ func (a *componentAccessorImpl) VolumeMounts() []corev1.VolumeMount {
 
 func (a *componentAccessorImpl) ExtraArgs() []string {
 	return a.ComponentSpec.ExtraArgs
+}
+
+func (a *componentAccessorImpl) Sidecars() []corev1.Container {
+	return a.ComponentSpec.Sidecars
 }
 
 func buildSeaweedComponentAccessor(spec *SeaweedSpec, componentSpec *ComponentSpec) ComponentAccessor {

@@ -232,7 +232,12 @@ type BucketSpec struct {
 	// Access is a declarative list of per-identity bucket grants. The
 	// controller reconciles to exactly this list — grants for users not
 	// present are removed (the IAM identity itself is left intact).
+	// The list is keyed by user so duplicate entries for the same
+	// identity are rejected at admission and the resource has a
+	// well-defined merge semantic for SSA / kubectl apply.
 	// +optional
+	// +listType=map
+	// +listMapKey=user
 	Access []BucketAccessGrant `json:"access,omitempty"`
 
 	// Placement carries the `fs.configure` options applied under

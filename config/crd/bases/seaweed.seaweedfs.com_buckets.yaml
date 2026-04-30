@@ -74,6 +74,9 @@ spec:
                   - user
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - user
+                x-kubernetes-list-type: map
               anonymousRead:
                 type: boolean
               clusterRef:

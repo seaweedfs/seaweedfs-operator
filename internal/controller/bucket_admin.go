@@ -22,6 +22,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -55,6 +57,21 @@ type BucketAdmin interface {
 	// Configure issues a single fs.configure call; args are the flag list
 	// minus locationPrefix and -apply (the admin layer adds those).
 	Configure(ctx context.Context, prefix string, args []string) error
+	// ListCollectionStats fetches per-collection (= per-bucket) usage in
+	// a single round trip. The map is keyed by bucket/collection name;
+	// buckets that exist on the filer but have no objects yet may be
+	// absent from the map.
+	ListCollectionStats(ctx context.Context) (map[string]BucketCollectionStats, error)
+}
+
+// BucketCollectionStats is the subset of `collection.list` output the
+// usage refresher consumes. See command_collection_list.go in OSS for the
+// canonical format.
+type BucketCollectionStats struct {
+	// FileCount is the total number of S3 objects in the bucket.
+	FileCount int64
+	// SizeBytes is the total stored bytes for the bucket.
+	SizeBytes int64
 }
 
 // BucketAdminFactory creates a BucketAdmin for the master peers of a target
@@ -214,6 +231,43 @@ func (a *swadminBucketAdmin) Configure(ctx context.Context, prefix string, args 
 	parts = append(parts, "-apply")
 	_, err := a.run(strings.Join(parts, " "))
 	return err
+}
+
+func (a *swadminBucketAdmin) ListCollectionStats(ctx context.Context) (map[string]BucketCollectionStats, error) {
+	out, err := a.run("collection.list")
+	if err != nil {
+		return nil, err
+	}
+	return parseCollectionListOutput(out), nil
+}
+
+// collectionListLine matches one line of `collection.list` stdout. The
+// `Total N collections.` summary line is skipped because it does not match
+// the per-collection prefix.
+//
+// Reference format (tabs between fields):
+//
+//	collection:"photos"\tvolumeCount:3\tsize:107374182400\tfileCount:12483\tdeletedBytes:0\tdeletion:0
+var collectionListLine = regexp.MustCompile(`collection:"([^"]+)"\s+volumeCount:\d+\s+size:(\d+)\s+fileCount:(\d+)`)
+
+func parseCollectionListOutput(out string) map[string]BucketCollectionStats {
+	m := map[string]BucketCollectionStats{}
+	for _, line := range strings.Split(out, "\n") {
+		matches := collectionListLine.FindStringSubmatch(line)
+		if len(matches) != 4 {
+			continue
+		}
+		size, err := strconv.ParseInt(matches[2], 10, 64)
+		if err != nil {
+			continue
+		}
+		count, err := strconv.ParseInt(matches[3], 10, 64)
+		if err != nil {
+			continue
+		}
+		m[matches[1]] = BucketCollectionStats{FileCount: count, SizeBytes: size}
+	}
+	return m
 }
 
 // Error-string classifiers. The shell commands return errors with stable

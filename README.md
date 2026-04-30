@@ -289,11 +289,21 @@ enabled, and the "no return to Off" versioning transition rule.
 See the `config/samples/seaweed_v1_bucket*.yaml` files for end-to-end
 examples (minimal, full-featured, object lock, cross-namespace).
 
-The `Bucket` controller (reconciler + finalizer + status) ships in a
-follow-up PR; this PR establishes only the API surface so the schema
-can be reviewed and adopted by tooling. While the controller is in
-flight, `Bucket` resources are inert — apply at will with no side
-effects on the cluster.
+#### Usage stats
+
+The operator periodically refreshes `status.usage` (object count, total
+bytes, last-updated timestamp) on every `Bucket` by issuing one
+`collection.list` call per Seaweed cluster and patching each bucket's
+status. The cadence is configurable via the
+`--bucket-usage-refresh-interval` flag (default `5m`). Set to `0` to
+disable. The loop is leader-elected so HA deployments do not duplicate
+work.
+
+Usage stats are best-effort observation — they do not block reconcile
+or affect quota enforcement (the underlying S3 quota check on writes is
+authoritative). When a Bucket has not been successfully reconciled yet
+(`status.bucketName` empty), it is skipped until the main reconcile
+loop has provisioned it.
 
 #### COSI coexistence
 

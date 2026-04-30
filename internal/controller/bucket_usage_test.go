@@ -68,6 +68,18 @@ func TestParseCollectionListOutput_IgnoresMalformedLines(t *testing.T) {
 	}
 }
 
+// Locks in the regex's tolerance for added fields between size/fileCount —
+// the parser must keep matching if a future SeaweedFS release inserts new
+// metadata columns into `collection.list` output.
+func TestParseCollectionListOutput_ToleratesNewFields(t *testing.T) {
+	out := `collection:"photos"	volumeCount:3	newFieldA:42	size:107374182400	newFieldB:abc	fileCount:12483	deletedBytes:0	deletion:0`
+	got := parseCollectionListOutput(out)
+	want := BucketCollectionStats{FileCount: 12483, SizeBytes: 107374182400}
+	if got["photos"] != want {
+		t.Errorf("got %+v want %+v", got["photos"], want)
+	}
+}
+
 func TestUsageEqual(t *testing.T) {
 	a := &seaweedv1.BucketUsage{ObjectCount: 1, SizeBytes: 2}
 	b := &seaweedv1.BucketUsage{ObjectCount: 1, SizeBytes: 2}

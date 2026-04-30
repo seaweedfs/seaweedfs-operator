@@ -241,14 +241,20 @@ func (a *swadminBucketAdmin) ListCollectionStats(ctx context.Context) (map[strin
 	return parseCollectionListOutput(out), nil
 }
 
-// collectionListLine matches one line of `collection.list` stdout. The
-// `Total N collections.` summary line is skipped because it does not match
-// the per-collection prefix.
+// collectionListLine matches the three fields the usage refresher cares
+// about — collection name, total size in bytes, total file count — out of
+// a single line of `collection.list` stdout. The `Total N collections.`
+// summary line is skipped because it lacks the `collection:"..."` prefix.
 //
-// Reference format (tabs between fields):
+// Reference format (tabs between fields, OSS today):
 //
 //	collection:"photos"\tvolumeCount:3\tsize:107374182400\tfileCount:12483\tdeletedBytes:0\tdeletion:0
-var collectionListLine = regexp.MustCompile(`collection:"([^"]+)"\s+volumeCount:\d+\s+size:(\d+)\s+fileCount:(\d+)`)
+//
+// The pattern uses non-greedy `.*?` between fields and word-boundary anchors
+// on `size:` / `fileCount:` so a future SeaweedFS release that inserts new
+// fields between these — or reorders existing ones — does not silently make
+// the parser skip every collection.
+var collectionListLine = regexp.MustCompile(`collection:"([^"]+)".*?\bsize:(\d+).*?\bfileCount:(\d+)`)
 
 func parseCollectionListOutput(out string) map[string]BucketCollectionStats {
 	m := map[string]BucketCollectionStats{}

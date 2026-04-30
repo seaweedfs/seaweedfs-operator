@@ -106,6 +106,7 @@ spec:
                     - message: objectLock cannot be disabled once enabled
                       rule: '!oldSelf || self'
                 owner:
+                  maxLength: 256
                   type: string
                 placement:
                   properties:

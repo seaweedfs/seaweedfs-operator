@@ -233,6 +233,7 @@ type BucketSpec struct {
 	// already exist in the SeaweedFS IAM service. When omitted the
 	// bucket is admin-only.
 	// +optional
+	// +kubebuilder:validation:MaxLength=256
 	Owner string `json:"owner,omitempty"`
 
 	// Access is a declarative list of per-identity bucket grants. The

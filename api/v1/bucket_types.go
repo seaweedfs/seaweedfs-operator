@@ -169,10 +169,12 @@ type BucketPlacement struct {
 	DataNode string `json:"dataNode,omitempty"`
 
 	// VolumeGrowthCount is the number of physical volumes to add when no
-	// writable volumes are available for this bucket's collection.
+	// writable volumes are available for this bucket's collection. Pointer
+	// so explicit 0 (disable pre-growth) is distinguishable from unset
+	// (use the SeaweedFS master default).
 	// +optional
 	// +kubebuilder:validation:Minimum=0
-	VolumeGrowthCount int32 `json:"volumeGrowthCount,omitempty"`
+	VolumeGrowthCount *int32 `json:"volumeGrowthCount,omitempty"`
 }
 
 // BucketSpec defines the desired state of a SeaweedFS bucket.

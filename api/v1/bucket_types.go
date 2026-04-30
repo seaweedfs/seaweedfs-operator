@@ -401,9 +401,17 @@ type BucketStatus struct {
 // +kubebuilder:printcolumn:name="QuotaBytes",type=integer,JSONPath=`.status.quota.sizeBytes`
 // +kubebuilder:printcolumn:name="UsedBytes",type=integer,JSONPath=`.status.usage.sizeBytes`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:validation:XValidation:rule="has(self.spec.name) || (self.metadata.name.matches('^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$') && !self.metadata.name.contains('..') && !self.metadata.name.matches('^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$'))",message="when spec.name is unset, metadata.name must satisfy the S3 bucket naming rules (3-63 chars, lowercase alnum/hyphen/dot, no consecutive dots, not IPv4-shaped)"
 
 // Bucket is the Schema for declaratively provisioning a SeaweedFS S3
 // bucket inside a Seaweed cluster.
+//
+// The root-level CEL rule above guards the metadata.name fallback path:
+// when spec.name is omitted the controller uses metadata.name as the
+// bucket name on the filer, so the admission server has to validate
+// that path too — otherwise a Kubernetes-legal but S3-illegal name
+// (e.g. a 100-character DNS label or "192.168.0.1") would slip through
+// and the controller would fail at create time instead of at apply.
 type Bucket struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

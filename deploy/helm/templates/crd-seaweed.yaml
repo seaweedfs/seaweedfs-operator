@@ -264,6 +264,9 @@ spec:
                   type: string
               type: object
           type: object
+          x-kubernetes-validations:
+            - message: when spec.name is unset, metadata.name must satisfy the S3 bucket naming rules (3-63 chars, lowercase alnum/hyphen/dot, no consecutive dots, not IPv4-shaped)
+              rule: has(self.spec.name) || (self.metadata.name.matches('^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$') && !self.metadata.name.contains('..') && !self.metadata.name.matches('^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$'))
       served: true
       storage: true
       subresources:

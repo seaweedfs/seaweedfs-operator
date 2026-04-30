@@ -198,12 +198,18 @@ type BucketSpec struct {
 	// rejected to match the upstream S3 contract — the basic Pattern is
 	// not expressive enough for those constraints under RE2 (no
 	// lookarounds), so the additional rules live in CEL.
-	// Once the bucket has been provisioned this field is immutable; the
-	// controller refuses to reconcile a rename.
+	// Once the bucket has been provisioned this field is immutable;
+	// the CEL transition rule fails fast at admission so users get an
+	// API error rather than waiting for the controller to surface a
+	// status condition. The transition guard tolerates the
+	// unset → first-set transition (so a bucket originally relying on
+	// the metadata.name fallback can be pinned later) but rejects any
+	// further change.
 	// +optional
 	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`
 	// +kubebuilder:validation:XValidation:rule="!self.contains('..')",message="bucket name must not contain consecutive dots"
 	// +kubebuilder:validation:XValidation:rule="!self.matches('^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$')",message="bucket name must not be in IPv4 format"
+	// +kubebuilder:validation:XValidation:rule="!has(oldSelf) || self == oldSelf",message="bucket name is immutable once set"
 	Name string `json:"name,omitempty"`
 
 	// ClusterRef points at the Seaweed CR that owns this bucket.

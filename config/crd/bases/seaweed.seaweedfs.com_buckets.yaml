@@ -98,6 +98,8 @@ spec:
                   rule: '!self.contains(''..'')'
                 - message: bucket name must not be in IPv4 format
                   rule: '!self.matches(''^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$'')'
+                - message: bucket name is immutable once set
+                  rule: '!has(oldSelf) || self == oldSelf'
               objectLock:
                 default: false
                 type: boolean

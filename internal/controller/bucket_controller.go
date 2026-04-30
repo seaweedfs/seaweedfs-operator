@@ -351,16 +351,27 @@ func (r *BucketReconciler) handleDeletion(ctx context.Context, bucket *seaweedv1
 	return ctrl.Result{}, nil
 }
 
-// failPhase records the failure on Status, persists, and returns. Used as a
-// terminal step within a reconcile so the caller does not need to also
-// requeue — controller-runtime will retry on the returned error.
+// failPhase records the failure on Status, persists, and returns a
+// requeue with a nil error. Returning a non-nil error alongside
+// RequeueAfter would make controller-runtime ignore RequeueAfter and
+// fall back to its default exponential backoff — but the failure is
+// already captured on Status (Phase=Failed, Ready=False with
+// reason+message), so the manager does not need an error return to
+// know the reconcile didn't succeed. The deterministic
+// `requeueAfterTransient` cadence is preserved.
+//
+// A non-nil error is still returned when the Status().Update itself
+// fails so the manager retries on its rate limiter; that case
+// signals an unhealthy API server, not a per-bucket failure.
 func (r *BucketReconciler) failPhase(ctx context.Context, bucket *seaweedv1.Bucket, phase seaweedv1.BucketPhase, reason, message string) (ctrl.Result, error) {
+	log := r.Log.WithValues("bucket", types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name})
+	log.Info("reconcile failed", "phase", phase, "reason", reason, "message", message)
 	bucket.Status.Phase = phase
 	r.setCondition(bucket, seaweedv1.BucketConditionReady, metav1.ConditionFalse, reason, message)
 	if err := r.Status().Update(ctx, bucket); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{RequeueAfter: requeueAfterTransient}, fmt.Errorf("%s: %s", reason, message)
+	return ctrl.Result{RequeueAfter: requeueAfterTransient}, nil
 }
 
 func (r *BucketReconciler) setCondition(bucket *seaweedv1.Bucket, condType string, status metav1.ConditionStatus, reason, message string) {

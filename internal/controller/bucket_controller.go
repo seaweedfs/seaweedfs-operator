@@ -485,8 +485,8 @@ func placementArgs(p *seaweedv1.BucketPlacement) []string {
 	if p.DataNode != "" {
 		out = append(out, "-dataNode="+p.DataNode)
 	}
-	if p.VolumeGrowthCount > 0 {
-		out = append(out, fmt.Sprintf("-volumeGrowthCount=%d", p.VolumeGrowthCount))
+	if p.VolumeGrowthCount != nil {
+		out = append(out, fmt.Sprintf("-volumeGrowthCount=%d", *p.VolumeGrowthCount))
 	}
 	return out
 }

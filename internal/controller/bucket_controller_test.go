@@ -571,7 +571,7 @@ func TestPlacementArgs(t *testing.T) {
 				DataCenter:        "dc1",
 				Rack:              "rack-a",
 				DataNode:          "node1",
-				VolumeGrowthCount: 4,
+				VolumeGrowthCount: ptrInt32(4),
 			},
 			[]string{
 				"-replication=001",
@@ -586,6 +586,10 @@ func TestPlacementArgs(t *testing.T) {
 				"-volumeGrowthCount=4",
 			},
 		},
+		"explicit volumeGrowthCount zero is emitted": {
+			&seaweedv1.BucketPlacement{VolumeGrowthCount: ptrInt32(0)},
+			[]string{"-volumeGrowthCount=0"},
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -596,6 +600,8 @@ func TestPlacementArgs(t *testing.T) {
 		})
 	}
 }
+
+func ptrInt32(v int32) *int32 { return &v }
 
 func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {

@@ -528,6 +528,12 @@ func readAppliedAccessAnnotation(b *seaweedv1.Bucket) []string {
 	return out
 }
 
+// writeAppliedAccessAnnotation persists the canonicalized applied-access
+// list to the Bucket's annotations. Uses Patch with MergeFrom so only
+// the annotation diff is sent — a full r.Update bumps ResourceVersion
+// across the entire metadata which then races with the Status().Update
+// at the end of reconcile (and any concurrent SSA writes from the
+// usage refresher).
 func (r *BucketReconciler) writeAppliedAccessAnnotation(ctx context.Context, bucket *seaweedv1.Bucket, desired map[string]string) error {
 	users := make([]string, 0, len(desired))
 	for u := range desired {
@@ -539,9 +545,10 @@ func (r *BucketReconciler) writeAppliedAccessAnnotation(ctx context.Context, buc
 	if bucket.Annotations[AnnotationAppliedAccess] == newVal {
 		return nil
 	}
+	patch := client.MergeFrom(bucket.DeepCopy())
 	if bucket.Annotations == nil {
 		bucket.Annotations = map[string]string{}
 	}
 	bucket.Annotations[AnnotationAppliedAccess] = newVal
-	return r.Update(ctx, bucket)
+	return r.Patch(ctx, bucket, patch)
 }

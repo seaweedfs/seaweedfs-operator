@@ -275,8 +275,12 @@ Supported per-bucket configuration:
 - `reclaimPolicy`: `Retain` (default) leaves data untouched on CR
   delete; `Delete` removes the bucket on CR delete (refused while
   Object Lock retention applies).
-- Cross-namespace `clusterRef` is allowed; the controller performs a
-  SubjectAccessReview against the requester before reconciling.
+- Cross-namespace `clusterRef` is allowed and is **not** gated by an
+  admission-time SubjectAccessReview — the controller has no notion of
+  the original requester. To restrict which namespaces may target a
+  particular `Seaweed`, gate access via Kubernetes RBAC on the `Bucket`
+  resource itself, or layer a Kyverno / Gatekeeper policy that checks
+  `spec.clusterRef.namespace`.
 
 CEL admission validations enforce: S3-compliant bucket-name regex, the
 `objectLock` ↔ `versioning` interlock, immutability of `objectLock` once

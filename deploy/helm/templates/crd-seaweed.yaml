@@ -139,6 +139,9 @@ spec:
                   required:
                     - size
                   type: object
+                  x-kubernetes-validations:
+                    - message: quota.size must be non-negative
+                      rule: '!string(self.size).startsWith(''-'')'
                 reclaimPolicy:
                   default: Retain
                   enum:

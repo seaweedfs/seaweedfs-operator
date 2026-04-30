@@ -83,6 +83,14 @@ type BucketClusterRef struct {
 }
 
 // BucketQuota caps the bucket's total stored size.
+//
+// CEL validation forbids negative sizes at admission. resource.Quantity is
+// rendered as int-or-string, so the rule converts to string and rejects a
+// leading minus — that catches both "-1" and units like "-100Gi" without
+// needing a regex override on the field's pattern (which kubebuilder
+// rejects for int-or-string fields).
+//
+// +kubebuilder:validation:XValidation:rule="!string(self.size).startsWith('-')",message="quota.size must be non-negative"
 type BucketQuota struct {
 	// Size is the maximum total stored size for the bucket (e.g., "100Gi").
 	// The controller converts this to MiB for the underlying s3.bucket.quota

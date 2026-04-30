@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/go-logr/logr"
 
@@ -76,9 +77,17 @@ var (
 )
 
 // swadminBucketAdmin is the default BucketAdmin, backed by swadmin.SeaweedAdmin.
+//
+// Reconcile goroutines (one per Bucket worker, plus the periodic
+// usage-stats loop) share a single instance via the reconciler's admin
+// cache, so concurrent ProcessCommand calls would race on the embedded
+// SeaweedAdmin's Output writer. The mu serializes every command in this
+// admin's lifetime — coarse but sufficient: shell commands are short and
+// per-bucket reconciles don't fan out further than the worker count.
 type swadminBucketAdmin struct {
 	sa  *swadmin.SeaweedAdmin
 	log logr.Logger
+	mu  sync.Mutex
 }
 
 // NewSwadminBucketAdmin returns a BucketAdmin that runs `weed shell` commands
@@ -89,6 +98,8 @@ func NewSwadminBucketAdmin(masters string, log logr.Logger) (BucketAdmin, error)
 }
 
 func (a *swadminBucketAdmin) run(cmd string) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	var buf bytes.Buffer
 	a.sa.Output = &buf
 	err := a.sa.ProcessCommand(cmd)

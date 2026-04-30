@@ -186,10 +186,16 @@ type BucketSpec struct {
 	// Name is the S3 bucket name. Defaults to .metadata.name. Must satisfy
 	// the S3 bucket naming rules: 3-63 characters, lowercase alphanumeric,
 	// hyphen and dot, starting and ending with an alphanumeric character.
+	// Consecutive dots and IPv4-shaped names (e.g. "192.168.0.1") are
+	// rejected to match the upstream S3 contract — the basic Pattern is
+	// not expressive enough for those constraints under RE2 (no
+	// lookarounds), so the additional rules live in CEL.
 	// Once the bucket has been provisioned this field is immutable; the
 	// controller refuses to reconcile a rename.
 	// +optional
 	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`
+	// +kubebuilder:validation:XValidation:rule="!self.contains('..')",message="bucket name must not contain consecutive dots"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$')",message="bucket name must not be in IPv4 format"
 	Name string `json:"name,omitempty"`
 
 	// ClusterRef points at the Seaweed CR that owns this bucket.

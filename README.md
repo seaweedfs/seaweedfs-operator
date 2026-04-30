@@ -236,10 +236,10 @@ For more examples, see the `config/samples/` directory:
 ### Declarative Buckets
 
 The `Bucket` CRD (`seaweed.seaweedfs.com/v1`) provisions S3 buckets
-inside an existing `Seaweed` cluster. It mirrors the surface of `weed
-shell s3.bucket.*` and `fs.configure` so the same operations users run
-manually become declarative manifests that GitOps tools (FluxCD, ArgoCD,
-OpenTofu) can apply and reconcile.
+inside an existing `Seaweed` cluster. It mirrors the surface of
+`weed shell s3.bucket.*` and `fs.configure` so the same operations
+users run manually become declarative manifests that GitOps tools
+(FluxCD, ArgoCD, OpenTofu) can apply and reconcile.
 
 A minimal bucket:
 

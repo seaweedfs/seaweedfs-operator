@@ -209,7 +209,7 @@ type BucketSpec struct {
 	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`
 	// +kubebuilder:validation:XValidation:rule="!self.contains('..')",message="bucket name must not contain consecutive dots"
 	// +kubebuilder:validation:XValidation:rule="!self.matches('^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$')",message="bucket name must not be in IPv4 format"
-	// +kubebuilder:validation:XValidation:rule="!has(oldSelf) || self == oldSelf",message="bucket name is immutable once set"
+	// +kubebuilder:validation:XValidation:rule="oldSelf == '' || self == oldSelf",message="bucket name is immutable once set"
 	Name string `json:"name,omitempty"`
 
 	// ClusterRef points at the Seaweed CR that owns this bucket.

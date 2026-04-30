@@ -1,0 +1,9 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: photos
+  namespace: media
+spec:
+  clusterRef:
+    name: seaweed1
+    namespace: default

@@ -1,0 +1,15 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: compliance-archive
+  namespace: legal
+spec:
+  clusterRef:
+    name: seaweed1
+    namespace: default
+  reclaimPolicy: Retain
+  versioning: Enabled
+  objectLock: true
+  owner: legal-archivist
+  quota:
+    size: 1Ti

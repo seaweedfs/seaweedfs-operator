@@ -221,6 +221,12 @@ func (a *swadminBucketAdmin) Configure(ctx context.Context, prefix string, args 
 // here so future swadmin error-message changes only need updates in one
 // place.
 
+// isBucketNotFoundErr matches the three SeaweedFS-specific error prefixes
+// emitted when a bucket lookup misses. The generic substring "not found"
+// is intentionally NOT matched: connection errors, gRPC stream errors,
+// and unrelated filer errors can all carry that phrase, and treating
+// them as bucket-missing would mask real problems and trigger spurious
+// CreateBucket attempts.
 func isBucketNotFoundErr(err error) bool {
 	if err == nil {
 		return false
@@ -228,8 +234,7 @@ func isBucketNotFoundErr(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "lookup bucket") ||
 		strings.Contains(msg, "did not find bucket") ||
-		strings.Contains(msg, "bucket not found") ||
-		strings.Contains(msg, "not found")
+		strings.Contains(msg, "bucket not found")
 }
 
 func isAlreadyExistsErr(err error) bool {

@@ -31,7 +31,10 @@ func TestIsBucketNotFoundErr(t *testing.T) {
 		"lookup bucket":    {errors.New("lookup bucket photos: not found"), true},
 		"did not find":     {errors.New("did not find bucket photos: rpc error"), true},
 		"bucket not found": {errors.New("bucket not found: lookup error"), true},
-		"plain not found":  {errors.New("entry not found"), true},
+		// Generic "not found" must NOT match — connection errors and
+		// unrelated filer errors carry that phrase.
+		"generic not found": {errors.New("entry not found"), false},
+		"transport error":   {errors.New("rpc error: code = NotFound desc = something"), false},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -1,0 +1,13 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: app-uploads
+  namespace: app-team
+spec:
+  clusterRef:
+    name: prod
+    namespace: seaweedfs
+  versioning: Suspended
+  quota:
+    size: 50Gi
+    enforce: false

@@ -1,0 +1,32 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: photos
+  namespace: media
+spec:
+  clusterRef:
+    name: seaweed1
+    namespace: default
+  reclaimPolicy: Retain
+  versioning: Enabled
+  objectLock: false
+  quota:
+    size: 100Gi
+    enforce: true
+  owner: media-team
+  access:
+    - user: photo-uploader
+      actions: [Read, Write, List]
+    - user: photo-viewer
+      actions: [Read, List]
+  placement:
+    replication: "001"
+    diskType: ssd
+    ttl: 30d
+    fsync: false
+    worm: false
+    readOnly: false
+    dataCenter: dc1
+    rack: rack-a
+    volumeGrowthCount: 4
+  anonymousRead: false

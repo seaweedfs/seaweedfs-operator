@@ -233,6 +233,80 @@ For more examples, see the `config/samples/` directory:
 - `seaweed_v1_seaweed_with_iam_embedded.yaml` - S3 with embedded IAM
 - `seaweed_v1_seaweed.yaml` - Basic deployment
 
+### Declarative Buckets
+
+The `Bucket` CRD (`seaweed.seaweedfs.com/v1`) provisions S3 buckets
+inside an existing `Seaweed` cluster. It mirrors the surface of
+`weed shell s3.bucket.*` and `fs.configure` so the same operations
+users run manually become declarative manifests that GitOps tools
+(FluxCD, ArgoCD, OpenTofu) can apply and reconcile.
+
+A minimal bucket:
+
+```yaml
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: photos
+  namespace: media
+spec:
+  clusterRef:
+    name: seaweed1
+    namespace: default
+```
+
+Supported per-bucket configuration:
+
+- `versioning`: `Off` (default), `Enabled`, `Suspended`. Once enabled,
+  cannot return to `Off` — use `Suspended` to halt new versions while
+  retaining version history.
+- `objectLock`: enable S3 Object Lock. Requires `versioning: Enabled`
+  and is irreversible (matches S3 / SeaweedFS semantics).
+- `quota`: cap total stored size with `resource.Quantity` (e.g. `100Gi`)
+  and toggle enforcement.
+- `owner` / `access`: bind an existing IAM identity as bucket owner and
+  grant per-user actions (`Read`, `Write`, `List`, `Tagging`, `Admin`).
+  The IAM identity must already exist — the controller does not create
+  users on your behalf.
+- `placement`: pin replication, disk type, default TTL, fsync, WORM,
+  read-only, data center / rack / data node, or pre-grow volumes for
+  the bucket's collection. Collection name always equals the bucket
+  name and is not configurable.
+- `reclaimPolicy`: `Retain` (default) leaves data untouched on CR
+  delete; `Delete` removes the bucket on CR delete (refused while
+  Object Lock retention applies).
+- Cross-namespace `clusterRef` is allowed and is **not** gated by an
+  admission-time SubjectAccessReview — the controller has no notion of
+  the original requester. To restrict which namespaces may target a
+  particular `Seaweed`, gate access via Kubernetes RBAC on the `Bucket`
+  resource itself, or layer a Kyverno / Gatekeeper policy that checks
+  `spec.clusterRef.namespace`.
+
+CEL admission validations enforce: S3-compliant bucket-name regex, the
+`objectLock` ↔ `versioning` interlock, immutability of `objectLock` once
+enabled, and the "no return to Off" versioning transition rule.
+
+See the `config/samples/seaweed_v1_bucket*.yaml` files for end-to-end
+examples (minimal, full-featured, object lock, cross-namespace).
+
+The `Bucket` controller (reconciler + finalizer + status) ships in a
+follow-up PR; this PR establishes only the API surface so the schema
+can be reviewed and adopted by tooling. While the controller is in
+flight, `Bucket` resources are inert — apply at will with no side
+effects on the cluster.
+
+#### COSI coexistence
+
+The SeaweedFS [COSI driver](https://github.com/seaweedfs/seaweedfs-cosi-driver)
+also creates buckets via the upstream `objectstorage.k8s.io/v1alpha1`
+API. The two are complementary: COSI is the right choice when an
+application needs a bucket-claim lifecycle bound to a workload, while
+the `Bucket` CRD is the right choice for cluster- or platform-team-owned
+buckets with quotas, placement, and IAM grants. The controller never
+adopts or modifies a bucket created by the COSI driver — collisions are
+surfaced as `BucketAlreadyExists` in `status` rather than silently
+overwriting.
+
 ## Maintenance and Uninstallation
 
 - TBD

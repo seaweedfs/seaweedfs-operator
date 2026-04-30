@@ -78,6 +78,7 @@ spec:
                 - user
                 x-kubernetes-list-type: map
               anonymousRead:
+                default: false
                 type: boolean
               clusterRef:
                 properties:
@@ -109,10 +110,12 @@ spec:
                   diskType:
                     type: string
                   fsync:
+                    default: false
                     type: boolean
                   rack:
                     type: string
                   readOnly:
+                    default: false
                     type: boolean
                   replication:
                     pattern: ^[0-9]{3}$
@@ -125,6 +128,7 @@ spec:
                     minimum: 0
                     type: integer
                   worm:
+                    default: false
                     type: boolean
                 type: object
               quota:

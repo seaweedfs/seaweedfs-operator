@@ -144,14 +144,17 @@ type BucketPlacement struct {
 
 	// Fsync forces an fsync after every write under this prefix.
 	// +optional
+	// +kubebuilder:default:=false
 	Fsync bool `json:"fsync,omitempty"`
 
 	// WORM (write-once-read-many) makes written files read-only.
 	// +optional
+	// +kubebuilder:default:=false
 	WORM bool `json:"worm,omitempty"`
 
 	// ReadOnly disables further writes under this prefix.
 	// +optional
+	// +kubebuilder:default:=false
 	ReadOnly bool `json:"readOnly,omitempty"`
 
 	// DataCenter pins writes for this bucket to a specific data center.
@@ -249,6 +252,7 @@ type BucketSpec struct {
 	// AnonymousRead exposes the bucket for unauthenticated read via a
 	// public-read bucket policy. Defaults to false.
 	// +optional
+	// +kubebuilder:default:=false
 	AnonymousRead bool `json:"anonymousRead,omitempty"`
 }
 

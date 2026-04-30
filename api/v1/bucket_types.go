@@ -21,9 +21,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // VersioningState is the desired versioning configuration for a bucket.
 // Once a bucket has been Enabled or Suspended it cannot be returned to Off
 // — Suspended is the correct state for "stop adding versions but keep the

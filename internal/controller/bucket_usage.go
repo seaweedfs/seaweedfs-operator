@@ -24,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
@@ -138,9 +139,15 @@ func (r *BucketReconciler) refreshClusterUsage(ctx context.Context, log logr.Log
 		if usageEqual(b.Status.Usage, newUsage) {
 			continue
 		}
+		// Patch with MergeFrom rather than Update so a concurrent
+		// status write from the spec reconciler (e.g., a Conditions
+		// update) does not race with this refresh and lose either
+		// side. The merge is computed against the snapshot we listed,
+		// so only status.usage is actually sent.
+		patch := client.MergeFrom(b.DeepCopy())
 		b.Status.Usage = newUsage
-		if err := r.Status().Update(ctx, b); err != nil {
-			log.Error(err, "status update during usage refresh", "bucket", b.Name)
+		if err := r.Status().Patch(ctx, b, patch); err != nil {
+			log.Error(err, "status patch during usage refresh", "bucket", b.Name)
 		}
 	}
 }

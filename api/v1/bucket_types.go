@@ -112,8 +112,9 @@ type BucketAccessGrant struct {
 
 	// Actions is the set of bucket-scoped actions granted to the user.
 	// An empty list strips all bucket grants for the user (without deleting
-	// the IAM identity itself).
-	// +kubebuilder:validation:MinItems=0
+	// the IAM identity itself). Marked as a set so duplicate actions like
+	// [Read, Read] are rejected at admission and SSA merges deterministically.
+	// +listType=set
 	Actions []BucketAccessAction `json:"actions"`
 }
 

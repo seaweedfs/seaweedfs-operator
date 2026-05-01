@@ -388,10 +388,13 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		if errors.IsConflict(err) {
 			log.V(2).Info("Conflict while updating Seaweed status; will retry on next reconciliation")
 			// Do not treat conflict as a hard error to avoid unnecessary requeues.
-			// Return the readiness we computed so the caller still picks
-			// the right cadence — the conflict means our snapshot was
-			// stale, not that readiness flipped.
-			return isReady, nil
+			// Force the fast cadence: the persisted status was NOT updated
+			// (the conflict aborted our write), so as far as any observer
+			// is concerned the CR may still report stale NotReady values.
+			// Returning isReady=true here would defer the retry by up to
+			// a minute. Return false so the next reconcile fires within
+			// requeueWhileReconciling and the status catches up promptly.
+			return false, nil
 		}
 		return false, err
 	}

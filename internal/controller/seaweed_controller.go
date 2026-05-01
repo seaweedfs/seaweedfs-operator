@@ -51,6 +51,40 @@ const (
 	ComponentWorker = "worker"
 )
 
+// Reconcile cadences. The reconciler pulls itself back periodically via
+// RequeueAfter rather than relying solely on watches, so transient
+// status changes the apiserver-side reflector might miss still get
+// caught. The interval depends on whether the cluster has converged:
+//
+//   - requeueWhileReconciling: status hasn't reached Ready yet — pods
+//     are still rolling out, components are coming up. Tight cadence
+//     so the user sees Replicas/ReadyReplicas catch up promptly.
+//   - requeueWhenReady: every owned component reports its desired
+//     replica count is fully ready. The reconciler is just refreshing
+//     status as a safety net; a slower cadence dramatically reduces
+//     the per-CR baseline load on the apiserver and the operator's
+//     log volume in steady state.
+//
+// At the previous unconditional 5s, a single Seaweed CR generated
+// ~17,280 reconcile passes / day even when nothing changed. With 1m
+// in steady state, ~1,440 / day — same convergence properties for
+// transitions, much less noise at rest.
+const (
+	requeueWhileReconciling = 5 * time.Second
+	requeueWhenReady        = 1 * time.Minute
+)
+
+// reconcileRequeueAfter returns the interval Reconcile should request
+// based on whether status reports the cluster is Ready. Extracted so
+// the cadence policy is unit-testable without driving a full
+// reconcile pass.
+func reconcileRequeueAfter(isReady bool) time.Duration {
+	if isReady {
+		return requeueWhenReady
+	}
+	return requeueWhileReconciling
+}
+
 // SeaweedReconciler reconciles a Seaweed object
 type SeaweedReconciler struct {
 	client.Client
@@ -150,13 +184,17 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	// Update status
-	if err := r.updateStatus(ctx, seaweedCR); err != nil {
+	// Update status. The returned readiness flag chooses the requeue
+	// cadence: tight while the cluster is still rolling out, slower
+	// once everything reports Ready (the periodic loop is then just
+	// a safety net for events the watch might have missed).
+	isReady, err := r.updateStatus(ctx, seaweedCR)
+	if err != nil {
 		log.Error(err, "Failed to update Seaweed status")
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	return ctrl.Result{RequeueAfter: reconcileRequeueAfter(isReady)}, nil
 }
 
 func (r *SeaweedReconciler) findSeaweedCustomResourceInstance(ctx context.Context, log logr.Logger, req ctrl.Request) (*seaweedv1.Seaweed, bool, ctrl.Result, error) {
@@ -185,21 +223,27 @@ func (r *SeaweedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweedv1.Seaweed) error {
+// updateStatus refreshes the Seaweed CR's status from the live state of
+// every owned component, then writes the result. It also returns the
+// readiness signal so Reconcile can decide how aggressively to requeue
+// itself: 5s while components are still rolling out (status converges
+// quickly), 1m once Ready=True (watches catch real changes; the periodic
+// loop is just a belt-and-suspenders safety net).
+func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (isReady bool, err error) {
 	log := r.Log.WithValues("seaweed", seaweedCR.Name)
 
 	// Get master statefulset status
 	masterStatus, err := r.getComponentStatus(ctx, seaweedCR, ComponentMaster)
 	if err != nil {
 		log.Error(err, "Failed to get master status")
-		return err
+		return false, err
 	}
 
 	// Get volume statefulset status
 	volumeStatus, err := r.getComponentStatus(ctx, seaweedCR, ComponentVolume)
 	if err != nil {
 		log.Error(err, "Failed to get volume status")
-		return err
+		return false, err
 	}
 
 	// Get filer statefulset status (if enabled)
@@ -208,7 +252,7 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		filerStatus, err = r.getComponentStatus(ctx, seaweedCR, ComponentFiler)
 		if err != nil {
 			log.Error(err, "Failed to get filer status")
-			return err
+			return false, err
 		}
 	}
 
@@ -218,7 +262,7 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		adminStatus, err = r.getComponentStatus(ctx, seaweedCR, ComponentAdmin)
 		if err != nil {
 			log.Error(err, "Failed to get admin status")
-			return err
+			return false, err
 		}
 	}
 
@@ -228,7 +272,7 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		workerStatus, err = r.getComponentStatus(ctx, seaweedCR, ComponentWorker)
 		if err != nil {
 			log.Error(err, "Failed to get worker status")
-			return err
+			return false, err
 		}
 	}
 
@@ -236,19 +280,19 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	s3Status, err := r.getS3Status(ctx, seaweedCR)
 	if err != nil {
 		log.Error(err, "Failed to get S3 gateway status")
-		return err
+		return false, err
 	}
 
 	// Get standalone SFTP gateway status (if enabled)
 	sftpStatus, err := r.getSFTPStatus(ctx, seaweedCR)
 	if err != nil {
 		log.Error(err, "Failed to get SFTP gateway status")
-		return err
+		return false, err
 	}
 
 	// Determine if cluster is ready
 	// Master must have replicas and all must be ready
-	isReady := masterStatus.Replicas > 0 && masterStatus.ReadyReplicas == masterStatus.Replicas
+	isReady = masterStatus.Replicas > 0 && masterStatus.ReadyReplicas == masterStatus.Replicas
 	// Volume is ready if disabled (0 replicas) or all configured replicas are ready
 	isReady = isReady && (volumeStatus.Replicas == 0 || volumeStatus.ReadyReplicas == volumeStatus.Replicas)
 
@@ -344,13 +388,16 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		if errors.IsConflict(err) {
 			log.V(2).Info("Conflict while updating Seaweed status; will retry on next reconciliation")
 			// Do not treat conflict as a hard error to avoid unnecessary requeues.
-			return nil
+			// Return the readiness we computed so the caller still picks
+			// the right cadence — the conflict means our snapshot was
+			// stale, not that readiness flipped.
+			return isReady, nil
 		}
-		return err
+		return false, err
 	}
 
 	log.Info("Updated Seaweed status", "ready", isReady)
-	return nil
+	return isReady, nil
 }
 
 func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *seaweedv1.Seaweed, component string) (seaweedv1.ComponentStatus, error) {

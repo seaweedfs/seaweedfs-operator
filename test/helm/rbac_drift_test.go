@@ -125,7 +125,13 @@ func helmManagerRules(t *testing.T, chartDir string) []rbacv1.PolicyRule {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Skipf("helm not available or chart render failed (%v); stderr: %s", err, stderr.String())
+		// Distinguish a missing helm binary (legitimate skip on a
+		// dev machine without helm) from a chart render error
+		// (genuine regression that must fail the build).
+		if errors.Is(err, exec.ErrNotFound) {
+			t.Skipf("helm not found in PATH; skipping RBAC parity test: %v", err)
+		}
+		t.Fatalf("helm template failed: %v\nstderr: %s", err, stderr.String())
 	}
 	return findManagerRoleRules(t, stdout.Bytes(), "drift-test")
 }

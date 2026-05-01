@@ -1,0 +1,145 @@
+/*
+
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// TestVCTSemanticallyEqual_HandlesApiserverDefaultedVolumeMode is the
+// regression test for issue #224. The operator builds a desired PVC
+// template with VolumeMode unset (nil); the apiserver fills it with
+// &Filesystem on Create. apiequality.Semantic.DeepEqual on the two
+// returns false, which makes reconcileVolumeClaimTemplates think the
+// VCT differs on every reconcile, log a warning, and emit a Warning
+// event — every 5 seconds, forever.
+//
+// The test constructs the two states by hand so it's fast and doesn't
+// need envtest. The end-to-end version (envtest_volume_claim_templates_test.go)
+// proves the same property against a real apiserver round-trip.
+func TestVCTSemanticallyEqual_HandlesApiserverDefaultedVolumeMode(t *testing.T) {
+	desired := []corev1.PersistentVolumeClaim{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "data"},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse("100Gi"),
+					},
+				},
+			},
+		},
+	}
+
+	// Mimic what the apiserver returns after Create: same fields plus
+	// VolumeMode defaulted to Filesystem, and a generated UID/CreationTimestamp
+	// that Semantic.DeepEqual would also have caught. Here we only inject
+	// the spec-level default, since metadata is excluded from the controller's
+	// comparison anyway.
+	filesystem := corev1.PersistentVolumeFilesystem
+	existing := []corev1.PersistentVolumeClaim{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "data"},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse("100Gi"),
+					},
+				},
+				VolumeMode: &filesystem, // <-- the apiserver default
+			},
+		},
+	}
+
+	if !vctSemanticallyEqual(existing, desired) {
+		t.Errorf("expected vctSemanticallyEqual to treat nil VolumeMode and &Filesystem as equivalent (issue #224 regression)")
+	}
+}
+
+func TestVCTSemanticallyEqual_DetectsRealStorageDiff(t *testing.T) {
+	mk := func(size string) []corev1.PersistentVolumeClaim {
+		return []corev1.PersistentVolumeClaim{{
+			ObjectMeta: metav1.ObjectMeta{Name: "data"},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse(size),
+					},
+				},
+			},
+		}}
+	}
+	if vctSemanticallyEqual(mk("100Gi"), mk("200Gi")) {
+		t.Errorf("expected size diff to be detected — comparator must not be too lenient")
+	}
+}
+
+func TestVCTSemanticallyEqual_DetectsRealStorageClassDiff(t *testing.T) {
+	mk := func(class string) []corev1.PersistentVolumeClaim {
+		var sc *string
+		if class != "" {
+			sc = &class
+		}
+		return []corev1.PersistentVolumeClaim{{
+			ObjectMeta: metav1.ObjectMeta{Name: "data"},
+			Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: sc},
+		}}
+	}
+	if vctSemanticallyEqual(mk("fast"), mk("slow")) {
+		t.Errorf("expected StorageClassName diff to be detected")
+	}
+	if !vctSemanticallyEqual(mk(""), mk("")) {
+		t.Errorf("expected matching nil StorageClassName to be equal")
+	}
+	if vctSemanticallyEqual(mk(""), mk("fast")) {
+		t.Errorf("expected nil vs set StorageClassName to be detected")
+	}
+}
+
+func TestVCTSemanticallyEqual_DetectsLengthDiff(t *testing.T) {
+	one := []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "a"}}}
+	two := []corev1.PersistentVolumeClaim{
+		{ObjectMeta: metav1.ObjectMeta{Name: "a"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "b"}},
+	}
+	if vctSemanticallyEqual(one, two) {
+		t.Errorf("expected length diff to be detected")
+	}
+}
+
+func TestVCTSemanticallyEqual_DetectsExplicitlyDifferentVolumeMode(t *testing.T) {
+	filesystem := corev1.PersistentVolumeFilesystem
+	block := corev1.PersistentVolumeBlock
+	a := []corev1.PersistentVolumeClaim{{
+		ObjectMeta: metav1.ObjectMeta{Name: "data"},
+		Spec:       corev1.PersistentVolumeClaimSpec{VolumeMode: &filesystem},
+	}}
+	b := []corev1.PersistentVolumeClaim{{
+		ObjectMeta: metav1.ObjectMeta{Name: "data"},
+		Spec:       corev1.PersistentVolumeClaimSpec{VolumeMode: &block},
+	}}
+	if vctSemanticallyEqual(a, b) {
+		t.Errorf("expected Filesystem vs Block VolumeMode to be detected — only the nil-vs-Filesystem case should be smoothed")
+	}
+}

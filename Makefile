@@ -50,6 +50,18 @@ test: manifests generate fmt vet envtest ## Run tests.
 test-e2e:
 	go test ./test/e2e/ -v -ginkgo.v -ginkgo.label-filter='!integration' -timeout 20m
 
+# test-helm-install validates the chart's default-values rendering by
+# actually installing it into a Kind cluster and asserting the
+# operator emits no RBAC permission errors. Complements the static
+# parity test in test/helm/rbac_drift_test.go (which only inspects
+# rendered YAML) by also catching helm-template syntax bugs, missing
+# CRD includes, broken ServiceAccount bindings, and conditional gates
+# the static test isn't aware of — failure modes invisible to the
+# kustomize-based test-e2e suite, which never deploys the chart.
+.PHONY: test-helm-install
+test-helm-install: kind-prepare kind-load
+	IMAGE_TAG=$(VERSION) test/helm/install_smoke.sh
+
 # Build manager binary
 manager: generate fmt vet
 	go build -ldflags="-s -w" -o bin/manager main.go

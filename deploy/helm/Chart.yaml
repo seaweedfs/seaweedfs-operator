@@ -3,7 +3,7 @@ name: seaweedfs-operator
 description: A Helm chart for the seaweedfs-operator
 type: application
 version: 0.1.16
-appVersion: "1.0.13"
+appVersion: "1.0.14"
 maintainers:
   - name: chrislusf
     url: https://github.com/chrislusf

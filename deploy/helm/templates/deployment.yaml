@@ -49,6 +49,11 @@ spec:
         args:
         - --leader-elect
         - --metrics-bind-address=:{{ .Values.port.number }}
+        {{- if .Values.bucketUsage }}
+        {{- if .Values.bucketUsage.refreshInterval }}
+        - --bucket-usage-refresh-interval={{ .Values.bucketUsage.refreshInterval }}
+        {{- end }}
+        {{- end }}
         env:
         {{- if eq .Values.webhook.enabled false }}
         - name: ENABLE_WEBHOOKS

@@ -62,6 +62,13 @@ image:
 # -- Set number of pod replicas
 replicaCount: 1
 
+# -- Bucket usage stats refresh configuration. The operator periodically
+# calls collection.list per Seaweed cluster and patches status.usage on
+# each Bucket. Leave refreshInterval empty to use the in-binary default
+# (5m). Set to "0s" to disable the loop entirely.
+bucketUsage:
+  refreshInterval: ""
+
 ## Configure container port
 port:
   # -- name of the container port to use for the Kubernete service and ingress

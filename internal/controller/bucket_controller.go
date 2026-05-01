@@ -71,6 +71,11 @@ type BucketReconciler struct {
 	// NewSwadminBucketAdmin.
 	AdminFactory BucketAdminFactory
 
+	// UsageRefreshInterval is the cadence of the periodic usage stats
+	// loop. Zero disables the loop entirely; the default in main.go is
+	// DefaultUsageRefreshInterval (5 minutes).
+	UsageRefreshInterval time.Duration
+
 	// adminCache holds one BucketAdmin per (Seaweed CR identity, masters
 	// string). swadmin.NewSeaweedAdmin spawns a background goroutine that
 	// keeps a master connection alive, so caching avoids leaking one
@@ -410,13 +415,24 @@ func (r *BucketReconciler) getAdmin(ns, name, masters string, log logr.Logger) (
 }
 
 // SetupWithManager wires the reconciler into the controller-runtime manager.
+// When UsageRefreshInterval is positive, also registers a periodic loop
+// that refreshes status.usage on every Bucket. The loop is leader-elected
+// to avoid duplicate work in HA deployments.
 func (r *BucketReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.AdminFactory == nil {
 		r.AdminFactory = NewSwadminBucketAdmin
 	}
-	return ctrl.NewControllerManagedBy(mgr).
+	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&seaweedv1.Bucket{}).
-		Complete(r)
+		Complete(r); err != nil {
+		return err
+	}
+	if r.UsageRefreshInterval > 0 {
+		if err := r.addUsageRunnable(mgr, r.UsageRefreshInterval); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // resolvedBucketName returns spec.Name when set, falling back to metadata.name.

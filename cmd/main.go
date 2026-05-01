@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"time"
 
 	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 
@@ -70,6 +71,11 @@ func main() {
 		"If set the metrics endpoint is served securely")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	var bucketUsageInterval time.Duration
+	flag.DurationVar(&bucketUsageInterval, "bucket-usage-refresh-interval", controller.DefaultUsageRefreshInterval,
+		"Cadence for refreshing status.usage on Bucket resources. "+
+			"Set to 0 to disable. Defaults to 5m. Each tick issues one collection.list "+
+			"call per Seaweed cluster that owns Buckets, then patches per-bucket status.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -137,10 +143,11 @@ func main() {
 	}
 
 	if err = (&controller.BucketReconciler{
-		Client:   mgr.GetClient(),
-		Log:      ctrl.Log.WithName("controller").WithName("Bucket"),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("bucket-controller"),
+		Client:               mgr.GetClient(),
+		Log:                  ctrl.Log.WithName("controller").WithName("Bucket"),
+		Scheme:               mgr.GetScheme(),
+		Recorder:             mgr.GetEventRecorderFor("bucket-controller"),
+		UsageRefreshInterval: bucketUsageInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Bucket")
 		os.Exit(1)

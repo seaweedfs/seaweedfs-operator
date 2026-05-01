@@ -33,7 +33,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strings"
 	"testing"
 
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -141,47 +140,22 @@ func findManagerRoleRules(t *testing.T, rendered []byte, releaseName string) []r
 	dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(rendered), 4096)
 	wantName := releaseName + "-seaweedfs-operator-manager-role"
 	for {
-		var partial struct {
-			Kind     string `json:"kind"`
-			Metadata struct {
-				Name string `json:"name"`
-			} `json:"metadata"`
-		}
-		if err := dec.Decode(&partial); err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			t.Fatalf("decoding helm output: %v", err)
-		}
-		if partial.Kind != "ClusterRole" || !strings.HasSuffix(partial.Metadata.Name, "-manager-role") {
-			continue
-		}
-		// Re-decode this single document into a typed ClusterRole. We
-		// can't easily rewind the decoder, so re-render and seek by name.
-		role := decodeClusterRoleByName(t, rendered, partial.Metadata.Name)
-		return role.Rules
-	}
-	t.Fatalf("no ClusterRole named %q (or *-manager-role) found in rendered chart output (helm release: %q)", wantName, releaseName)
-	return nil
-}
-
-func decodeClusterRoleByName(t *testing.T, rendered []byte, name string) *rbacv1.ClusterRole {
-	t.Helper()
-	dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(rendered), 4096)
-	for {
 		var role rbacv1.ClusterRole
 		if err := dec.Decode(&role); err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			// Skip non-ClusterRole documents.
+			// Skip docs that don't shape into a ClusterRole. Decode
+			// returns errors for malformed YAML too, but the chart
+			// is rendered fresh in the same test invocation and
+			// already validated by helm template's own pass.
 			continue
 		}
-		if role.Kind == "ClusterRole" && role.Name == name {
-			return &role
+		if role.Kind == "ClusterRole" && role.Name == wantName {
+			return role.Rules
 		}
 	}
-	t.Fatalf("could not re-locate ClusterRole %q", name)
+	t.Fatalf("no ClusterRole named %q found in rendered chart output (helm release: %q)", wantName, releaseName)
 	return nil
 }
 

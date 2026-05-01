@@ -12,6 +12,7 @@ on:
       - labeled
       - synchronize
     paths:
+      - '.github/workflows/helm-install-test.yml'
       - 'deploy/helm/**'
       - 'config/rbac/**'
       - 'config/samples/**'

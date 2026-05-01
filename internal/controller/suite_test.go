@@ -16,84 +16,111 @@ limitations under the License.
 
 package controller
 
-//import (
-//	"path/filepath"
-//	"testing"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	goruntime "runtime"
+	"testing"
+
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
+
+	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+)
+
+// Shared test environment populated by TestMain. Individual tests that
+// need a real apiserver call mustEnvtest() to fetch the config + client
+// or get a clean Skip when the suite couldn't start (e.g., the
+// kubebuilder envtest binaries weren't downloaded). Pure-Go tests in
+// this package don't depend on these globals and run regardless.
+var (
+	envtestEnv    *envtest.Environment
+	envtestCfg    *rest.Config
+	envtestClient client.Client
+)
+
+// TestMain bootstraps an in-process kube-apiserver via envtest and
+// installs the operator's CRDs so tests can exercise round-trip
+// behaviors that the controller-runtime fake client doesn't reproduce
+// (apiserver-side defaulting, CEL admission, ResourceVersion semantics).
 //
-//	. "github.com/onsi/ginkgo"
-//	. "github.com/onsi/gomega"
-//	"k8s.io/client-go/kubernetes/scheme"
-//	"k8s.io/client-go/rest"
-//	ctrl "sigs.k8s.io/controller-runtime"
-//	"sigs.k8s.io/controller-runtime/pkg/client"
-//	"sigs.k8s.io/controller-runtime/pkg/envtest"
-//	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
-//	logf "sigs.k8s.io/controller-runtime/pkg/log"
-//	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-//
-//	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
-//	// +kubebuilder:scaffold:imports
-//)
-//
-//// These tests use Ginkgo (BDD-style Go testing framework). Refer to
-//// http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
-//
-//var cfg *rest.Config
-//var k8sClient client.Client
-//var testEnv *envtest.Environment
-//
-//func TestAPIs(t *testing.T) {
-//	RegisterFailHandler(Fail)
-//
-//	RunSpecsWithDefaultAndCustomReporters(t,
-//		"Controller Suite",
-//		[]Reporter{printer.NewlineReporter{}})
-//}
-//
-//var _ = BeforeSuite(func(done Done) {
-//	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-//
-//	By("bootstrapping test environment")
-//	testEnv = &envtest.Environment{
-//		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases")},
-//	}
-//
-//	var err error
-//	cfg, err = testEnv.Start()
-//	Expect(err).ToNot(HaveOccurred())
-//	Expect(cfg).ToNot(BeNil())
-//
-//	err = seaweedv1.AddToScheme(scheme.Scheme)
-//	Expect(err).NotTo(HaveOccurred())
-//
-//	// +kubebuilder:scaffold:scheme
-//
-//	k8sClient, _ = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-//	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
-//		Scheme: scheme.Scheme,
-//	})
-//	Expect(err).ToNot(HaveOccurred())
-//
-//	err = (&SeaweedReconciler{
-//		Client: k8sManager.GetClient(),
-//		Log:    ctrl.Log.WithName("controller").WithName("Seaweed"),
-//		Scheme: k8sManager.GetScheme(),
-//	}).SetupWithManager(k8sManager)
-//	Expect(err).ToNot(HaveOccurred())
-//
-//	go func() {
-//		err = k8sManager.Start(ctrl.SetupSignalHandler())
-//		Expect(err).ToNot(HaveOccurred())
-//	}()
-//
-//	Expect(err).ToNot(HaveOccurred())
-//	Expect(k8sClient).ToNot(BeNil())
-//
-//	close(done)
-//}, 60)
-//
-//var _ = AfterSuite(func() {
-//	By("tearing down the test environment")
-//	err := testEnv.Stop()
-//	Expect(err).ToNot(HaveOccurred())
-//})
+// If KUBEBUILDER_ASSETS is unset or envtest fails to start, m.Run()
+// proceeds anyway — envtest-only tests Skip via mustEnvtest while pure
+// unit tests stay green. This means `go test ./...` works on a
+// developer machine that has not run setup-envtest, and `make test`
+// (which sets KUBEBUILDER_ASSETS) exercises the full suite.
+func TestMain(m *testing.M) {
+	if err := startEnvtest(); err != nil {
+		fmt.Fprintf(os.Stderr, "envtest unavailable, envtest-tagged tests will Skip: %v\n", err)
+	}
+	code := m.Run()
+	if envtestEnv != nil {
+		_ = envtestEnv.Stop()
+	}
+	os.Exit(code)
+}
+
+func startEnvtest() error {
+	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
+		return fmt.Errorf("KUBEBUILDER_ASSETS unset; run `make test` or set the env var to a setup-envtest assets dir")
+	}
+
+	envtestEnv = &envtest.Environment{
+		CRDDirectoryPaths:     []string{filepath.Join(projectRoot(), "config", "crd", "bases")},
+		ErrorIfCRDPathMissing: true,
+	}
+	cfg, err := envtestEnv.Start()
+	if err != nil {
+		envtestEnv = nil
+		return fmt.Errorf("start envtest: %w", err)
+	}
+	envtestCfg = cfg
+
+	scheme := clientgoscheme.Scheme
+	utilruntime.Must(seaweedv1.AddToScheme(scheme))
+
+	cli, err := client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		_ = envtestEnv.Stop()
+		envtestEnv = nil
+		envtestCfg = nil
+		return fmt.Errorf("build envtest client: %w", err)
+	}
+	envtestClient = cli
+	return nil
+}
+
+// mustEnvtest returns the running test environment's config+client, or
+// Skips the calling test when envtest didn't start. Use as the first
+// line in any test that creates real apiserver objects.
+func mustEnvtest(t *testing.T) (*rest.Config, client.Client) {
+	t.Helper()
+	if envtestCfg == nil || envtestClient == nil {
+		t.Skip("envtest not running; set KUBEBUILDER_ASSETS or run via `make test`")
+	}
+	return envtestCfg, envtestClient
+}
+
+// projectRoot resolves the operator repo root by walking up from this
+// file's location until it sees a go.mod. Lets tests run from any cwd.
+func projectRoot() string {
+	_, thisFile, _, ok := goruntime.Caller(0)
+	if !ok {
+		panic("runtime.Caller(0) failed")
+	}
+	dir := filepath.Dir(thisFile)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			panic(fmt.Sprintf("could not find project root from %s", filepath.Dir(thisFile)))
+		}
+		dir = parent
+	}
+}

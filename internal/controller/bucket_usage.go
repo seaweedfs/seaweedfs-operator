@@ -66,12 +66,6 @@ func (u *bucketUsageRunnable) Start(ctx context.Context) error {
 	}
 }
 
-// NeedLeaderElection ensures the loop only runs on the leader replica
-// when the operator is deployed with leader election enabled — otherwise
-// a follower would issue redundant collection.list calls and racing
-// status writes against the same buckets.
-func (u *bucketUsageRunnable) NeedLeaderElection() bool { return true }
-
 // refreshAllUsage groups buckets by Seaweed cluster, fetches collection
 // stats once per cluster, then updates each bucket's status.usage.
 // Errors during a single cluster pass are logged and skipped — the next

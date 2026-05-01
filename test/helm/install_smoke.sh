@@ -78,12 +78,15 @@ kubectl wait deployment.apps/"${RELEASE}-seaweedfs-operator" \
 log "applying sample Seaweed CR"
 kubectl apply -f "$REPO_ROOT/config/samples/seaweed_v1_seaweed.yaml"
 
-# Apply a basic Bucket CR. This drives the BucketReconciler which
-# requires List/Watch on buckets.seaweed.seaweedfs.com — the original
-# permission gap reported in #223.
+# Apply a basic Bucket CR. This drives the BucketReconciler all the
+# way through its full reconcile sequence (List, Get, finalizer
+# Update, Status Patch), not just the initial List. The bucket
+# sample is in the `media` namespace, so create it first — without
+# the namespace the apply errors before any RBAC verb beyond List
+# gets exercised.
 log "applying sample Bucket CR"
-kubectl apply -f "$REPO_ROOT/config/samples/seaweed_v1_bucket.yaml" || \
-  log "  (bucket sample apply failed — likely missing media namespace; not fatal — bucket-CR List still tries on every reconcile)"
+kubectl create namespace media --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f "$REPO_ROOT/config/samples/seaweed_v1_bucket.yaml"
 
 log "sleeping ${RECONCILE_WAIT}s for reconcile cycles to run"
 sleep "$RECONCILE_WAIT"

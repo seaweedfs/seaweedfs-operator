@@ -3,8 +3,8 @@
 # Complements make-test-e2e.yaml (kustomize-based) by exercising the
 # `helm install` path users actually run. Catches RBAC drift, packaging
 # bugs, conditional gates, and helm-template render errors that the
-# kustomize deployment never sees. See test/helm/install_smoke.sh and
-# issues #223 + the servicemonitor RBAC follow-up for context.
+# kustomize deployment never sees. See test/helm/install_smoke.sh for
+# the assertion logic.
 on:
   pull_request:
     types:

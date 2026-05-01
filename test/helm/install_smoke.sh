@@ -9,14 +9,15 @@
 # Why this exists: the existing test-e2e suite deploys via `make deploy`
 # (kustomize-based, uses config/rbac/role.yaml — the kubebuilder-generated
 # unconditional ClusterRole), so it never observes the chart's
-# hand-maintained RBAC. Issue #223 (missing bucket RBAC) and the
-# follow-up servicemonitor RBAC gate were both invisible to the
-# existing e2e tests for that reason — both manifested only at
-# `helm install` time. The static parity test in test/helm/rbac_drift_test.go
-# catches obvious drift at compile-time, but a full install lap also
-# catches packaging bugs (missing CRD include, broken ServiceAccount
-# binding, helm template syntax errors that only manifest at apply
-# time, conditional gates the static parity test doesn't render).
+# hand-maintained RBAC. Past chart-RBAC drift (missing bucket RBAC,
+# servicemonitor RBAC gated behind a Helm value the operator binary
+# can't read) was invisible to the existing e2e tests for that reason —
+# both classes of bug only manifested at `helm install` time. The
+# static parity test in test/helm/rbac_drift_test.go catches obvious
+# drift at compile-time, but a full install lap also catches packaging
+# bugs (missing CRD include, broken ServiceAccount binding, helm
+# template syntax errors that only manifest at apply time, conditional
+# gates the static parity test doesn't render).
 #
 # Pre-conditions assumed:
 #   - kubectl points at a Kind cluster created via `make kind-prepare`
@@ -73,8 +74,7 @@ kubectl wait deployment.apps/"${RELEASE}-seaweedfs-operator" \
 # Apply a basic Seaweed CR. This drives the SeaweedReconciler which,
 # among other things, attempts to upsert ServiceMonitors for the
 # master/volume/filer/admin/worker components — that's the path that
-# trips the missing servicemonitor RBAC reported in TsengSR's follow-up
-# on issue #223.
+# would trip a missing servicemonitor RBAC rule.
 log "applying sample Seaweed CR"
 kubectl apply -f "$REPO_ROOT/config/samples/seaweed_v1_seaweed.yaml"
 

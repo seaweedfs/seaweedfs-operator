@@ -56,10 +56,8 @@ test-e2e:
 # parity test in test/helm/rbac_drift_test.go (which only inspects
 # rendered YAML) by also catching helm-template syntax bugs, missing
 # CRD includes, broken ServiceAccount bindings, and conditional gates
-# the static test isn't aware of. See issues #223 and the
-# servicemonitor RBAC follow-up — both of those would have failed
-# this test on master and were missed by the kustomize-based e2e
-# suite.
+# the static test isn't aware of — failure modes invisible to the
+# kustomize-based test-e2e suite, which never deploys the chart.
 .PHONY: test-helm-install
 test-helm-install: kind-prepare kind-load
 	IMAGE_TAG=$(VERSION) test/helm/install_smoke.sh

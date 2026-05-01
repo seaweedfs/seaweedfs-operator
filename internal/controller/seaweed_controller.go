@@ -35,7 +35,6 @@ import (
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
 )
 
 // ErrStatefulSetDeleted is a sentinel error returned when a StatefulSet is
@@ -451,7 +450,7 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 }
 
 func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(ctx context.Context, seaweedCR *seaweedv1.Seaweed, existing, desired *appsv1.StatefulSet) error {
-	if apiequality.Semantic.DeepEqual(existing.Spec.VolumeClaimTemplates, desired.Spec.VolumeClaimTemplates) {
+	if vctSemanticallyEqual(existing.Spec.VolumeClaimTemplates, desired.Spec.VolumeClaimTemplates) {
 		return nil
 	}
 

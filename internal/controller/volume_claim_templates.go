@@ -45,7 +45,7 @@ import (
 //   - Selector          Semantic.DeepEqual on *metav1.LabelSelector
 //   - VolumeName        exact string match
 //   - VolumeMode        nil-equivalent-to-Filesystem; Filesystem vs
-//                       Block etc. is still a real diff
+//     Block etc. is still a real diff
 //   - DataSource        Semantic.DeepEqual
 //
 // Fields the operator never sets and the apiserver may populate

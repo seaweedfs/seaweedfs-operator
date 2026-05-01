@@ -74,6 +74,7 @@ rules:
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:
+  - buckets
   - seaweeds
   verbs:
   - create
@@ -86,6 +87,13 @@ rules:
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:
+  - buckets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - buckets/status
   - seaweeds/status
   verbs:
   - get

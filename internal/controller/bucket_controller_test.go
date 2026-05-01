@@ -54,6 +54,9 @@ type fakeBucketAdmin struct {
 	ownerErr      error
 	accessErr     error
 	configureErr  error
+
+	collectionStats map[string]BucketCollectionStats
+	collectionErr   error
 }
 
 func newFakeAdmin() *fakeBucketAdmin {
@@ -111,6 +114,13 @@ func (f *fakeBucketAdmin) SetAccess(_ context.Context, name, user, actions strin
 func (f *fakeBucketAdmin) Configure(_ context.Context, prefix string, args []string) error {
 	f.record("Configure:" + prefix + ":" + strings.Join(args, ","))
 	return f.configureErr
+}
+func (f *fakeBucketAdmin) ListCollectionStats(_ context.Context) (map[string]BucketCollectionStats, error) {
+	f.record("ListCollectionStats")
+	if f.collectionErr != nil {
+		return nil, f.collectionErr
+	}
+	return f.collectionStats, nil
 }
 
 func boolStr(b bool) string {

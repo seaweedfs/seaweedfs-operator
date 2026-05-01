@@ -110,16 +110,23 @@ func flattenRules(rules []rbacv1.PolicyRule) map[ruleTriple]bool {
 
 func helmManagerRules(t *testing.T, chartDir string) []rbacv1.PolicyRule {
 	t.Helper()
-	// Render with every feature toggle enabled so the chart's
-	// rendered RBAC reflects the union of all conditional rules.
-	// The kustomize source-of-truth role.yaml is unconditional, so a
-	// fair parity comparison must compare against the chart's
-	// maximum-RBAC rendering. New conditional toggles that gate RBAC
-	// must be added here, otherwise this test will start failing
-	// when a kubebuilder marker references the gated resource.
-	cmd := exec.Command("helm", "template", "drift-test", chartDir,
-		"--set", "serviceMonitor.enabled=true",
-	)
+	// Render with the chart's default values — exactly what
+	// `helm install seaweedfs/seaweedfs-operator` produces for a
+	// fresh user. The previous version of this test rendered with
+	// every feature toggle enabled (e.g., serviceMonitor.enabled=true)
+	// to compare against the unconditional kustomize role; that
+	// masked the bug behind the comment on issue #223 — users hit
+	// the operator running with default-Helm RBAC, and any rule
+	// gated behind a values flag is missing for them. The kustomize
+	// role represents what the operator's controller code might
+	// actually request at runtime; the chart's default render must
+	// be a superset of that, regardless of which optional features
+	// the operator is using locally. RBAC scoped to "only granted
+	// when feature X is enabled" is fine in principle, but it has
+	// to be tied to a runtime signal the operator code itself
+	// observes — not a Helm value the operator binary knows nothing
+	// about.
+	cmd := exec.Command("helm", "template", "drift-test", chartDir)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

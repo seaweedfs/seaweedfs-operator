@@ -99,7 +99,6 @@ rules:
   - get
   - patch
   - update
-{{- if .Values.serviceMonitor.enabled }}
 - apiGroups:
   - monitoring.coreos.com
   resources:
@@ -112,4 +111,3 @@ rules:
   - patch
   - update
   - watch
-{{- end }}

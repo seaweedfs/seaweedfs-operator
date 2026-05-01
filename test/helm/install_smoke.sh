@@ -68,7 +68,20 @@ helm upgrade --install "$RELEASE" "$CHART_DIR" \
   --wait --timeout 5m
 
 log "waiting for operator deployment Available"
-kubectl wait deployment.apps/"${RELEASE}-seaweedfs-operator" \
+# Resolve the operator Deployment by Helm's standard
+# app.kubernetes.io/instance label rather than guessing the rendered
+# fullname. The chart's `_helpers.tpl` collapses
+# `<release>-<chart-name>` to just `<release>` when the release name
+# already contains the chart name, so a hardcoded `<release>-<chart>`
+# only works for some release names — use the label.
+DEPLOYMENT="$(kubectl -n "$NAMESPACE" get deployment \
+  -l app.kubernetes.io/instance="$RELEASE",app.kubernetes.io/name=seaweedfs-operator \
+  -o jsonpath='{.items[0].metadata.name}')"
+if [ -z "$DEPLOYMENT" ]; then
+  fail "no Deployment matching the operator labels in namespace $NAMESPACE"
+fi
+log "  resolved operator Deployment: $DEPLOYMENT"
+kubectl wait deployment.apps/"$DEPLOYMENT" \
   --for=condition=Available --namespace "$NAMESPACE" --timeout 5m
 
 # Apply a basic Seaweed CR. This drives the SeaweedReconciler which,
@@ -92,7 +105,7 @@ log "sleeping ${RECONCILE_WAIT}s for reconcile cycles to run"
 sleep "$RECONCILE_WAIT"
 
 log "scraping operator logs for RBAC permission errors"
-LOGS="$(kubectl -n "$NAMESPACE" logs deployment.apps/"${RELEASE}-seaweedfs-operator" --tail=-1 2>/dev/null || true)"
+LOGS="$(kubectl -n "$NAMESPACE" logs deployment.apps/"$DEPLOYMENT" --tail=-1 2>/dev/null || true)"
 if [ -z "$LOGS" ]; then
   fail "no operator logs found — deployment may not be running"
 fi

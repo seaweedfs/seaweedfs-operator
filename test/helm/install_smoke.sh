@@ -104,9 +104,10 @@ fi
 #   - "failed to watch *v1.Bucket" / "failed to list *v1.Bucket"
 #   - controller-runtime reflector errors carrying "forbidden"
 PATTERN='is forbidden|cannot list|cannot watch|cannot get|cannot create|cannot update|cannot patch|cannot delete|failed to list|failed to watch'
-if printf '%s\n' "$LOGS" | grep -E -- "$PATTERN" >/tmp/smoke-rbac-errors 2>/dev/null; then
+RBAC_ERRORS="$(printf '%s\n' "$LOGS" | grep -E -- "$PATTERN" || true)"
+if [ -n "$RBAC_ERRORS" ]; then
   log "operator logs contain RBAC errors:"
-  sed 's/^/  /' /tmp/smoke-rbac-errors >&2
+  printf '%s\n' "$RBAC_ERRORS" | sed 's/^/  /' >&2
   fail "operator emitted RBAC permission errors after Helm install with default values; see lines above"
 fi
 

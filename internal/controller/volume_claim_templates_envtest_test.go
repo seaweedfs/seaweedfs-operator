@@ -34,16 +34,18 @@ import (
 )
 
 // TestReconcileVolumeClaimTemplates_RoundTripWithApiserverDefaults is the
-// end-to-end version of the regression test for issue #224. It builds a
-// volume-server StatefulSet exactly the way the controller does in
-// production, hands it to a real apiserver, reads it back (now carrying
-// the apiserver's defaulted PVC fields), and asserts that
-// reconcileVolumeClaimTemplates does NOT report drift.
+// end-to-end counterpart to the unit-level VCT comparator test. It
+// builds a volume-server StatefulSet exactly the way the controller
+// does in production, hands it to a real apiserver, reads it back
+// (now carrying the apiserver's defaulted PVC fields), and asserts
+// that reconcileVolumeClaimTemplates does NOT report drift.
 //
-// On master with apiequality.Semantic.DeepEqual, this test fails: the
-// apiserver writes &Filesystem into Spec.VolumeMode and the in-memory
-// desired still has nil, so DeepEqual returns false. With the
-// vctSemanticallyEqual comparator introduced in this PR, it passes.
+// With a naive apiequality.Semantic.DeepEqual the apiserver-injected
+// &Filesystem on Spec.VolumeMode would diverge from the in-memory
+// desired (still nil), DeepEqual would return false, and the
+// reconciler would log a Warning event every 5s forever. The
+// vctSemanticallyEqual comparator handles the default and this test
+// pins that property against real apiserver round-trip semantics.
 //
 // The unit test in volume_claim_templates_test.go covers the comparator
 // in isolation; this test catches the case where the operator and

@@ -27,13 +27,13 @@ import (
 // StatefulSet's VCT entries differently from what the operator
 // constructed in memory.
 //
-// The original implementation (apiequality.Semantic.DeepEqual on the
-// whole slice) returns false on every reconcile because the apiserver
-// defaults Spec.VolumeMode to Filesystem when the operator leaves it
-// nil — see issue #224. The reconciler then logs
-// "VolumeClaimTemplates differ but cannot be auto-applied" every 5
-// seconds (the requeue cadence), spamming the events stream and
-// confusing operators into thinking their CR isn't taking effect.
+// A naive apiequality.Semantic.DeepEqual on the whole slice returns
+// false on every reconcile because the apiserver defaults
+// Spec.VolumeMode to Filesystem when the operator leaves it nil. The
+// reconciler then logs "VolumeClaimTemplates differ but cannot be
+// auto-applied" every 5 seconds (the requeue cadence), spamming the
+// events stream and confusing operators into thinking their CR isn't
+// taking effect.
 //
 // Comparison surface, per field the operator can set in any of the
 // component statefulset builders:

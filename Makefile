@@ -62,7 +62,7 @@ test-e2e:
 # suite.
 .PHONY: test-helm-install
 test-helm-install: kind-prepare kind-load
-	test/helm/install_smoke.sh
+	IMAGE_TAG=$(VERSION) test/helm/install_smoke.sh
 
 # Build manager binary
 manager: generate fmt vet

@@ -24,13 +24,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// TestVCTSemanticallyEqual_HandlesApiserverDefaultedVolumeMode is the
-// regression test for issue #224. The operator builds a desired PVC
-// template with VolumeMode unset (nil); the apiserver fills it with
-// &Filesystem on Create. apiequality.Semantic.DeepEqual on the two
-// returns false, which makes reconcileVolumeClaimTemplates think the
-// VCT differs on every reconcile, log a warning, and emit a Warning
-// event — every 5 seconds, forever.
+// TestVCTSemanticallyEqual_HandlesApiserverDefaultedVolumeMode pins
+// the regression behavior for the comparator: the operator builds a
+// desired PVC template with VolumeMode unset (nil); the apiserver
+// fills it with &Filesystem on Create. apiequality.Semantic.DeepEqual
+// on the two returns false, which makes reconcileVolumeClaimTemplates
+// think the VCT differs on every reconcile, log a warning, and emit
+// a Warning event — every 5 seconds, forever.
 //
 // The test constructs the two states by hand so it's fast and doesn't
 // need envtest. The end-to-end version (envtest_volume_claim_templates_test.go)
@@ -72,7 +72,7 @@ func TestVCTSemanticallyEqual_HandlesApiserverDefaultedVolumeMode(t *testing.T) 
 	}
 
 	if !vctSemanticallyEqual(existing, desired) {
-		t.Errorf("expected vctSemanticallyEqual to treat nil VolumeMode and &Filesystem as equivalent (issue #224 regression)")
+		t.Errorf("expected vctSemanticallyEqual to treat nil VolumeMode and &Filesystem as equivalent — apiserver defaults the field on Create, so the in-memory desired and the round-tripped existing must compare equal")
 	}
 }
 

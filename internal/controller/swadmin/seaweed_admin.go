@@ -23,6 +23,13 @@ func NewSeaweedAdmin(masters string, output io.Writer) *SeaweedAdmin {
 	var shellOptions shell.ShellOptions
 	shellOptions.GrpcDialOption = grpc.WithTransportCredentials(insecure.NewCredentials())
 	shellOptions.Masters = &masters
+	// `shell.NewCommandEnv` dereferences `*options.FilerGroup` (commands.go:46)
+	// when constructing the MasterClient. The operator does not configure a
+	// filer group, so leaving it nil panics every reconcile — the same root
+	// cause as #101 / #120 keeps recurring after upstream refactors (#233).
+	// Default to an empty string so the deref produces "" without crashing.
+	emptyFilerGroup := ""
+	shellOptions.FilerGroup = &emptyFilerGroup
 
 	commandEnv := shell.NewCommandEnv(&shellOptions)
 	reg, _ := regexp.Compile(`'.*?'|".*?"|\S+`)

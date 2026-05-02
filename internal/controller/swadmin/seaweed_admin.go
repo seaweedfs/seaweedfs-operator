@@ -10,8 +10,21 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/seaweedfs/seaweedfs/weed/shell"
+	"github.com/seaweedfs/seaweedfs/weed/util/fla9"
 	"google.golang.org/grpc"
 )
+
+func init() {
+	// seaweedfs internals log via weed/glog, which defaults to writing
+	// log files under /tmp. The operator pod runs with a read-only root
+	// filesystem, so glog repeatedly prints "cannot create log: ... read-only
+	// file system" to stderr the moment any seaweedfs code logs. glog
+	// registers its flags via the seaweedfs-internal fla9 package (NOT
+	// the stdlib flag package), so this has to go through fla9.
+	if f := fla9.Lookup("logtostderr"); f != nil {
+		_ = f.Value.Set("true")
+	}
+}
 
 type SeaweedAdmin struct {
 	commandReg *regexp.Regexp
@@ -23,6 +36,11 @@ func NewSeaweedAdmin(masters string, output io.Writer) *SeaweedAdmin {
 	var shellOptions shell.ShellOptions
 	shellOptions.GrpcDialOption = grpc.WithTransportCredentials(insecure.NewCredentials())
 	shellOptions.Masters = &masters
+	// shell.NewCommandEnv unconditionally dereferences FilerGroup; leaving
+	// it nil panics the reconciler the moment any Bucket is processed.
+	// Match the `weed shell` default of an empty filer group.
+	emptyFilerGroup := ""
+	shellOptions.FilerGroup = &emptyFilerGroup
 
 	commandEnv := shell.NewCommandEnv(&shellOptions)
 	reg, _ := regexp.Compile(`'.*?'|".*?"|\S+`)

@@ -23,6 +23,11 @@ func NewSeaweedAdmin(masters string, output io.Writer) *SeaweedAdmin {
 	var shellOptions shell.ShellOptions
 	shellOptions.GrpcDialOption = grpc.WithTransportCredentials(insecure.NewCredentials())
 	shellOptions.Masters = &masters
+	// shell.NewCommandEnv unconditionally dereferences FilerGroup; leaving
+	// it nil panics the reconciler the moment any Bucket is processed.
+	// Match the `weed shell` default of an empty filer group.
+	emptyFilerGroup := ""
+	shellOptions.FilerGroup = &emptyFilerGroup
 
 	commandEnv := shell.NewCommandEnv(&shellOptions)
 	reg, _ := regexp.Compile(`'.*?'|".*?"|\S+`)

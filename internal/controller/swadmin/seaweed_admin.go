@@ -2,6 +2,7 @@ package swadmin
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"regexp"
@@ -12,6 +13,19 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/shell"
 	"google.golang.org/grpc"
 )
+
+func init() {
+	// seaweedfs internals log via weed/glog, which defaults to writing
+	// log files under /tmp. The operator pod runs with a read-only root
+	// filesystem, so glog repeatedly prints "cannot create log: ... read-only
+	// file system" to stderr the moment any seaweedfs code logs. Force
+	// stderr-only output as the operator default. flag.Set before
+	// flag.Parse only changes the default — operators can still override
+	// via -logtostderr=false on the manager command line.
+	if f := flag.Lookup("logtostderr"); f != nil {
+		_ = f.Value.Set("true")
+	}
+}
 
 type SeaweedAdmin struct {
 	commandReg *regexp.Regexp

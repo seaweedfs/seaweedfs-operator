@@ -19,7 +19,40 @@ package controller
 import (
 	"errors"
 	"testing"
+
+	"github.com/seaweedfs/seaweedfs/weed/shell"
 )
+
+// TestBucketAdminCommandsRegistered guards the seam between the operator
+// and the vendored seaweedfs's shell.Commands registry. Each name listed
+// here is invoked verbatim by the swadminBucketAdmin methods (see
+// bucket_admin.go). If the seaweedfs pin in go.mod predates the upstream
+// init() that registers one of these commands, every reconcile that hits
+// it falls through swadmin's lookup loop and fails with
+// `unknown command: <name>` — see issue #235 for the failure mode this
+// test prevents.
+func TestBucketAdminCommandsRegistered(t *testing.T) {
+	required := []string{
+		"s3.bucket.versioning",
+		"s3.bucket.create",
+		"s3.bucket.delete",
+		"s3.bucket.lock",
+		"s3.bucket.quota",
+		"s3.bucket.owner",
+		"s3.bucket.access",
+		"fs.configure",
+		"collection.list",
+	}
+	registered := map[string]bool{}
+	for _, c := range shell.Commands {
+		registered[c.Name()] = true
+	}
+	for _, name := range required {
+		if !registered[name] {
+			t.Errorf("shell.Commands missing %q — bump seaweedfs in go.mod past the upstream commit that adds its init()", name)
+		}
+	}
+}
 
 func TestIsBucketNotFoundErr(t *testing.T) {
 	cases := map[string]struct {

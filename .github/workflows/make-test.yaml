@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v4.1.7
       - uses: actions/setup-go@v5.0.1
         with:
-          go-version: '1.24'
+          go-version: '1.26'
       - run: |
           if [ "${{ matrix.k8s.version }}" = "default" ]; then
             # For latest version use default from Makefile

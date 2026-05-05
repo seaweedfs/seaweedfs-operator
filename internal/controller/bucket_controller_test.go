@@ -173,7 +173,7 @@ func testReconciler(t *testing.T, fa *fakeBucketAdmin, objs ...client.Object) (*
 		Client: cli,
 		Log:    logf.FromContext(context.Background()),
 		Scheme: scheme,
-		AdminFactory: func(_ string, _ logr.Logger) (BucketAdmin, error) {
+		AdminFactory: func(_, _ string, _ logr.Logger) (BucketAdmin, error) {
 			return fa, nil
 		},
 	}

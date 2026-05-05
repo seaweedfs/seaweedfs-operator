@@ -16,7 +16,7 @@ func (r *SeaweedReconciler) maintenance(m *seaweedv1.Seaweed) (done bool, result
 	r.Log.V(0).Info("wait to connect to masters", "masters", masters)
 
 	// this step blocks since the operator can not access the masters when running from outside of the k8s cluster
-	sa := swadmin.NewSeaweedAdmin(masters, ioutil.Discard)
+	sa := swadmin.NewSeaweedAdmin(masters, "", ioutil.Discard)
 
 	// For now this is an example of the admin commands
 	// master by default has some maintenance commands already.

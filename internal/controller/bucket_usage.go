@@ -107,7 +107,8 @@ func (r *BucketReconciler) refreshClusterUsage(ctx context.Context, log logr.Log
 		return
 	}
 	masters := getMasterPeersString(&seaweed)
-	admin, err := r.getAdmin(seaweedNS, seaweedName, masters, r.Log)
+	filer := getFilerAddress(&seaweed)
+	admin, err := r.getAdmin(seaweedNS, seaweedName, masters, filer, r.Log)
 	if err != nil {
 		log.Error(err, "build admin for usage refresh", "seaweed", seaweedName)
 		return

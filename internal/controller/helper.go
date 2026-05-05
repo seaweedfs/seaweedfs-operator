@@ -62,6 +62,12 @@ func getMasterPeersString(m *seaweedv1.Seaweed) string {
 	return strings.Join(getMasterAddresses(m.Namespace, m.Name, m.Spec.Master.Replicas), ",")
 }
 
+// getFilerAddress returns the HTTP host:port for the Seaweed CR's filer Service.
+// Required for s3.bucket.* shell commands; seaweedfs adds GRPCPortDelta internally.
+func getFilerAddress(m *seaweedv1.Seaweed) string {
+	return fmt.Sprintf("%s-filer.%s:%d", m.Name, m.Namespace, seaweedv1.FilerHTTPPort)
+}
+
 // Note: IAM is now embedded in S3 by default (on the same port as S3: FilerS3Port).
 // The getIAMPort function has been removed since standalone IAM is no longer supported.
 

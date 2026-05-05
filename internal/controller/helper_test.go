@@ -5,6 +5,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
 func TestFilterContainerResources(t *testing.T) {
@@ -71,5 +74,18 @@ func TestFilterContainerResourcesEmpty(t *testing.T) {
 	}
 	if filtered.Limits != nil {
 		t.Errorf("Expected empty limits to remain nil")
+	}
+}
+
+// TestGetFilerAddress pins the filer address format; a regression here
+// resurfaces issue #237.
+func TestGetFilerAddress(t *testing.T) {
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "seaweed", Namespace: "seaweedfs"},
+	}
+	got := getFilerAddress(m)
+	want := "seaweed-filer.seaweedfs:8888"
+	if got != want {
+		t.Fatalf("getFilerAddress = %q, want %q", got, want)
 	}
 }

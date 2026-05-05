@@ -9,6 +9,7 @@ import (
 
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/shell"
 	"github.com/seaweedfs/seaweedfs/weed/util/fla9"
 	"google.golang.org/grpc"
@@ -32,13 +33,16 @@ type SeaweedAdmin struct {
 	Output     io.Writer
 }
 
-func NewSeaweedAdmin(masters string, output io.Writer) *SeaweedAdmin {
+// NewSeaweedAdmin builds a SeaweedAdmin that mirrors `weed shell`. filer is
+// required for s3.bucket.* / fs.* callers; master-only callers (volume.list,
+// volume.balance) may pass "".
+func NewSeaweedAdmin(masters, filer string, output io.Writer) *SeaweedAdmin {
 	var shellOptions shell.ShellOptions
 	shellOptions.GrpcDialOption = grpc.WithTransportCredentials(insecure.NewCredentials())
 	shellOptions.Masters = &masters
+	shellOptions.FilerAddress = pb.ServerAddress(filer)
 	// shell.NewCommandEnv unconditionally dereferences FilerGroup; leaving
 	// it nil panics the reconciler the moment any Bucket is processed.
-	// Match the `weed shell` default of an empty filer group.
 	emptyFilerGroup := ""
 	shellOptions.FilerGroup = &emptyFilerGroup
 

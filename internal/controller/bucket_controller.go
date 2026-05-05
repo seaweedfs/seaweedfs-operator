@@ -135,7 +135,8 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	r.setCondition(&bucket, seaweedv1.BucketConditionClusterReachable, metav1.ConditionTrue, "Reachable", "")
 
 	masters := getMasterPeersString(&seaweed)
-	admin, err := r.getAdmin(seaweedNS, seaweed.Name, masters, log)
+	filer := getFilerAddress(&seaweed)
+	admin, err := r.getAdmin(seaweedNS, seaweed.Name, masters, filer, log)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -393,11 +394,10 @@ func (r *BucketReconciler) clearCondition(bucket *seaweedv1.Bucket, condType str
 	meta.RemoveStatusCondition(&bucket.Status.Conditions, condType)
 }
 
-// getAdmin returns a cached BucketAdmin for the (Seaweed CR, masters)
-// pair, creating one via the factory on first use. See the comment on
-// adminCache about the goroutine-leak trade-off.
-func (r *BucketReconciler) getAdmin(ns, name, masters string, log logr.Logger) (BucketAdmin, error) {
-	key := ns + "/" + name + "@" + masters
+// getAdmin returns a cached BucketAdmin for the (Seaweed CR, masters, filer)
+// tuple. See the comment on adminCache about the goroutine-leak trade-off.
+func (r *BucketReconciler) getAdmin(ns, name, masters, filer string, log logr.Logger) (BucketAdmin, error) {
+	key := ns + "/" + name + "@" + masters + "|" + filer
 	r.adminMu.Lock()
 	defer r.adminMu.Unlock()
 	if r.adminCache == nil {
@@ -406,7 +406,7 @@ func (r *BucketReconciler) getAdmin(ns, name, masters string, log logr.Logger) (
 	if a, ok := r.adminCache[key]; ok {
 		return a, nil
 	}
-	a, err := r.AdminFactory(masters, log)
+	a, err := r.AdminFactory(masters, filer, log)
 	if err != nil {
 		return nil, err
 	}

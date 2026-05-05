@@ -74,9 +74,9 @@ type BucketCollectionStats struct {
 	SizeBytes int64
 }
 
-// BucketAdminFactory creates a BucketAdmin for the master peers of a target
-// Seaweed cluster. Replaceable in tests.
-type BucketAdminFactory func(masters string, log logr.Logger) (BucketAdmin, error)
+// BucketAdminFactory creates a BucketAdmin for a target Seaweed cluster.
+// Replaceable in tests.
+type BucketAdminFactory func(masters, filer string, log logr.Logger) (BucketAdmin, error)
 
 // Sentinel errors returned by BucketAdmin implementations.
 var (
@@ -107,10 +107,9 @@ type swadminBucketAdmin struct {
 	mu  sync.Mutex
 }
 
-// NewSwadminBucketAdmin returns a BucketAdmin that runs `weed shell` commands
-// against the given comma-separated master peers list.
-func NewSwadminBucketAdmin(masters string, log logr.Logger) (BucketAdmin, error) {
-	sa := swadmin.NewSeaweedAdmin(masters, io.Discard)
+// NewSwadminBucketAdmin returns a BucketAdmin that runs `weed shell` commands.
+func NewSwadminBucketAdmin(masters, filer string, log logr.Logger) (BucketAdmin, error) {
+	sa := swadmin.NewSeaweedAdmin(masters, filer, io.Discard)
 	return &swadminBucketAdmin{sa: sa, log: log}, nil
 }
 

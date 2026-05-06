@@ -46,78 +46,75 @@ func TestAdminRoutePath(t *testing.T) {
 }
 
 func TestBuildAdminStartupScript(t *testing.T) {
-	m := &seaweedv1.Seaweed{
-		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
-		Spec: seaweedv1.SeaweedSpec{
-			Master: &seaweedv1.MasterSpec{Replicas: 1},
-			Admin:  &seaweedv1.AdminSpec{},
-		},
-	}
-	got := buildAdminStartupScript(m, "-urlPrefix=/admin")
-	// `exec` must prefix weed so SIGTERM from the kubelet reaches weed
-	// instead of the /bin/sh wrapper.
-	if !strings.HasPrefix(got, "exec weed -logtostderr=true admin ") {
-		t.Fatalf("expected exec'd weed command, got %q", got)
-	}
-	if !strings.Contains(got, "-urlPrefix=/admin") {
-		t.Fatalf("expected extra args to be included, got %q", got)
-	}
-}
-
-func TestAdminCredentialEnvVars(t *testing.T) {
-	baseSpec := func() *seaweedv1.Seaweed {
-		return &seaweedv1.Seaweed{
+	t.Run("no credentials secret execs weed directly", func(t *testing.T) {
+		m := &seaweedv1.Seaweed{
 			ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
 			Spec: seaweedv1.SeaweedSpec{
 				Master: &seaweedv1.MasterSpec{Replicas: 1},
 				Admin:  &seaweedv1.AdminSpec{},
 			},
 		}
-	}
-
-	t.Run("no credentials secret yields no env vars", func(t *testing.T) {
-		if got := adminCredentialEnvVars(baseSpec()); got != nil {
-			t.Fatalf("expected nil env vars, got %+v", got)
+		got := buildAdminStartupScript(m, "-urlPrefix=/admin")
+		// `exec` must prefix weed so SIGTERM from the kubelet reaches weed
+		// instead of the /bin/sh wrapper.
+		if !strings.HasPrefix(got, "exec weed -logtostderr=true admin ") {
+			t.Fatalf("expected exec'd weed command, got %q", got)
+		}
+		if !strings.Contains(got, "-urlPrefix=/admin") {
+			t.Fatalf("expected extra args to be included, got %q", got)
+		}
+		if strings.Contains(got, adminCredentialsMountPath) {
+			t.Fatalf("expected no credentials preamble, got %q", got)
 		}
 	})
 
-	t.Run("empty secret name yields no env vars", func(t *testing.T) {
-		m := baseSpec()
-		m.Spec.Admin.CredentialsSecret = &corev1.LocalObjectReference{Name: ""}
-		if got := adminCredentialEnvVars(m); got != nil {
-			t.Fatalf("expected nil env vars, got %+v", got)
+	t.Run("credentials secret emits flag-forwarding preamble", func(t *testing.T) {
+		m := &seaweedv1.Seaweed{
+			ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+			Spec: seaweedv1.SeaweedSpec{
+				Master: &seaweedv1.MasterSpec{Replicas: 1},
+				Admin: &seaweedv1.AdminSpec{
+					CredentialsSecret: &corev1.LocalObjectReference{Name: "admin-creds"},
+				},
+			},
+		}
+		got := buildAdminStartupScript(m)
+
+		// The preamble must read each well-known key from the mount path and
+		// forward it as `-<key>=<value>` via `"$@"` so values with spaces or
+		// special characters survive shell expansion.
+		for _, key := range adminCredentialKeys {
+			if !strings.Contains(got, key) {
+				t.Errorf("expected preamble to reference key %q, got %q", key, got)
+			}
+		}
+		if !strings.Contains(got, adminCredentialsMountPath) {
+			t.Errorf("expected preamble to reference mount path %q, got %q", adminCredentialsMountPath, got)
+		}
+		if !strings.Contains(got, `set -- "$@" "-$key=$(cat "$f")"`) {
+			t.Errorf("expected preamble to append flags via positional parameters, got %q", got)
+		}
+		if !strings.Contains(got, `exec weed -logtostderr=true admin`) {
+			t.Errorf("expected weed to be exec'd after preamble, got %q", got)
+		}
+		if !strings.HasSuffix(got, ` "$@"`) {
+			t.Errorf("expected weed command to expand positional parameters at the end, got %q", got)
 		}
 	})
 
-	t.Run("credentials secret projects every key as optional secretKeyRef", func(t *testing.T) {
-		m := baseSpec()
-		m.Spec.Admin.CredentialsSecret = &corev1.LocalObjectReference{Name: "admin-creds"}
-
-		got := adminCredentialEnvVars(m)
-		if len(got) != len(adminCredentialEnvMappings) {
-			t.Fatalf("expected %d env vars, got %d: %+v", len(adminCredentialEnvMappings), len(got), got)
+	t.Run("empty credentials secret name skips preamble", func(t *testing.T) {
+		m := &seaweedv1.Seaweed{
+			ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+			Spec: seaweedv1.SeaweedSpec{
+				Master: &seaweedv1.MasterSpec{Replicas: 1},
+				Admin: &seaweedv1.AdminSpec{
+					CredentialsSecret: &corev1.LocalObjectReference{Name: ""},
+				},
+			},
 		}
-		for i, mapping := range adminCredentialEnvMappings {
-			ev := got[i]
-			if ev.Name != mapping.envName {
-				t.Errorf("env[%d]: got name %q, want %q", i, ev.Name, mapping.envName)
-			}
-			if ev.ValueFrom == nil || ev.ValueFrom.SecretKeyRef == nil {
-				t.Fatalf("env[%d] (%s): missing SecretKeyRef", i, mapping.envName)
-			}
-			ref := ev.ValueFrom.SecretKeyRef
-			if ref.Name != "admin-creds" {
-				t.Errorf("env[%d]: secret name %q, want %q", i, ref.Name, "admin-creds")
-			}
-			if ref.Key != mapping.secretKey {
-				t.Errorf("env[%d]: secret key %q, want %q", i, ref.Key, mapping.secretKey)
-			}
-			// Every mapping is optional so users can supply only
-			// adminUser/adminPassword without pod startup failing on the
-			// missing read-only keys.
-			if ref.Optional == nil || !*ref.Optional {
-				t.Errorf("env[%d] (%s): SecretKeyRef.Optional must be true", i, mapping.envName)
-			}
+		got := buildAdminStartupScript(m)
+		if strings.Contains(got, adminCredentialsMountPath) {
+			t.Fatalf("expected no credentials preamble for empty secret name, got %q", got)
 		}
 	})
 }

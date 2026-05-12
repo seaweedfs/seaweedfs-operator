@@ -461,6 +461,10 @@ func buildTopologyPodSpec(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTo
 		podSpec.PriorityClassName = *topologySpec.PriorityClassName
 	}
 
+	if topologySpec.ServiceAccountName != nil {
+		podSpec.ServiceAccountName = *topologySpec.ServiceAccountName
+	}
+
 	if topologySpec.SchedulerName != nil {
 		podSpec.SchedulerName = *topologySpec.SchedulerName
 	} else if m.Spec.SchedulerName != "" {

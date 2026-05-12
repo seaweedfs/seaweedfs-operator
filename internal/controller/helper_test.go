@@ -77,6 +77,40 @@ func TestFilterContainerResourcesEmpty(t *testing.T) {
 	}
 }
 
+// TestBuildTopologyPodSpecServiceAccountName locks in that the
+// VolumeTopology pod-spec builder (which constructs PodSpec manually
+// rather than via ComponentAccessor.BuildPodSpec) also propagates
+// serviceAccountName — see issue #244.
+func TestBuildTopologyPodSpecServiceAccountName(t *testing.T) {
+	sa := "seaweedfs-volume-rack1"
+	cases := []struct {
+		name     string
+		set      *string
+		expected string
+	}{
+		{"unset preserves default SA fallback", nil, ""},
+		{"explicit value is propagated", &sa, sa},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &seaweedv1.Seaweed{
+				ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+			}
+			topo := &seaweedv1.VolumeTopologySpec{
+				VolumeServerConfig: seaweedv1.VolumeServerConfig{
+					ComponentSpec: seaweedv1.ComponentSpec{ServiceAccountName: tc.set},
+				},
+				Rack:       "rack1",
+				DataCenter: "dc1",
+			}
+			got := buildTopologyPodSpec(m, topo).ServiceAccountName
+			if got != tc.expected {
+				t.Fatalf("ServiceAccountName = %q, want %q", got, tc.expected)
+			}
+		})
+	}
+}
+
 // TestGetFilerAddress pins the filer address format; a regression here
 // resurfaces issue #237.
 func TestGetFilerAddress(t *testing.T) {

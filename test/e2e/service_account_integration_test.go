@@ -68,6 +68,7 @@ var _ = Describe("ServiceAccountName Integration", Ordered, func() {
 		masterSA := "seaweedfs-master"
 		volumeSA := "seaweedfs-volume"
 		filerSA := "seaweedfs-filer"
+		topologySA := "seaweedfs-volume-rack1"
 
 		BeforeEach(func() {
 			concurrentStart := true
@@ -99,6 +100,22 @@ var _ = Describe("ServiceAccountName Integration", Ordered, func() {
 							ServiceAccountName: &filerSA,
 						},
 					},
+					// VolumeTopology has its own pod-spec builder
+					// (buildTopologyPodSpec) separate from the shared
+					// ComponentAccessor path — covered here to lock in
+					// that the field flows through both code paths.
+					VolumeTopology: map[string]*seaweedv1.VolumeTopologySpec{
+						"rack1": {
+							VolumeServerConfig: seaweedv1.VolumeServerConfig{
+								ComponentSpec: seaweedv1.ComponentSpec{
+									ServiceAccountName: &topologySA,
+								},
+							},
+							Replicas:   1,
+							Rack:       "rack1",
+							DataCenter: "dc1",
+						},
+					},
 					VolumeServerDiskCount: func() *int32 { v := int32(1); return &v }(),
 				},
 			}
@@ -116,16 +133,17 @@ var _ = Describe("ServiceAccountName Integration", Ordered, func() {
 			}
 		})
 
-		It("should set serviceAccountName on master, volume, and filer StatefulSets", func() {
+		It("should set serviceAccountName on master, volume, filer, and topology volume StatefulSets", func() {
 			Expect(k8sClient.Create(ctx, seaweed)).To(Succeed())
 
 			clientset, err := utils.GetClientset(restCfg)
 			Expect(err).NotTo(HaveOccurred())
 
 			expected := map[string]string{
-				seaweedName + "-master": masterSA,
-				seaweedName + "-volume": volumeSA,
-				seaweedName + "-filer":  filerSA,
+				seaweedName + "-master":       masterSA,
+				seaweedName + "-volume":       volumeSA,
+				seaweedName + "-filer":        filerSA,
+				seaweedName + "-volume-rack1": topologySA,
 			}
 
 			for stsName, wantSA := range expected {

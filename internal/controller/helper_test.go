@@ -77,6 +77,30 @@ func TestFilterContainerResourcesEmpty(t *testing.T) {
 	}
 }
 
+// TestBuildVolumeServerStartupScriptWithTopologyNilVolume guards against
+// the panic surfaced by issue #244 once VolumeTopology was exercised
+// without a flat spec.volume: the builder previously dereferenced
+// m.Spec.Volume.<field> unconditionally, crashing the reconciler on
+// topology-only deployments.
+func TestBuildVolumeServerStartupScriptWithTopologyNilVolume(t *testing.T) {
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+		Spec: seaweedv1.SeaweedSpec{
+			Master: &seaweedv1.MasterSpec{Replicas: 1},
+		},
+	}
+	topo := &seaweedv1.VolumeTopologySpec{
+		VolumeServerConfig: seaweedv1.VolumeServerConfig{},
+		Rack:               "rack1",
+		DataCenter:         "dc1",
+	}
+	// Must not panic.
+	got := buildVolumeServerStartupScriptWithTopology(m, []string{"/data0"}, "rack1", topo)
+	if got == "" {
+		t.Fatal("expected non-empty startup script")
+	}
+}
+
 // TestBuildTopologyPodSpecServiceAccountName locks in that the
 // VolumeTopology pod-spec builder (which constructs PodSpec manually
 // rather than via ComponentAccessor.BuildPodSpec) also propagates

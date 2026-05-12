@@ -13,6 +13,15 @@ import (
 )
 
 func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []string, topologyName string, topologySpec *seaweedv1.VolumeTopologySpec) string {
+	// In topology-only deployments spec.volume is omitted (the operator
+	// skips the flat -volume StatefulSet entirely), so all flat-Volume
+	// fallbacks below must be nil-safe — reading m.Spec.Volume.<field>
+	// directly panics otherwise.
+	var fallback seaweedv1.VolumeServerConfig
+	if m.Spec.Volume != nil {
+		fallback = m.Spec.Volume.VolumeServerConfig
+	}
+
 	commands := []string{"weed", "-logtostderr=true"}
 	if arg := tlsConfigDirArg(m); arg != "" {
 		commands = append(commands, arg)
@@ -21,7 +30,7 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
 
 	// Configure max volume counts with fallback
-	maxVolumeCounts := getVolumeServerConfigValue(topologySpec.MaxVolumeCounts, m.Spec.Volume.MaxVolumeCounts)
+	maxVolumeCounts := getVolumeServerConfigValue(topologySpec.MaxVolumeCounts, fallback.MaxVolumeCounts)
 	if maxVolumeCounts != nil {
 		commands = append(commands, fmt.Sprintf("-max=%d", *maxVolumeCounts))
 	} else {
@@ -46,23 +55,23 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 	commands = append(commands, fmt.Sprintf("-dataCenter=%s", topologySpec.DataCenter))
 
 	// Add volume server configuration parameters with fallback
-	compactionMBps := getVolumeServerConfigValue(topologySpec.CompactionMBps, m.Spec.Volume.CompactionMBps)
+	compactionMBps := getVolumeServerConfigValue(topologySpec.CompactionMBps, fallback.CompactionMBps)
 	if compactionMBps != nil {
 		commands = append(commands, fmt.Sprintf("-compactionMBps=%d", *compactionMBps))
 	}
-	fileSizeLimitMB := getVolumeServerConfigValue(topologySpec.FileSizeLimitMB, m.Spec.Volume.FileSizeLimitMB)
+	fileSizeLimitMB := getVolumeServerConfigValue(topologySpec.FileSizeLimitMB, fallback.FileSizeLimitMB)
 	if fileSizeLimitMB != nil {
 		commands = append(commands, fmt.Sprintf("-fileSizeLimitMB=%d", *fileSizeLimitMB))
 	}
-	fixJpgOrientation := getVolumeServerConfigValue(topologySpec.FixJpgOrientation, m.Spec.Volume.FixJpgOrientation)
+	fixJpgOrientation := getVolumeServerConfigValue(topologySpec.FixJpgOrientation, fallback.FixJpgOrientation)
 	if fixJpgOrientation != nil {
 		commands = append(commands, fmt.Sprintf("-fixJpgOrientation=%t", *fixJpgOrientation))
 	}
-	idleTimeout := getVolumeServerConfigValue(topologySpec.IdleTimeout, m.Spec.Volume.IdleTimeout)
+	idleTimeout := getVolumeServerConfigValue(topologySpec.IdleTimeout, fallback.IdleTimeout)
 	if idleTimeout != nil {
 		commands = append(commands, fmt.Sprintf("-idleTimeout=%d", *idleTimeout))
 	}
-	minFreeSpacePercent := getVolumeServerConfigValue(topologySpec.MinFreeSpacePercent, m.Spec.Volume.MinFreeSpacePercent)
+	minFreeSpacePercent := getVolumeServerConfigValue(topologySpec.MinFreeSpacePercent, fallback.MinFreeSpacePercent)
 	if minFreeSpacePercent != nil {
 		commands = append(commands, fmt.Sprintf("-minFreeSpacePercent=%d", *minFreeSpacePercent))
 	}

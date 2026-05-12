@@ -126,6 +126,7 @@ func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string, extraAr
 
 func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForVolumeServer(m.Name)
+	podLabels := mergePodLabels(labels, m.BaseVolumeSpec().Labels())
 	annotations := m.Spec.Volume.Annotations
 	ports := []corev1.ContainerPort{
 		{
@@ -268,7 +269,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      podLabels,
 					Annotations: annotations,
 				},
 				Spec: volumePodSpec,
@@ -281,6 +282,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 
 func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.Seaweed, topologyName string, topologySpec *seaweedv1.VolumeTopologySpec) *appsv1.StatefulSet {
 	labels := labelsForVolumeServerTopology(m.Name, topologyName)
+	podLabels := mergePodLabels(labels, mergeAnnotations(m.Spec.Labels, topologySpec.Labels))
 	annotations := mergeAnnotations(m.Spec.Annotations, topologySpec.Annotations)
 	ports := []corev1.ContainerPort{
 		{
@@ -426,7 +428,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      podLabels,
 					Annotations: annotations,
 				},
 				Spec: volumePodSpec,

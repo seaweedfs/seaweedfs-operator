@@ -598,6 +598,10 @@ spec:
                           type: object
                         type: array
                     type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
                   limits:
                     additionalProperties:
                       anyOf:
@@ -2456,6 +2460,10 @@ spec:
                           type: object
                         type: array
                     type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
                   limits:
                     additionalProperties:
                       anyOf:
@@ -3449,6 +3457,10 @@ spec:
                   type: object
                   x-kubernetes-map-type: atomic
                 type: array
+              labels:
+                additionalProperties:
+                  type: string
+                type: object
               master:
                 properties:
                   affinity:
@@ -4021,6 +4033,10 @@ spec:
                               type: string
                           type: object
                         type: array
+                    type: object
+                  labels:
+                    additionalProperties:
+                      type: string
                     type: object
                   limits:
                     additionalProperties:
@@ -5460,6 +5476,10 @@ spec:
                           type: object
                         type: array
                     type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
                   limits:
                     additionalProperties:
                       anyOf:
@@ -6879,6 +6899,10 @@ spec:
                               type: string
                           type: object
                         type: array
+                    type: object
+                  labels:
+                    additionalProperties:
+                      type: string
                     type: object
                   limits:
                     additionalProperties:
@@ -8357,6 +8381,10 @@ spec:
                           type: object
                         type: array
                     type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
                   limits:
                     additionalProperties:
                       anyOf:
@@ -9757,6 +9785,10 @@ spec:
                         type: object
                         x-kubernetes-map-type: atomic
                       type: array
+                    labels:
+                      additionalProperties:
+                        type: string
+                      type: object
                     limits:
                       additionalProperties:
                         anyOf:
@@ -11150,6 +11182,10 @@ spec:
                   jobType:
                     default: all
                     type: string
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
                   limits:
                     additionalProperties:
                       anyOf:

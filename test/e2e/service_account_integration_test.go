@@ -22,6 +22,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
@@ -70,9 +72,15 @@ var _ = Describe("ServiceAccountName Integration", Ordered, func() {
 		filerSA := "seaweedfs-filer"
 		topologySA := "seaweedfs-volume-rack1"
 
-		BeforeEach(func() {
+		// buildBase returns a Seaweed CR with master and filer wired up,
+		// each pinned to its own ServiceAccount. The volume side is
+		// intentionally absent so each spec can choose between the flat
+		// VolumeSpec and the topology-aware VolumeTopology map — they
+		// flow through different pod-spec builders and Seaweed treats
+		// VolumeTopology as a replacement for VolumeSpec, not an addition.
+		buildBase := func() *seaweedv1.Seaweed {
 			concurrentStart := true
-			seaweed = &seaweedv1.Seaweed{
+			return &seaweedv1.Seaweed{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      seaweedName,
 					Namespace: testNamespace,
@@ -86,40 +94,32 @@ var _ = Describe("ServiceAccountName Integration", Ordered, func() {
 							ServiceAccountName: &masterSA,
 						},
 					},
-					Volume: &seaweedv1.VolumeSpec{
-						Replicas: 1,
-						VolumeServerConfig: seaweedv1.VolumeServerConfig{
-							ComponentSpec: seaweedv1.ComponentSpec{
-								ServiceAccountName: &volumeSA,
-							},
-						},
-					},
 					Filer: &seaweedv1.FilerSpec{
 						Replicas: 1,
 						ComponentSpec: seaweedv1.ComponentSpec{
 							ServiceAccountName: &filerSA,
 						},
 					},
-					// VolumeTopology has its own pod-spec builder
-					// (buildTopologyPodSpec) separate from the shared
-					// ComponentAccessor path — covered here to lock in
-					// that the field flows through both code paths.
-					VolumeTopology: map[string]*seaweedv1.VolumeTopologySpec{
-						"rack1": {
-							VolumeServerConfig: seaweedv1.VolumeServerConfig{
-								ComponentSpec: seaweedv1.ComponentSpec{
-									ServiceAccountName: &topologySA,
-								},
-							},
-							Replicas:   1,
-							Rack:       "rack1",
-							DataCenter: "dc1",
-						},
-					},
 					VolumeServerDiskCount: func() *int32 { v := int32(1); return &v }(),
 				},
 			}
-		})
+		}
+
+		assertSAs := func(expected map[string]string) {
+			clientset, err := utils.GetClientset(restCfg)
+			Expect(err).NotTo(HaveOccurred())
+			for stsName, wantSA := range expected {
+				stsName, wantSA := stsName, wantSA
+				Eventually(func() (string, error) {
+					sts, err := clientset.AppsV1().StatefulSets(testNamespace).Get(ctx, stsName, metav1.GetOptions{})
+					if err != nil {
+						return "", err
+					}
+					return sts.Spec.Template.Spec.ServiceAccountName, nil
+				}, time.Minute*2, time.Second*10).Should(Equal(wantSA),
+					"StatefulSet %s should pin pods to %s, not the namespace default SA", stsName, wantSA)
+			}
+		}
 
 		AfterEach(func() {
 			if seaweed != nil {
@@ -133,29 +133,61 @@ var _ = Describe("ServiceAccountName Integration", Ordered, func() {
 			}
 		})
 
-		It("should set serviceAccountName on master, volume, filer, and topology volume StatefulSets", func() {
+		It("should set serviceAccountName on master, volume, and filer StatefulSets", func() {
+			seaweed = buildBase()
+			seaweed.Spec.Volume = &seaweedv1.VolumeSpec{
+				Replicas: 1,
+				VolumeServerConfig: seaweedv1.VolumeServerConfig{
+					ComponentSpec: seaweedv1.ComponentSpec{
+						ServiceAccountName: &volumeSA,
+					},
+					ResourceRequirements: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			}
 			Expect(k8sClient.Create(ctx, seaweed)).To(Succeed())
 
-			clientset, err := utils.GetClientset(restCfg)
-			Expect(err).NotTo(HaveOccurred())
+			assertSAs(map[string]string{
+				seaweedName + "-master": masterSA,
+				seaweedName + "-volume": volumeSA,
+				seaweedName + "-filer":  filerSA,
+			})
+		})
 
-			expected := map[string]string{
+		// VolumeTopology renders pods through buildTopologyPodSpec, not
+		// ComponentAccessor.BuildPodSpec — the field needs to flow through
+		// both code paths. Note that setting VolumeTopology causes the
+		// operator to skip the flat -volume StatefulSet entirely, so this
+		// spec verifies only the topology-suffixed StatefulSet.
+		It("should set serviceAccountName on the topology volume StatefulSet", func() {
+			seaweed = buildBase()
+			seaweed.Spec.VolumeTopology = map[string]*seaweedv1.VolumeTopologySpec{
+				"rack1": {
+					VolumeServerConfig: seaweedv1.VolumeServerConfig{
+						ComponentSpec: seaweedv1.ComponentSpec{
+							ServiceAccountName: &topologySA,
+						},
+						ResourceRequirements: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: resource.MustParse("1Gi"),
+							},
+						},
+					},
+					Replicas:   1,
+					Rack:       "rack1",
+					DataCenter: "dc1",
+				},
+			}
+			Expect(k8sClient.Create(ctx, seaweed)).To(Succeed())
+
+			assertSAs(map[string]string{
 				seaweedName + "-master":       masterSA,
-				seaweedName + "-volume":       volumeSA,
 				seaweedName + "-filer":        filerSA,
 				seaweedName + "-volume-rack1": topologySA,
-			}
-
-			for stsName, wantSA := range expected {
-				stsName, wantSA := stsName, wantSA
-				Eventually(func() (string, error) {
-					sts, err := clientset.AppsV1().StatefulSets(testNamespace).Get(ctx, stsName, metav1.GetOptions{})
-					if err != nil {
-						return "", err
-					}
-					return sts.Spec.Template.Spec.ServiceAccountName, nil
-				}, time.Minute*2, time.Second*10).Should(Equal(wantSA), "StatefulSet %s should pin pods to %s, not the namespace default SA", stsName, wantSA)
-			}
+			})
 		})
 	})
 })

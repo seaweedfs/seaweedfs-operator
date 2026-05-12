@@ -99,6 +99,25 @@ func mergePodLabels(selectorLabels, userLabels map[string]string) map[string]str
 	return merged
 }
 
+// mergeLabels merges two label sets. The second argument takes precedence
+// over the first on key collisions — used to layer component- or
+// topology-level labels on top of cluster/volume-level defaults.
+func mergeLabels(base, override map[string]string) map[string]string {
+	if base == nil && override == nil {
+		return nil
+	}
+
+	merged := map[string]string{}
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range override {
+		merged[k] = v
+	}
+
+	return merged
+}
+
 // mergeAnnotations merges cluster-level annotations with component-level annotations
 // Component-level annotations take precedence over cluster-level ones
 func mergeAnnotations(clusterAnnotations, componentAnnotations map[string]string) map[string]string {

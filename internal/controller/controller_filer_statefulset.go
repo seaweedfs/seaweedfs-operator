@@ -46,6 +46,7 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 
 func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForFiler(m.Name)
+	podLabels := mergePodLabels(labels, m.BaseFilerSpec().Labels())
 	annotations := m.Spec.Filer.Annotations
 	ports := []corev1.ContainerPort{
 		{
@@ -235,7 +236,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      podLabels,
 					Annotations: annotations,
 				},
 				Spec: filerPodSpec,

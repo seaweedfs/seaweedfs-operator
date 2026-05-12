@@ -82,6 +82,42 @@ func copyAnnotations(src map[string]string) map[string]string {
 	return dst
 }
 
+// mergePodLabels returns the pod template label set: user-supplied labels first,
+// then operator-managed selector labels layered on top so the StatefulSet/Deployment
+// selector keeps matching its pods even when the user supplies a colliding key.
+func mergePodLabels(selectorLabels, userLabels map[string]string) map[string]string {
+	if len(userLabels) == 0 {
+		return selectorLabels
+	}
+	merged := map[string]string{}
+	for k, v := range userLabels {
+		merged[k] = v
+	}
+	for k, v := range selectorLabels {
+		merged[k] = v
+	}
+	return merged
+}
+
+// mergeLabels merges two label sets. The second argument takes precedence
+// over the first on key collisions — used to layer component- or
+// topology-level labels on top of cluster/volume-level defaults.
+func mergeLabels(base, override map[string]string) map[string]string {
+	if base == nil && override == nil {
+		return nil
+	}
+
+	merged := map[string]string{}
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range override {
+		merged[k] = v
+	}
+
+	return merged
+}
+
 // mergeAnnotations merges cluster-level annotations with component-level annotations
 // Component-level annotations take precedence over cluster-level ones
 func mergeAnnotations(clusterAnnotations, componentAnnotations map[string]string) map[string]string {

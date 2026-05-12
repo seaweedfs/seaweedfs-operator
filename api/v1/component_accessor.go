@@ -17,6 +17,7 @@ type ComponentAccessor interface {
 	PriorityClassName() *string
 	NodeSelector() map[string]string
 	Annotations() map[string]string
+	Labels() map[string]string
 	Tolerations() []corev1.Toleration
 	SchedulerName() string
 	DNSPolicy() corev1.DNSPolicy
@@ -39,6 +40,7 @@ type componentAccessorImpl struct {
 	schedulerName             string
 	clusterNodeSelector       map[string]string
 	clusterAnnotations        map[string]string
+	clusterLabels             map[string]string
 	tolerations               []corev1.Toleration
 	statefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType
 
@@ -133,6 +135,17 @@ func (a *componentAccessorImpl) Annotations() map[string]string {
 	return anno
 }
 
+func (a *componentAccessorImpl) Labels() map[string]string {
+	lbl := map[string]string{}
+	for k, v := range a.clusterLabels {
+		lbl[k] = v
+	}
+	for k, v := range a.ComponentSpec.Labels {
+		lbl[k] = v
+	}
+	return lbl
+}
+
 func (a *componentAccessorImpl) Tolerations() []corev1.Toleration {
 	tols := a.ComponentSpec.Tolerations
 	if len(tols) == 0 {
@@ -204,6 +217,7 @@ func buildSeaweedComponentAccessor(spec *SeaweedSpec, componentSpec *ComponentSp
 		schedulerName:             spec.SchedulerName,
 		clusterNodeSelector:       spec.NodeSelector,
 		clusterAnnotations:        spec.Annotations,
+		clusterLabels:             spec.Labels,
 		tolerations:               spec.Tolerations,
 		statefulSetUpdateStrategy: spec.StatefulSetUpdateStrategy,
 

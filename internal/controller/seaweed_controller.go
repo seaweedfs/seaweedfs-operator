@@ -525,13 +525,21 @@ func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(ctx context.Context, s
 	}
 
 	// Warn but don't fail reconciliation — this requires manual intervention.
+	// Name the specific fields that drifted so operators (and future bug
+	// reports) can tell whether this is a real user-intent change versus a
+	// spurious apiserver-defaulting artifact the comparator should have
+	// smoothed over.
+	diffs := vctDifferences(existing.Spec.VolumeClaimTemplates, desired.Spec.VolumeClaimTemplates)
+	diffSummary := strings.Join(diffs, "; ")
+
 	r.Log.Info("VolumeClaimTemplates differ but cannot be auto-applied. Delete the StatefulSet manually to apply changes.",
 		"statefulset", existing.Name,
-		"namespace", existing.Namespace)
+		"namespace", existing.Namespace,
+		"differences", diffSummary)
 
 	if r.Recorder != nil {
 		r.Recorder.Eventf(seaweedCR, corev1.EventTypeWarning, "VolumeClaimTemplatesMismatch",
-			"VolumeClaimTemplates on %s differ but cannot be auto-applied. Delete the StatefulSet manually to apply changes.", existing.Name)
+			"VolumeClaimTemplates on %s differ but cannot be auto-applied. Delete the StatefulSet manually to apply changes. Differences: %s", existing.Name, diffSummary)
 	}
 
 	return nil

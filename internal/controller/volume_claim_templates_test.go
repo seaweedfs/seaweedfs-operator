@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -125,6 +126,76 @@ func TestVCTSemanticallyEqual_DetectsLengthDiff(t *testing.T) {
 	}
 	if vctSemanticallyEqual(one, two) {
 		t.Errorf("expected length diff to be detected")
+	}
+}
+
+func TestVCTDifferences_ReturnsEmptyForEqualTemplates(t *testing.T) {
+	mk := func() []corev1.PersistentVolumeClaim {
+		return []corev1.PersistentVolumeClaim{{
+			ObjectMeta: metav1.ObjectMeta{Name: "data"},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse("100Gi"),
+					},
+				},
+			},
+		}}
+	}
+	if diffs := vctDifferences(mk(), mk()); len(diffs) != 0 {
+		t.Errorf("expected no differences for equal templates, got %v", diffs)
+	}
+}
+
+func TestVCTDifferences_NamesTheDriftedField(t *testing.T) {
+	mk := func(size, class string) []corev1.PersistentVolumeClaim {
+		var sc *string
+		if class != "" {
+			sc = &class
+		}
+		return []corev1.PersistentVolumeClaim{{
+			ObjectMeta: metav1.ObjectMeta{Name: "mount0"},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				StorageClassName: sc,
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse(size),
+					},
+				},
+			},
+		}}
+	}
+
+	diffs := vctDifferences(mk("100Gi", "fast"), mk("200Gi", "slow"))
+	if len(diffs) == 0 {
+		t.Fatalf("expected differences to be reported")
+	}
+	joined := strings.Join(diffs, " ")
+	if !strings.Contains(joined, "resources.requests") {
+		t.Errorf("expected resources.requests to be named in diff, got %v", diffs)
+	}
+	if !strings.Contains(joined, "storageClassName") {
+		t.Errorf("expected storageClassName to be named in diff, got %v", diffs)
+	}
+	if !strings.Contains(joined, "mount0") {
+		t.Errorf("expected template name to appear in diff prefix, got %v", diffs)
+	}
+}
+
+func TestVCTDifferences_ReportsLengthMismatchOnly(t *testing.T) {
+	one := []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "a"}}}
+	two := []corev1.PersistentVolumeClaim{
+		{ObjectMeta: metav1.ObjectMeta{Name: "a"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "b"}},
+	}
+	diffs := vctDifferences(one, two)
+	if len(diffs) != 1 {
+		t.Fatalf("expected exactly one diff for length mismatch, got %v", diffs)
+	}
+	if !strings.Contains(diffs[0], "length") {
+		t.Errorf("expected length diff, got %q", diffs[0])
 	}
 }
 

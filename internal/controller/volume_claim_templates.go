@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -162,8 +163,14 @@ func resourceListString(rl corev1.ResourceList) string {
 	if len(rl) == 0 {
 		return "{}"
 	}
-	parts := make([]string, 0, len(rl))
-	for name, q := range rl {
+	names := make([]string, 0, len(rl))
+	for name := range rl {
+		names = append(names, string(name))
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		q := rl[corev1.ResourceName(name)]
 		parts = append(parts, fmt.Sprintf("%s=%s", name, q.String()))
 	}
 	return "{" + strings.Join(parts, ",") + "}"

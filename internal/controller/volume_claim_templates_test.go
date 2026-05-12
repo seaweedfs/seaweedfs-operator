@@ -199,6 +199,30 @@ func TestVCTDifferences_ReportsLengthMismatchOnly(t *testing.T) {
 	}
 }
 
+// TestResourceListString_DeterministicAcrossMapIteration pins that the
+// diff message sorts resource names. Without this, repeated reconciles
+// could format the same ResourceList differently — the Warning event
+// body would flap between runs and confuse anyone diffing event logs.
+func TestResourceListString_DeterministicAcrossMapIteration(t *testing.T) {
+	rl := corev1.ResourceList{
+		corev1.ResourceStorage:          resource.MustParse("100Gi"),
+		corev1.ResourceEphemeralStorage: resource.MustParse("1Gi"),
+		corev1.ResourceMemory:           resource.MustParse("4Gi"),
+		corev1.ResourceCPU:              resource.MustParse("2"),
+	}
+	first := resourceListString(rl)
+	for i := 0; i < 50; i++ {
+		if got := resourceListString(rl); got != first {
+			t.Fatalf("resourceListString output flapped between calls: %q vs %q", first, got)
+		}
+	}
+	// And confirm the order is the expected sorted one, not just stable-by-luck.
+	want := "{cpu=2,ephemeral-storage=1Gi,memory=4Gi,storage=100Gi}"
+	if first != want {
+		t.Errorf("resourceListString = %q, want %q", first, want)
+	}
+}
+
 func TestVCTSemanticallyEqual_DetectsExplicitlyDifferentVolumeMode(t *testing.T) {
 	filesystem := corev1.PersistentVolumeFilesystem
 	block := corev1.PersistentVolumeBlock

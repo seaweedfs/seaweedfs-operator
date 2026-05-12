@@ -612,6 +612,16 @@ type ComponentSpec struct {
 	// PriorityClassName of the component. Override the cluster-level one if present
 	PriorityClassName *string `json:"priorityClassName,omitempty"`
 
+	// ServiceAccountName of the component's pods. When set, the operator
+	// renders pod.spec.serviceAccountName so the component runs under a
+	// dedicated ServiceAccount instead of the namespace's default SA. The
+	// operator does not create the ServiceAccount — it must already exist
+	// in the same namespace as the Seaweed CR. Required on clusters that
+	// bind SCCs or PSA-restricted privileges per-SA (e.g. OpenShift) and
+	// want to avoid granting elevated permissions to the default SA.
+	// +optional
+	ServiceAccountName *string `json:"serviceAccountName,omitempty"`
+
 	// SchedulerName of the component. Override the cluster-level one if present
 	SchedulerName *string `json:"schedulerName,omitempty"`
 

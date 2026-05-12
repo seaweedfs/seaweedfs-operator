@@ -15,6 +15,7 @@ type ComponentAccessor interface {
 	HostNetwork() bool
 	Affinity() *corev1.Affinity
 	PriorityClassName() *string
+	ServiceAccountName() string
 	NodeSelector() map[string]string
 	Annotations() map[string]string
 	Tolerations() []corev1.Toleration
@@ -103,6 +104,14 @@ func (a *componentAccessorImpl) PriorityClassName() *string {
 	return pcn
 }
 
+func (a *componentAccessorImpl) ServiceAccountName() string {
+	san := a.ComponentSpec.ServiceAccountName
+	if san == nil {
+		return ""
+	}
+	return *san
+}
+
 func (a *componentAccessorImpl) SchedulerName() string {
 	pcn := a.ComponentSpec.SchedulerName
 	if pcn == nil {
@@ -165,6 +174,9 @@ func (a *componentAccessorImpl) BuildPodSpec() corev1.PodSpec {
 	}
 	if a.PriorityClassName() != nil {
 		spec.PriorityClassName = *a.PriorityClassName()
+	}
+	if san := a.ServiceAccountName(); san != "" {
+		spec.ServiceAccountName = san
 	}
 	if a.ImagePullSecrets() != nil {
 		spec.ImagePullSecrets = a.ImagePullSecrets()

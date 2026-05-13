@@ -226,6 +226,7 @@ func (r *SeaweedReconciler) ensureS3Deployment(ctx context.Context, m *seaweedv1
 
 func (r *SeaweedReconciler) buildS3Deployment(m *seaweedv1.Seaweed) *appsv1.Deployment {
 	labels := labelsForS3(m.Name)
+	podLabels := mergePodLabels(labels, m.BaseS3Spec().Labels())
 	replicas := m.Spec.S3.Replicas
 
 	podSpec := m.BaseS3Spec().BuildPodSpec()
@@ -301,7 +302,7 @@ func (r *SeaweedReconciler) buildS3Deployment(m *seaweedv1.Seaweed) *appsv1.Depl
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      podLabels,
 					Annotations: m.Spec.S3.Annotations,
 				},
 				Spec: podSpec,

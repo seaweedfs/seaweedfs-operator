@@ -49,6 +49,7 @@ func buildWorkerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string 
 
 func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1.Deployment {
 	labels := labelsForWorker(m.Name)
+	podLabels := mergePodLabels(labels, m.BaseWorkerSpec().Labels())
 	annotations := m.BaseWorkerSpec().Annotations()
 	var ports []corev1.ContainerPort
 	if m.Spec.Worker.MetricsPort != nil {
@@ -169,7 +170,7 @@ func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      podLabels,
 					Annotations: annotations,
 				},
 				Spec: workerPodSpec,

@@ -118,6 +118,7 @@ func adminRoutePath(extraArgs []string, route string) string {
 
 func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForAdmin(m.Name)
+	podLabels := mergePodLabels(labels, m.BaseAdminSpec().Labels())
 	annotations := m.BaseAdminSpec().Annotations()
 	ports := []corev1.ContainerPort{
 		{
@@ -236,7 +237,7 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      podLabels,
 					Annotations: annotations,
 				},
 				Spec: adminPodSpec,

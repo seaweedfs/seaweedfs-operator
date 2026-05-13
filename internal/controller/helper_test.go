@@ -147,3 +147,57 @@ func TestGetFilerAddress(t *testing.T) {
 		t.Fatalf("getFilerAddress = %q, want %q", got, want)
 	}
 }
+
+// TestMergePodLabels pins the contract for issue #243: user-supplied labels
+// are added to the pod template, but operator-managed selector labels always
+// win on key collisions so the StatefulSet/Deployment selector keeps matching.
+func TestMergePodLabels(t *testing.T) {
+	selector := map[string]string{
+		"app.kubernetes.io/name":       "seaweedfs",
+		"app.kubernetes.io/instance":   "seaweed",
+		"app.kubernetes.io/component":  "filer",
+		"app.kubernetes.io/managed-by": "seaweedfs-operator",
+	}
+
+	t.Run("nil user labels returns the selector unchanged", func(t *testing.T) {
+		got := mergePodLabels(selector, nil)
+		if len(got) != len(selector) {
+			t.Fatalf("len = %d, want %d", len(got), len(selector))
+		}
+		for k, v := range selector {
+			if got[k] != v {
+				t.Errorf("got[%q] = %q, want %q", k, got[k], v)
+			}
+		}
+	})
+
+	t.Run("user labels are added alongside selector labels", func(t *testing.T) {
+		user := map[string]string{"backup": "true", "team": "storage"}
+		got := mergePodLabels(selector, user)
+		for k, v := range selector {
+			if got[k] != v {
+				t.Errorf("selector label %q lost: got %q, want %q", k, got[k], v)
+			}
+		}
+		for k, v := range user {
+			if got[k] != v {
+				t.Errorf("user label %q missing: got %q, want %q", k, got[k], v)
+			}
+		}
+	})
+
+	t.Run("user cannot override operator selector keys", func(t *testing.T) {
+		user := map[string]string{
+			"app.kubernetes.io/component": "hijacked",
+			"backup":                      "true",
+		}
+		got := mergePodLabels(selector, user)
+		if got["app.kubernetes.io/component"] != "filer" {
+			t.Errorf("operator component label was overridden: got %q, want %q",
+				got["app.kubernetes.io/component"], "filer")
+		}
+		if got["backup"] != "true" {
+			t.Errorf("user label backup missing: got %q", got["backup"])
+		}
+	})
+}

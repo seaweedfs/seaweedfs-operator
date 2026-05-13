@@ -193,6 +193,12 @@ type SeaweedSpec struct {
 	// Base annotations of Pods, components may add or override selectors upon this respectively
 	Annotations map[string]string `json:"annotations,omitempty"`
 
+	// Base labels of Pods, components may add or override labels upon this respectively.
+	// Note that user-supplied keys cannot replace the operator-managed selector labels
+	// (app.kubernetes.io/name, /instance, /component, /managed-by) — those are required
+	// for the StatefulSet/Deployment selector and will be preserved.
+	Labels map[string]string `json:"labels,omitempty"`
+
 	// Base tolerations of Pods, components may add more tolerations upon this respectively
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 
@@ -630,6 +636,12 @@ type ComponentSpec struct {
 
 	// Annotations of the component. Merged into the cluster-level annotations if non-empty
 	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// Labels of the component. Merged into the cluster-level labels and onto the pod
+	// template labels. Operator-managed selector labels (app.kubernetes.io/name,
+	// /instance, /component, /managed-by) cannot be overridden and will always win,
+	// so the StatefulSet/Deployment selector keeps matching its pods.
+	Labels map[string]string `json:"labels,omitempty"`
 
 	// Tolerations of the component. Override the cluster-level tolerations if non-empty
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`

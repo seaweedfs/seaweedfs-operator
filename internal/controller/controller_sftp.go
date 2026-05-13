@@ -213,6 +213,7 @@ func (r *SeaweedReconciler) ensureSFTPDeployment(ctx context.Context, m *seaweed
 
 func (r *SeaweedReconciler) buildSFTPDeployment(m *seaweedv1.Seaweed) *appsv1.Deployment {
 	labels := labelsForSFTP(m.Name)
+	podLabels := mergePodLabels(labels, m.BaseSFTPSpec().Labels())
 	replicas := m.Spec.SFTP.Replicas
 
 	podSpec := m.BaseSFTPSpec().BuildPodSpec()
@@ -311,7 +312,7 @@ func (r *SeaweedReconciler) buildSFTPDeployment(m *seaweedv1.Seaweed) *appsv1.De
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      podLabels,
 					Annotations: m.Spec.SFTP.Annotations,
 				},
 				Spec: podSpec,

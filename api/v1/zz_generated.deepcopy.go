@@ -349,6 +349,13 @@ func (in *ComponentSpec) DeepCopyInto(out *ComponentSpec) {
 			(*out)[key] = val
 		}
 	}
+	if in.Labels != nil {
+		in, out := &in.Labels, &out.Labels
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.Tolerations != nil {
 		in, out := &in.Tolerations, &out.Tolerations
 		*out = make([]corev1.Toleration, len(*in))
@@ -956,6 +963,13 @@ func (in *SeaweedSpec) DeepCopyInto(out *SeaweedSpec) {
 	}
 	if in.Annotations != nil {
 		in, out := &in.Annotations, &out.Annotations
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.Labels != nil {
+		in, out := &in.Labels, &out.Labels
 		*out = make(map[string]string, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val

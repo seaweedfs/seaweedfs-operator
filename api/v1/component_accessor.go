@@ -247,9 +247,19 @@ func (s *Seaweed) BaseFilerSpec() ComponentAccessor {
 	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Filer.ComponentSpec)
 }
 
-// BaseVolumeSpec provides merged spec of volumes
+// BaseVolumeSpec provides merged spec of volumes. Volume is optional —
+// topology-only deployments (spec.volumeTopology set, spec.volume omitted)
+// still call this accessor for cluster-level fallbacks like labels, so
+// nil-guard the dereference. Returning an accessor over an empty
+// ComponentSpec collapses the volume tier of inheritance to a no-op,
+// which matches the controller's expectation that topology entries fully
+// describe their pods when spec.volume is absent.
 func (s *Seaweed) BaseVolumeSpec() ComponentAccessor {
-	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Volume.ComponentSpec)
+	cs := &ComponentSpec{}
+	if s.Spec.Volume != nil {
+		cs = &s.Spec.Volume.ComponentSpec
+	}
+	return buildSeaweedComponentAccessor(&s.Spec, cs)
 }
 
 // BaseAdminSpec provides merged spec of admin

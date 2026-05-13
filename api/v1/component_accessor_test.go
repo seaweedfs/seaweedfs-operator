@@ -44,6 +44,27 @@ func TestBuildPodSpecServiceAccountName(t *testing.T) {
 	}
 }
 
+// TestBaseVolumeSpecNilVolume guards against the panic that surfaced on
+// the post-merge CI when spec.volumeTopology is set without spec.volume:
+// BaseVolumeSpec() previously deref'd s.Spec.Volume.ComponentSpec
+// unconditionally, crashing topology-only deployments through any
+// caller that reached for cluster-level fallbacks (Labels, etc.).
+func TestBaseVolumeSpecNilVolume(t *testing.T) {
+	s := &Seaweed{
+		Spec: SeaweedSpec{
+			Labels: map[string]string{"team": "platform"},
+			// Volume intentionally nil — topology-only deployment.
+		},
+	}
+	acc := s.BaseVolumeSpec()
+	got := acc.Labels()
+	if got["team"] != "platform" {
+		t.Fatalf("expected cluster label to pass through, got %v", got)
+	}
+	// BuildPodSpec must also be safe to call.
+	_ = acc.BuildPodSpec()
+}
+
 // TestComponentAccessorLabels pins the cluster+component label merge for
 // issue #243: component-level labels override cluster-level keys, and both
 // flow through unchanged when one side is empty.

@@ -325,6 +325,11 @@ func (in *ComponentSpec) DeepCopyInto(out *ComponentSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.ServiceAccountName != nil {
+		in, out := &in.ServiceAccountName, &out.ServiceAccountName
+		*out = new(string)
+		**out = **in
+	}
 	if in.SchedulerName != nil {
 		in, out := &in.SchedulerName, &out.SchedulerName
 		*out = new(string)

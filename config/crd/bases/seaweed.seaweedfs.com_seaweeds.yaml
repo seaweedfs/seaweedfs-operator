@@ -641,6 +641,8 @@ spec:
                       type:
                         type: string
                     type: object
+                  serviceAccountName:
+                    type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
                   statefulSetUpdateStrategy:
@@ -2641,6 +2643,8 @@ spec:
                       type:
                         type: string
                     type: object
+                  serviceAccountName:
+                    type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
                   statefulSetUpdateStrategy:
@@ -4082,6 +4086,8 @@ spec:
                       type:
                         type: string
                     type: object
+                  serviceAccountName:
+                    type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
                   statefulSetUpdateStrategy:
@@ -5525,6 +5531,8 @@ spec:
                       type:
                         type: string
                     type: object
+                  serviceAccountName:
+                    type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
                   statefulSetUpdateStrategy:
@@ -6954,6 +6962,8 @@ spec:
                       type:
                         type: string
                     type: object
+                  serviceAccountName:
+                    type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
                   statefulSetUpdateStrategy:
@@ -8433,6 +8443,8 @@ spec:
                       type:
                         type: string
                     type: object
+                  serviceAccountName:
+                    type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
                   statefulSetUpdateStrategy:
@@ -9837,6 +9849,8 @@ spec:
                         type:
                           type: string
                       type: object
+                    serviceAccountName:
+                      type: string
                     sidecars:
                       x-kubernetes-preserve-unknown-fields: true
                     statefulSetUpdateStrategy:
@@ -11308,6 +11322,8 @@ spec:
                       x-kubernetes-int-or-string: true
                     type: object
                   schedulerName:
+                    type: string
+                  serviceAccountName:
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true

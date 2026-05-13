@@ -15,6 +15,7 @@ type ComponentAccessor interface {
 	HostNetwork() bool
 	Affinity() *corev1.Affinity
 	PriorityClassName() *string
+	ServiceAccountName() string
 	NodeSelector() map[string]string
 	Annotations() map[string]string
 	Labels() map[string]string
@@ -105,6 +106,14 @@ func (a *componentAccessorImpl) PriorityClassName() *string {
 	return pcn
 }
 
+func (a *componentAccessorImpl) ServiceAccountName() string {
+	san := a.ComponentSpec.ServiceAccountName
+	if san == nil {
+		return ""
+	}
+	return *san
+}
+
 func (a *componentAccessorImpl) SchedulerName() string {
 	pcn := a.ComponentSpec.SchedulerName
 	if pcn == nil {
@@ -179,6 +188,9 @@ func (a *componentAccessorImpl) BuildPodSpec() corev1.PodSpec {
 	if a.PriorityClassName() != nil {
 		spec.PriorityClassName = *a.PriorityClassName()
 	}
+	if san := a.ServiceAccountName(); san != "" {
+		spec.ServiceAccountName = san
+	}
 	if a.ImagePullSecrets() != nil {
 		spec.ImagePullSecrets = a.ImagePullSecrets()
 	}
@@ -235,9 +247,19 @@ func (s *Seaweed) BaseFilerSpec() ComponentAccessor {
 	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Filer.ComponentSpec)
 }
 
-// BaseVolumeSpec provides merged spec of volumes
+// BaseVolumeSpec provides merged spec of volumes. Volume is optional —
+// topology-only deployments (spec.volumeTopology set, spec.volume omitted)
+// still call this accessor for cluster-level fallbacks like labels, so
+// nil-guard the dereference. Returning an accessor over an empty
+// ComponentSpec collapses the volume tier of inheritance to a no-op,
+// which matches the controller's expectation that topology entries fully
+// describe their pods when spec.volume is absent.
 func (s *Seaweed) BaseVolumeSpec() ComponentAccessor {
-	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Volume.ComponentSpec)
+	cs := &ComponentSpec{}
+	if s.Spec.Volume != nil {
+		cs = &s.Spec.Volume.ComponentSpec
+	}
+	return buildSeaweedComponentAccessor(&s.Spec, cs)
 }
 
 // BaseAdminSpec provides merged spec of admin

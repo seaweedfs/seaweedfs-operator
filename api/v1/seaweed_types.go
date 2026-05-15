@@ -695,6 +695,29 @@ type ComponentSpec struct {
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Sidecars []corev1.Container `json:"sidecars,omitempty"`
+
+	// InitContainers run to completion, in order, before the operator-managed
+	// container of this component starts. Use this to gate the SeaweedFS
+	// process on external dependencies — wait for a metadata store (Cassandra,
+	// MySQL, Postgres) to be reachable, wait for a schema/keyspace, fix file
+	// ownership on a mounted PVC, seed certs into a shared volume, or run a
+	// migration. Sidecars cannot substitute: a sidecar starts in parallel
+	// with the main container, so the SeaweedFS process has already
+	// attempted (and exited) before the sidecar's wait loop completes.
+	//
+	// The list is appended to the operator-managed initContainers (if any)
+	// and runs after them, so user containers can rely on operator-managed
+	// init steps. Init containers share the pod's volumes — reference any
+	// extra volumes through ComponentSpec.Volumes / ComponentSpec.VolumeMounts.
+	// The operator does not inject env vars, probes, or volume mounts into
+	// user-supplied init containers.
+	//
+	// Schema is preserved as opaque for the same CRD-size reason as Sidecars
+	// above; validation happens at pod-create time.
+	// +optional
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
+	InitContainers []corev1.Container `json:"initContainers,omitempty"`
 }
 
 // ServiceSpec is a subset of the original k8s spec

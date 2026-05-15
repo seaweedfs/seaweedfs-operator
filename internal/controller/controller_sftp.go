@@ -300,6 +300,7 @@ func (r *SeaweedReconciler) buildSFTPDeployment(m *seaweedv1.Seaweed) *appsv1.De
 		},
 	}}
 	podSpec.Containers = append(podSpec.Containers, m.BaseSFTPSpec().Sidecars()...)
+	podSpec.InitContainers = append(podSpec.InitContainers, m.BaseSFTPSpec().InitContainers()...)
 
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

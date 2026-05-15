@@ -290,6 +290,7 @@ func (r *SeaweedReconciler) buildS3Deployment(m *seaweedv1.Seaweed) *appsv1.Depl
 		},
 	}}
 	podSpec.Containers = append(podSpec.Containers, m.BaseS3Spec().Sidecars()...)
+	podSpec.InitContainers = append(podSpec.InitContainers, m.BaseS3Spec().InitContainers()...)
 
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

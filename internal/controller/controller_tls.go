@@ -145,10 +145,9 @@ func (r *SeaweedReconciler) ensureTLS(ctx context.Context, m *seaweedv1.Seaweed)
 // ensureSecurityConfig provisions the security.toml ConfigMap whenever the
 // filer or admin server is in spec, regardless of TLS state. The filer needs
 // jwt.filer_signing.key to register the IAM gRPC service the Admin UI Users
-// tab calls (seaweedfs#9442); the admin needs the same key to sign Bearer
-// tokens (seaweedfs#9498). Bundling those JWT keys with cert-manager mTLS
-// would force every operator user that enables Admin to also pull in
-// cert-manager just to make the Users tab work.
+// tab calls; the admin needs the same key to sign Bearer tokens. Bundling
+// those JWT keys with cert-manager mTLS would force every operator user that
+// enables Admin to also pull in cert-manager just to make the Users tab work.
 func (r *SeaweedReconciler) ensureSecurityConfig(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	if !securityConfigNeeded(m) {
 		return ReconcileResult(nil)

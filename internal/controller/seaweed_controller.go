@@ -124,6 +124,12 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return result, err
 	}
 
+	// security.toml is needed even when TLS is off, so the filer registers
+	// the IAM gRPC service the Admin UI Users tab calls.
+	if done, result, err = r.ensureSecurityConfig(ctx, seaweedCR); done {
+		return result, err
+	}
+
 	if done, result, err = r.ensureMaster(seaweedCR); done {
 		return result, err
 	}

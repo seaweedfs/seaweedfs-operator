@@ -598,6 +598,8 @@ spec:
                           type: object
                         type: array
                     type: object
+                  initContainers:
+                    x-kubernetes-preserve-unknown-fields: true
                   labels:
                     additionalProperties:
                       type: string
@@ -2462,6 +2464,8 @@ spec:
                           type: object
                         type: array
                     type: object
+                  initContainers:
+                    x-kubernetes-preserve-unknown-fields: true
                   labels:
                     additionalProperties:
                       type: string
@@ -4038,6 +4042,8 @@ spec:
                           type: object
                         type: array
                     type: object
+                  initContainers:
+                    x-kubernetes-preserve-unknown-fields: true
                   labels:
                     additionalProperties:
                       type: string
@@ -5482,6 +5488,8 @@ spec:
                           type: object
                         type: array
                     type: object
+                  initContainers:
+                    x-kubernetes-preserve-unknown-fields: true
                   labels:
                     additionalProperties:
                       type: string
@@ -6908,6 +6916,8 @@ spec:
                           type: object
                         type: array
                     type: object
+                  initContainers:
+                    x-kubernetes-preserve-unknown-fields: true
                   labels:
                     additionalProperties:
                       type: string
@@ -8391,6 +8401,8 @@ spec:
                           type: object
                         type: array
                     type: object
+                  initContainers:
+                    x-kubernetes-preserve-unknown-fields: true
                   labels:
                     additionalProperties:
                       type: string
@@ -9797,6 +9809,8 @@ spec:
                         type: object
                         x-kubernetes-map-type: atomic
                       type: array
+                    initContainers:
+                      x-kubernetes-preserve-unknown-fields: true
                     labels:
                       additionalProperties:
                         type: string
@@ -11193,6 +11207,8 @@ spec:
                       type: object
                       x-kubernetes-map-type: atomic
                     type: array
+                  initContainers:
+                    x-kubernetes-preserve-unknown-fields: true
                   jobType:
                     default: all
                     type: string

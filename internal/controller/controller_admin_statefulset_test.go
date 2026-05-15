@@ -57,7 +57,7 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		got := buildAdminStartupScript(m, "-urlPrefix=/admin")
 		// `exec` must prefix weed so SIGTERM from the kubelet reaches weed
 		// instead of the /bin/sh wrapper.
-		if !strings.HasPrefix(got, "exec weed -logtostderr=true admin ") {
+		if !strings.HasPrefix(got, "exec weed -logtostderr=true -config_dir=/etc/sw-security admin ") {
 			t.Fatalf("expected exec'd weed command, got %q", got)
 		}
 		if !strings.Contains(got, "-urlPrefix=/admin") {
@@ -94,7 +94,7 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		if !strings.Contains(got, `set -- "$@" "-$key=$(cat "$f")"`) {
 			t.Errorf("expected preamble to append flags via positional parameters, got %q", got)
 		}
-		if !strings.Contains(got, `exec weed -logtostderr=true admin`) {
+		if !strings.Contains(got, `exec weed -logtostderr=true -config_dir=/etc/sw-security admin`) {
 			t.Errorf("expected weed to be exec'd after preamble, got %q", got)
 		}
 		if !strings.HasSuffix(got, ` "$@"`) {

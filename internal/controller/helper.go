@@ -288,24 +288,20 @@ func tlsEffective(m *seaweedv1.Seaweed) bool {
 
 // tlsVolumesAndMounts returns the set of pod volumes and container mounts
 // that wire the shared TLS Secret and security.toml ConfigMap into a
-// component pod. Returns empty slices when TLS is disabled or the
-// cert-manager CRD probe has failed — callers can safely append
-// unconditionally. Every component that speaks gRPC should use this
-// helper so the paths stay in sync with renderSecurityTOML.
+// component pod. Returns empty slices when neither TLS nor the security
+// ConfigMap is needed — callers can safely append unconditionally. Every
+// component that speaks gRPC should use this helper so the paths stay in
+// sync with renderSecurityTOML.
+//
+// The security ConfigMap mount is included independently of the TLS Secret
+// mount, so filer + admin pods can pick up jwt.filer_signing.key (needed for
+// the IAM gRPC service the Admin UI Users tab calls) without requiring
+// cert-manager.
 func tlsVolumesAndMounts(m *seaweedv1.Seaweed) ([]corev1.Volume, []corev1.VolumeMount) {
-	if !tlsEffective(m) {
-		return nil, nil
-	}
-	volumes := []corev1.Volume{
-		{
-			Name: tlsVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: TLSServerSecretName(m),
-				},
-			},
-		},
-		{
+	var volumes []corev1.Volume
+	var mounts []corev1.VolumeMount
+	if securityConfigNeeded(m) {
+		volumes = append(volumes, corev1.Volume{
 			Name: securityVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
@@ -314,28 +310,36 @@ func tlsVolumesAndMounts(m *seaweedv1.Seaweed) ([]corev1.Volume, []corev1.Volume
 					},
 				},
 			},
-		},
-	}
-	mounts := []corev1.VolumeMount{
-		{
-			Name:      tlsVolumeName,
-			ReadOnly:  true,
-			MountPath: tlsMountPath,
-		},
-		{
+		})
+		mounts = append(mounts, corev1.VolumeMount{
 			Name:      securityVolumeName,
 			ReadOnly:  true,
 			MountPath: securityConfigMountPath,
-		},
+		})
+	}
+	if tlsEffective(m) {
+		volumes = append(volumes, corev1.Volume{
+			Name: tlsVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: TLSServerSecretName(m),
+				},
+			},
+		})
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      tlsVolumeName,
+			ReadOnly:  true,
+			MountPath: tlsMountPath,
+		})
 	}
 	return volumes, mounts
 }
 
 // tlsConfigDirArg returns the additional top-level `weed` flag that tells
 // viper to look in the security config mount path, or the empty string
-// when TLS is not effective (disabled by spec or cert-manager absent).
+// when no security.toml is mounted.
 func tlsConfigDirArg(m *seaweedv1.Seaweed) string {
-	if !tlsEffective(m) {
+	if !securityConfigNeeded(m) {
 		return ""
 	}
 	return "-config_dir=" + securityConfigMountPath

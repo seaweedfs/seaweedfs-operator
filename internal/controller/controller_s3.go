@@ -266,6 +266,7 @@ func (r *SeaweedReconciler) buildS3Deployment(m *seaweedv1.Seaweed) *appsv1.Depl
 		Name:            "s3",
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseS3Spec().ImagePullPolicy(),
+		SecurityContext: m.BaseS3Spec().ContainerSecurityContext(),
 		Env:             append(m.BaseS3Spec().Env(), kubernetesEnvVars...),
 		Resources:       filterContainerResources(m.Spec.S3.ResourceRequirements),
 		VolumeMounts:    mergeVolumeMounts(volumeMounts, m.BaseS3Spec().VolumeMounts()),

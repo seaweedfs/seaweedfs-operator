@@ -217,6 +217,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 		Name:            "volume",
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseVolumeSpec().ImagePullPolicy(),
+		SecurityContext: m.BaseVolumeSpec().ContainerSecurityContext(),
 		Env:             append(m.BaseVolumeSpec().Env(), kubernetesEnvVars...),
 		Resources:       filterContainerResources(m.Spec.Volume.ResourceRequirements),
 		Command: []string{
@@ -380,6 +381,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 		Name:            "volume",
 		Image:           m.Spec.Image,
 		ImagePullPolicy: getImagePullPolicy(m, topologySpec),
+		SecurityContext: getContainerSecurityContext(m, topologySpec),
 		Env:             append(getEnvVars(m, topologySpec), kubernetesEnvVars...),
 		Resources:       filterContainerResources(resourceRequirements),
 		Command: []string{
@@ -504,7 +506,37 @@ func buildTopologyPodSpec(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTo
 		podSpec.HostNetwork = *m.Spec.HostNetwork
 	}
 
+	if sc := getPodSecurityContext(m, topologySpec); sc != nil {
+		podSpec.SecurityContext = sc
+	}
+
 	return podSpec
+}
+
+// getPodSecurityContext resolves the pod-level securityContext for a topology
+// group: the topology's own value wins, otherwise it inherits the flat
+// spec.volume value (nil-safe for topology-only deployments), otherwise nil.
+func getPodSecurityContext(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *corev1.PodSecurityContext {
+	if topologySpec != nil && topologySpec.PodSecurityContext != nil {
+		return topologySpec.PodSecurityContext
+	}
+	if m.Spec.Volume != nil && m.Spec.Volume.PodSecurityContext != nil {
+		return m.Spec.Volume.PodSecurityContext
+	}
+	return nil
+}
+
+// getContainerSecurityContext resolves the container-level securityContext for
+// a topology group's volume container, mirroring getPodSecurityContext's
+// topology-then-flat-volume fallback.
+func getContainerSecurityContext(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *corev1.SecurityContext {
+	if topologySpec != nil && topologySpec.ContainerSecurityContext != nil {
+		return topologySpec.ContainerSecurityContext
+	}
+	if m.Spec.Volume != nil && m.Spec.Volume.ContainerSecurityContext != nil {
+		return m.Spec.Volume.ContainerSecurityContext
+	}
+	return nil
 }
 
 func getImagePullPolicy(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) corev1.PullPolicy {

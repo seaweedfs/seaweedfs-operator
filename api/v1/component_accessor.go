@@ -31,6 +31,8 @@ type ComponentAccessor interface {
 	ExtraArgs() []string
 	Sidecars() []corev1.Container
 	InitContainers() []corev1.Container
+	PodSecurityContext() *corev1.PodSecurityContext
+	ContainerSecurityContext() *corev1.SecurityContext
 }
 
 type componentAccessorImpl struct {
@@ -198,6 +200,9 @@ func (a *componentAccessorImpl) BuildPodSpec() corev1.PodSpec {
 	if a.TerminationGracePeriodSeconds() != nil {
 		spec.TerminationGracePeriodSeconds = a.TerminationGracePeriodSeconds()
 	}
+	if a.PodSecurityContext() != nil {
+		spec.SecurityContext = a.PodSecurityContext()
+	}
 	return spec
 }
 
@@ -223,6 +228,14 @@ func (a *componentAccessorImpl) Sidecars() []corev1.Container {
 
 func (a *componentAccessorImpl) InitContainers() []corev1.Container {
 	return a.ComponentSpec.InitContainers
+}
+
+func (a *componentAccessorImpl) PodSecurityContext() *corev1.PodSecurityContext {
+	return a.ComponentSpec.PodSecurityContext
+}
+
+func (a *componentAccessorImpl) ContainerSecurityContext() *corev1.SecurityContext {
+	return a.ComponentSpec.ContainerSecurityContext
 }
 
 func buildSeaweedComponentAccessor(spec *SeaweedSpec, componentSpec *ComponentSpec) ComponentAccessor {

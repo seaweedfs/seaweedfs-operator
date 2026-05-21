@@ -99,6 +99,8 @@ var _ = Describe("SecurityContext Integration", Ordered, func() {
 			g.Expect(podSC).NotTo(BeNil(), "StatefulSet %s pod securityContext", stsName)
 			g.Expect(podSC.RunAsUser).NotTo(BeNil())
 			g.Expect(*podSC.RunAsUser).To(Equal(uid))
+			g.Expect(podSC.RunAsNonRoot).NotTo(BeNil())
+			g.Expect(*podSC.RunAsNonRoot).To(BeTrue())
 			g.Expect(podSC.FSGroup).NotTo(BeNil())
 			g.Expect(*podSC.FSGroup).To(Equal(uid))
 			var c *corev1.Container
@@ -110,6 +112,8 @@ var _ = Describe("SecurityContext Integration", Ordered, func() {
 			}
 			g.Expect(c).NotTo(BeNil(), "StatefulSet %s container %s", stsName, containerName)
 			g.Expect(c.SecurityContext).NotTo(BeNil())
+			g.Expect(c.SecurityContext.AllowPrivilegeEscalation).NotTo(BeNil())
+			g.Expect(*c.SecurityContext.AllowPrivilegeEscalation).To(BeFalse())
 			g.Expect(c.SecurityContext.ReadOnlyRootFilesystem).NotTo(BeNil())
 			g.Expect(*c.SecurityContext.ReadOnlyRootFilesystem).To(BeTrue())
 			g.Expect(c.SecurityContext.Capabilities).NotTo(BeNil())
@@ -127,6 +131,8 @@ var _ = Describe("SecurityContext Integration", Ordered, func() {
 			g.Expect(podSC).NotTo(BeNil(), "Deployment %s pod securityContext", depName)
 			g.Expect(podSC.RunAsUser).NotTo(BeNil())
 			g.Expect(*podSC.RunAsUser).To(Equal(uid))
+			g.Expect(podSC.RunAsNonRoot).NotTo(BeNil())
+			g.Expect(*podSC.RunAsNonRoot).To(BeTrue())
 			g.Expect(podSC.FSGroup).NotTo(BeNil())
 			g.Expect(*podSC.FSGroup).To(Equal(uid))
 			var c *corev1.Container
@@ -138,6 +144,8 @@ var _ = Describe("SecurityContext Integration", Ordered, func() {
 			}
 			g.Expect(c).NotTo(BeNil(), "Deployment %s container %s", depName, containerName)
 			g.Expect(c.SecurityContext).NotTo(BeNil())
+			g.Expect(c.SecurityContext.AllowPrivilegeEscalation).NotTo(BeNil())
+			g.Expect(*c.SecurityContext.AllowPrivilegeEscalation).To(BeFalse())
 			g.Expect(c.SecurityContext.ReadOnlyRootFilesystem).NotTo(BeNil())
 			g.Expect(*c.SecurityContext.ReadOnlyRootFilesystem).To(BeTrue())
 			g.Expect(c.SecurityContext.Capabilities).NotTo(BeNil())

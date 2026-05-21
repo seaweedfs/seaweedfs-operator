@@ -68,22 +68,50 @@ func mainContainer(t *testing.T, containers []corev1.Container, name string) cor
 	return corev1.Container{}
 }
 
+// assertSecurityContexts checks that every field set by samplePodSecurityContext
+// and sampleContainerSecurityContext survives propagation, so a bug that drops
+// any single field fails the test.
 func assertSecurityContexts(t *testing.T, podSpec corev1.PodSpec, containerName string) {
 	t.Helper()
-	if podSpec.SecurityContext == nil {
+	psc := podSpec.SecurityContext
+	if psc == nil {
 		t.Fatalf("%s pod securityContext = nil, want it propagated", containerName)
 	}
-	if podSpec.SecurityContext.RunAsUser == nil || *podSpec.SecurityContext.RunAsUser != 1000 {
-		t.Fatalf("%s pod securityContext.runAsUser = %v, want 1000", containerName, podSpec.SecurityContext.RunAsUser)
+	if psc.RunAsUser == nil || *psc.RunAsUser != 1000 {
+		t.Fatalf("%s pod securityContext.runAsUser = %v, want 1000", containerName, psc.RunAsUser)
+	}
+	if psc.RunAsNonRoot == nil || !*psc.RunAsNonRoot {
+		t.Fatalf("%s pod securityContext.runAsNonRoot = %v, want true", containerName, psc.RunAsNonRoot)
+	}
+	if psc.FSGroup == nil || *psc.FSGroup != 2000 {
+		t.Fatalf("%s pod securityContext.fsGroup = %v, want 2000", containerName, psc.FSGroup)
 	}
 	c := mainContainer(t, podSpec.Containers, containerName)
-	if c.SecurityContext == nil {
+	csc := c.SecurityContext
+	if csc == nil {
 		t.Fatalf("%s container securityContext = nil, want it propagated", containerName)
 	}
-	if c.SecurityContext.ReadOnlyRootFilesystem == nil || !*c.SecurityContext.ReadOnlyRootFilesystem {
-		t.Fatalf("%s container securityContext.readOnlyRootFilesystem = %v, want true",
-			containerName, c.SecurityContext.ReadOnlyRootFilesystem)
+	if csc.AllowPrivilegeEscalation == nil || *csc.AllowPrivilegeEscalation {
+		t.Fatalf("%s container securityContext.allowPrivilegeEscalation = %v, want false",
+			containerName, csc.AllowPrivilegeEscalation)
 	}
+	if csc.ReadOnlyRootFilesystem == nil || !*csc.ReadOnlyRootFilesystem {
+		t.Fatalf("%s container securityContext.readOnlyRootFilesystem = %v, want true",
+			containerName, csc.ReadOnlyRootFilesystem)
+	}
+	if csc.Capabilities == nil || !containsCapability(csc.Capabilities.Drop, "ALL") {
+		t.Fatalf("%s container securityContext.capabilities.drop = %v, want it to include ALL",
+			containerName, csc.Capabilities)
+	}
+}
+
+func containsCapability(caps []corev1.Capability, want corev1.Capability) bool {
+	for _, c := range caps {
+		if c == want {
+			return true
+		}
+	}
+	return false
 }
 
 func componentSpecWithSecurityContext() seaweedv1.ComponentSpec {

@@ -100,6 +100,7 @@ var _ = Describe("SecurityContext Integration", Ordered, func() {
 			g.Expect(podSC.RunAsUser).NotTo(BeNil())
 			g.Expect(*podSC.RunAsUser).To(Equal(uid))
 			g.Expect(podSC.FSGroup).NotTo(BeNil())
+			g.Expect(*podSC.FSGroup).To(Equal(uid))
 			var c *corev1.Container
 			for i := range sts.Spec.Template.Spec.Containers {
 				if sts.Spec.Template.Spec.Containers[i].Name == containerName {
@@ -126,6 +127,8 @@ var _ = Describe("SecurityContext Integration", Ordered, func() {
 			g.Expect(podSC).NotTo(BeNil(), "Deployment %s pod securityContext", depName)
 			g.Expect(podSC.RunAsUser).NotTo(BeNil())
 			g.Expect(*podSC.RunAsUser).To(Equal(uid))
+			g.Expect(podSC.FSGroup).NotTo(BeNil())
+			g.Expect(*podSC.FSGroup).To(Equal(uid))
 			var c *corev1.Container
 			for i := range dep.Spec.Template.Spec.Containers {
 				if dep.Spec.Template.Spec.Containers[i].Name == containerName {
@@ -137,6 +140,8 @@ var _ = Describe("SecurityContext Integration", Ordered, func() {
 			g.Expect(c.SecurityContext).NotTo(BeNil())
 			g.Expect(c.SecurityContext.ReadOnlyRootFilesystem).NotTo(BeNil())
 			g.Expect(*c.SecurityContext.ReadOnlyRootFilesystem).To(BeTrue())
+			g.Expect(c.SecurityContext.Capabilities).NotTo(BeNil())
+			g.Expect(c.SecurityContext.Capabilities.Drop).To(ContainElement(corev1.Capability("ALL")))
 		}, time.Minute*2, time.Second*5).Should(Succeed())
 	}
 

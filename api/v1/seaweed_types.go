@@ -718,6 +718,27 @@ type ComponentSpec struct {
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:pruning:PreserveUnknownFields
 	InitContainers []corev1.Container `json:"initContainers,omitempty"`
+
+	// PodSecurityContext sets pod-level security attributes on this
+	// component's pod template, rendered into pod.spec.securityContext. Use
+	// it to run the SeaweedFS process as a non-root user (runAsUser /
+	// runAsNonRoot), make mounted PVCs group-writable (fsGroup), or pin a
+	// seccomp profile pod-wide. The SeaweedFS image runs as root by default,
+	// so this is the field to set on PodSecurityStandards-restricted or
+	// OpenShift clusters. Leaving it unset preserves the prior behavior.
+	// +optional
+	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
+
+	// ContainerSecurityContext sets container-level security attributes on
+	// the operator-managed container of this component, rendered into the
+	// container's securityContext. Use it to drop Linux capabilities, set
+	// runAsNonRoot / runAsUser, enable readOnlyRootFilesystem, or forbid
+	// privilege escalation. Where they overlap, settings here take
+	// precedence over PodSecurityContext for this container. It is applied
+	// only to the operator-managed container — set securityContext directly
+	// on any user-supplied Sidecars or InitContainers.
+	// +optional
+	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 }
 
 // ServiceSpec is a subset of the original k8s spec

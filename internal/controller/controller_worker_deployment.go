@@ -112,6 +112,7 @@ func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1
 		Name:            "worker",
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseWorkerSpec().ImagePullPolicy(),
+		SecurityContext: m.BaseWorkerSpec().ContainerSecurityContext(),
 		Env:             append(m.BaseWorkerSpec().Env(), kubernetesEnvVars...),
 		Resources:       filterContainerResources(m.Spec.Worker.ResourceRequirements),
 		VolumeMounts:    mergeVolumeMounts(volumeMounts, m.BaseWorkerSpec().VolumeMounts()),

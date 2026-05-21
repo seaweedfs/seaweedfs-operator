@@ -177,6 +177,7 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		Name:            "admin",
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseAdminSpec().ImagePullPolicy(),
+		SecurityContext: m.BaseAdminSpec().ContainerSecurityContext(),
 		Env:             env,
 		Resources:       filterContainerResources(m.Spec.Admin.ResourceRequirements),
 		VolumeMounts:    mergeVolumeMounts(volumeMounts, m.BaseAdminSpec().VolumeMounts()),

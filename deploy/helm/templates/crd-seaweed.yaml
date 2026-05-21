@@ -754,6 +754,76 @@ spec:
                       x-kubernetes-list-map-keys:
                         - name
                       x-kubernetes-list-type: map
+                    containerSecurityContext:
+                      properties:
+                        allowPrivilegeEscalation:
+                          type: boolean
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        capabilities:
+                          properties:
+                            add:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            drop:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          type: object
+                        privileged:
+                          type: boolean
+                        procMount:
+                          type: string
+                        readOnlyRootFilesystem:
+                          type: boolean
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
+                      type: object
                     credentialsSecret:
                       properties:
                         name:
@@ -891,6 +961,77 @@ spec:
                     nodeSelector:
                       additionalProperties:
                         type: string
+                      type: object
+                    podSecurityContext:
+                      properties:
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        fsGroup:
+                          type: integer
+                        fsGroupChangePolicy:
+                          type: string
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        supplementalGroups:
+                          items:
+                            type: integer
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        sysctls:
+                          items:
+                            properties:
+                              name:
+                                type: string
+                              value:
+                                type: string
+                            required:
+                              - name
+                              - value
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
                       type: object
                     priorityClassName:
                       type: string
@@ -2614,6 +2755,76 @@ spec:
                       x-kubernetes-list-type: map
                     config:
                       type: string
+                    containerSecurityContext:
+                      properties:
+                        allowPrivilegeEscalation:
+                          type: boolean
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        capabilities:
+                          properties:
+                            add:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            drop:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          type: object
+                        privileged:
+                          type: boolean
+                        procMount:
+                          type: string
+                        readOnlyRootFilesystem:
+                          type: boolean
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
+                      type: object
                     env:
                       items:
                         properties:
@@ -2846,6 +3057,77 @@ spec:
                           type: string
                         volumeName:
                           type: string
+                      type: object
+                    podSecurityContext:
+                      properties:
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        fsGroup:
+                          type: integer
+                        fsGroupChangePolicy:
+                          type: string
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        supplementalGroups:
+                          items:
+                            type: integer
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        sysctls:
+                          items:
+                            properties:
+                              name:
+                                type: string
+                              value:
+                                type: string
+                            required:
+                              - name
+                              - value
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
                       type: object
                     priorityClassName:
                       type: string
@@ -4201,6 +4483,76 @@ spec:
                       type: boolean
                     config:
                       type: string
+                    containerSecurityContext:
+                      properties:
+                        allowPrivilegeEscalation:
+                          type: boolean
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        capabilities:
+                          properties:
+                            add:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            drop:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          type: object
+                        privileged:
+                          type: boolean
+                        procMount:
+                          type: string
+                        readOnlyRootFilesystem:
+                          type: boolean
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
+                      type: object
                     defaultReplication:
                       type: string
                     env:
@@ -4335,6 +4687,77 @@ spec:
                     nodeSelector:
                       additionalProperties:
                         type: string
+                      type: object
+                    podSecurityContext:
+                      properties:
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        fsGroup:
+                          type: integer
+                        fsGroupChangePolicy:
+                          type: string
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        supplementalGroups:
+                          items:
+                            type: integer
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        sysctls:
+                          items:
+                            properties:
+                              name:
+                                type: string
+                              value:
+                                type: string
+                            required:
+                              - name
+                              - value
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
                       type: object
                     priorityClassName:
                       type: string
@@ -5646,6 +6069,76 @@ spec:
                         - key
                       type: object
                       x-kubernetes-map-type: atomic
+                    containerSecurityContext:
+                      properties:
+                        allowPrivilegeEscalation:
+                          type: boolean
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        capabilities:
+                          properties:
+                            add:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            drop:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          type: object
+                        privileged:
+                          type: boolean
+                        procMount:
+                          type: string
+                        readOnlyRootFilesystem:
+                          type: boolean
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
+                      type: object
                     domainName:
                       type: string
                     env:
@@ -5781,6 +6274,77 @@ spec:
                     nodeSelector:
                       additionalProperties:
                         type: string
+                      type: object
+                    podSecurityContext:
+                      properties:
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        fsGroup:
+                          type: integer
+                        fsGroupChangePolicy:
+                          type: string
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        supplementalGroups:
+                          items:
+                            type: integer
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        sysctls:
+                          items:
+                            properties:
+                              name:
+                                type: string
+                              value:
+                                type: string
+                            required:
+                              - name
+                              - value
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
                       type: object
                     port:
                       type: integer
@@ -7072,6 +7636,76 @@ spec:
                       x-kubernetes-list-map-keys:
                         - name
                       x-kubernetes-list-type: map
+                    containerSecurityContext:
+                      properties:
+                        allowPrivilegeEscalation:
+                          type: boolean
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        capabilities:
+                          properties:
+                            add:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            drop:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          type: object
+                        privileged:
+                          type: boolean
+                        procMount:
+                          type: string
+                        readOnlyRootFilesystem:
+                          type: boolean
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
+                      type: object
                     env:
                       items:
                         properties:
@@ -7212,6 +7846,77 @@ spec:
                     nodeSelector:
                       additionalProperties:
                         type: string
+                      type: object
+                    podSecurityContext:
+                      properties:
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        fsGroup:
+                          type: integer
+                        fsGroupChangePolicy:
+                          type: string
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        supplementalGroups:
+                          items:
+                            type: integer
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        sysctls:
+                          items:
+                            properties:
+                              name:
+                                type: string
+                              value:
+                                type: string
+                            required:
+                              - name
+                              - value
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
                       type: object
                     port:
                       maximum: 65535
@@ -8556,6 +9261,76 @@ spec:
                       x-kubernetes-list-type: map
                     compactionMBps:
                       type: integer
+                    containerSecurityContext:
+                      properties:
+                        allowPrivilegeEscalation:
+                          type: boolean
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        capabilities:
+                          properties:
+                            add:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            drop:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          type: object
+                        privileged:
+                          type: boolean
+                        procMount:
+                          type: string
+                        readOnlyRootFilesystem:
+                          type: boolean
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
+                      type: object
                     dataCenter:
                       type: string
                     env:
@@ -8698,6 +9473,77 @@ spec:
                     nodeSelector:
                       additionalProperties:
                         type: string
+                      type: object
+                    podSecurityContext:
+                      properties:
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        fsGroup:
+                          type: integer
+                        fsGroupChangePolicy:
+                          type: string
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        supplementalGroups:
+                          items:
+                            type: integer
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        sysctls:
+                          items:
+                            properties:
+                              name:
+                                type: string
+                              value:
+                                type: string
+                            required:
+                              - name
+                              - value
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
                       type: object
                     priorityClassName:
                       type: string
@@ -9991,6 +10837,76 @@ spec:
                         x-kubernetes-list-type: map
                       compactionMBps:
                         type: integer
+                      containerSecurityContext:
+                        properties:
+                          allowPrivilegeEscalation:
+                            type: boolean
+                          appArmorProfile:
+                            properties:
+                              localhostProfile:
+                                type: string
+                              type:
+                                type: string
+                            required:
+                              - type
+                            type: object
+                          capabilities:
+                            properties:
+                              add:
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              drop:
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            type: object
+                          privileged:
+                            type: boolean
+                          procMount:
+                            type: string
+                          readOnlyRootFilesystem:
+                            type: boolean
+                          runAsGroup:
+                            type: integer
+                          runAsNonRoot:
+                            type: boolean
+                          runAsUser:
+                            type: integer
+                          seLinuxOptions:
+                            properties:
+                              level:
+                                type: string
+                              role:
+                                type: string
+                              type:
+                                type: string
+                              user:
+                                type: string
+                            type: object
+                          seccompProfile:
+                            properties:
+                              localhostProfile:
+                                type: string
+                              type:
+                                type: string
+                            required:
+                              - type
+                            type: object
+                          windowsOptions:
+                            properties:
+                              gmsaCredentialSpec:
+                                type: string
+                              gmsaCredentialSpecName:
+                                type: string
+                              hostProcess:
+                                type: boolean
+                              runAsUserName:
+                                type: string
+                            type: object
+                        type: object
                       dataCenter:
                         type: string
                       env:
@@ -10106,6 +11022,77 @@ spec:
                       nodeSelector:
                         additionalProperties:
                           type: string
+                        type: object
+                      podSecurityContext:
+                        properties:
+                          appArmorProfile:
+                            properties:
+                              localhostProfile:
+                                type: string
+                              type:
+                                type: string
+                            required:
+                              - type
+                            type: object
+                          fsGroup:
+                            type: integer
+                          fsGroupChangePolicy:
+                            type: string
+                          runAsGroup:
+                            type: integer
+                          runAsNonRoot:
+                            type: boolean
+                          runAsUser:
+                            type: integer
+                          seLinuxOptions:
+                            properties:
+                              level:
+                                type: string
+                              role:
+                                type: string
+                              type:
+                                type: string
+                              user:
+                                type: string
+                            type: object
+                          seccompProfile:
+                            properties:
+                              localhostProfile:
+                                type: string
+                              type:
+                                type: string
+                            required:
+                              - type
+                            type: object
+                          supplementalGroups:
+                            items:
+                              type: integer
+                            type: array
+                            x-kubernetes-list-type: atomic
+                          sysctls:
+                            items:
+                              properties:
+                                name:
+                                  type: string
+                                value:
+                                  type: string
+                              required:
+                                - name
+                                - value
+                              type: object
+                            type: array
+                            x-kubernetes-list-type: atomic
+                          windowsOptions:
+                            properties:
+                              gmsaCredentialSpec:
+                                type: string
+                              gmsaCredentialSpecName:
+                                type: string
+                              hostProcess:
+                                type: boolean
+                              runAsUserName:
+                                type: string
+                            type: object
                         type: object
                       priorityClassName:
                         type: string
@@ -11397,6 +12384,76 @@ spec:
                       x-kubernetes-list-map-keys:
                         - name
                       x-kubernetes-list-type: map
+                    containerSecurityContext:
+                      properties:
+                        allowPrivilegeEscalation:
+                          type: boolean
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        capabilities:
+                          properties:
+                            add:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            drop:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          type: object
+                        privileged:
+                          type: boolean
+                        procMount:
+                          type: string
+                        readOnlyRootFilesystem:
+                          type: boolean
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
+                      type: object
                     env:
                       items:
                         properties:
@@ -11596,6 +12653,77 @@ spec:
                           type: string
                         volumeName:
                           type: string
+                      type: object
+                    podSecurityContext:
+                      properties:
+                        appArmorProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        fsGroup:
+                          type: integer
+                        fsGroupChangePolicy:
+                          type: string
+                        runAsGroup:
+                          type: integer
+                        runAsNonRoot:
+                          type: boolean
+                        runAsUser:
+                          type: integer
+                        seLinuxOptions:
+                          properties:
+                            level:
+                              type: string
+                            role:
+                              type: string
+                            type:
+                              type: string
+                            user:
+                              type: string
+                          type: object
+                        seccompProfile:
+                          properties:
+                            localhostProfile:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - type
+                          type: object
+                        supplementalGroups:
+                          items:
+                            type: integer
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        sysctls:
+                          items:
+                            properties:
+                              name:
+                                type: string
+                              value:
+                                type: string
+                            required:
+                              - name
+                              - value
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        windowsOptions:
+                          properties:
+                            gmsaCredentialSpec:
+                              type: string
+                            gmsaCredentialSpecName:
+                              type: string
+                            hostProcess:
+                              type: boolean
+                            runAsUserName:
+                              type: string
+                          type: object
                       type: object
                     priorityClassName:
                       type: string

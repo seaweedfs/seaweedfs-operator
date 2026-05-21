@@ -276,6 +276,7 @@ func (r *SeaweedReconciler) buildSFTPDeployment(m *seaweedv1.Seaweed) *appsv1.De
 		Name:            "sftp",
 		Image:           m.Spec.Image,
 		ImagePullPolicy: m.BaseSFTPSpec().ImagePullPolicy(),
+		SecurityContext: m.BaseSFTPSpec().ContainerSecurityContext(),
 		Env:             append(m.BaseSFTPSpec().Env(), kubernetesEnvVars...),
 		Resources:       filterContainerResources(m.Spec.SFTP.ResourceRequirements),
 		VolumeMounts:    mergeVolumeMounts(volumeMounts, m.BaseSFTPSpec().VolumeMounts()),

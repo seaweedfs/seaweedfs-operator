@@ -267,7 +267,8 @@ Supported per-bucket configuration:
 - `owner` / `access`: bind an existing IAM identity as bucket owner and
   grant per-user actions (`Read`, `Write`, `List`, `Tagging`, `Admin`).
   The IAM identity must already exist — the controller does not create
-  users on your behalf.
+  users on your behalf. Manage identities declaratively with the
+  [`S3Identity`](#declarative-iam-identities-credentials-policies) CRD.
 - `placement`: pin replication, disk type, default TTL, fsync, WORM,
   read-only, data center / rack / data node, or pre-grow volumes for
   the bucket's collection. Collection name always equals the bucket

@@ -1,0 +1,21 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3PolicyBinding
+metadata:
+  name: alice-uploads-binding
+  namespace: default
+spec:
+  seaweedRef:
+    name: seaweed-sample
+  # The IAM policy to attach (equals the resolved name of an S3Policy).
+  policyRef:
+    name: rw-uploads
+  # The identities the policy is attached to. The controller reconciles to
+  # exactly this set — identities removed here have the policy detached.
+  # Add more subjects (each must reference an existing S3Identity), e.g.:
+  #   - kind: S3Identity
+  #     name: bob
+  subjects:
+    - kind: S3Identity
+      name: alice
+  # reclaimPolicy: Retain  # default Delete: removing this CR detaches the
+  #                        # policy from all listed subjects

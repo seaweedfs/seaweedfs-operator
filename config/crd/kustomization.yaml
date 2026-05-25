@@ -4,6 +4,10 @@
 resources:
 - bases/seaweed.seaweedfs.com_seaweeds.yaml
 - bases/seaweed.seaweedfs.com_buckets.yaml
+- bases/seaweed.seaweedfs.com_s3identities.yaml
+- bases/seaweed.seaweedfs.com_s3credentials.yaml
+- bases/seaweed.seaweedfs.com_s3policies.yaml
+- bases/seaweed.seaweedfs.com_s3policybindings.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

@@ -9,6 +9,18 @@ resources:
 - group: seaweed
   kind: Bucket
   version: v1
+- group: seaweed
+  kind: S3Identity
+  version: v1
+- group: seaweed
+  kind: S3Credentials
+  version: v1
+- group: seaweed
+  kind: S3Policy
+  version: v1
+- group: seaweed
+  kind: S3PolicyBinding
+  version: v1
 version: 3-alpha
 plugins:
   go.operator-sdk.io/v2-alpha: {}

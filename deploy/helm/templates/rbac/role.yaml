@@ -9,6 +9,7 @@ rules:
   - ""
   resources:
   - configmaps
+  - secrets
   - services
   verbs:
   - create
@@ -76,6 +77,10 @@ rules:
   - seaweed.seaweedfs.com
   resources:
   - buckets
+  - s3credentials
+  - s3identities
+  - s3policies
+  - s3policybindings
   - seaweeds
   verbs:
   - create
@@ -89,12 +94,20 @@ rules:
   - seaweed.seaweedfs.com
   resources:
   - buckets/finalizers
+  - s3credentials/finalizers
+  - s3identities/finalizers
+  - s3policies/finalizers
+  - s3policybindings/finalizers
   verbs:
   - update
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:
   - buckets/status
+  - s3credentials/status
+  - s3identities/status
+  - s3policies/status
+  - s3policybindings/status
   - seaweeds/status
   verbs:
   - get

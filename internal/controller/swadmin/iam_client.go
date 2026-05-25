@@ -3,6 +3,7 @@ package swadmin
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/iam"
@@ -15,6 +16,40 @@ import (
 // iamRequestTimeout caps every IAM gRPC call so a reconcile can't hang on an
 // unresponsive filer. Mirrors the shell's withIamClient timeout.
 const iamRequestTimeout = 30 * time.Second
+
+// keyedMutex hands out a distinct mutex per string key. It is used to
+// serialize read-modify-write updates to a single IAM identity.
+type keyedMutex struct {
+	mu    sync.Mutex
+	locks map[string]*sync.Mutex
+}
+
+// lock acquires the mutex for key and returns its unlock func.
+func (k *keyedMutex) lock(key string) func() {
+	k.mu.Lock()
+	if k.locks == nil {
+		k.locks = make(map[string]*sync.Mutex)
+	}
+	m, ok := k.locks[key]
+	if !ok {
+		m = &sync.Mutex{}
+		k.locks[key] = m
+	}
+	k.mu.Unlock()
+	m.Lock()
+	return m.Unlock
+}
+
+// iamUserLocks serializes the GetUser→mutate→UpdateUser sequences in
+// SetUserState / AttachPolicy / DetachPolicy. The SeaweedFS IAM service has no
+// ETag/versioning on identities, so without this lock two concurrent
+// reconciles touching the same user (e.g. an S3Identity disabling it while an
+// S3PolicyBinding attaches a policy) could clobber each other's write. The map
+// is package-global because each reconciler holds its own IAMClient, so the
+// lock has to live above any single client instance. Keyed by
+// filer-address + user, it does not guard against changes made outside the
+// operator process — that would require server-side optimistic concurrency.
+var iamUserLocks = &keyedMutex{}
 
 // IAMClient talks to a Seaweed cluster's embedded IAM service — the IAM gRPC
 // API served on the filer's gRPC port. It mirrors `weed shell`'s s3.user.* /
@@ -50,6 +85,12 @@ func (c *IAMClient) withClient(ctx context.Context, fn func(ctx context.Context,
 		defer cancel()
 		return fn(callCtx, iam_pb.NewSeaweedIdentityAccessManagementClient(conn))
 	}, c.filerGrpcAddress, false, c.dialOption)
+}
+
+// lockUser serializes read-modify-write updates to a single identity on this
+// client's filer. Use as `defer c.lockUser(name)()`.
+func (c *IAMClient) lockUser(name string) func() {
+	return iamUserLocks.lock(c.filerGrpcAddress + "\x00" + name)
 }
 
 // IAMUser is the subset of an IAM identity the operator reconciles. It is a
@@ -101,6 +142,7 @@ func (c *IAMClient) CreateUser(ctx context.Context, name, displayName, email str
 // reads the current identity, mutates the two managed fields, and writes it
 // back via UpdateUser.
 func (c *IAMClient) SetUserState(ctx context.Context, name, displayName, email string, disabled bool) error {
+	defer c.lockUser(name)()
 	return c.withClient(ctx, func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error {
 		resp, err := client.GetUser(ctx, &iam_pb.GetUserRequest{Username: name})
 		if err != nil {
@@ -156,6 +198,7 @@ func (c *IAMClient) DeleteAccessKey(ctx context.Context, user, accessKey string)
 // AttachPolicy adds policy to an identity's policy list (no-op if already
 // attached), preserving the rest of the identity.
 func (c *IAMClient) AttachPolicy(ctx context.Context, user, policy string) error {
+	defer c.lockUser(user)()
 	return c.withClient(ctx, func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error {
 		resp, err := client.GetUser(ctx, &iam_pb.GetUserRequest{Username: user})
 		if err != nil {
@@ -179,6 +222,7 @@ func (c *IAMClient) AttachPolicy(ctx context.Context, user, policy string) error
 // DetachPolicy removes policy from an identity's policy list (no-op if not
 // attached), preserving the rest of the identity.
 func (c *IAMClient) DetachPolicy(ctx context.Context, user, policy string) error {
+	defer c.lockUser(user)()
 	return c.withClient(ctx, func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error {
 		resp, err := client.GetUser(ctx, &iam_pb.GetUserRequest{Username: user})
 		if err != nil {

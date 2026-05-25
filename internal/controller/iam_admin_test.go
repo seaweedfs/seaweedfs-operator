@@ -154,6 +154,12 @@ func (f *fakeIAMAdmin) CreateAccessKey(_ context.Context, user, accessKey, secre
 	if !ok {
 		return ErrIAMNotFound
 	}
+	for _, existing := range u.AccessKeys {
+		if existing == accessKey {
+			// Mirror the IAM service, which rejects a duplicate access key.
+			return errors.New("access key already exists")
+		}
+	}
 	u.AccessKeys = append(u.AccessKeys, accessKey)
 	f.secretKeys[accessKey] = secretKey
 	return nil

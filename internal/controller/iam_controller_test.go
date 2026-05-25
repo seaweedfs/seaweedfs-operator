@@ -532,6 +532,51 @@ func TestS3PolicyBinding_WaitsForPolicy(t *testing.T) {
 	}
 }
 
+func TestS3PolicyBinding_PartialAttachWhenOneSubjectMissing(t *testing.T) {
+	scheme := iamTestScheme(t)
+	binding := &seaweedv1.S3PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "rw-bind", Namespace: "media"},
+		Spec: seaweedv1.S3PolicyBindingSpec{
+			SeaweedRef: iamSeaweedRef(),
+			PolicyRef:  seaweedv1.S3PolicyRef{Name: "rw"},
+			Subjects: []seaweedv1.S3Subject{
+				{Kind: seaweedv1.S3SubjectKindIdentity, Name: "alice"},
+				{Kind: seaweedv1.S3SubjectKindIdentity, Name: "ghost"},
+			},
+		},
+	}
+	cli := iamTestClient(t, scheme, newTestSeaweed(), binding)
+	fa := newFakeIAMAdmin()
+	fa.seedUser("alice") // ghost is intentionally absent
+	if err := fa.PutPolicy(context.Background(), "rw", "{}"); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	r := &S3PolicyBindingReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "rw-bind"}
+	reconcileOnce(t, r, key) // finalizer
+	res := reconcileOnce(t, r, key)
+	if res.RequeueAfter == 0 {
+		t.Fatal("expected requeue while one subject is missing")
+	}
+
+	// The present subject must still get the policy (no head-of-line blocking).
+	if got := fa.userPolicies("alice"); len(got) != 1 || got[0] != "rw" {
+		t.Errorf("alice should be attached despite ghost missing, got %v", got)
+	}
+	var got seaweedv1.S3PolicyBinding
+	if err := cli.Get(context.Background(), key, &got); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.S3PhasePending {
+		t.Errorf("phase = %q, want Pending", got.Status.Phase)
+	}
+	if len(got.Status.AttachedSubjects) != 1 || got.Status.AttachedSubjects[0] != "alice" {
+		t.Errorf("attachedSubjects = %v, want [alice]", got.Status.AttachedSubjects)
+	}
+}
+
 // Ensure the reconcilers satisfy the controller-runtime Reconciler interface.
 var (
 	_ reconcile.Reconciler = (*S3IdentityReconciler)(nil)

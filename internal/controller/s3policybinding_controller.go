@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -111,22 +112,29 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Attach the policy to each desired subject. A missing identity is
-	// transient — requeue and keep the already-attached subjects in status.
+	// transient and must not block the others: skip it, attach everyone
+	// present, and requeue at the end so the binding converges as the
+	// missing identities appear. Real (non-NotFound) errors still fail fast.
 	attached := make([]string, 0, len(desired))
+	var pendingSubjects []string
 	for _, user := range desired {
 		if err := admin.AttachPolicy(ctx, user, policyName); err != nil {
 			if errors.Is(err, ErrIAMNotFound) {
-				r.recordAttached(ctx, &binding, attached)
-				return r.pending(ctx, &binding, "SubjectMissing",
-					fmt.Sprintf("identity %q does not exist yet", user))
+				pendingSubjects = append(pendingSubjects, user)
+				continue
 			}
-			r.recordAttached(ctx, &binding, attached)
+			binding.Status.AttachedSubjects = attached
 			return r.fail(ctx, &binding, "AttachFailed", fmt.Sprintf("attach %q to %q: %s", policyName, user, err.Error()))
 		}
 		attached = append(attached, user)
 	}
 
 	binding.Status.AttachedSubjects = attached
+	if len(pendingSubjects) > 0 {
+		return r.pending(ctx, &binding, "SubjectMissing",
+			fmt.Sprintf("identities do not exist yet: %s", strings.Join(pendingSubjects, ", ")))
+	}
+
 	binding.Status.ObservedGeneration = binding.Generation
 	binding.Status.Phase = seaweedv1.S3PhaseReady
 	setIAMCondition(&binding.Status.Conditions, binding.Generation, seaweedv1.S3ConditionReady, metav1.ConditionTrue, "Reconciled", "")
@@ -159,15 +167,6 @@ func (r *S3PolicyBindingReconciler) handleDeletion(ctx context.Context, binding 
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
-}
-
-// recordAttached persists the partial attached set after a mid-loop failure so
-// a later detach of a removed subject is not missed.
-func (r *S3PolicyBindingReconciler) recordAttached(ctx context.Context, binding *seaweedv1.S3PolicyBinding, attached []string) {
-	binding.Status.AttachedSubjects = attached
-	if err := r.Status().Update(ctx, binding); err != nil {
-		r.Log.Error(err, "recording partial attached subjects")
-	}
 }
 
 func (r *S3PolicyBindingReconciler) clusterNotFound(ctx context.Context, binding *seaweedv1.S3PolicyBinding) (ctrl.Result, error) {

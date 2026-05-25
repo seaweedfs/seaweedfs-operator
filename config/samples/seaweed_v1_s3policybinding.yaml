@@ -11,10 +11,11 @@ spec:
     name: rw-uploads
   # The identities the policy is attached to. The controller reconciles to
   # exactly this set — identities removed here have the policy detached.
+  # Add more subjects (each must reference an existing S3Identity), e.g.:
+  #   - kind: S3Identity
+  #     name: bob
   subjects:
     - kind: S3Identity
       name: alice
-    - kind: S3Identity
-      name: bob
   # reclaimPolicy: Retain  # default Delete: removing this CR detaches the
   #                        # policy from all listed subjects

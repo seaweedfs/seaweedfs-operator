@@ -70,10 +70,13 @@ type S3PolicyBindingSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="policyRef is immutable"
 	PolicyRef S3PolicyRef `json:"policyRef"`
 
-	// Subjects is the set of identities the policy is attached to. At least
-	// one subject is required.
+	// Subjects is the set of identities the policy is attached to. The
+	// controller reconciles to exactly this set (and deduplicates it during
+	// reconcile); keying the list by name additionally rejects duplicate
+	// subjects at admission. At least one subject is required.
 	// +kubebuilder:validation:MinItems=1
-	// +listType=atomic
+	// +listType=map
+	// +listMapKey=name
 	Subjects []S3Subject `json:"subjects"`
 
 	// ReclaimPolicy controls whether the policy is detached from its

@@ -137,7 +137,9 @@ func (r *S3IdentityReconciler) handleDeletion(ctx context.Context, identity *sea
 	identity.Status.Phase = seaweedv1.S3PhaseTerminating
 
 	if identity.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain {
-		if err := admin.DeleteUser(ctx, name); err != nil {
+		// Idempotent: a user already gone (deleted out-of-band) must not
+		// block finalizer removal.
+		if err := admin.DeleteUser(ctx, name); err != nil && !errors.Is(err, ErrIAMNotFound) {
 			setIAMCondition(&identity.Status.Conditions, identity.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DeleteFailed", err.Error())
 			if updateErr := r.Status().Update(ctx, identity); updateErr != nil {
 				r.Log.Error(updateErr, "status update during deletion")

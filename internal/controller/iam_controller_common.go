@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/go-logr/logr"
@@ -60,6 +61,9 @@ func (p *iamAdminProvider) getIAMAdmin(filer string, log logr.Logger) (IAMAdmin,
 	}
 	if a, ok := p.cache[filer]; ok {
 		return a, nil
+	}
+	if p.AdminFactory == nil {
+		return nil, fmt.Errorf("iam admin factory is not configured")
 	}
 	a, err := p.AdminFactory(filer, log)
 	if err != nil {

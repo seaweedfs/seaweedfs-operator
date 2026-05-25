@@ -214,7 +214,8 @@ func (r *S3CredentialsReconciler) handleDeletion(ctx context.Context, cred *seaw
 
 	if cred.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain {
 		if cred.Status.AccessKey != "" {
-			if err := admin.DeleteAccessKey(ctx, user, cred.Status.AccessKey); err != nil {
+			// Idempotent: a key already gone must not block finalizer removal.
+			if err := admin.DeleteAccessKey(ctx, user, cred.Status.AccessKey); err != nil && !errors.Is(err, ErrIAMNotFound) {
 				setIAMCondition(&cred.Status.Conditions, cred.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DeleteAccessKeyFailed", err.Error())
 				if updateErr := r.Status().Update(ctx, cred); updateErr != nil {
 					r.Log.Error(updateErr, "status update during deletion")

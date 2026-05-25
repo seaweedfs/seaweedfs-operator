@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -118,7 +119,8 @@ func (r *S3PolicyReconciler) handleDeletion(ctx context.Context, policy *seaweed
 	policy.Status.Phase = seaweedv1.S3PhaseTerminating
 
 	if policy.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain {
-		if err := admin.DeletePolicy(ctx, name); err != nil {
+		// Idempotent: a policy already gone must not block finalizer removal.
+		if err := admin.DeletePolicy(ctx, name); err != nil && !errors.Is(err, ErrIAMNotFound) {
 			setIAMCondition(&policy.Status.Conditions, policy.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DeleteFailed", err.Error())
 			if updateErr := r.Status().Update(ctx, policy); updateErr != nil {
 				r.Log.Error(updateErr, "status update during deletion")

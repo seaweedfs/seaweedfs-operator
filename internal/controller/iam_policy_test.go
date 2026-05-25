@@ -102,3 +102,25 @@ func TestBuildPolicyDocument_Empty(t *testing.T) {
 		t.Fatal("expected error for empty policy, got nil")
 	}
 }
+
+func TestBuildPolicyDocument_StatementMissingActions(t *testing.T) {
+	spec := &seaweedv1.S3PolicySpec{
+		Statements: []seaweedv1.S3PolicyStatement{
+			{Effect: seaweedv1.S3PolicyEffectAllow, Resources: []string{"my-bucket"}},
+		},
+	}
+	if _, err := buildPolicyDocument(spec); err == nil {
+		t.Fatal("expected error for statement with no actions, got nil")
+	}
+}
+
+func TestBuildPolicyDocument_StatementMissingResources(t *testing.T) {
+	spec := &seaweedv1.S3PolicySpec{
+		Statements: []seaweedv1.S3PolicyStatement{
+			{Effect: seaweedv1.S3PolicyEffectAllow, Actions: []string{"s3:GetObject"}},
+		},
+	}
+	if _, err := buildPolicyDocument(spec); err == nil {
+		t.Fatal("expected error for statement with no resources, got nil")
+	}
+}

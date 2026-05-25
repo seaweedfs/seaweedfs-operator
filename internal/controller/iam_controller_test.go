@@ -186,6 +186,19 @@ func TestS3Identity_Delete_RespectsReclaimPolicy(t *testing.T) {
 			if deleted != tc.wantDeleted {
 				t.Errorf("user deleted = %v, want %v", deleted, tc.wantDeleted)
 			}
+
+			// The finalizer must be cleared on both paths so the CR is not
+			// stuck Terminating.
+			var after seaweedv1.S3Identity
+			getErr := cli.Get(context.Background(), key, &after)
+			switch {
+			case apierrors.IsNotFound(getErr):
+				// gone — finalizer was removed
+			case getErr != nil:
+				t.Fatalf("get after delete: %v", getErr)
+			case len(after.Finalizers) != 0:
+				t.Fatalf("expected finalizers cleared, got %v", after.Finalizers)
+			}
 		})
 	}
 }
@@ -351,6 +364,9 @@ func TestS3Credentials_WaitsForIdentity(t *testing.T) {
 	err := cli.Get(context.Background(), types.NamespacedName{Namespace: "media", Name: "alice-secret"}, &secret)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("no secret should be created while identity is missing, got err=%v", err)
+	}
+	if keys := fa.userKeys("ghost"); len(keys) != 0 {
+		t.Errorf("no IAM key should be provisioned while identity is missing, got %v", keys)
 	}
 	var got seaweedv1.S3Credentials
 	if err := cli.Get(context.Background(), key, &got); err != nil {

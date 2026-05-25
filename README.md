@@ -317,6 +317,98 @@ adopts or modifies a bucket created by the COSI driver — collisions are
 surfaced as `BucketAlreadyExists` in `status` rather than silently
 overwriting.
 
+### Declarative IAM (identities, credentials, policies)
+
+Four CRDs (`seaweed.seaweedfs.com/v1`) manage the S3 IAM objects of a
+`Seaweed` cluster declaratively, so users, access keys, and permissions
+can be GitOps-managed alongside the `Bucket` CRD. They drive the cluster's
+embedded IAM service (the IAM gRPC API on the filer — see
+[IAM_SUPPORT.md](./IAM_SUPPORT.md)) and mirror `weed shell`'s
+`s3.user.*`, `s3.accesskey.*`, and `s3.policy*` commands.
+
+Unlike `Bucket` (which holds data and defaults to `reclaimPolicy: Retain`),
+these resources are pure configuration: the CR is the source of truth, so
+they default to `reclaimPolicy: Delete` — deleting the CR removes the
+underlying IAM object. Set `reclaimPolicy: Retain` to opt out.
+
+- **`S3Identity`** — an IAM user. Created with no credentials by default;
+  optionally carries `account` (display name / e-mail) and a `disabled`
+  flag. The user name defaults to `metadata.name` (override with
+  `spec.name`, which is immutable once set).
+
+  ```yaml
+  apiVersion: seaweed.seaweedfs.com/v1
+  kind: S3Identity
+  metadata: { name: alice, namespace: default }
+  spec:
+    seaweedRef: { name: seaweed1 }
+  ```
+
+- **`S3Credentials`** — an access key / secret key pair for an identity,
+  mirrored into a Kubernetes `Secret`. If the referenced `Secret` is
+  absent or empty the operator **generates** a key pair and writes it
+  (the operator-created `Secret` is annotated as managed and removed with
+  the CR under `reclaimPolicy: Delete`); if the `Secret` already holds
+  both keys they are **adopted** and registered on the identity. A
+  user-managed `Secret` is never deleted by the controller. The secret
+  key is written only to the `Secret`, never to status.
+
+  ```yaml
+  apiVersion: seaweed.seaweedfs.com/v1
+  kind: S3Credentials
+  metadata: { name: alice-creds, namespace: default }
+  spec:
+    seaweedRef: { name: seaweed1 }
+    identityRef: { name: alice }
+    secretRef: { name: alice-s3-secret }   # accessKeyField/secretKeyField default to accessKey/secretKey
+  ```
+
+- **`S3Policy`** — an IAM policy. Author it as structured `statements`
+  (assembled into an AWS-style document) or supply a raw `policyDocument`
+  JSON string for full control — exactly one is required. In statements,
+  `actions` are S3 actions (`s3:GetObject`, …; `*` is shorthand for
+  `s3:*`) and `resources` accept bucket-relative shorthand (`my-bucket`,
+  `my-bucket/*`), expanded to `arn:aws:s3:::…` ARNs.
+
+  ```yaml
+  apiVersion: seaweed.seaweedfs.com/v1
+  kind: S3Policy
+  metadata: { name: rw-uploads, namespace: default }
+  spec:
+    seaweedRef: { name: seaweed1 }
+    statements:
+      - effect: Allow
+        actions: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+        resources: [my-bucket/uploads/*]
+  ```
+
+- **`S3PolicyBinding`** — attaches a policy to a set of identities. The
+  controller reconciles to exactly the listed `subjects`; identities
+  removed from the list have the policy detached (the identity itself is
+  left intact).
+
+  ```yaml
+  apiVersion: seaweed.seaweedfs.com/v1
+  kind: S3PolicyBinding
+  metadata: { name: alice-uploads, namespace: default }
+  spec:
+    seaweedRef: { name: seaweed1 }
+    policyRef: { name: rw-uploads }
+    subjects:
+      - { kind: S3Identity, name: alice }
+      - { kind: S3Identity, name: bob }
+  ```
+
+`S3Credentials` and `S3PolicyBinding` wait (status `Pending`) until the
+identity / policy they reference exists, so apply order does not matter.
+As with `Bucket`, cross-namespace `seaweedRef` is allowed and **not**
+gated by a SubjectAccessReview — restrict access with Kubernetes RBAC on
+the IAM CRDs. Clusters that set `jwt.filer_signing.key` in `security.toml`
+(which makes the filer reject unauthenticated IAM gRPC calls) are not yet
+supported.
+
+See the `config/samples/seaweed_v1_s3*.yaml` files for end-to-end examples.
+
 ## Maintenance and Uninstallation
 
 - TBD

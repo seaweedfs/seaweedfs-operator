@@ -72,6 +72,37 @@ func TestVolumeStatefulSet_PropagatesStorageSelectorToEachPVCTemplate(t *testing
 	}
 }
 
+func TestVolumeStatefulSet_StorageSelectorIsDeepCopiedPerPVC(t *testing.T) {
+	// Each PVC template must own its selector — mutating one must not bleed
+	// into the others or back into the CR.
+	sel := &metav1.LabelSelector{MatchLabels: map[string]string{"tier": "fast"}}
+	m := makeStorageSelectorSeaweed(3, sel)
+
+	r := &SeaweedReconciler{}
+	sts := r.createVolumeServerStatefulSet(m)
+	if len(sts.Spec.VolumeClaimTemplates) != 3 {
+		t.Fatalf("VolumeClaimTemplates len = %d, want 3", len(sts.Spec.VolumeClaimTemplates))
+	}
+
+	first := sts.Spec.VolumeClaimTemplates[0].Spec.Selector
+	if first == sel {
+		t.Errorf("PVC[0].Spec.Selector aliases the CR's selector pointer; deep copy expected")
+	}
+	for i, pvc := range sts.Spec.VolumeClaimTemplates {
+		if i > 0 && pvc.Spec.Selector == first {
+			t.Errorf("PVC[%d].Spec.Selector aliases PVC[0]'s selector pointer; per-PVC deep copy expected", i)
+		}
+	}
+
+	sts.Spec.VolumeClaimTemplates[0].Spec.Selector.MatchLabels["tier"] = "mutated"
+	if sts.Spec.VolumeClaimTemplates[1].Spec.Selector.MatchLabels["tier"] != "fast" {
+		t.Errorf("mutating PVC[0] selector leaked into PVC[1]: %#v", sts.Spec.VolumeClaimTemplates[1].Spec.Selector)
+	}
+	if sel.MatchLabels["tier"] != "fast" {
+		t.Errorf("mutating PVC[0] selector leaked back to the CR's selector: %#v", sel)
+	}
+}
+
 func TestVolumeStatefulSet_NilSelectorYieldsNilPVCSelector(t *testing.T) {
 	m := makeStorageSelectorSeaweed(1, nil)
 

@@ -324,11 +324,7 @@ func (r *SeaweedReconciler) buildSFTPDeployment(m *seaweedv1.Seaweed) *appsv1.De
 }
 
 func buildSFTPGatewayStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
-	commands := []string{"weed", "-logtostderr=true"}
-	if arg := tlsConfigDirArg(m); arg != "" {
-		commands = append(commands, arg)
-	}
-	commands = append(commands, "sftp")
+	commands := weedPreamble(m, m.BaseSFTPSpec().LoggingArgs(), "sftp")
 	commands = append(commands, fmt.Sprintf("-port=%d", sftpEffectivePort(m)))
 	commands = append(commands, fmt.Sprintf("-filer=%s-filer:%d", m.Name, seaweedv1.FilerHTTPPort))
 	if m.Spec.SFTP.MetricsPort != nil {

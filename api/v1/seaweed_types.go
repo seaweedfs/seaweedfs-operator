@@ -212,6 +212,18 @@ type SeaweedSpec struct {
 
 	// Ingresses
 	HostSuffix *string `json:"hostSuffix,omitempty"`
+
+	// LoggingArgs are command line flags placed before the weed subcommand,
+	// e.g. ["-logJson", "-v=2"]. seaweedfs's logging flags (defined by the
+	// embedded fla9 parser) must precede the subcommand — they are rejected
+	// after "master", "filer", etc. — so they cannot be expressed through
+	// ExtraArgs. When this slice is non-empty the operator drops its default
+	// `-logtostderr=true` and emits the user-supplied flags verbatim, giving
+	// full control over log destination, format, and verbosity. Components
+	// may override via ComponentSpec.LoggingArgs.
+	// +optional
+	// +listType=atomic
+	LoggingArgs []string `json:"loggingArgs,omitempty"`
 }
 
 // SeaweedStatus defines the observed state of Seaweed
@@ -677,6 +689,17 @@ type ComponentSpec struct {
 	// ExtraArgs are additional command line arguments passed to the component container
 	// +listType=atomic
 	ExtraArgs []string `json:"extraArgs,omitempty"`
+
+	// LoggingArgs are command line flags placed before the weed subcommand
+	// (e.g. ["-logJson", "-v=2"]). When non-empty, this slice fully replaces
+	// the cluster-level SeaweedSpec.LoggingArgs for this component — there
+	// is no per-flag merge, matching how ExtraArgs and Tolerations work.
+	// Leave unset to inherit the cluster-level value. See
+	// SeaweedSpec.LoggingArgs for the rationale (logging flags must precede
+	// the subcommand and therefore cannot be expressed via ExtraArgs).
+	// +optional
+	// +listType=atomic
+	LoggingArgs []string `json:"loggingArgs,omitempty"`
 
 	// Sidecars are additional containers run alongside the operator-managed
 	// container in each pod of this component. Use this to attach helpers

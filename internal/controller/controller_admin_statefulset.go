@@ -25,11 +25,7 @@ const adminCredentialsMountPath = "/etc/sw/admin"
 var adminCredentialKeys = []string{"adminUser", "adminPassword", "readOnlyUser", "readOnlyPassword"}
 
 func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
-	commands := []string{"weed", "-logtostderr=true"}
-	if arg := tlsConfigDirArg(m); arg != "" {
-		commands = append(commands, arg)
-	}
-	commands = append(commands, "admin")
+	commands := weedPreamble(m, m.BaseAdminSpec().LoggingArgs(), "admin")
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.AdminHTTPPort))
 	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m)))
 	if m.Spec.Admin.MetricsPort != nil {

@@ -13,11 +13,7 @@ import (
 )
 
 func buildFilerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
-	commands := []string{"weed", "-logtostderr=true"}
-	if arg := tlsConfigDirArg(m); arg != "" {
-		commands = append(commands, arg)
-	}
-	commands = append(commands, "filer")
+	commands := weedPreamble(m, m.BaseFilerSpec().LoggingArgs(), "filer")
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.FilerHTTPPort))
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-filer-peer.%s", m.Name, m.Namespace))
 	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m)))

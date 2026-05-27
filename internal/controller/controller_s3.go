@@ -314,11 +314,7 @@ func (r *SeaweedReconciler) buildS3Deployment(m *seaweedv1.Seaweed) *appsv1.Depl
 }
 
 func buildS3GatewayStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
-	commands := []string{"weed", "-logtostderr=true"}
-	if arg := tlsConfigDirArg(m); arg != "" {
-		commands = append(commands, arg)
-	}
-	commands = append(commands, "s3")
+	commands := weedPreamble(m, m.BaseS3Spec().LoggingArgs(), "s3")
 	commands = append(commands, fmt.Sprintf("-port=%d", s3EffectivePort(m)))
 	commands = append(commands, fmt.Sprintf("-filer=%s-filer:%d", m.Name, seaweedv1.FilerHTTPPort))
 	if m.Spec.S3.ConfigSecret != nil && m.Spec.S3.ConfigSecret.Key != "" {

@@ -236,6 +236,19 @@ func getMetricsPort(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopology
 	return nil
 }
 
+// topologyLoggingArgs returns the logging args for a topology group, following
+// the same precedence as the other topology getters: topology spec, then
+// spec.volume, then cluster-level. The first non-empty value wins.
+func topologyLoggingArgs(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) []string {
+	if topologySpec != nil && len(topologySpec.LoggingArgs) > 0 {
+		return topologySpec.LoggingArgs
+	}
+	if m.Spec.Volume != nil && len(m.Spec.Volume.LoggingArgs) > 0 {
+		return m.Spec.Volume.LoggingArgs
+	}
+	return m.Spec.LoggingArgs
+}
+
 // getServiceSpec returns the service spec with fallback logic
 func getServiceSpec(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *seaweedv1.ServiceSpec {
 	if topologySpec != nil && topologySpec.Service != nil {
@@ -343,4 +356,25 @@ func tlsConfigDirArg(m *seaweedv1.Seaweed) string {
 		return ""
 	}
 	return "-config_dir=" + securityConfigMountPath
+}
+
+// weedPreamble returns the `weed <logging args> [-config_dir=…] <subcommand>`
+// prefix common to every component startup script. loggingArgs comes from the
+// merged cluster/component LoggingArgs slice; when empty we fall back to the
+// historical `-logtostderr=true` default so existing CRs keep their behavior.
+// Once the user opts in, they own logging completely — passing both default
+// and overrides would produce duplicate-flag conflicts in fla9 and obscure
+// the user's intent.
+func weedPreamble(m *seaweedv1.Seaweed, loggingArgs []string, subcommand string) []string {
+	cmd := []string{"weed"}
+	if len(loggingArgs) > 0 {
+		cmd = append(cmd, loggingArgs...)
+	} else {
+		cmd = append(cmd, "-logtostderr=true")
+	}
+	if arg := tlsConfigDirArg(m); arg != "" {
+		cmd = append(cmd, arg)
+	}
+	cmd = append(cmd, subcommand)
+	return cmd
 }

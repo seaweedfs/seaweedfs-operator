@@ -69,8 +69,10 @@ type IAMAdmin interface {
 }
 
 // IAMAdminFactory creates an IAMAdmin for the IAM service on a target filer.
+// adminSigningKey is jwt.filer_signing.key from the cluster's security.toml
+// (nil/empty when the cluster does not require admin Bearer auth).
 // Replaceable in tests.
-type IAMAdminFactory func(filer string, log logr.Logger) (IAMAdmin, error)
+type IAMAdminFactory func(filer string, adminSigningKey []byte, log logr.Logger) (IAMAdmin, error)
 
 // Sentinel errors returned by IAMAdmin implementations.
 var (
@@ -91,8 +93,11 @@ type swadminIAMAdmin struct {
 }
 
 // NewSwadminIAMAdmin returns an IAMAdmin that talks to the filer IAM gRPC API.
-func NewSwadminIAMAdmin(filer string, log logr.Logger) (IAMAdmin, error) {
-	return &swadminIAMAdmin{c: swadmin.NewIAMClient(filer), log: log}, nil
+// adminSigningKey is forwarded to the underlying IAMClient so it can sign
+// admin Bearer tokens; pass nil/empty when the cluster's security.toml does
+// not configure jwt.filer_signing.key.
+func NewSwadminIAMAdmin(filer string, adminSigningKey []byte, log logr.Logger) (IAMAdmin, error) {
+	return &swadminIAMAdmin{c: swadmin.NewIAMClient(filer, adminSigningKey), log: log}, nil
 }
 
 func (a *swadminIAMAdmin) GetUser(ctx context.Context, name string) (*swadmin.IAMUser, error) {

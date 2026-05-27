@@ -18,10 +18,13 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sync"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,31 +56,53 @@ type iamAdminProvider struct {
 	mu    sync.Mutex
 }
 
-func (p *iamAdminProvider) getIAMAdmin(filer string, log logr.Logger) (IAMAdmin, error) {
+func (p *iamAdminProvider) getIAMAdmin(filer string, adminSigningKey []byte, log logr.Logger) (IAMAdmin, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.cache == nil {
 		p.cache = make(map[string]IAMAdmin)
 	}
-	if a, ok := p.cache[filer]; ok {
+	// Cache key folds in a hash of the signing key so that key rotation (a
+	// user editing the security.toml ConfigMap) invalidates the cached
+	// client instead of leaving a stale Bearer issuer behind.
+	cacheKey := filer + "\x00" + signingKeyFingerprint(adminSigningKey)
+	if a, ok := p.cache[cacheKey]; ok {
 		return a, nil
 	}
 	if p.AdminFactory == nil {
 		return nil, fmt.Errorf("iam admin factory is not configured")
 	}
-	a, err := p.AdminFactory(filer, log)
+	a, err := p.AdminFactory(filer, adminSigningKey, log)
 	if err != nil {
 		return nil, err
 	}
-	p.cache[filer] = a
+	p.cache[cacheKey] = a
 	return a, nil
 }
 
+func signingKeyFingerprint(key []byte) string {
+	if len(key) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(key)
+	return hex.EncodeToString(sum[:8])
+}
+
 // resolveSeaweedFiler looks up the Seaweed CR named by ref and returns its
-// filer address. found is false (with a nil error) when the Seaweed CR does
-// not exist, so callers can surface a transient "cluster not found" condition
-// and requeue rather than treating it as a hard error.
-func resolveSeaweedFiler(ctx context.Context, c client.Client, ref seaweedv1.SeaweedReference, ownNamespace string) (filer string, found bool, err error) {
+// filer address along with the admin signing key the operator rendered into
+// the cluster's security.toml ConfigMap (issue #257: the filer's IAM gRPC
+// service rejects unauthenticated calls when jwt.filer_signing.key is set, so
+// the operator must sign its own Bearer tokens with the same key). found is
+// false (with a nil error) when the Seaweed CR does not exist, so callers can
+// surface a transient "cluster not found" condition and requeue rather than
+// treating it as a hard error.
+//
+// adminSigningKey is nil when the security ConfigMap has not been reconciled
+// yet, when its data is missing/malformed, or when the cluster was not
+// provisioned by this operator (no ConfigMap to read). In those cases the IAM
+// client falls back to unauthenticated calls, matching the cluster's likely
+// configuration.
+func resolveSeaweedFiler(ctx context.Context, c client.Client, ref seaweedv1.SeaweedReference, ownNamespace string) (filer string, adminSigningKey []byte, found bool, err error) {
 	ns := ref.Namespace
 	if ns == "" {
 		ns = ownNamespace
@@ -85,11 +110,39 @@ func resolveSeaweedFiler(ctx context.Context, c client.Client, ref seaweedv1.Sea
 	var sw seaweedv1.Seaweed
 	if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: ref.Name}, &sw); err != nil {
 		if apierrors.IsNotFound(err) {
-			return "", false, nil
+			return "", nil, false, nil
 		}
-		return "", false, err
+		return "", nil, false, err
 	}
-	return getFilerAddress(&sw), true, nil
+	key, err := loadFilerAdminSigningKey(ctx, c, &sw)
+	if err != nil {
+		return "", nil, false, err
+	}
+	return getFilerAddress(&sw), key, true, nil
+}
+
+// loadFilerAdminSigningKey reads jwt.filer_signing.key from the
+// seaweedfs-security-config ConfigMap the operator renders for sw. Returns
+// nil with no error when the ConfigMap does not exist or its security.toml
+// has no key (the cluster will be running unauthenticated in that case).
+// A non-NotFound API error is propagated so the reconciler can requeue.
+func loadFilerAdminSigningKey(ctx context.Context, c client.Client, sw *seaweedv1.Seaweed) ([]byte, error) {
+	if !securityConfigNeeded(sw) {
+		return nil, nil
+	}
+	var cm corev1.ConfigMap
+	err := c.Get(ctx, types.NamespacedName{Namespace: sw.Namespace, Name: SecurityConfigMapName(sw)}, &cm)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	raw := extractTOMLKey(cm.Data["security.toml"], "jwt.filer_signing", "key")
+	if raw == "" {
+		return nil, nil
+	}
+	return []byte(raw), nil
 }
 
 // setIAMCondition upserts a condition on an IAM CR's condition list, stamping

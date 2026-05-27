@@ -9,8 +9,10 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/iam"
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
+	"github.com/seaweedfs/seaweedfs/weed/security"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 // iamRequestTimeout caps every IAM gRPC call so a reconcile can't hang on an
@@ -57,34 +59,62 @@ var iamUserLocks = &keyedMutex{}
 // file-based policy I/O and stderr-only secret printing) so the operator can
 // run with a read-only root filesystem and capture every result.
 //
-// Like the bucket admin's master connection, this dials without TLS and
-// without a JWT admin token. Clusters that set jwt.filer_signing.key in
-// security.toml reject unauthenticated IAM calls; supporting those is a
-// follow-up (the operator would need the signing key mounted).
+// Like the bucket admin's master connection, this dials without TLS. When
+// adminSigningKey is non-empty (the operator reads it from the rendered
+// security.toml ConfigMap) every RPC is stamped with a freshly minted admin
+// Bearer token in the "authorization" metadata — matching the upstream
+// `weed shell` IAM client. When the key is empty the calls are
+// unauthenticated, which the filer accepts when jwt.filer_signing.key is not
+// set in its security.toml.
 type IAMClient struct {
 	filerGrpcAddress string
 	dialOption       grpc.DialOption
+	adminSigningKey  security.SigningKey
 }
 
 // NewIAMClient builds an IAMClient for the given filer. filer is the filer's
 // HTTP host:port (as returned by getFilerAddress); seaweedfs derives the gRPC
-// port from it internally.
-func NewIAMClient(filer string) *IAMClient {
+// port from it internally. adminSigningKey is the jwt.filer_signing.key from
+// the cluster's security.toml; pass nil/empty when the cluster does not
+// require admin Bearer auth.
+func NewIAMClient(filer string, adminSigningKey []byte) *IAMClient {
 	return &IAMClient{
 		filerGrpcAddress: pb.ServerAddress(filer).ToGrpcAddress(),
 		dialOption:       grpc.WithTransportCredentials(insecure.NewCredentials()),
+		adminSigningKey:  security.SigningKey(adminSigningKey),
 	}
 }
 
 // withClient opens a short-lived connection to the filer IAM service, applies
-// the request timeout, and invokes fn. Errors are returned verbatim so
-// callers can classify gRPC status codes.
+// the request timeout, attaches an admin Bearer token when one is configured,
+// and invokes fn. Errors are returned verbatim so callers can classify gRPC
+// status codes.
 func (c *IAMClient) withClient(ctx context.Context, fn func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error) error {
 	return pb.WithGrpcClient(false, 0, func(conn *grpc.ClientConn) error {
-		callCtx, cancel := context.WithTimeout(ctx, iamRequestTimeout)
+		callCtx, cancel := context.WithTimeout(c.authContext(ctx), iamRequestTimeout)
 		defer cancel()
 		return fn(callCtx, iam_pb.NewSeaweedIdentityAccessManagementClient(conn))
 	}, c.filerGrpcAddress, false, c.dialOption)
+}
+
+// authContext returns ctx with an admin Bearer token appended to the outgoing
+// metadata when adminSigningKey is configured; otherwise ctx is returned
+// unchanged. The token is minted per call (claims carry no per-request data
+// but jwt/v5 stamps a fresh iat/exp) — cheap enough at IAM-CR-reconcile rate.
+// Mirrors weed/shell/command_s3_iam_client.go:iamAdminAuthContext.
+func (c *IAMClient) authContext(ctx context.Context) context.Context {
+	if len(c.adminSigningKey) == 0 {
+		return ctx
+	}
+	// expiresAfterSec=0 → no exp claim. The filer's checkAdminAuth only
+	// validates the signature + RegisteredClaims; not pinning an expiry here
+	// keeps the operator's IAM reconciles working without a clock-skew
+	// allowance against the filer pod.
+	token := security.GenJwtForFilerAdmin(c.adminSigningKey, 0)
+	if token == "" {
+		return ctx
+	}
+	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+string(token))
 }
 
 // lockUser serializes read-modify-write updates to a single identity on this

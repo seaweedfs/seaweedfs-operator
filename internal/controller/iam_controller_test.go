@@ -92,7 +92,7 @@ func reconcileOnce(t *testing.T, r reconcile.Reconciler, key types.NamespacedNam
 }
 
 func fakeIAMFactory(fa IAMAdmin) IAMAdminFactory {
-	return func(_ string, _ logr.Logger) (IAMAdmin, error) { return fa, nil }
+	return func(_ string, _ []byte, _ logr.Logger) (IAMAdmin, error) { return fa, nil }
 }
 
 // --- S3Identity ---
@@ -600,3 +600,63 @@ var (
 	_ reconcile.Reconciler = (*S3PolicyReconciler)(nil)
 	_ reconcile.Reconciler = (*S3PolicyBindingReconciler)(nil)
 )
+
+// TestResolveSeaweedFiler_LoadsAdminSigningKey pins the issue #257 fix:
+// resolveSeaweedFiler must surface jwt.filer_signing.key from the rendered
+// security ConfigMap so the IAM client can mint admin Bearer tokens. A
+// missing ConfigMap (cluster mid-reconcile, or an externally managed cluster)
+// degrades to an empty key — matching the filer's unauthenticated branch.
+func TestResolveSeaweedFiler_LoadsAdminSigningKey(t *testing.T) {
+	scheme := iamTestScheme(t)
+	sw := newTestSeaweedWithFiler()
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      SecurityConfigMapName(sw),
+			Namespace: sw.Namespace,
+		},
+		Data: map[string]string{
+			"security.toml": "[jwt.filer_signing]\nkey = \"abc123==\"\n",
+		},
+	}
+	cli := iamTestClient(t, scheme, sw, cm)
+
+	filer, key, found, err := resolveSeaweedFiler(context.Background(), cli, iamSeaweedRef(), "media")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if !found {
+		t.Fatal("expected cluster to be found")
+	}
+	if filer == "" {
+		t.Fatal("expected non-empty filer address")
+	}
+	if string(key) != "abc123==" {
+		t.Fatalf("admin signing key = %q, want %q", string(key), "abc123==")
+	}
+}
+
+func TestResolveSeaweedFiler_MissingConfigMapReturnsEmptyKey(t *testing.T) {
+	scheme := iamTestScheme(t)
+	sw := newTestSeaweedWithFiler()
+	cli := iamTestClient(t, scheme, sw)
+
+	_, key, found, err := resolveSeaweedFiler(context.Background(), cli, iamSeaweedRef(), "media")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if !found {
+		t.Fatal("expected cluster to be found")
+	}
+	if len(key) != 0 {
+		t.Fatalf("expected empty key when ConfigMap missing, got %q", string(key))
+	}
+}
+
+// newTestSeaweedWithFiler returns the standard test Seaweed CR with a Filer
+// spec so securityConfigNeeded returns true and the operator would render a
+// security.toml ConfigMap with jwt.filer_signing.key.
+func newTestSeaweedWithFiler() *seaweedv1.Seaweed {
+	sw := newTestSeaweed()
+	sw.Spec.Filer = &seaweedv1.FilerSpec{Replicas: 1}
+	return sw
+}

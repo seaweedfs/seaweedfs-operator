@@ -22,11 +22,7 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 		fallback = m.Spec.Volume.VolumeServerConfig
 	}
 
-	commands := []string{"weed", "-logtostderr=true"}
-	if arg := tlsConfigDirArg(m); arg != "" {
-		commands = append(commands, arg)
-	}
-	commands = append(commands, "volume")
+	commands := weedPreamble(m, topologyLoggingArgs(m, topologySpec), "volume")
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
 
 	// Configure max volume counts with fallback
@@ -81,11 +77,7 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 }
 
 func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string, extraArgs ...string) string {
-	commands := []string{"weed", "-logtostderr=true"}
-	if arg := tlsConfigDirArg(m); arg != "" {
-		commands = append(commands, arg)
-	}
-	commands = append(commands, "volume")
+	commands := weedPreamble(m, m.BaseVolumeSpec().LoggingArgs(), "volume")
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
 	if m.Spec.Volume.MaxVolumeCounts != nil && *m.Spec.Volume.MaxVolumeCounts > 0 {
 		commands = append(commands, fmt.Sprintf("-max=%d", *m.Spec.Volume.MaxVolumeCounts))

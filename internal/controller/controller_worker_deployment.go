@@ -17,11 +17,7 @@ func getAdminAddress(m *seaweedv1.Seaweed) string {
 }
 
 func buildWorkerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
-	commands := []string{"weed", "-logtostderr=true"}
-	if arg := tlsConfigDirArg(m); arg != "" {
-		commands = append(commands, arg)
-	}
-	commands = append(commands, "worker")
+	commands := weedPreamble(m, m.BaseWorkerSpec().LoggingArgs(), "worker")
 	commands = append(commands, fmt.Sprintf("-admin=%s", getAdminAddress(m)))
 	if m.Spec.Worker.Persistence != nil && m.Spec.Worker.Persistence.Enabled {
 		mountPath := "/data"

@@ -1585,6 +1585,11 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    loggingArgs:
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
                     metricsPort:
                       type: integer
                     nodeSelector:
@@ -3592,6 +3597,11 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    loggingArgs:
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
                     maxMB:
                       type: integer
                     metricsPort:
@@ -4654,6 +4664,11 @@ spec:
                   additionalProperties:
                     type: string
                   type: object
+                loggingArgs:
+                  items:
+                    type: string
+                  type: array
+                  x-kubernetes-list-type: atomic
                 master:
                   properties:
                     affinity:
@@ -5311,6 +5326,11 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    loggingArgs:
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
                     metricsPort:
                       type: integer
                     nodeSelector:
@@ -6898,6 +6918,11 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    loggingArgs:
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
                     metricsPort:
                       type: integer
                     nodeSelector:
@@ -8467,6 +8492,11 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    loggingArgs:
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
                     maxAuthTries:
                       minimum: 1
                       type: integer
@@ -10093,6 +10123,11 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    loggingArgs:
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
                     maxVolumeCounts:
                       type: integer
                     metricsPort:
@@ -11642,6 +11677,11 @@ spec:
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
                         type: object
+                      loggingArgs:
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
                       maxVolumeCounts:
                         type: integer
                       metricsPort:
@@ -13184,6 +13224,11 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    loggingArgs:
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
                     maxDetect:
                       minimum: 1
                       type: integer

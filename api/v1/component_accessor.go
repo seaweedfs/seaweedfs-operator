@@ -29,6 +29,7 @@ type ComponentAccessor interface {
 	Volumes() []corev1.Volume
 	VolumeMounts() []corev1.VolumeMount
 	ExtraArgs() []string
+	LoggingArgs() []string
 	Sidecars() []corev1.Container
 	InitContainers() []corev1.Container
 	PodSecurityContext() *corev1.PodSecurityContext
@@ -47,6 +48,7 @@ type componentAccessorImpl struct {
 	clusterLabels             map[string]string
 	tolerations               []corev1.Toleration
 	statefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType
+	loggingArgs               []string
 
 	// ComponentSpec is the Component Spec
 	ComponentSpec *ComponentSpec
@@ -222,6 +224,14 @@ func (a *componentAccessorImpl) ExtraArgs() []string {
 	return a.ComponentSpec.ExtraArgs
 }
 
+func (a *componentAccessorImpl) LoggingArgs() []string {
+	args := a.ComponentSpec.LoggingArgs
+	if len(args) == 0 {
+		args = a.loggingArgs
+	}
+	return args
+}
+
 func (a *componentAccessorImpl) Sidecars() []corev1.Container {
 	return a.ComponentSpec.Sidecars
 }
@@ -250,6 +260,7 @@ func buildSeaweedComponentAccessor(spec *SeaweedSpec, componentSpec *ComponentSp
 		clusterLabels:             spec.Labels,
 		tolerations:               spec.Tolerations,
 		statefulSetUpdateStrategy: spec.StatefulSetUpdateStrategy,
+		loggingArgs:               spec.LoggingArgs,
 
 		ComponentSpec: componentSpec,
 	}

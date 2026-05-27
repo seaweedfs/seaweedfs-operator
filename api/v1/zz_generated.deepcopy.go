@@ -394,6 +394,11 @@ func (in *ComponentSpec) DeepCopyInto(out *ComponentSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.LoggingArgs != nil {
+		in, out := &in.LoggingArgs, &out.LoggingArgs
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.Sidecars != nil {
 		in, out := &in.Sidecars, &out.Sidecars
 		*out = make([]corev1.Container, len(*in))
@@ -1536,6 +1541,11 @@ func (in *SeaweedSpec) DeepCopyInto(out *SeaweedSpec) {
 		in, out := &in.HostSuffix, &out.HostSuffix
 		*out = new(string)
 		**out = **in
+	}
+	if in.LoggingArgs != nil {
+		in, out := &in.LoggingArgs, &out.LoggingArgs
+		*out = make([]string, len(*in))
+		copy(*out, *in)
 	}
 }
 

@@ -13,13 +13,7 @@ import (
 )
 
 func buildMasterStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
-	command := []string{"weed", "-logtostderr=true"}
-	if arg := tlsConfigDirArg(m); arg != "" {
-		// -config_dir is a top-level weed flag and must come before the
-		// subcommand.
-		command = append(command, arg)
-	}
-	command = append(command, "master")
+	command := weedPreamble(m, m.BaseMasterSpec().LoggingArgs(), "master")
 	spec := m.Spec.Master
 	if spec.VolumePreallocate != nil && *spec.VolumePreallocate {
 		command = append(command, "-volumePreallocate")

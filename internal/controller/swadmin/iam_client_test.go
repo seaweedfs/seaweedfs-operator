@@ -140,4 +140,3 @@ func (s *authRecordingIAM) GetUser(ctx context.Context, req *iam_pb.GetUserReque
 	}
 	return &iam_pb.GetUserResponse{Identity: &iam_pb.Identity{Name: req.Username}}, nil
 }
-

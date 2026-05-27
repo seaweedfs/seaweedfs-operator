@@ -77,7 +77,7 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		secretName = cred.Name
 	}
 
-	filer, found, err := resolveSeaweedFiler(ctx, r.Client, cred.Spec.SeaweedRef, cred.Namespace)
+	filer, adminKey, found, err := resolveSeaweedFiler(ctx, r.Client, cred.Spec.SeaweedRef, cred.Namespace)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -86,7 +86,7 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 	setIAMCondition(&cred.Status.Conditions, cred.Generation, seaweedv1.S3ConditionClusterReachable, metav1.ConditionTrue, "Reachable", "")
 
-	admin, err := r.getIAMAdmin(filer, log)
+	admin, err := r.getIAMAdmin(filer, adminKey, log)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

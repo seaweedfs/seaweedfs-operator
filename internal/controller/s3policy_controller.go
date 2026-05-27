@@ -67,7 +67,7 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				policy.Status.PolicyName, name))
 	}
 
-	filer, found, err := resolveSeaweedFiler(ctx, r.Client, policy.Spec.SeaweedRef, policy.Namespace)
+	filer, adminKey, found, err := resolveSeaweedFiler(ctx, r.Client, policy.Spec.SeaweedRef, policy.Namespace)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -76,7 +76,7 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	setIAMCondition(&policy.Status.Conditions, policy.Generation, seaweedv1.S3ConditionClusterReachable, metav1.ConditionTrue, "Reachable", "")
 
-	admin, err := r.getIAMAdmin(filer, log)
+	admin, err := r.getIAMAdmin(filer, adminKey, log)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

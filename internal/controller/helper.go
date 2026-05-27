@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
@@ -197,6 +198,19 @@ func getStorageClassName(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTop
 	}
 	if m.Spec.Volume != nil && m.Spec.Volume.StorageClassName != nil {
 		return m.Spec.Volume.StorageClassName
+	}
+	return nil
+}
+
+// getStorageSelector returns the PVC label selector with topology-then-flat
+// fallback. Used to bind a volume server's StatefulSet PVCs to pre-provisioned
+// PVs that carry matching labels.
+func getStorageSelector(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *metav1.LabelSelector {
+	if topologySpec != nil && topologySpec.StorageSelector != nil {
+		return topologySpec.StorageSelector
+	}
+	if m.Spec.Volume != nil && m.Spec.Volume.StorageSelector != nil {
+		return m.Spec.Volume.StorageSelector
 	}
 	return nil
 }

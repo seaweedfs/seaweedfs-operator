@@ -1660,6 +1660,11 @@ func (in *VolumeServerConfig) DeepCopyInto(out *VolumeServerConfig) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.StorageSelector != nil {
+		in, out := &in.StorageSelector, &out.StorageSelector
+		*out = new(metav1.LabelSelector)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.MetricsPort != nil {
 		in, out := &in.MetricsPort, &out.MetricsPort
 		*out = new(int32)

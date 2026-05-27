@@ -309,6 +309,16 @@ type VolumeServerConfig struct {
 	Service          *ServiceSpec `json:"service,omitempty"`
 	StorageClassName *string      `json:"storageClassName,omitempty"`
 
+	// StorageSelector is an optional label query applied to the
+	// VolumeClaimTemplate's spec.selector. Set this to bind the volume
+	// server's PVCs to pre-provisioned PVs that carry matching labels —
+	// useful when reusing existing PVs on a cluster instead of dynamic
+	// provisioning. The selector is propagated unchanged to each
+	// per-disk PVC template; with multiple matching PVs, the scheduler
+	// pairs one PV per replica/disk.
+	// +optional
+	StorageSelector *metav1.LabelSelector `json:"storageSelector,omitempty"`
+
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 

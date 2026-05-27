@@ -202,9 +202,6 @@ func getStorageClassName(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTop
 	return nil
 }
 
-// getStorageSelector returns the PVC label selector with topology-then-flat
-// fallback. Used to bind a volume server's StatefulSet PVCs to pre-provisioned
-// PVs that carry matching labels.
 func getStorageSelector(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) *metav1.LabelSelector {
 	if topologySpec != nil && topologySpec.StorageSelector != nil {
 		return topologySpec.StorageSelector

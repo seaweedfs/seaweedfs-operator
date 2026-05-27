@@ -82,14 +82,11 @@ func TestVolumeStatefulSet_NilSelectorYieldsNilPVCSelector(t *testing.T) {
 		t.Fatalf("VolumeClaimTemplates len = %d, want 1", len(sts.Spec.VolumeClaimTemplates))
 	}
 	if sts.Spec.VolumeClaimTemplates[0].Spec.Selector != nil {
-		t.Errorf("PVC.Spec.Selector = %#v, want nil — selector must stay unset when StorageSelector is nil so dynamic provisioning still works",
-			sts.Spec.VolumeClaimTemplates[0].Spec.Selector)
+		t.Errorf("PVC.Spec.Selector = %#v, want nil", sts.Spec.VolumeClaimTemplates[0].Spec.Selector)
 	}
 }
 
 func TestVolumeTopologyStatefulSet_PropagatesStorageSelector_TopologyWins(t *testing.T) {
-	// Topology-level selector should win over the flat spec.volume selector,
-	// mirroring the precedence already established for StorageClassName.
 	flatSel := &metav1.LabelSelector{MatchLabels: map[string]string{"tier": "fast"}}
 	topoSel := &metav1.LabelSelector{MatchLabels: map[string]string{"tier": "ultra"}}
 
@@ -131,14 +128,11 @@ func TestVolumeTopologyStatefulSet_PropagatesStorageSelector_TopologyWins(t *tes
 		t.Fatalf("VolumeClaimTemplates len = %d, want 1", len(sts.Spec.VolumeClaimTemplates))
 	}
 	if !apiequality.Semantic.DeepEqual(sts.Spec.VolumeClaimTemplates[0].Spec.Selector, topoSel) {
-		t.Errorf("topology PVC.Spec.Selector = %#v, want topology selector %#v (topology must override flat)",
-			sts.Spec.VolumeClaimTemplates[0].Spec.Selector, topoSel)
+		t.Errorf("topology PVC.Spec.Selector = %#v, want %#v", sts.Spec.VolumeClaimTemplates[0].Spec.Selector, topoSel)
 	}
 }
 
 func TestVolumeTopologyStatefulSet_FallsBackToFlatStorageSelector(t *testing.T) {
-	// When the topology group leaves StorageSelector unset, the flat
-	// spec.volume.storageSelector value is used.
 	flatSel := &metav1.LabelSelector{MatchLabels: map[string]string{"tier": "fast"}}
 
 	diskCount := int32(1)
@@ -175,14 +169,12 @@ func TestVolumeTopologyStatefulSet_FallsBackToFlatStorageSelector(t *testing.T) 
 	sts := r.createVolumeServerTopologyStatefulSet(m, "rack1", topology)
 
 	if !apiequality.Semantic.DeepEqual(sts.Spec.VolumeClaimTemplates[0].Spec.Selector, flatSel) {
-		t.Errorf("topology PVC.Spec.Selector = %#v, want flat selector %#v (fallback when topology unset)",
-			sts.Spec.VolumeClaimTemplates[0].Spec.Selector, flatSel)
+		t.Errorf("topology PVC.Spec.Selector = %#v, want %#v", sts.Spec.VolumeClaimTemplates[0].Spec.Selector, flatSel)
 	}
 }
 
 func TestGetStorageSelector_NilSafe(t *testing.T) {
-	// Topology-only deployments may omit spec.volume entirely; the helper
-	// must not panic on m.Spec.Volume == nil.
+	// Topology-only deployments omit spec.volume; helper must not panic.
 	m := &seaweedv1.Seaweed{
 		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
 		Spec:       seaweedv1.SeaweedSpec{Master: &seaweedv1.MasterSpec{Replicas: 1}},

@@ -188,6 +188,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
 				StorageClassName: m.Spec.Volume.StorageClassName,
+				Selector:         m.Spec.Volume.StorageSelector.DeepCopy(),
 				AccessModes: []corev1.PersistentVolumeAccessMode{
 					corev1.ReadWriteOnce,
 				},
@@ -351,6 +352,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
 				StorageClassName: getStorageClassName(m, topologySpec),
+				Selector:         getStorageSelector(m, topologySpec).DeepCopy(),
 				AccessModes: []corev1.PersistentVolumeAccessMode{
 					corev1.ReadWriteOnce,
 				},

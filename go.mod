@@ -71,7 +71,6 @@ require (
 	github.com/bradfitz/iter v0.0.0-20191230175014-e8f45d346db8 // indirect
 	github.com/buengese/sgzip v0.1.1 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
-	github.com/bwmarrin/snowflake v0.3.0 // indirect
 	github.com/calebcase/tmpfile v1.0.3 // indirect
 	github.com/chilts/sid v0.0.0-20190607042430-660e94789ec9 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
@@ -272,7 +271,7 @@ require (
 	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/seaweedfs/goexif v1.0.3 // indirect
-	github.com/seaweedfs/seaweedfs v0.0.0-20260526054125-1355c7a10219
+	github.com/seaweedfs/seaweedfs v0.0.0-20260530162906-5834c834e329
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect

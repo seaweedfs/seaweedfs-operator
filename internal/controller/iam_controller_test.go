@@ -377,6 +377,148 @@ func TestS3Credentials_WaitsForIdentity(t *testing.T) {
 	}
 }
 
+func TestS3Credentials_CrossNamespaceSecret(t *testing.T) {
+	scheme := iamTestScheme(t)
+	existing := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "shared-secret", Namespace: "secrets"},
+		Data: map[string][]byte{
+			defaultAccessKeyField: []byte("AKIAXNAMESPACE"),
+			defaultSecretKeyField: []byte("xnssecretkey"),
+		},
+	}
+	cred := &seaweedv1.S3Credentials{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice-creds", Namespace: "media"},
+		Spec: seaweedv1.S3CredentialsSpec{
+			SeaweedRef:  iamSeaweedRef(),
+			IdentityRef: seaweedv1.S3IdentityRef{Name: "alice"},
+			SecretRef:   seaweedv1.S3SecretRef{Name: "shared-secret", Namespace: "secrets"},
+		},
+	}
+	cli := iamTestClient(t, scheme, newTestSeaweed(), existing, cred)
+	fa := newFakeIAMAdmin()
+	fa.seedUser("alice")
+	r := &S3CredentialsReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "alice-creds"}
+	reconcileStable(t, r, key, 5)
+
+	// Key from the cross-namespace Secret should be registered on the identity.
+	if keys := fa.userKeys("alice"); len(keys) != 1 || keys[0] != "AKIAXNAMESPACE" {
+		t.Fatalf("expected adopted key AKIAXNAMESPACE, got %v", keys)
+	}
+
+	// The original Secret in the foreign namespace must not be deleted or modified.
+	var secret corev1.Secret
+	if err := cli.Get(context.Background(), types.NamespacedName{Namespace: "secrets", Name: "shared-secret"}, &secret); err != nil {
+		t.Fatalf("cross-namespace secret should still exist: %v", err)
+	}
+	if secret.Annotations[s3CredentialsManagedAnnotation] == "true" {
+		t.Error("cross-namespace secret must not be marked managed")
+	}
+
+	// Status should reflect the qualified namespace/name.
+	var got seaweedv1.S3Credentials
+	if err := cli.Get(context.Background(), key, &got); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status.SecretName != "secrets/shared-secret" {
+		t.Errorf("status.secretName = %q, want %q", got.Status.SecretName, "secrets/shared-secret")
+	}
+	if got.Status.Phase != seaweedv1.S3PhaseReady {
+		t.Errorf("phase = %q, want Ready", got.Status.Phase)
+	}
+}
+
+func TestS3Credentials_CrossNamespaceSecret_MissingEntersPending(t *testing.T) {
+	scheme := iamTestScheme(t)
+	cred := &seaweedv1.S3Credentials{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice-creds", Namespace: "media"},
+		Spec: seaweedv1.S3CredentialsSpec{
+			SeaweedRef:  iamSeaweedRef(),
+			IdentityRef: seaweedv1.S3IdentityRef{Name: "alice"},
+			SecretRef:   seaweedv1.S3SecretRef{Name: "shared-secret", Namespace: "secrets"},
+		},
+	}
+	cli := iamTestClient(t, scheme, newTestSeaweed(), cred)
+	fa := newFakeIAMAdmin()
+	fa.seedUser("alice")
+	r := &S3CredentialsReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "alice-creds"}
+	reconcileOnce(t, r, key) // adds finalizer
+	res := reconcileOnce(t, r, key)
+	if res.RequeueAfter == 0 {
+		t.Fatal("expected requeue while waiting for cross-namespace secret")
+	}
+
+	// No IAM key should be provisioned.
+	if keys := fa.userKeys("alice"); len(keys) != 0 {
+		t.Errorf("no IAM key should be provisioned while secret is missing, got %v", keys)
+	}
+
+	var got seaweedv1.S3Credentials
+	if err := cli.Get(context.Background(), key, &got); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.S3PhasePending {
+		t.Errorf("phase = %q, want Pending", got.Status.Phase)
+	}
+}
+
+func TestS3Credentials_CrossNamespaceSecret_DeleteDoesNotTouchForeignSecret(t *testing.T) {
+	scheme := iamTestScheme(t)
+	// A secret in a foreign namespace that happens to carry the managed annotation
+	// (e.g. it is owned by a different S3Credentials in that namespace).
+	existing := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "shared-secret",
+			Namespace:   "secrets",
+			Annotations: map[string]string{s3CredentialsManagedAnnotation: "true"},
+		},
+		Data: map[string][]byte{
+			defaultAccessKeyField: []byte("AKIAXNAMESPACE"),
+			defaultSecretKeyField: []byte("xnssecretkey"),
+		},
+	}
+	cred := &seaweedv1.S3Credentials{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice-creds", Namespace: "media"},
+		Spec: seaweedv1.S3CredentialsSpec{
+			SeaweedRef:  iamSeaweedRef(),
+			IdentityRef: seaweedv1.S3IdentityRef{Name: "alice"},
+			SecretRef:   seaweedv1.S3SecretRef{Name: "shared-secret", Namespace: "secrets"},
+		},
+	}
+	cli := iamTestClient(t, scheme, newTestSeaweed(), existing, cred)
+	fa := newFakeIAMAdmin()
+	fa.seedUser("alice")
+	r := &S3CredentialsReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "alice-creds"}
+	reconcileStable(t, r, key, 5)
+
+	var live seaweedv1.S3Credentials
+	if err := cli.Get(context.Background(), key, &live); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if err := cli.Delete(context.Background(), &live); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reconcileOnce(t, r, key)
+
+	// IAM key should be removed (reclaimPolicy: Delete by default).
+	if k := fa.userKeys("alice"); len(k) != 0 {
+		t.Errorf("expected access key removed, got %v", k)
+	}
+	// The foreign Secret must be untouched.
+	var secret corev1.Secret
+	if err := cli.Get(context.Background(), types.NamespacedName{Namespace: "secrets", Name: "shared-secret"}, &secret); err != nil {
+		t.Fatalf("cross-namespace secret must not be deleted: %v", err)
+	}
+}
+
 func TestS3Credentials_Delete_RemovesKeyAndManagedSecret(t *testing.T) {
 	scheme := iamTestScheme(t)
 	cred := &seaweedv1.S3Credentials{

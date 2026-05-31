@@ -76,6 +76,10 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if secretName == "" {
 		secretName = cred.Name
 	}
+	secretNamespace := cred.Spec.SecretRef.Namespace
+	if secretNamespace == "" {
+		secretNamespace = cred.Namespace
+	}
 
 	filer, adminKey, found, err := resolveSeaweedFiler(ctx, r.Client, cred.Spec.SeaweedRef, cred.Namespace)
 	if err != nil {
@@ -92,7 +96,7 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if !cred.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, &cred, user, secretName, admin)
+		return r.handleDeletion(ctx, &cred, user, secretName, secretNamespace, admin)
 	}
 
 	if !controllerutil.ContainsFinalizer(&cred, s3CredentialsFinalizer) {
@@ -112,19 +116,28 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return r.fail(ctx, &cred, "IdentityLookupFailed", err.Error())
 	}
 
-	return r.reconcileKey(ctx, &cred, user, secretName, iamUser, admin)
+	return r.reconcileKey(ctx, &cred, user, secretName, secretNamespace, iamUser, admin)
 }
 
 // reconcileKey ensures the identity owns exactly the access key recorded in
 // the Secret. It adopts a user-populated Secret, generates and stores a fresh
 // key pair when the Secret is missing/incomplete, and removes a previously
 // generated key it is replacing.
-func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seaweedv1.S3Credentials, user, secretName string, iamUser *swadmin.IAMUser, admin IAMAdmin) (ctrl.Result, error) {
+func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seaweedv1.S3Credentials, user, secretName, secretNamespace string, iamUser *swadmin.IAMUser, admin IAMAdmin) (ctrl.Result, error) {
 	akField, skField := credentialFields(cred)
 
-	secret, secretFound, err := r.getSecret(ctx, cred.Namespace, secretName)
+	crossNamespace := secretNamespace != cred.Namespace
+
+	secret, secretFound, err := r.getSecret(ctx, secretNamespace, secretName)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+
+	// A cross-namespace Secret must already exist; the controller never creates
+	// Secrets in foreign namespaces (owner references are namespace-scoped).
+	if crossNamespace && !secretFound {
+		return r.pending(ctx, cred, "SecretNotFound",
+			fmt.Sprintf("cross-namespace Secret %s/%s does not exist", secretNamespace, secretName))
 	}
 
 	var existingAK, existingSK string
@@ -150,7 +163,7 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 	}
 
 	// Mirror the key pair into the Secret.
-	if err := r.writeSecret(ctx, cred, secret, secretFound, secretName, akField, skField, desiredAK, desiredSK); err != nil {
+	if err := r.writeSecret(ctx, cred, secret, secretFound, secretName, secretNamespace, akField, skField, desiredAK, desiredSK); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -162,7 +175,11 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 	}
 
 	cred.Status.AccessKey = desiredAK
-	cred.Status.SecretName = secretName
+	if secretNamespace != cred.Namespace {
+		cred.Status.SecretName = secretNamespace + "/" + secretName
+	} else {
+		cred.Status.SecretName = secretName
+	}
 	cred.Status.ObservedGeneration = cred.Generation
 	cred.Status.Phase = seaweedv1.S3PhaseReady
 	setIAMCondition(&cred.Status.Conditions, cred.Generation, seaweedv1.S3ConditionReady, metav1.ConditionTrue, "Reconciled", "")
@@ -175,12 +192,12 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 // writeSecret creates or updates the Secret holding the key pair. A Secret the
 // operator creates is annotated as managed so the finalizer can delete it; a
 // pre-existing Secret is updated in place but never marked managed.
-func (r *S3CredentialsReconciler) writeSecret(ctx context.Context, cred *seaweedv1.S3Credentials, secret *corev1.Secret, secretFound bool, secretName, akField, skField, ak, sk string) error {
+func (r *S3CredentialsReconciler) writeSecret(ctx context.Context, cred *seaweedv1.S3Credentials, secret *corev1.Secret, secretFound bool, secretName, secretNamespace, akField, skField, ak, sk string) error {
 	if !secretFound {
 		newSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        secretName,
-				Namespace:   cred.Namespace,
+				Namespace:   secretNamespace,
 				Annotations: map[string]string{s3CredentialsManagedAnnotation: "true"},
 			},
 			Type: corev1.SecretTypeOpaque,
@@ -206,7 +223,7 @@ func (r *S3CredentialsReconciler) writeSecret(ctx context.Context, cred *seaweed
 	return r.Update(ctx, secret)
 }
 
-func (r *S3CredentialsReconciler) handleDeletion(ctx context.Context, cred *seaweedv1.S3Credentials, user, secretName string, admin IAMAdmin) (ctrl.Result, error) {
+func (r *S3CredentialsReconciler) handleDeletion(ctx context.Context, cred *seaweedv1.S3Credentials, user, secretName, secretNamespace string, admin IAMAdmin) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(cred, s3CredentialsFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -223,7 +240,7 @@ func (r *S3CredentialsReconciler) handleDeletion(ctx context.Context, cred *seaw
 				return ctrl.Result{}, err
 			}
 		}
-		if err := r.deleteManagedSecret(ctx, cred.Namespace, secretName); err != nil {
+		if err := r.deleteManagedSecret(ctx, secretNamespace, secretName); err != nil {
 			return ctrl.Result{}, err
 		}
 	} else {
@@ -231,7 +248,7 @@ func (r *S3CredentialsReconciler) handleDeletion(ctx context.Context, cred *seaw
 		// reference, so removing the finalizer would let garbage collection
 		// delete it along with the access key we are deliberately keeping.
 		// Orphan it first so both the key and the Secret survive.
-		if err := r.orphanManagedSecret(ctx, cred.Namespace, secretName); err != nil {
+		if err := r.orphanManagedSecret(ctx, secretNamespace, secretName); err != nil {
 			return ctrl.Result{}, err
 		}
 	}

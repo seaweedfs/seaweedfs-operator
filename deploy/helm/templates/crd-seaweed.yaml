@@ -360,6 +360,8 @@ spec:
                     name:
                       maxLength: 253
                       type: string
+                    namespace:
+                      type: string
                     secretKeyField:
                       default: secretKey
                       minLength: 1

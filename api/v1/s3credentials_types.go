@@ -31,8 +31,8 @@ type S3IdentityRef struct {
 }
 
 // S3SecretRef points at the Kubernetes Secret that stores the access key and
-// secret key. The Secret must live in the same namespace as the
-// S3Credentials resource.
+// secret key. The Secret defaults to the same namespace as the S3Credentials
+// resource; set Namespace to reference a Secret in another namespace.
 //
 // On first reconcile the controller reads the Secret: if both keys are
 // already present it adopts them (registering the access key on the IAM user
@@ -41,11 +41,24 @@ type S3IdentityRef struct {
 // removed together with the IAM access key when the CR is deleted with
 // reclaimPolicy: Delete. A pre-existing (user-managed) Secret is never
 // deleted by the controller.
+//
+// Cross-namespace references are allowed and are NOT gated by an
+// admission-time SubjectAccessReview — gate access with Kubernetes RBAC on
+// the S3Credentials CRD if you need to restrict which namespaces may read a
+// Secret in another namespace (same model as seaweedRef). When Namespace is
+// set to a different namespace the Secret must already exist; the controller
+// will not create Secrets in foreign namespaces.
 type S3SecretRef struct {
 	// Name of the Secret. Defaults to .metadata.name of the S3Credentials.
 	// +optional
 	// +kubebuilder:validation:MaxLength=253
 	Name string `json:"name,omitempty"`
+
+	// Namespace of the Secret. Defaults to the namespace of the S3Credentials
+	// resource. When set to a different namespace the Secret must already
+	// exist; the controller will not create Secrets in foreign namespaces.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 
 	// AccessKeyField is the key under which the access key id is stored in
 	// the Secret. Defaults to "accessKey".

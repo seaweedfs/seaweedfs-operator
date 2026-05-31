@@ -240,16 +240,22 @@ func (r *S3CredentialsReconciler) handleDeletion(ctx context.Context, cred *seaw
 				return ctrl.Result{}, err
 			}
 		}
-		if err := r.deleteManagedSecret(ctx, secretNamespace, secretName); err != nil {
-			return ctrl.Result{}, err
+		// Never touch a Secret in a foreign namespace. The controller did not
+		// create it there and another S3Credentials may legitimately own it.
+		if secretNamespace == cred.Namespace {
+			if err := r.deleteManagedSecret(ctx, secretNamespace, secretName); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 	} else {
 		// Retain: an operator-created Secret carries a controller owner
 		// reference, so removing the finalizer would let garbage collection
 		// delete it along with the access key we are deliberately keeping.
 		// Orphan it first so both the key and the Secret survive.
-		if err := r.orphanManagedSecret(ctx, secretNamespace, secretName); err != nil {
-			return ctrl.Result{}, err
+		if secretNamespace == cred.Namespace {
+			if err := r.orphanManagedSecret(ctx, secretNamespace, secretName); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 	}
 

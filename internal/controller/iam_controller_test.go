@@ -467,6 +467,58 @@ func TestS3Credentials_CrossNamespaceSecret_MissingEntersPending(t *testing.T) {
 	}
 }
 
+func TestS3Credentials_CrossNamespaceSecret_DeleteDoesNotTouchForeignSecret(t *testing.T) {
+	scheme := iamTestScheme(t)
+	// A secret in a foreign namespace that happens to carry the managed annotation
+	// (e.g. it is owned by a different S3Credentials in that namespace).
+	existing := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "shared-secret",
+			Namespace:   "secrets",
+			Annotations: map[string]string{s3CredentialsManagedAnnotation: "true"},
+		},
+		Data: map[string][]byte{
+			defaultAccessKeyField: []byte("AKIAXNAMESPACE"),
+			defaultSecretKeyField: []byte("xnssecretkey"),
+		},
+	}
+	cred := &seaweedv1.S3Credentials{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice-creds", Namespace: "media"},
+		Spec: seaweedv1.S3CredentialsSpec{
+			SeaweedRef:  iamSeaweedRef(),
+			IdentityRef: seaweedv1.S3IdentityRef{Name: "alice"},
+			SecretRef:   seaweedv1.S3SecretRef{Name: "shared-secret", Namespace: "secrets"},
+		},
+	}
+	cli := iamTestClient(t, scheme, newTestSeaweed(), existing, cred)
+	fa := newFakeIAMAdmin()
+	fa.seedUser("alice")
+	r := &S3CredentialsReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "alice-creds"}
+	reconcileStable(t, r, key, 5)
+
+	var live seaweedv1.S3Credentials
+	if err := cli.Get(context.Background(), key, &live); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if err := cli.Delete(context.Background(), &live); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reconcileOnce(t, r, key)
+
+	// IAM key should be removed (reclaimPolicy: Delete by default).
+	if k := fa.userKeys("alice"); len(k) != 0 {
+		t.Errorf("expected access key removed, got %v", k)
+	}
+	// The foreign Secret must be untouched.
+	var secret corev1.Secret
+	if err := cli.Get(context.Background(), types.NamespacedName{Namespace: "secrets", Name: "shared-secret"}, &secret); err != nil {
+		t.Fatalf("cross-namespace secret must not be deleted: %v", err)
+	}
+}
+
 func TestS3Credentials_Delete_RemovesKeyAndManagedSecret(t *testing.T) {
 	scheme := iamTestScheme(t)
 	cred := &seaweedv1.S3Credentials{

@@ -67,8 +67,7 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				policy.Status.PolicyName, name))
 	}
 
-	// Gate a cross-namespace seaweedRef on a ResourceReferenceGrant. Skipped on
-	// the deletion path so revoking a grant can never strand the finalizer.
+	// Cross-namespace seaweedRef needs a grant; skip on deletion to not block cleanup.
 	if policy.DeletionTimestamp.IsZero() {
 		permitted, err := seaweedRefPermitted(ctx, r.Client, policy.Spec.SeaweedRef, kindS3Policy, policy.Namespace)
 		if err != nil {
@@ -149,8 +148,8 @@ func (r *S3PolicyReconciler) handleDeletion(ctx context.Context, policy *seaweed
 	return ctrl.Result{}, nil
 }
 
-// refForbidden records that a cross-namespace reference is not yet permitted by
-// a ResourceReferenceGrant and requeues without marking the CR Failed.
+// refForbidden requeues (not Failed) until a ResourceReferenceGrant permits the
+// reference.
 func (r *S3PolicyReconciler) refForbidden(ctx context.Context, policy *seaweedv1.S3Policy, message string) (ctrl.Result, error) {
 	setIAMCondition(&policy.Status.Conditions, policy.Generation, seaweedv1.S3ConditionReferenceGranted, metav1.ConditionFalse, "ReferenceGrantMissing", message)
 	policy.Status.Phase = seaweedv1.S3PhasePending

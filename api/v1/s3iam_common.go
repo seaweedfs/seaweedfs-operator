@@ -25,13 +25,10 @@ package v1
 // object, mirroring the convention in AWS ACK / Crossplane / Config Connector.
 
 // SeaweedReference points at the Seaweed CR whose embedded IAM service hosts
-// the identity/policy. A reference into another namespace is denied by default:
-// it resolves only when a ResourceReferenceGrant in the target Seaweed's
-// namespace permits a reference of this CR's kind from this CR's namespace to
-// kind Seaweed (group seaweed.seaweedfs.com). Same-namespace references never
-// need a grant. The controller stays Pending (condition ReferenceGranted=False)
-// until a permitting grant exists. Layer Kubernetes RBAC on the IAM CRDs on top
-// if you also want to restrict who can create them in the first place.
+// the identity/policy. A cross-namespace reference is denied unless a
+// ResourceReferenceGrant in the target Seaweed's namespace permits it; the CR
+// stays Pending (ReferenceGranted=False) until then. Same-namespace references
+// are always allowed.
 type SeaweedReference struct {
 	// Name of the Seaweed CR.
 	// +kubebuilder:validation:MinLength=1
@@ -79,11 +76,8 @@ const (
 	// S3ConditionClusterReachable reports filer/IAM connectivity via the
 	// referenced Seaweed CR.
 	S3ConditionClusterReachable = "ClusterReachable"
-	// S3ConditionReferenceGranted reports whether the CR's cross-namespace
-	// references (seaweedRef, and secretRef for S3Credentials) are permitted by
-	// a ResourceReferenceGrant in the target namespace. It is set False with
-	// reason ReferenceGrantMissing while a required grant is absent; the
-	// controller stays Pending and re-evaluates as grants appear. Same-namespace
-	// references never set this condition False.
+	// S3ConditionReferenceGranted is set False (reason ReferenceGrantMissing)
+	// while a required cross-namespace ResourceReferenceGrant is absent, and
+	// cleared once one permits the reference.
 	S3ConditionReferenceGranted = "ReferenceGranted"
 )

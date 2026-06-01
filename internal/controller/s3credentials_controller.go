@@ -81,9 +81,8 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		secretNamespace = cred.Namespace
 	}
 
-	// Gate a cross-namespace seaweedRef on a ResourceReferenceGrant. Skipped on
-	// the deletion path so revoking a grant can never strand the finalizer. The
-	// cross-namespace secretRef is gated separately in reconcileKey.
+	// Cross-namespace seaweedRef needs a grant; skip on deletion to not block
+	// cleanup. The secretRef is gated separately in reconcileKey.
 	if cred.DeletionTimestamp.IsZero() {
 		permitted, err := seaweedRefPermitted(ctx, r.Client, cred.Spec.SeaweedRef, kindS3Credentials, cred.Namespace)
 		if err != nil {
@@ -92,9 +91,7 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if !permitted {
 			return r.refForbidden(ctx, &cred, seaweedRefDeniedMessage(cred.Spec.SeaweedRef, kindS3Credentials, cred.Namespace))
 		}
-		// Clears any stale ReferenceGranted=False from a prior seaweedRef or
-		// secretRef denial. The secretRef gate in reconcileKey re-sets it if that
-		// reference is still not permitted.
+		// Clear any stale denial; the secretRef gate in reconcileKey re-sets it.
 		clearIAMCondition(&cred.Status.Conditions, seaweedv1.S3ConditionReferenceGranted)
 	}
 
@@ -145,8 +142,7 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 
 	crossNamespace := secretNamespace != cred.Namespace
 
-	// A cross-namespace secretRef requires a ResourceReferenceGrant in the
-	// Secret's namespace, independent of the seaweedRef grant checked earlier.
+	// Cross-namespace secretRef needs its own grant in the Secret's namespace.
 	if crossNamespace {
 		permitted, err := secretRefPermitted(ctx, r.Client, secretNamespace, secretName, cred.Namespace)
 		if err != nil {
@@ -338,9 +334,8 @@ func (r *S3CredentialsReconciler) getSecret(ctx context.Context, namespace, name
 	return &secret, true, nil
 }
 
-// refForbidden records that a cross-namespace reference (seaweedRef or
-// secretRef) is not yet permitted by a ResourceReferenceGrant and requeues
-// without marking the CR Failed.
+// refForbidden requeues (not Failed) until a ResourceReferenceGrant permits the
+// reference.
 func (r *S3CredentialsReconciler) refForbidden(ctx context.Context, cred *seaweedv1.S3Credentials, message string) (ctrl.Result, error) {
 	setIAMCondition(&cred.Status.Conditions, cred.Generation, seaweedv1.S3ConditionReferenceGranted, metav1.ConditionFalse, "ReferenceGrantMissing", message)
 	cred.Status.Phase = seaweedv1.S3PhasePending

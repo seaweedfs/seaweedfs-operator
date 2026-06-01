@@ -66,13 +66,10 @@ const (
 )
 
 // BucketClusterRef identifies the Seaweed cluster that hosts the bucket. A
-// reference into another namespace is denied by default: it resolves only when
-// a ResourceReferenceGrant in the target Seaweed's namespace permits a reference
-// from kind Bucket in this Bucket's namespace to kind Seaweed (group
-// seaweed.seaweedfs.com). Same-namespace references never need a grant. The
-// controller stays Pending (condition ClusterRefForbidden=True) until a
-// permitting grant exists. Layer Kubernetes RBAC on the `Bucket` resource on top
-// if you also want to restrict who can create Buckets in the first place.
+// cross-namespace reference is denied unless a ResourceReferenceGrant in the
+// target Seaweed's namespace permits it; the Bucket stays Pending
+// (ClusterRefForbidden=True) until then. Same-namespace references are always
+// allowed.
 type BucketClusterRef struct {
 	// Name of the Seaweed CR.
 	// +kubebuilder:validation:MinLength=1
@@ -336,11 +333,9 @@ const (
 	// BucketConditionOwnerMissing is set when the spec.owner identity
 	// does not exist in the IAM service. The controller retries.
 	BucketConditionOwnerMissing = "OwnerMissing"
-	// BucketConditionClusterRefForbidden is set True (reason
-	// ReferenceGrantMissing) when a cross-namespace clusterRef is not permitted
-	// by a ResourceReferenceGrant in the target Seaweed's namespace. The bucket
-	// stays Pending until a permitting grant appears, at which point the
-	// condition is cleared.
+	// BucketConditionClusterRefForbidden is set True (reason ReferenceGrantMissing)
+	// when a cross-namespace clusterRef lacks a permitting ResourceReferenceGrant;
+	// cleared once granted.
 	BucketConditionClusterRefForbidden = "ClusterRefForbidden"
 )
 

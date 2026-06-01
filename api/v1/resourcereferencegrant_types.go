@@ -20,87 +20,57 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ResourceReferenceGrant grants resources in one namespace permission to be
-// referenced from another namespace. It mirrors the Gateway API ReferenceGrant
-// (sigs.k8s.io/gateway-api): a cross-namespace reference is denied by default
-// and only succeeds when a ResourceReferenceGrant in the *referent's* namespace
-// (the namespace of the resource being pointed at) explicitly allows it.
-//
-// The grant lives in the namespace that owns the resources being referenced (the
-// "to" side), so that namespace's owner — not the requester — controls who may
-// reach in. Every spec.from entry is paired with every spec.to entry: a
-// reference is permitted when its source matches any from entry and its target
-// matches any to entry.
-//
-// This gates the cross-namespace references in this API group:
-//   - seaweedRef on S3Identity, S3Credentials, S3Policy, S3PolicyBinding, and
-//     clusterRef on Bucket (kind "Seaweed", group seaweed.seaweedfs.com)
-//   - secretRef on S3Credentials (kind "Secret", core group "")
-//
-// Same-namespace references never require a grant.
-
-// ReferenceGrantFrom describes a source of cross-namespace references: a kind in
-// a namespace that the grant trusts to reach into this namespace.
+// ReferenceGrantFrom is a trusted source: a kind in a namespace allowed to
+// reference into this grant's namespace.
 type ReferenceGrantFrom struct {
-	// Group is the API group of the referencing resource. The core API group
-	// is the empty string. For this operator's CRDs use
-	// "seaweed.seaweedfs.com".
+	// Group of the referencing resource; core group is "".
 	// +kubebuilder:validation:MaxLength=253
 	// +kubebuilder:validation:Pattern=`^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
 	Group string `json:"group"`
 
-	// Kind is the kind of the referencing resource, e.g. "S3Credentials",
-	// "S3Identity", "S3Policy", "S3PolicyBinding", or "Bucket".
+	// Kind of the referencing resource, e.g. "Bucket" or "S3Credentials".
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$`
 	Kind string `json:"kind"`
 
-	// Namespace is the namespace of the referencing resource.
+	// Namespace of the referencing resource.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	Namespace string `json:"namespace"`
 }
 
-// ReferenceGrantTo describes a referent: a kind (optionally a single named
-// resource) in this grant's namespace that may be referenced from a trusted
-// source.
+// ReferenceGrantTo is a referent in this grant's namespace, optionally pinned to
+// a single name.
 type ReferenceGrantTo struct {
-	// Group is the API group of the referent. The core API group (used by
-	// Secret) is the empty string. For this operator's Seaweed CR use
-	// "seaweed.seaweedfs.com".
+	// Group of the referent; core group "" for Secret.
 	// +kubebuilder:validation:MaxLength=253
 	// +kubebuilder:validation:Pattern=`^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
 	Group string `json:"group"`
 
-	// Kind is the kind of the referent, e.g. "Seaweed" or "Secret".
+	// Kind of the referent, e.g. "Seaweed" or "Secret".
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$`
 	Kind string `json:"kind"`
 
-	// Name, when set, restricts the grant to a single referent of the given
-	// group/kind in this namespace. Leave it empty to permit every resource of
-	// that group/kind in this namespace.
+	// Name pins a single referent; empty permits every resource of the group/kind.
 	// +optional
 	// +kubebuilder:validation:MaxLength=253
 	Name string `json:"name,omitempty"`
 }
 
-// ResourceReferenceGrantSpec identifies the cross-namespace references this
-// grant permits. A reference is allowed when it matches at least one from entry
-// and at least one to entry.
+// ResourceReferenceGrantSpec permits a reference that matches at least one From
+// and at least one To entry.
 type ResourceReferenceGrantSpec struct {
-	// From is the set of trusted sources (kind + namespace) that may reference
-	// the resources listed in To.
+	// From lists trusted sources that may reference the resources in To.
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=16
 	// +listType=atomic
 	From []ReferenceGrantFrom `json:"from"`
 
-	// To is the set of referents (kind, optionally a single name) in this
-	// grant's own namespace that the sources in From may reference.
+	// To lists the referents in this grant's namespace that From may reference.
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=16
 	// +listType=atomic
@@ -111,10 +81,12 @@ type ResourceReferenceGrantSpec struct {
 // +kubebuilder:resource:shortName=refgrant,categories=seaweedfs
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// ResourceReferenceGrant is the Schema for declaratively permitting
-// cross-namespace references into the grant's namespace. Like the Gateway API
-// ReferenceGrant it has no status: it is pure authorization data consumed by the
-// other controllers, with no lifecycle of its own.
+// ResourceReferenceGrant permits cross-namespace references into its own
+// namespace, mirroring the Gateway API ReferenceGrant: a cross-namespace
+// reference (seaweedRef/clusterRef -> Seaweed, secretRef -> Secret) is denied
+// unless a grant in the referent's namespace allows it. Same-namespace
+// references never need one. It has no status — pure authorization data consumed
+// by the other controllers.
 type ResourceReferenceGrant struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

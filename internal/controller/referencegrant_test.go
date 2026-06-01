@@ -411,10 +411,8 @@ func TestS3PolicyBinding_CrossNamespaceSeaweedRef_DeniedWithoutGrant(t *testing.
 	}
 }
 
-// assertDeletionNotBlocked deletes the live object and runs one reconcile with
-// no grant present, asserting the finalizer is cleared — i.e. a missing grant
-// never blocks cleanup. fresh is a fresh empty object of the same kind for the
-// post-reconcile re-read.
+// assertDeletionNotBlocked deletes live and reconciles once with no grant,
+// asserting the finalizer is cleared. fresh is an empty object for the re-read.
 func assertDeletionNotBlocked(t *testing.T, cli client.Client, r reconcile.Reconciler, key types.NamespacedName, live, fresh client.Object) {
 	t.Helper()
 	if err := cli.Get(context.Background(), key, live); err != nil {

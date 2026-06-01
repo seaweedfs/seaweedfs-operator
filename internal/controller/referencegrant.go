@@ -25,14 +25,11 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-// Group/kind identifiers used when matching ResourceReferenceGrants. These are
-// the API group + kind strings as they appear in a ResourceReferenceGrant's
-// spec.from / spec.to entries.
+// Group/kind strings as they appear in a ResourceReferenceGrant's from/to
+// entries. groupCore ("") is the core API group, where Secret lives.
 const (
-	// groupSeaweed is this operator's API group (Seaweed, Bucket, S3* CRDs).
 	groupSeaweed = "seaweed.seaweedfs.com"
-	// groupCore is the core Kubernetes API group, where Secret lives.
-	groupCore = ""
+	groupCore    = ""
 
 	kindSeaweed         = "Seaweed"
 	kindSecret          = "Secret"
@@ -45,8 +42,7 @@ const (
 
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=resourcereferencegrants,verbs=get;list;watch
 
-// referent identifies one side of a cross-namespace reference when matching it
-// against a ResourceReferenceGrant. Name is only consulted on the "to" side.
+// referent is one side of a reference; Name is only consulted on the "to" side.
 type referent struct {
 	Group     string
 	Kind      string
@@ -54,23 +50,11 @@ type referent struct {
 	Name      string
 }
 
-// referenceGrantPermits reports whether a reference from `from` to `to` is
-// allowed. A same-namespace reference is always allowed and short-circuits
-// without an API call. A cross-namespace reference is allowed only when some
-// ResourceReferenceGrant in the referent's namespace (to.Namespace) has a from
-// entry matching the source's group/kind/namespace and a to entry matching the
-// referent's group/kind — and, when that to entry pins a name, its name. This
-// mirrors the Gateway API ReferenceGrant semantics: deny by default, the
-// referent's namespace owner opts specific sources in.
-//
-// Enforcement is reconcile-time and therefore eventually consistent, like every
-// cross-resource dependency in this operator (and like Gateway API itself):
-// the check runs at the start of a reconcile, so revoking a grant does not
-// retroactively undo objects already provisioned under it, nor is it guaranteed
-// to interrupt an in-flight reconcile. A revoked grant takes effect on the next
-// reconcile, which then refuses to (re)provision and reports the reference as
-// not granted. Deletion never consults a grant, so revocation cannot strand a
-// finalizer.
+// referenceGrantPermits reports whether a from->to reference is allowed. Same
+// namespace is always allowed; cross-namespace requires a ResourceReferenceGrant
+// in to.Namespace matching both sides (Gateway API ReferenceGrant semantics:
+// deny by default). Enforcement is reconcile-time, so revoking a grant blocks the
+// next (re)provision but does not undo objects already provisioned under it.
 func referenceGrantPermits(ctx context.Context, c client.Client, from, to referent) (bool, error) {
 	if from.Namespace == to.Namespace {
 		return true, nil
@@ -87,8 +71,8 @@ func referenceGrantPermits(ctx context.Context, c client.Client, from, to refere
 	return false, nil
 }
 
-// grantAllows reports whether a single grant spec permits the from->to
-// reference: it must match both a from entry and a to entry.
+// grantAllows reports whether a grant spec matches both a from entry and a to
+// entry. An empty to.Name is a wildcard over the group/kind.
 func grantAllows(spec *seaweedv1.ResourceReferenceGrantSpec, from, to referent) bool {
 	fromMatched := false
 	for _, f := range spec.From {
@@ -104,8 +88,6 @@ func grantAllows(spec *seaweedv1.ResourceReferenceGrantSpec, from, to referent) 
 		if t.Group != to.Group || t.Kind != to.Kind {
 			continue
 		}
-		// An empty Name permits every resource of this group/kind in the
-		// namespace; a set Name pins a single referent.
 		if t.Name == "" || t.Name == to.Name {
 			return true
 		}
@@ -113,10 +95,7 @@ func grantAllows(spec *seaweedv1.ResourceReferenceGrantSpec, from, to referent) 
 	return false
 }
 
-// seaweedRefPermitted reports whether a resource of fromKind in fromNamespace
-// may resolve the given seaweedRef. Cross-namespace refs require a
-// ResourceReferenceGrant in the target Seaweed's namespace; same-namespace refs
-// are always permitted.
+// seaweedRefPermitted reports whether fromKind in fromNamespace may resolve ref.
 func seaweedRefPermitted(ctx context.Context, c client.Client, ref seaweedv1.SeaweedReference, fromKind, fromNamespace string) (bool, error) {
 	toNamespace := ref.Namespace
 	if toNamespace == "" {
@@ -129,8 +108,7 @@ func seaweedRefPermitted(ctx context.Context, c client.Client, ref seaweedv1.Sea
 }
 
 // secretRefPermitted reports whether an S3Credentials in fromNamespace may
-// reference the Secret named secretName in secretNamespace. Same-namespace
-// references are always permitted.
+// reference the Secret secretNamespace/secretName.
 func secretRefPermitted(ctx context.Context, c client.Client, secretNamespace, secretName, fromNamespace string) (bool, error) {
 	return referenceGrantPermits(ctx, c,
 		referent{Group: groupSeaweed, Kind: kindS3Credentials, Namespace: fromNamespace},
@@ -138,8 +116,7 @@ func secretRefPermitted(ctx context.Context, c client.Client, secretNamespace, s
 	)
 }
 
-// seaweedRefDeniedMessage explains why a cross-namespace seaweedRef was denied
-// and exactly which ResourceReferenceGrant would permit it.
+// seaweedRefDeniedMessage names the grant that would permit a denied seaweedRef.
 func seaweedRefDeniedMessage(ref seaweedv1.SeaweedReference, fromKind, fromNamespace string) string {
 	toNamespace := ref.Namespace
 	if toNamespace == "" {
@@ -151,8 +128,7 @@ func seaweedRefDeniedMessage(ref seaweedv1.SeaweedReference, fromKind, fromNames
 		groupSeaweed, fromKind, fromNamespace, groupSeaweed, kindSeaweed)
 }
 
-// secretRefDeniedMessage explains why a cross-namespace secretRef was denied and
-// exactly which ResourceReferenceGrant would permit it.
+// secretRefDeniedMessage names the grant that would permit a denied secretRef.
 func secretRefDeniedMessage(secretNamespace, secretName, fromNamespace string) string {
 	return fmt.Sprintf(
 		"cross-namespace secretRef to Secret %q in namespace %q is not permitted; create a ResourceReferenceGrant in namespace %q with from {group: %q, kind: %q, namespace: %q} to {group: %q, kind: %q}",

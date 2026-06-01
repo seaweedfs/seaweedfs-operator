@@ -42,13 +42,10 @@ type S3IdentityRef struct {
 // reclaimPolicy: Delete. A pre-existing (user-managed) Secret is never
 // deleted by the controller.
 //
-// A reference into another namespace is denied by default: it resolves only
-// when a ResourceReferenceGrant in the Secret's namespace permits a reference
-// from kind S3Credentials in this resource's namespace to kind Secret (core
-// group ""). Same-namespace references never need a grant. The controller stays
-// Pending (condition ReferenceGranted=False) until a permitting grant exists.
-// When Namespace is set to a different namespace the Secret must already exist;
-// the controller will not create Secrets in foreign namespaces.
+// A cross-namespace reference is denied unless a ResourceReferenceGrant in the
+// Secret's namespace permits it (the CR stays Pending until then). A
+// cross-namespace Secret must already exist; the controller never creates
+// Secrets in foreign namespaces.
 type S3SecretRef struct {
 	// Name of the Secret. Defaults to .metadata.name of the S3Credentials.
 	// +optional

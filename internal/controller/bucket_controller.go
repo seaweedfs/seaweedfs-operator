@@ -114,10 +114,8 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return r.failPhase(ctx, &bucket, seaweedv1.BucketPhaseFailed, "BucketRenameNotSupported", msg)
 	}
 
-	// Resolve the cluster reference. A cross-namespace clusterRef is denied by
-	// default — it resolves only when a ResourceReferenceGrant in the target
-	// Seaweed's namespace permits it. The grant is skipped on the deletion path
-	// so revoking it can never strand the finalizer.
+	// Resolve the cluster reference. A cross-namespace clusterRef needs a
+	// ResourceReferenceGrant; skip on deletion to not block cleanup.
 	seaweedNS := bucket.Spec.ClusterRef.Namespace
 	if seaweedNS == "" {
 		seaweedNS = bucket.Namespace

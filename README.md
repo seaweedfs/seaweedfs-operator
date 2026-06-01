@@ -275,12 +275,13 @@ Supported per-bucket configuration:
 - `reclaimPolicy`: `Retain` (default) leaves data untouched on CR
   delete; `Delete` removes the bucket on CR delete (refused while
   Object Lock retention applies).
-- Cross-namespace `clusterRef` is allowed and is **not** gated by an
-  admission-time SubjectAccessReview — the controller has no notion of
-  the original requester. To restrict which namespaces may target a
-  particular `Seaweed`, gate access via Kubernetes RBAC on the `Bucket`
-  resource itself, or layer a Kyverno / Gatekeeper policy that checks
-  `spec.clusterRef.namespace`.
+- Cross-namespace `clusterRef` is **denied by default**: it resolves only
+  when a [`ResourceReferenceGrant`](#cross-namespace-references-resourcereferencegrant)
+  in the target `Seaweed`'s namespace permits it. The bucket stays
+  `Pending` (condition `ClusterRefForbidden=True`) until a grant exists.
+  Same-namespace references never need a grant. Layer Kubernetes RBAC on
+  the `Bucket` resource on top if you also want to restrict who can create
+  Buckets in the first place.
 
 CEL admission validations enforce: S3-compliant bucket-name regex, the
 `objectLock` ↔ `versioning` interlock, immutability of `objectLock` once
@@ -401,13 +402,61 @@ underlying IAM object. Set `reclaimPolicy: Retain` to opt out.
 
 `S3Credentials` and `S3PolicyBinding` wait (status `Pending`) until the
 identity / policy they reference exists, so apply order does not matter.
-As with `Bucket`, cross-namespace `seaweedRef` is allowed and **not**
-gated by a SubjectAccessReview — restrict access with Kubernetes RBAC on
-the IAM CRDs. Clusters that set `jwt.filer_signing.key` in `security.toml`
-(which makes the filer reject unauthenticated IAM gRPC calls) are not yet
-supported.
+As with `Bucket`, a cross-namespace `seaweedRef` (and the `S3Credentials`
+`secretRef`) is **denied by default** and requires a
+[`ResourceReferenceGrant`](#cross-namespace-references-resourcereferencegrant)
+in the target namespace. Clusters that set `jwt.filer_signing.key` in
+`security.toml` (which makes the filer reject unauthenticated IAM gRPC
+calls) are not yet supported.
 
 See the `config/samples/seaweed_v1_s3*.yaml` files for end-to-end examples.
+
+### Cross-namespace references (ResourceReferenceGrant)
+
+By default a SeaweedFS resource may only reference resources in **its own
+namespace**. A reference that crosses namespaces — a `Bucket`/`S3*`
+`seaweedRef`/`clusterRef` pointing at a `Seaweed` in another namespace, or
+an `S3Credentials` `secretRef` pointing at a `Secret` in another namespace —
+is refused until the **target** namespace publishes a `ResourceReferenceGrant`
+that allows it. This mirrors the [Gateway API
+`ReferenceGrant`](https://gateway-api.sigs.k8s.io/api-types/referencegrant/):
+the namespace that owns the resource being pointed at — not the requester —
+decides who may reach in.
+
+The grant lives in the namespace of the resource being referenced. Its
+`spec.from` lists the trusted `{group, kind, namespace}` sources and its
+`spec.to` lists the `{group, kind, name?}` referents in that namespace
+(omit `name` to allow every resource of that kind). A reference is allowed
+when it matches at least one `from` and one `to` entry.
+
+```yaml
+# In the cluster's namespace: let the "media" namespace's Buckets and
+# S3Credentials reference the Seaweed cluster "prod".
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: allow-media
+  namespace: seaweedfs
+spec:
+  from:
+    - { group: seaweed.seaweedfs.com, kind: Bucket, namespace: media }
+    - { group: seaweed.seaweedfs.com, kind: S3Credentials, namespace: media }
+  to:
+    - { group: seaweed.seaweedfs.com, kind: Seaweed }   # any Seaweed here
+```
+
+While a required grant is missing the referencing resource stays `Pending`
+(`Bucket` surfaces condition `ClusterRefForbidden=True`; the `S3*` kinds
+surface `ReferenceGranted=False`) and reconciles to ready automatically once
+the grant is created — at which point the condition is cleared.
+
+Enforcement is reconcile-time and eventually consistent (like every
+cross-resource dependency here, and like Gateway API): revoking a grant stops
+the operator from (re)provisioning the reference on the next reconcile, but
+does **not** retroactively tear down objects already provisioned under it.
+Deleting a resource is **never** blocked by a missing grant, so revoking one
+cannot strand a finalizer. See
+`config/samples/seaweed_v1_resourcereferencegrant.yaml`.
 
 ## Maintenance and Uninstallation
 

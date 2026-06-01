@@ -47,7 +47,20 @@ func iamTestScheme(t *testing.T) *runtime.Scheme {
 	return scheme
 }
 
+// iamTestClient builds a fake client seeded with objs plus the default
+// ResourceReferenceGrants that authorize the standard cross-namespace test
+// fixtures (CRs in "media" referencing the Seaweed cluster in "seaweedfs" and
+// shared Secrets in "secrets"). Tests that predate ReferenceGrant enforcement
+// rely on these so their cross-namespace seaweedRef / secretRef keep resolving;
+// tests that exercise grant denial build their client with iamTestClientNoGrants.
 func iamTestClient(t *testing.T, scheme *runtime.Scheme, objs ...client.Object) client.Client {
+	t.Helper()
+	return iamTestClientNoGrants(t, scheme, append(defaultTestRefGrants(), objs...)...)
+}
+
+// iamTestClientNoGrants is iamTestClient without the default grants — nothing is
+// authorized for cross-namespace reference unless objs include the grant.
+func iamTestClientNoGrants(t *testing.T, scheme *runtime.Scheme, objs ...client.Object) client.Client {
 	t.Helper()
 	return fake.NewClientBuilder().
 		WithScheme(scheme).
@@ -59,6 +72,37 @@ func iamTestClient(t *testing.T, scheme *runtime.Scheme, objs ...client.Object) 
 			&seaweedv1.S3PolicyBinding{},
 		).
 		Build()
+}
+
+// defaultTestRefGrants permits the cross-namespace references baked into the
+// shared test fixtures: every IAM kind and Bucket in "media" may reference the
+// Seaweed cluster in "seaweedfs", and S3Credentials in "media" may reference
+// Secrets in "secrets".
+func defaultTestRefGrants() []client.Object {
+	return []client.Object{
+		&seaweedv1.ResourceReferenceGrant{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-allow-media", Namespace: "seaweedfs"},
+			Spec: seaweedv1.ResourceReferenceGrantSpec{
+				From: []seaweedv1.ReferenceGrantFrom{
+					{Group: groupSeaweed, Kind: kindS3Identity, Namespace: "media"},
+					{Group: groupSeaweed, Kind: kindS3Credentials, Namespace: "media"},
+					{Group: groupSeaweed, Kind: kindS3Policy, Namespace: "media"},
+					{Group: groupSeaweed, Kind: kindS3PolicyBinding, Namespace: "media"},
+					{Group: groupSeaweed, Kind: kindBucket, Namespace: "media"},
+				},
+				To: []seaweedv1.ReferenceGrantTo{{Group: groupSeaweed, Kind: kindSeaweed}},
+			},
+		},
+		&seaweedv1.ResourceReferenceGrant{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-allow-media-secrets", Namespace: "secrets"},
+			Spec: seaweedv1.ResourceReferenceGrantSpec{
+				From: []seaweedv1.ReferenceGrantFrom{
+					{Group: groupSeaweed, Kind: kindS3Credentials, Namespace: "media"},
+				},
+				To: []seaweedv1.ReferenceGrantTo{{Group: groupCore, Kind: kindSecret}},
+			},
+		},
+	}
 }
 
 func iamSeaweedRef() seaweedv1.SeaweedReference {

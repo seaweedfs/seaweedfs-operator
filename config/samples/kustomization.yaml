@@ -9,3 +9,4 @@ resources:
 - seaweed_v1_s3credentials.yaml
 - seaweed_v1_s3policy.yaml
 - seaweed_v1_s3policybinding.yaml
+- seaweed_v1_resourcereferencegrant.yaml

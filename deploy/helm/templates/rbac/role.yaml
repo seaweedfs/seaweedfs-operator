@@ -114,6 +114,14 @@ rules:
   - patch
   - update
 - apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - resourcereferencegrants
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - monitoring.coreos.com
   resources:
   - servicemonitors

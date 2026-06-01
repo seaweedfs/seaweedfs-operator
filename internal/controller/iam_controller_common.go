@@ -156,3 +156,10 @@ func setIAMCondition(conds *[]metav1.Condition, generation int64, condType strin
 		Message:            message,
 	})
 }
+
+// clearIAMCondition removes a condition from an IAM CR's condition list. Used to
+// drop a transient condition (e.g. ReferenceGranted=False) once its cause is
+// resolved, so it does not linger as stale state next to a Ready condition.
+func clearIAMCondition(conds *[]metav1.Condition, condType string) {
+	meta.RemoveStatusCondition(conds, condType)
+}

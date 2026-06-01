@@ -114,10 +114,29 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return r.failPhase(ctx, &bucket, seaweedv1.BucketPhaseFailed, "BucketRenameNotSupported", msg)
 	}
 
-	// Resolve the cluster reference. Cross-namespace is allowed.
+	// Resolve the cluster reference. A cross-namespace clusterRef needs a
+	// ResourceReferenceGrant; skip on deletion to not block cleanup.
 	seaweedNS := bucket.Spec.ClusterRef.Namespace
 	if seaweedNS == "" {
 		seaweedNS = bucket.Namespace
+	}
+	if bucket.DeletionTimestamp.IsZero() {
+		clusterRef := seaweedv1.SeaweedReference{Name: bucket.Spec.ClusterRef.Name, Namespace: bucket.Spec.ClusterRef.Namespace}
+		permitted, err := seaweedRefPermitted(ctx, r.Client, clusterRef, kindBucket, bucket.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !permitted {
+			r.setCondition(&bucket, seaweedv1.BucketConditionClusterRefForbidden, metav1.ConditionTrue, "ReferenceGrantMissing",
+				fmt.Sprintf("cross-namespace clusterRef to Seaweed %q in namespace %q is not permitted; create a ResourceReferenceGrant in namespace %q with from {group: %q, kind: %q, namespace: %q} to {group: %q, kind: %q}",
+					bucket.Spec.ClusterRef.Name, seaweedNS, seaweedNS, groupSeaweed, kindBucket, bucket.Namespace, groupSeaweed, kindSeaweed))
+			bucket.Status.Phase = seaweedv1.BucketPhasePending
+			if updateErr := r.Status().Update(ctx, &bucket); updateErr != nil {
+				return ctrl.Result{}, updateErr
+			}
+			return ctrl.Result{RequeueAfter: requeueAfterTransient}, nil
+		}
+		r.clearCondition(&bucket, seaweedv1.BucketConditionClusterRefForbidden)
 	}
 	var seaweed seaweedv1.Seaweed
 	if err := r.Get(ctx, types.NamespacedName{Namespace: seaweedNS, Name: bucket.Spec.ClusterRef.Name}, &seaweed); err != nil {

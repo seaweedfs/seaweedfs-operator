@@ -155,7 +155,18 @@ func intStr(i int64) string {
 // testReconciler builds a BucketReconciler whose AdminFactory always returns
 // the supplied fake. The fake client is pre-loaded with the given objects
 // and the bucket status subresource is registered.
+// testReconciler builds a BucketReconciler whose client is seeded with objs
+// plus the default ResourceReferenceGrants, so the standard cross-namespace test
+// bucket (in "media", clusterRef -> "seaweedfs") resolves under deny-by-default
+// enforcement. Tests that exercise grant denial use testReconcilerNoGrants.
 func testReconciler(t *testing.T, fa *fakeBucketAdmin, objs ...client.Object) (*BucketReconciler, client.Client) {
+	t.Helper()
+	return testReconcilerNoGrants(t, fa, append(defaultTestRefGrants(), objs...)...)
+}
+
+// testReconcilerNoGrants is testReconciler without the default grants — a
+// cross-namespace clusterRef is denied unless objs include a permitting grant.
+func testReconcilerNoGrants(t *testing.T, fa *fakeBucketAdmin, objs ...client.Object) (*BucketReconciler, client.Client) {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {

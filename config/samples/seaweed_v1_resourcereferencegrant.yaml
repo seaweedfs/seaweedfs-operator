@@ -1,0 +1,55 @@
+# A ResourceReferenceGrant lives in the namespace that owns the resources being
+# referenced (the "to" side) and opts specific source namespaces in. Without a
+# matching grant, cross-namespace seaweedRef / clusterRef / secretRef references
+# are denied (the referencing resource stays Pending).
+#
+# This grant lets resources in the "app-team" namespace reach the Seaweed
+# cluster "prod" in the "seaweedfs" namespace — it pairs with
+# seaweed_v1_bucket_cross_namespace.yaml (a Bucket in app-team whose clusterRef
+# points at seaweedfs/prod).
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: allow-app-team
+  namespace: seaweedfs
+spec:
+  from:
+    # Every kind whose seaweedRef / clusterRef can target this cluster.
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: app-team
+    - group: seaweed.seaweedfs.com
+      kind: S3Identity
+      namespace: app-team
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: app-team
+    - group: seaweed.seaweedfs.com
+      kind: S3Policy
+      namespace: app-team
+    - group: seaweed.seaweedfs.com
+      kind: S3PolicyBinding
+      namespace: app-team
+  to:
+    # An entry with no name permits every Seaweed in this namespace; set name to
+    # pin a single cluster.
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+---
+# A second grant in the namespace that owns a shared Secret, letting an
+# S3Credentials in "app-team" mirror its key pair into the Secret
+# "shared-s3-secret" in the "secrets" namespace (spec.secretRef.namespace).
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: allow-app-team-secret
+  namespace: secrets
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: app-team
+  to:
+    - group: ""
+      kind: Secret
+      name: shared-s3-secret

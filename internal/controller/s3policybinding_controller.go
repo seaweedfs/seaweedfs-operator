@@ -60,6 +60,18 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	policyName := binding.Spec.PolicyRef.Name
 
+	// Cross-namespace seaweedRef needs a grant; skip on deletion to not block cleanup.
+	if binding.DeletionTimestamp.IsZero() {
+		permitted, err := seaweedRefPermitted(ctx, r.Client, binding.Spec.SeaweedRef, kindS3PolicyBinding, binding.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !permitted {
+			return r.refForbidden(ctx, &binding, seaweedRefDeniedMessage(binding.Spec.SeaweedRef, kindS3PolicyBinding, binding.Namespace))
+		}
+		clearIAMCondition(&binding.Status.Conditions, seaweedv1.S3ConditionReferenceGranted)
+	}
+
 	filer, adminKey, found, err := resolveSeaweedFiler(ctx, r.Client, binding.Spec.SeaweedRef, binding.Namespace)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -167,6 +179,17 @@ func (r *S3PolicyBindingReconciler) handleDeletion(ctx context.Context, binding 
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+// refForbidden requeues (not Failed) until a ResourceReferenceGrant permits the
+// reference.
+func (r *S3PolicyBindingReconciler) refForbidden(ctx context.Context, binding *seaweedv1.S3PolicyBinding, message string) (ctrl.Result, error) {
+	setIAMCondition(&binding.Status.Conditions, binding.Generation, seaweedv1.S3ConditionReferenceGranted, metav1.ConditionFalse, "ReferenceGrantMissing", message)
+	binding.Status.Phase = seaweedv1.S3PhasePending
+	if err := r.Status().Update(ctx, binding); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{RequeueAfter: requeueAfterTransient}, nil
 }
 
 func (r *S3PolicyBindingReconciler) clusterNotFound(ctx context.Context, binding *seaweedv1.S3PolicyBinding) (ctrl.Result, error) {

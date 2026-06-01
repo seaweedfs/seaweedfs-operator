@@ -25,10 +25,10 @@ package v1
 // object, mirroring the convention in AWS ACK / Crossplane / Config Connector.
 
 // SeaweedReference points at the Seaweed CR whose embedded IAM service hosts
-// the identity/policy. Cross-namespace references are allowed and are NOT
-// gated by an admission-time SubjectAccessReview — gate access with
-// kubernetes RBAC on the IAM CRDs themselves if you need to restrict which
-// namespaces may target a particular Seaweed (same model as BucketClusterRef).
+// the identity/policy. A cross-namespace reference is denied unless a
+// ResourceReferenceGrant in the target Seaweed's namespace permits it; the CR
+// stays Pending (ReferenceGranted=False) until then. Same-namespace references
+// are always allowed.
 type SeaweedReference struct {
 	// Name of the Seaweed CR.
 	// +kubebuilder:validation:MinLength=1
@@ -76,4 +76,8 @@ const (
 	// S3ConditionClusterReachable reports filer/IAM connectivity via the
 	// referenced Seaweed CR.
 	S3ConditionClusterReachable = "ClusterReachable"
+	// S3ConditionReferenceGranted is set False (reason ReferenceGrantMissing)
+	// while a required cross-namespace ResourceReferenceGrant is absent, and
+	// cleared once one permits the reference.
+	S3ConditionReferenceGranted = "ReferenceGranted"
 )

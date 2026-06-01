@@ -81,6 +81,20 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		secretNamespace = cred.Namespace
 	}
 
+	// Cross-namespace seaweedRef needs a grant; skip on deletion to not block
+	// cleanup. The secretRef is gated separately in reconcileKey.
+	if cred.DeletionTimestamp.IsZero() {
+		permitted, err := seaweedRefPermitted(ctx, r.Client, cred.Spec.SeaweedRef, kindS3Credentials, cred.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !permitted {
+			return r.refForbidden(ctx, &cred, seaweedRefDeniedMessage(cred.Spec.SeaweedRef, kindS3Credentials, cred.Namespace))
+		}
+		// Clear any stale denial; the secretRef gate in reconcileKey re-sets it.
+		clearIAMCondition(&cred.Status.Conditions, seaweedv1.S3ConditionReferenceGranted)
+	}
+
 	filer, adminKey, found, err := resolveSeaweedFiler(ctx, r.Client, cred.Spec.SeaweedRef, cred.Namespace)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -127,6 +141,17 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 	akField, skField := credentialFields(cred)
 
 	crossNamespace := secretNamespace != cred.Namespace
+
+	// Cross-namespace secretRef needs its own grant in the Secret's namespace.
+	if crossNamespace {
+		permitted, err := secretRefPermitted(ctx, r.Client, secretNamespace, secretName, cred.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !permitted {
+			return r.refForbidden(ctx, cred, secretRefDeniedMessage(secretNamespace, secretName, cred.Namespace))
+		}
+	}
 
 	secret, secretFound, err := r.getSecret(ctx, secretNamespace, secretName)
 	if err != nil {
@@ -307,6 +332,17 @@ func (r *S3CredentialsReconciler) getSecret(ctx context.Context, namespace, name
 		return nil, false, err
 	}
 	return &secret, true, nil
+}
+
+// refForbidden requeues (not Failed) until a ResourceReferenceGrant permits the
+// reference.
+func (r *S3CredentialsReconciler) refForbidden(ctx context.Context, cred *seaweedv1.S3Credentials, message string) (ctrl.Result, error) {
+	setIAMCondition(&cred.Status.Conditions, cred.Generation, seaweedv1.S3ConditionReferenceGranted, metav1.ConditionFalse, "ReferenceGrantMissing", message)
+	cred.Status.Phase = seaweedv1.S3PhasePending
+	if err := r.Status().Update(ctx, cred); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{RequeueAfter: requeueAfterTransient}, nil
 }
 
 func (r *S3CredentialsReconciler) clusterNotFound(ctx context.Context, cred *seaweedv1.S3Credentials) (ctrl.Result, error) {

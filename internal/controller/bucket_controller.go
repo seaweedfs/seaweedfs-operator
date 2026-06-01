@@ -134,7 +134,7 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 					bucket.Spec.ClusterRef.Name, seaweedNS, seaweedNS, groupSeaweed, kindBucket, bucket.Namespace, groupSeaweed, kindSeaweed))
 			bucket.Status.Phase = seaweedv1.BucketPhasePending
 			if updateErr := r.Status().Update(ctx, &bucket); updateErr != nil {
-				log.Error(updateErr, "status update")
+				return ctrl.Result{}, updateErr
 			}
 			return ctrl.Result{RequeueAfter: requeueAfterTransient}, nil
 		}

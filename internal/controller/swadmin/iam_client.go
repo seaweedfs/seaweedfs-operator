@@ -3,6 +3,7 @@ package swadmin
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,8 +12,10 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // iamRequestTimeout caps every IAM gRPC call so a reconcile can't hang on an
@@ -278,6 +281,62 @@ func (c *IAMClient) DetachPolicy(ctx context.Context, user, policy string) error
 		_, err = client.UpdateUser(ctx, &iam_pb.UpdateUserRequest{Username: user, Identity: id})
 		return err
 	})
+}
+
+// SetBucketAccess grants user the comma-separated actions on bucket, mirroring
+// `weed shell s3.bucket.access`. Bucket grants are stored on the identity as
+// "Action:bucket" entries; passing "none" (or an empty string) strips the
+// user's grants on this bucket without deleting the identity or its other
+// grants. The user is auto-created when absent. Going through IAMClient (rather
+// than the shell) means the call carries the admin Bearer token, which the
+// filer's IAM service requires once jwt.filer_signing.key is set.
+func (c *IAMClient) SetBucketAccess(ctx context.Context, bucket, user, actions string) error {
+	defer c.lockUser(user)()
+	return c.withClient(ctx, func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error {
+		resp, err := client.GetUser(ctx, &iam_pb.GetUserRequest{Username: user})
+		isNewUser := false
+		if err != nil {
+			if st, ok := status.FromError(err); !ok || st.Code() != codes.NotFound {
+				return err
+			}
+			isNewUser = true
+		}
+		id := resp.GetIdentity()
+		if isNewUser || id == nil {
+			id = &iam_pb.Identity{Name: user}
+			isNewUser = true
+		}
+		setBucketActions(id, bucket, actions)
+		if isNewUser {
+			_, err = client.CreateUser(ctx, &iam_pb.CreateUserRequest{Identity: id})
+			return err
+		}
+		_, err = client.UpdateUser(ctx, &iam_pb.UpdateUserRequest{Username: user, Identity: id})
+		return err
+	})
+}
+
+// setBucketActions rewrites id's bucket-scoped actions: it drops existing
+// "X:bucket" entries and appends one per requested action, leaving grants on
+// other buckets untouched. An empty or "none" actions string only strips.
+// Mirrors weed/shell updateBucketActions; the CRD enum constrains actions to
+// the canonical set so no casing fixup is needed here.
+func setBucketActions(id *iam_pb.Identity, bucket, actions string) {
+	suffix := ":" + bucket
+	kept := make([]string, 0, len(id.Actions))
+	for _, a := range id.Actions {
+		if !strings.HasSuffix(a, suffix) {
+			kept = append(kept, a)
+		}
+	}
+	if actions != "" && !strings.EqualFold(actions, "none") {
+		for _, a := range strings.Split(actions, ",") {
+			if a = strings.TrimSpace(a); a != "" {
+				kept = append(kept, a+suffix)
+			}
+		}
+	}
+	id.Actions = kept
 }
 
 // PutPolicy creates or replaces a named policy with the given AWS-style JSON

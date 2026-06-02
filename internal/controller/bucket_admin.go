@@ -75,8 +75,10 @@ type BucketCollectionStats struct {
 }
 
 // BucketAdminFactory creates a BucketAdmin for a target Seaweed cluster.
+// signingKey is jwt.filer_signing.key from the cluster's security.toml
+// (nil/empty when the cluster does not require an admin Bearer token).
 // Replaceable in tests.
-type BucketAdminFactory func(masters, filer string, log logr.Logger) (BucketAdmin, error)
+type BucketAdminFactory func(masters, filer string, signingKey []byte, log logr.Logger) (BucketAdmin, error)
 
 // Sentinel errors returned by BucketAdmin implementations.
 var (
@@ -103,14 +105,19 @@ var (
 // per-bucket reconciles don't fan out further than the worker count.
 type swadminBucketAdmin struct {
 	sa  *swadmin.SeaweedAdmin
+	iam *swadmin.IAMClient
 	log logr.Logger
 	mu  sync.Mutex
 }
 
-// NewSwadminBucketAdmin returns a BucketAdmin that runs `weed shell` commands.
-func NewSwadminBucketAdmin(masters, filer string, log logr.Logger) (BucketAdmin, error) {
+// NewSwadminBucketAdmin returns a BucketAdmin. Bucket lifecycle commands run
+// through the embedded `weed shell` (filer gRPC, unauthenticated). Access
+// grants go through swadmin.IAMClient instead: those hit the filer's IAM gRPC
+// service, which requires an admin Bearer token signed with signingKey
+// (jwt.filer_signing.key) once the cluster configures one.
+func NewSwadminBucketAdmin(masters, filer string, signingKey []byte, log logr.Logger) (BucketAdmin, error) {
 	sa := swadmin.NewSeaweedAdmin(masters, filer, io.Discard)
-	return &swadminBucketAdmin{sa: sa, log: log}, nil
+	return &swadminBucketAdmin{sa: sa, iam: swadmin.NewIAMClient(filer, signingKey), log: log}, nil
 }
 
 func (a *swadminBucketAdmin) run(cmd string) (string, error) {
@@ -220,8 +227,7 @@ func (a *swadminBucketAdmin) SetAccess(ctx context.Context, name, user, actions 
 	if actions == "" {
 		actions = "none"
 	}
-	_, err := a.run(fmt.Sprintf("s3.bucket.access -name %s -user %s -access %s", name, user, actions))
-	return err
+	return a.iam.SetBucketAccess(ctx, name, user, actions)
 }
 
 func (a *swadminBucketAdmin) Configure(ctx context.Context, prefix string, args []string) error {

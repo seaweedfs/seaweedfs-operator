@@ -155,7 +155,11 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	masters := getMasterPeersString(&seaweed)
 	filer := getFilerAddress(&seaweed)
-	admin, err := r.getAdmin(seaweedNS, seaweed.Name, masters, filer, log)
+	adminKey, err := loadFilerAdminSigningKey(ctx, r.Client, &seaweed)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	admin, err := r.getAdmin(seaweedNS, seaweed.Name, masters, filer, adminKey, log)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -413,10 +417,13 @@ func (r *BucketReconciler) clearCondition(bucket *seaweedv1.Bucket, condType str
 	meta.RemoveStatusCondition(&bucket.Status.Conditions, condType)
 }
 
-// getAdmin returns a cached BucketAdmin for the (Seaweed CR, masters, filer)
-// tuple. See the comment on adminCache about the goroutine-leak trade-off.
-func (r *BucketReconciler) getAdmin(ns, name, masters, filer string, log logr.Logger) (BucketAdmin, error) {
-	key := ns + "/" + name + "@" + masters + "|" + filer
+// getAdmin returns a cached BucketAdmin for the (Seaweed CR, masters, filer,
+// signing key) tuple. The signing-key fingerprint is part of the cache key so
+// rotating jwt.filer_signing.key (editing the security ConfigMap) yields a
+// fresh admin rather than a stale Bearer issuer. See the comment on adminCache
+// about the goroutine-leak trade-off.
+func (r *BucketReconciler) getAdmin(ns, name, masters, filer string, signingKey []byte, log logr.Logger) (BucketAdmin, error) {
+	key := ns + "/" + name + "@" + masters + "|" + filer + "|" + signingKeyFingerprint(signingKey)
 	r.adminMu.Lock()
 	defer r.adminMu.Unlock()
 	if r.adminCache == nil {
@@ -425,7 +432,7 @@ func (r *BucketReconciler) getAdmin(ns, name, masters, filer string, log logr.Lo
 	if a, ok := r.adminCache[key]; ok {
 		return a, nil
 	}
-	a, err := r.AdminFactory(masters, filer, log)
+	a, err := r.AdminFactory(masters, filer, signingKey, log)
 	if err != nil {
 		return nil, err
 	}

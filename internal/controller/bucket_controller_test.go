@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -184,9 +185,34 @@ func testReconcilerNoGrants(t *testing.T, fa *fakeBucketAdmin, objs ...client.Ob
 		Client: cli,
 		Log:    logf.FromContext(context.Background()),
 		Scheme: scheme,
-		AdminFactory: func(_, _ string, _ logr.Logger) (BucketAdmin, error) {
+		AdminFactory: func(_, _ string, _ []byte, _ logr.Logger) (BucketAdmin, error) {
 			return fa, nil
 		},
+	}
+	return r, cli
+}
+
+// testReconcilerWithFactory is testReconciler with a caller-supplied admin
+// factory, so a test can observe the arguments the reconciler passes to it.
+func testReconcilerWithFactory(t *testing.T, factory BucketAdminFactory, objs ...client.Object) (*BucketReconciler, client.Client) {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("clientgoscheme: %v", err)
+	}
+	if err := seaweedv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("seaweedv1: %v", err)
+	}
+	cli := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(append(defaultTestRefGrants(), objs...)...).
+		WithStatusSubresource(&seaweedv1.Bucket{}).
+		Build()
+	r := &BucketReconciler{
+		Client:       cli,
+		Log:          logf.FromContext(context.Background()),
+		Scheme:       scheme,
+		AdminFactory: factory,
 	}
 	return r, cli
 }
@@ -231,6 +257,58 @@ func newTestBucket(name string) *seaweedv1.Bucket {
 			ReclaimPolicy: seaweedv1.BucketReclaimRetain,
 			Versioning:    seaweedv1.VersioningOff,
 		},
+	}
+}
+
+// TestReconcile_PassesAdminSigningKeyToFactory pins the issue #265 fix: the
+// reconciler must read jwt.filer_signing.key from the cluster's rendered
+// security ConfigMap and hand it to the BucketAdminFactory. Without it,
+// s3.bucket.access (and every filer IAM call) is sent unauthenticated and the
+// bucket stays Failed with reason AccessFailed.
+func TestReconcile_PassesAdminSigningKeyToFactory(t *testing.T) {
+	sw := newTestSeaweedWithFiler()
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: SecurityConfigMapName(sw), Namespace: sw.Namespace},
+		Data:       map[string]string{"security.toml": "[jwt.filer_signing]\nkey = \"abc123==\"\n"},
+	}
+	bucket := newTestBucket("photos")
+	bucket.Finalizers = []string{BucketFinalizer}
+
+	fa := newFakeAdmin()
+	var gotKey []byte
+	r, _ := testReconcilerWithFactory(t, func(_, _ string, key []byte, _ logr.Logger) (BucketAdmin, error) {
+		gotKey = key
+		return fa, nil
+	}, sw, cm, bucket)
+
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+	reconcileUntilStable(t, r, key, 5)
+
+	if string(gotKey) != "abc123==" {
+		t.Fatalf("admin signing key passed to factory = %q, want %q", string(gotKey), "abc123==")
+	}
+}
+
+// TestReconcile_NoSecurityConfigPassesEmptyKey pins the unauthenticated path:
+// a cluster with no rendered security ConfigMap hands the factory an empty key
+// so the filer IAM calls stay unauthenticated, matching its no-key branch.
+func TestReconcile_NoSecurityConfigPassesEmptyKey(t *testing.T) {
+	sw := newTestSeaweedWithFiler() // filer present, but no security ConfigMap seeded
+	bucket := newTestBucket("photos")
+	bucket.Finalizers = []string{BucketFinalizer}
+
+	fa := newFakeAdmin()
+	gotKey := []byte("sentinel")
+	r, _ := testReconcilerWithFactory(t, func(_, _ string, key []byte, _ logr.Logger) (BucketAdmin, error) {
+		gotKey = key
+		return fa, nil
+	}, sw, bucket)
+
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+	reconcileUntilStable(t, r, key, 5)
+
+	if len(gotKey) != 0 {
+		t.Fatalf("expected empty key when no security ConfigMap, got %q", string(gotKey))
 	}
 }
 

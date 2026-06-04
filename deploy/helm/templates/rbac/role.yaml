@@ -79,6 +79,7 @@ rules:
   - buckets
   - s3credentials
   - s3identities
+  - s3oidcproviders
   - s3policies
   - s3policybindings
   - seaweeds
@@ -96,6 +97,7 @@ rules:
   - buckets/finalizers
   - s3credentials/finalizers
   - s3identities/finalizers
+  - s3oidcproviders/finalizers
   - s3policies/finalizers
   - s3policybindings/finalizers
   verbs:
@@ -106,6 +108,7 @@ rules:
   - buckets/status
   - s3credentials/status
   - s3identities/status
+  - s3oidcproviders/status
   - s3policies/status
   - s3policybindings/status
   - seaweeds/status

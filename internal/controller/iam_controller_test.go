@@ -913,32 +913,47 @@ func TestS3OIDCProvider_Delete_SkipsWhenNeverRegistered(t *testing.T) {
 	assertOIDCGone(t, cli, key)
 }
 
-func TestS3OIDCProvider_Delete_RemovesWhenRegistered(t *testing.T) {
-	scheme := iamTestScheme(t)
-	p := newTestOIDCProvider("google")
-	cli := iamTestClient(t, scheme, newTestSeaweed(), p)
-	fa := newFakeIAMAdmin()
-	r := newOIDCReconciler(cli, scheme, fa)
+func TestS3OIDCProvider_Delete_RespectsReclaimPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		policy      seaweedv1.S3ReclaimPolicy
+		wantDeleted bool
+	}{
+		{"delete", seaweedv1.S3ReclaimDelete, true},
+		{"retain", seaweedv1.S3ReclaimRetain, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scheme := iamTestScheme(t)
+			p := newTestOIDCProvider("google", func(p *seaweedv1.S3OIDCProvider) {
+				p.Spec.ReclaimPolicy = tc.policy
+			})
+			cli := iamTestClient(t, scheme, newTestSeaweed(), p)
+			fa := newFakeIAMAdmin()
+			r := newOIDCReconciler(cli, scheme, fa)
 
-	key := types.NamespacedName{Namespace: "media", Name: "google"}
-	reconcileStable(t, r, key, 5) // register + add finalizer
-	if !fa.hasProvider("https://accounts.google.com") {
-		t.Fatalf("precondition: expected provider registered")
-	}
+			key := types.NamespacedName{Namespace: "media", Name: "google"}
+			reconcileStable(t, r, key, 5) // register + add finalizer
+			if !fa.hasProvider("https://accounts.google.com") {
+				t.Fatalf("precondition: expected provider registered")
+			}
 
-	var reg seaweedv1.S3OIDCProvider
-	if err := cli.Get(context.Background(), key, &reg); err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if err := cli.Delete(context.Background(), &reg); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	reconcileOnce(t, r, key)
+			var reg seaweedv1.S3OIDCProvider
+			if err := cli.Get(context.Background(), key, &reg); err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			if err := cli.Delete(context.Background(), &reg); err != nil {
+				t.Fatalf("delete: %v", err)
+			}
+			reconcileOnce(t, r, key)
 
-	if fa.hasProvider("https://accounts.google.com") {
-		t.Fatalf("expected provider removed from IAM service")
+			deleted := !fa.hasProvider("https://accounts.google.com")
+			if deleted != tc.wantDeleted {
+				t.Fatalf("provider deleted = %v, want %v", deleted, tc.wantDeleted)
+			}
+			// Finalizer must clear on both paths so the CR is not stuck Terminating.
+			assertOIDCGone(t, cli, key)
+		})
 	}
-	assertOIDCGone(t, cli, key)
 }
 
 // If the referenced Seaweed cluster is already gone, deletion must still

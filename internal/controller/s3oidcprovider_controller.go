@@ -76,6 +76,15 @@ func (r *S3OIDCProviderReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 	if !found {
+		// Cluster already gone: nothing to clean up from its IAM service, so let
+		// deletion proceed instead of requeuing forever on a missing reference.
+		if !provider.DeletionTimestamp.IsZero() {
+			controllerutil.RemoveFinalizer(&provider, s3OIDCProviderFinalizer)
+			if err := r.Update(ctx, &provider); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, nil
+		}
 		return r.clusterNotFound(ctx, &provider)
 	}
 	setIAMCondition(&provider.Status.Conditions, provider.Generation, seaweedv1.S3ConditionClusterReachable, metav1.ConditionTrue, "Reachable", "")
@@ -123,7 +132,10 @@ func (r *S3OIDCProviderReconciler) handleDeletion(ctx context.Context, provider 
 	}
 	provider.Status.Phase = seaweedv1.S3PhaseTerminating
 
-	if provider.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain {
+	// Only delete if we actually registered one (ProviderArn recorded). Skipping
+	// when it was never created keeps a failed/unregistered CR from deadlocking
+	// on the delete call.
+	if provider.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain && provider.Status.ProviderArn != "" {
 		// Idempotent: a provider already gone must not block finalizer removal.
 		if err := admin.DeleteOIDCProvider(ctx, issuer); err != nil && !errors.Is(err, ErrIAMNotFound) {
 			setIAMCondition(&provider.Status.Conditions, provider.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DeleteFailed", err.Error())

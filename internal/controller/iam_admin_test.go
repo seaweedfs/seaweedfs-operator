@@ -264,6 +264,24 @@ func (f *fakeIAMAdmin) userPolicies(name string) []string {
 	return append([]string(nil), u.PolicyNames...)
 }
 
+func (f *fakeIAMAdmin) hasProvider(issuer string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.providers[issuer]
+	return ok
+}
+
+func (f *fakeIAMAdmin) calledDeleteOIDC(issuer string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.calls {
+		if c == "DeleteOIDCProvider:"+issuer {
+			return true
+		}
+	}
+	return false
+}
+
 func (f *fakeIAMAdmin) userKeys(name string) []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()

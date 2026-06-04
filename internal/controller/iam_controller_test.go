@@ -70,6 +70,7 @@ func iamTestClientNoGrants(t *testing.T, scheme *runtime.Scheme, objs ...client.
 			&seaweedv1.S3Credentials{},
 			&seaweedv1.S3Policy{},
 			&seaweedv1.S3PolicyBinding{},
+			&seaweedv1.S3OIDCProvider{},
 		).
 		Build()
 }
@@ -88,6 +89,7 @@ func defaultTestRefGrants() []client.Object {
 					{Group: groupSeaweed, Kind: kindS3Credentials, Namespace: "media"},
 					{Group: groupSeaweed, Kind: kindS3Policy, Namespace: "media"},
 					{Group: groupSeaweed, Kind: kindS3PolicyBinding, Namespace: "media"},
+					{Group: groupSeaweed, Kind: kindS3OIDCProvider, Namespace: "media"},
 					{Group: groupSeaweed, Kind: kindBucket, Namespace: "media"},
 				},
 				To: []seaweedv1.ReferenceGrantTo{{Group: groupSeaweed, Kind: kindSeaweed}},
@@ -835,6 +837,140 @@ func TestResolveSeaweedFiler_MissingConfigMapReturnsEmptyKey(t *testing.T) {
 	}
 	if len(key) != 0 {
 		t.Fatalf("expected empty key when ConfigMap missing, got %q", string(key))
+	}
+}
+
+// --- S3OIDCProvider ---
+
+func newTestOIDCProvider(name string, opts ...func(*seaweedv1.S3OIDCProvider)) *seaweedv1.S3OIDCProvider {
+	p := &seaweedv1.S3OIDCProvider{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "media"},
+		Spec: seaweedv1.S3OIDCProviderSpec{
+			SeaweedRef:    iamSeaweedRef(),
+			IssuerURL:     "https://accounts.google.com",
+			ClientIDs:     []string{"client-a"},
+			ReclaimPolicy: seaweedv1.S3ReclaimDelete,
+		},
+	}
+	for _, o := range opts {
+		o(p)
+	}
+	return p
+}
+
+func newOIDCReconciler(cli client.Client, scheme *runtime.Scheme, fa IAMAdmin) *S3OIDCProviderReconciler {
+	r := &S3OIDCProviderReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+	return r
+}
+
+func TestS3OIDCProvider_Registers(t *testing.T) {
+	scheme := iamTestScheme(t)
+	p := newTestOIDCProvider("google")
+	cli := iamTestClient(t, scheme, newTestSeaweed(), p)
+	fa := newFakeIAMAdmin()
+	r := newOIDCReconciler(cli, scheme, fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "google"}
+	reconcileStable(t, r, key, 5)
+
+	if !fa.hasProvider("https://accounts.google.com") {
+		t.Fatalf("expected OIDC provider registered")
+	}
+	var got seaweedv1.S3OIDCProvider
+	if err := cli.Get(context.Background(), key, &got); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.S3PhaseReady {
+		t.Errorf("phase = %q, want Ready", got.Status.Phase)
+	}
+	if got.Status.ProviderArn == "" {
+		t.Errorf("expected providerArn recorded")
+	}
+}
+
+// A provider that was never registered (ProviderArn empty) must not attempt an
+// IAM delete on cleanup, or the finalizer would deadlock.
+func TestS3OIDCProvider_Delete_SkipsWhenNeverRegistered(t *testing.T) {
+	scheme := iamTestScheme(t)
+	p := newTestOIDCProvider("broken", func(p *seaweedv1.S3OIDCProvider) {
+		p.Finalizers = []string{s3OIDCProviderFinalizer}
+		p.Spec.IssuerURL = "https://issuer.example.com"
+	})
+	cli := iamTestClient(t, scheme, newTestSeaweed(), p)
+	fa := newFakeIAMAdmin()
+	r := newOIDCReconciler(cli, scheme, fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "broken"}
+	if err := cli.Delete(context.Background(), p); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reconcileOnce(t, r, key)
+
+	if fa.calledDeleteOIDC("https://issuer.example.com") {
+		t.Fatalf("DeleteOIDCProvider must not be called when nothing was registered")
+	}
+	assertOIDCGone(t, cli, key)
+}
+
+func TestS3OIDCProvider_Delete_RemovesWhenRegistered(t *testing.T) {
+	scheme := iamTestScheme(t)
+	p := newTestOIDCProvider("google")
+	cli := iamTestClient(t, scheme, newTestSeaweed(), p)
+	fa := newFakeIAMAdmin()
+	r := newOIDCReconciler(cli, scheme, fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "google"}
+	reconcileStable(t, r, key, 5) // register + add finalizer
+	if !fa.hasProvider("https://accounts.google.com") {
+		t.Fatalf("precondition: expected provider registered")
+	}
+
+	var reg seaweedv1.S3OIDCProvider
+	if err := cli.Get(context.Background(), key, &reg); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if err := cli.Delete(context.Background(), &reg); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reconcileOnce(t, r, key)
+
+	if fa.hasProvider("https://accounts.google.com") {
+		t.Fatalf("expected provider removed from IAM service")
+	}
+	assertOIDCGone(t, cli, key)
+}
+
+// If the referenced Seaweed cluster is already gone, deletion must still
+// converge instead of requeuing forever on the missing reference.
+func TestS3OIDCProvider_Delete_ClusterGone(t *testing.T) {
+	scheme := iamTestScheme(t)
+	p := newTestOIDCProvider("orphan", func(p *seaweedv1.S3OIDCProvider) {
+		p.Finalizers = []string{s3OIDCProviderFinalizer}
+	})
+	cli := iamTestClient(t, scheme, p) // no Seaweed cluster
+	fa := newFakeIAMAdmin()
+	r := newOIDCReconciler(cli, scheme, fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "orphan"}
+	if err := cli.Delete(context.Background(), p); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reconcileOnce(t, r, key)
+
+	assertOIDCGone(t, cli, key)
+}
+
+func assertOIDCGone(t *testing.T, cli client.Client, key types.NamespacedName) {
+	t.Helper()
+	var after seaweedv1.S3OIDCProvider
+	switch err := cli.Get(context.Background(), key, &after); {
+	case apierrors.IsNotFound(err):
+		// gone — finalizer removed
+	case err != nil:
+		t.Fatalf("get after delete: %v", err)
+	case len(after.Finalizers) != 0:
+		t.Fatalf("expected finalizers cleared, got %v", after.Finalizers)
 	}
 }
 

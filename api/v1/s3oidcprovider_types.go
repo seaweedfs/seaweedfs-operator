@@ -38,19 +38,22 @@ type S3OIDCProviderSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:Pattern=`^https://`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="issuerURL is immutable"
 	IssuerURL string `json:"issuerURL"`
 
 	// ClientIDs is the list of audiences (OIDC "aud" / client IDs) accepted
-	// from this issuer. At least one is required.
+	// from this issuer. At least one non-empty entry is required.
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:MinLength=1
 	// +listType=set
 	ClientIDs []string `json:"clientIDs"`
 
-	// Thumbprints is the optional list of SHA-1 thumbprints of the issuer's TLS
-	// signing certificates. Leave empty to let the IAM service fetch and pin
-	// the issuer's JWKS over its trusted CA set.
+	// Thumbprints is the optional list of SHA-1 thumbprints (40 hex chars) of
+	// the issuer's TLS signing certificates. Leave empty to let the IAM service
+	// fetch and pin the issuer's JWKS over its trusted CA set.
 	// +optional
+	// +kubebuilder:validation:items:Pattern=`^[A-Fa-f0-9]{40}$`
 	// +listType=set
 	Thumbprints []string `json:"thumbprints,omitempty"`
 

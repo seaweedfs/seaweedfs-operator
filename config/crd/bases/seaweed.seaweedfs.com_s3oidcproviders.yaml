@@ -45,6 +45,7 @@ spec:
             properties:
               clientIDs:
                 items:
+                  minLength: 1
                   type: string
                 minItems: 1
                 type: array
@@ -52,6 +53,7 @@ spec:
               issuerURL:
                 maxLength: 2048
                 minLength: 1
+                pattern: ^https://
                 type: string
                 x-kubernetes-validations:
                 - message: issuerURL is immutable
@@ -74,6 +76,7 @@ spec:
                 type: object
               thumbprints:
                 items:
+                  pattern: ^[A-Fa-f0-9]{40}$
                   type: string
                 type: array
                 x-kubernetes-list-type: set

@@ -193,6 +193,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controller.S3OIDCProviderReconciler{
+		Client:   mgr.GetClient(),
+		Log:      ctrl.Log.WithName("controller").WithName("S3OIDCProvider"),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("s3oidcprovider-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "S3OIDCProvider")
+		os.Exit(1)
+	}
+
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err = (&seaweedv1.Seaweed{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "Seaweed")

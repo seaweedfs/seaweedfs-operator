@@ -22,6 +22,9 @@ resources:
   kind: S3PolicyBinding
   version: v1
 - group: seaweed
+  kind: S3OIDCProvider
+  version: v1
+- group: seaweed
   kind: ResourceReferenceGrant
   version: v1
 version: 3-alpha

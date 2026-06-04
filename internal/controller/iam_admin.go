@@ -66,6 +66,14 @@ type IAMAdmin interface {
 	// DetachPolicy detaches a policy from an identity (no-op if not
 	// attached).
 	DetachPolicy(ctx context.Context, user, policy string) error
+
+	// PutOIDCProvider registers or updates a trusted OIDC identity provider
+	// (issuer URL + client IDs + optional TLS thumbprints) and returns its
+	// ARN. Idempotent on the issuer URL.
+	PutOIDCProvider(ctx context.Context, provider swadmin.OIDCProvider) (string, error)
+	// DeleteOIDCProvider removes the OIDC provider identified by issuer URL.
+	// Idempotent.
+	DeleteOIDCProvider(ctx context.Context, issuerURL string) error
 }
 
 // IAMAdminFactory creates an IAMAdmin for the IAM service on a target filer.
@@ -167,6 +175,22 @@ func (a *swadminIAMAdmin) AttachPolicy(ctx context.Context, user, policy string)
 
 func (a *swadminIAMAdmin) DetachPolicy(ctx context.Context, user, policy string) error {
 	return mapIAMError(a.c.DetachPolicy(ctx, user, policy))
+}
+
+func (a *swadminIAMAdmin) PutOIDCProvider(ctx context.Context, provider swadmin.OIDCProvider) (string, error) {
+	arn, err := a.c.PutOIDCProvider(ctx, provider)
+	if err != nil {
+		return "", mapIAMError(err)
+	}
+	return arn, nil
+}
+
+func (a *swadminIAMAdmin) DeleteOIDCProvider(ctx context.Context, issuerURL string) error {
+	err := mapIAMError(a.c.DeleteOIDCProvider(ctx, issuerURL))
+	if errors.Is(err, ErrIAMNotFound) {
+		return nil
+	}
+	return err
 }
 
 // mapIAMError translates IAM gRPC status codes into the package sentinels the

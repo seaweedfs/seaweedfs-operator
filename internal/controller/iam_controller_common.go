@@ -41,6 +41,7 @@ const (
 	s3CredentialsFinalizer   = "seaweed.seaweedfs.com/s3credentials-protection"
 	s3PolicyFinalizer        = "seaweed.seaweedfs.com/s3policy-protection"
 	s3PolicyBindingFinalizer = "seaweed.seaweedfs.com/s3policybinding-protection"
+	s3OIDCProviderFinalizer  = "seaweed.seaweedfs.com/s3oidcprovider-protection"
 )
 
 // iamAdminProvider supplies (and caches) IAMAdmin instances per target filer.

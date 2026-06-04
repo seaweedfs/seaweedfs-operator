@@ -8,6 +8,7 @@ resources:
 - bases/seaweed.seaweedfs.com_s3credentials.yaml
 - bases/seaweed.seaweedfs.com_s3policies.yaml
 - bases/seaweed.seaweedfs.com_s3policybindings.yaml
+- bases/seaweed.seaweedfs.com_s3oidcproviders.yaml
 - bases/seaweed.seaweedfs.com_resourcereferencegrants.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 

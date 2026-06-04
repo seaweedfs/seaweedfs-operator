@@ -70,12 +70,14 @@ type fakeIAMAdmin struct {
 	users      map[string]*swadmin.IAMUser
 	policies   map[string]string
 	secretKeys map[string]string // accessKey -> secretKey, to assert generation/adoption
+	providers  map[string]string // issuerURL -> arn
 	calls      []string
 
 	createUserErr   error
 	createAKErr     error
 	putPolicyErr    error
 	attachPolicyErr error
+	putOIDCErr      error
 }
 
 func newFakeIAMAdmin() *fakeIAMAdmin {
@@ -83,6 +85,7 @@ func newFakeIAMAdmin() *fakeIAMAdmin {
 		users:      map[string]*swadmin.IAMUser{},
 		policies:   map[string]string{},
 		secretKeys: map[string]string{},
+		providers:  map[string]string{},
 	}
 }
 
@@ -261,6 +264,24 @@ func (f *fakeIAMAdmin) userPolicies(name string) []string {
 	return append([]string(nil), u.PolicyNames...)
 }
 
+func (f *fakeIAMAdmin) hasProvider(issuer string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.providers[issuer]
+	return ok
+}
+
+func (f *fakeIAMAdmin) calledDeleteOIDC(issuer string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.calls {
+		if c == "DeleteOIDCProvider:"+issuer {
+			return true
+		}
+	}
+	return false
+}
+
 func (f *fakeIAMAdmin) userKeys(name string) []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -269,6 +290,26 @@ func (f *fakeIAMAdmin) userKeys(name string) []string {
 		return nil
 	}
 	return append([]string(nil), u.AccessKeys...)
+}
+
+func (f *fakeIAMAdmin) PutOIDCProvider(_ context.Context, provider swadmin.OIDCProvider) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("PutOIDCProvider:" + provider.IssuerURL)
+	if f.putOIDCErr != nil {
+		return "", f.putOIDCErr
+	}
+	arn := "arn:aws:iam::seaweedfs:oidc-provider/" + provider.IssuerURL
+	f.providers[provider.IssuerURL] = arn
+	return arn, nil
+}
+
+func (f *fakeIAMAdmin) DeleteOIDCProvider(_ context.Context, issuerURL string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("DeleteOIDCProvider:" + issuerURL)
+	delete(f.providers, issuerURL) // idempotent
+	return nil
 }
 
 // compile-time check that the fake satisfies the interface.

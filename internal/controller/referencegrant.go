@@ -37,6 +37,7 @@ const (
 	kindS3Credentials   = "S3Credentials"
 	kindS3Policy        = "S3Policy"
 	kindS3PolicyBinding = "S3PolicyBinding"
+	kindS3OIDCProvider  = "S3OIDCProvider"
 	kindBucket          = "Bucket"
 )
 

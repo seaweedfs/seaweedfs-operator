@@ -193,6 +193,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The S3OIDCProvider transport is not wired yet (the filer IAM gRPC service
+	// has no OIDC methods), so registering it would fail-loop on every cluster.
+	// Keep it off by default until the server-side RPCs land; opt in with
+	// ENABLE_S3_OIDC_PROVIDER=true for development.
+	if os.Getenv("ENABLE_S3_OIDC_PROVIDER") == "true" {
+		if err = (&controller.S3OIDCProviderReconciler{
+			Client:   mgr.GetClient(),
+			Log:      ctrl.Log.WithName("controller").WithName("S3OIDCProvider"),
+			Scheme:   mgr.GetScheme(),
+			Recorder: mgr.GetEventRecorderFor("s3oidcprovider-controller"),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "S3OIDCProvider")
+			os.Exit(1)
+		}
+	} else {
+		setupLog.Info("S3OIDCProvider controller disabled (set ENABLE_S3_OIDC_PROVIDER=true to enable; requires filer OIDC gRPC support)")
+	}
+
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err = (&seaweedv1.Seaweed{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "Seaweed")

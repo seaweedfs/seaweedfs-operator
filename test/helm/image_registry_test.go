@@ -30,8 +30,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
-// TestHelmGlobalImageRegistry guards issue #268: global.imageRegistry was
-// declared but ignored, so images never honored the chart-wide override.
+// TestHelmGlobalImageRegistry verifies global.imageRegistry overrides the
+// registry of every chart image, and that images render correctly when unset.
 func TestHelmGlobalImageRegistry(t *testing.T) {
 	root := projectRoot(t)
 	chartDir := filepath.Join(root, "deploy", "helm")

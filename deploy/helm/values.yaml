@@ -1,8 +1,10 @@
 # -- Global Docker image parameters
-# Please, note that this will override the image parameters, including dependencies, configured to use the global value
+# When set, global.imageRegistry overrides the registry of every image in this
+# chart (operator and webhook certgen), e.g. to point at an internal mirror.
+# Leave empty to use each image's own registry.
 # Current available global Docker image parameters: imageRegistry
 global:
-  imageRegistry: "chrislusf"
+  imageRegistry: ""
 
 # -- String to partially override common.names.fullname template (will maintain the release name)
 nameOverride: ""

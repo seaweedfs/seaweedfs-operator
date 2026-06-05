@@ -20,7 +20,7 @@ spec:
       {{- include "seaweedfs-operator.scheduling" . | nindent 6 }}
       containers:
       - name: certgen
-        image: {{ .Values.webhook.certgen.registry }}/{{ .Values.webhook.certgen.repository }}:{{ .Values.webhook.certgen.tag }}
+        image: {{ include "seaweedfs-operator.image" (dict "imageRoot" .Values.webhook.certgen "tag" .Values.webhook.certgen.tag "global" .Values.global) }}
         {{- include "seaweedfs-operator.webhookContainerSecurityContext" . | nindent 8 }}
         args:
           - create
@@ -57,7 +57,7 @@ spec:
       {{- include "seaweedfs-operator.webhookWaitInitContainer" (dict "Chart" .Chart "Values" .Values "Release" .Release "webhookPath" (include "seaweedfs-operator.mutatingWebhookPath" .)) | nindent 8 }}
       containers:
       - name: certgen
-        image: {{ .Values.webhook.certgen.registry }}/{{ .Values.webhook.certgen.repository }}:{{ .Values.webhook.certgen.tag }}
+        image: {{ include "seaweedfs-operator.image" (dict "imageRoot" .Values.webhook.certgen "tag" .Values.webhook.certgen.tag "global" .Values.global) }}
         {{- include "seaweedfs-operator.webhookContainerSecurityContext" . | nindent 8 }}
         args:
           - patch
@@ -97,7 +97,7 @@ spec:
       {{- include "seaweedfs-operator.webhookWaitInitContainer" (dict "Chart" .Chart "Values" .Values "Release" .Release "webhookPath" (include "seaweedfs-operator.validatingWebhookPath" .)) | nindent 8 }}
       containers:
       - name: certgen
-        image: {{ .Values.webhook.certgen.registry }}/{{ .Values.webhook.certgen.repository }}:{{ .Values.webhook.certgen.tag }}
+        image: {{ include "seaweedfs-operator.image" (dict "imageRoot" .Values.webhook.certgen "tag" .Values.webhook.certgen.tag "global" .Values.global) }}
         {{- include "seaweedfs-operator.webhookContainerSecurityContext" . | nindent 8 }}
         args:
           - patch

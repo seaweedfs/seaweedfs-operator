@@ -59,7 +59,10 @@ Usage:
   include "seaweedfs-operator.image" (dict "imageRoot" .Values.image "tag" "1.2.3" "global" .Values.global)
 */}}
 {{- define "seaweedfs-operator.image" -}}
-{{- $registry := default .imageRoot.registry ((.global).imageRegistry) -}}
+{{- $registry := .imageRoot.registry -}}
+{{- if .global -}}
+{{- $registry = default .imageRoot.registry .global.imageRegistry -}}
+{{- end -}}
 {{- if $registry -}}
 {{- printf "%s/%s:%s" $registry .imageRoot.repository .tag -}}
 {{- else -}}

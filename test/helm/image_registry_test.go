@@ -30,14 +30,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
-// TestHelmGlobalImageRegistry guards the fix for issue #268: the chart
-// declares a `global.imageRegistry` value (the Bitnami-style chart-wide
-// registry override used for internal mirrors / air-gapped clusters), but
-// the templates rendered images straight from each image's own
-// `.registry` and ignored the global value entirely, so setting it had no
-// effect. These cases render the chart with `helm template` — exactly what
-// `helm install` does — and assert the global override actually reaches the
-// rendered image references while staying backward compatible when unset.
+// TestHelmGlobalImageRegistry guards issue #268: global.imageRegistry was
+// declared but ignored, so images never honored the chart-wide override.
 func TestHelmGlobalImageRegistry(t *testing.T) {
 	root := projectRoot(t)
 	chartDir := filepath.Join(root, "deploy", "helm")
@@ -51,9 +45,7 @@ func TestHelmGlobalImageRegistry(t *testing.T) {
 			}
 		}
 
-		// The chart renders three certgen Jobs (create + patch
-		// mutating + patch validating); assert every one honors the
-		// override so a single drifting Job can't hide behind another.
+		// Three certgen Jobs render; assert each honors the override.
 		certgens := requireImages(t, images, "certgen")
 		if len(certgens) != 3 {
 			t.Fatalf("expected 3 rendered certgen containers, got %d (%v)", len(certgens), certgens)
@@ -92,11 +84,7 @@ func TestHelmGlobalImageRegistry(t *testing.T) {
 	})
 
 	t.Run("nil global renders without error and falls back to per-image registry", func(t *testing.T) {
-		// Guards the image helper against a nil/omitted `global` (the
-		// subchart case, where Helm may not inject a `global` map, or
-		// an explicit `--set global=null`). The helper must fall back
-		// to the per-image registry rather than panic on a nil-pointer
-		// field access.
+		// A nil/omitted global (subchart case) must fall back, not panic.
 		images := renderImages(t, chartDir, "--set", "global=null")
 
 		for _, operator := range requireImages(t, images, "seaweedfs-operator") {
@@ -107,17 +95,13 @@ func TestHelmGlobalImageRegistry(t *testing.T) {
 	})
 }
 
-// renderImages runs `helm template` with the given extra args and returns
-// a map of container name -> all images rendered for that name across every
-// Deployment and Job. Images are collected into a slice per name (rather
-// than a single value) so that multiple resources sharing a container name
-// — e.g. the three webhook certgen Jobs — are each recorded instead of
-// overwriting one another.
+// renderImages runs `helm template` and returns container name -> all images
+// rendered for that name. A slice per name keeps containers that share a name
+// (e.g. the three certgen Jobs) from overwriting one another.
 func renderImages(t *testing.T, chartDir string, extraArgs ...string) map[string][]string {
 	t.Helper()
 	args := append([]string{"template", "image-test", chartDir}, extraArgs...)
-	// Bound the subprocess so a stalled `helm template` can't hang CI
-	// indefinitely.
+	// Timeout so a stalled render can't hang CI.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "helm", args...)
@@ -128,8 +112,7 @@ func renderImages(t *testing.T, chartDir string, extraArgs ...string) map[string
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			t.Fatalf("helm template timed out after 30s\nstderr: %s", stderr.String())
 		}
-		// A missing helm binary is a legitimate skip on a dev machine;
-		// a render failure is a genuine regression that must fail.
+		// Missing helm binary: skip on a dev machine. Render error: fail.
 		if errors.Is(err, exec.ErrNotFound) {
 			t.Skipf("helm not found in PATH; skipping image registry test: %v", err)
 		}

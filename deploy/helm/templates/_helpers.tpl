@@ -51,10 +51,8 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Resolve a fully qualified Docker image reference, honoring a chart-wide registry
-override. When .Values.global.imageRegistry is set it takes precedence over the
-image's own registry, so an internal mirror can be applied to every image at once
-(e.g. air-gapped clusters). See issue #268.
+Resolve a Docker image reference. global.imageRegistry, when set, overrides the
+image's own registry (chart-wide mirror, e.g. air-gapped). See issue #268.
 Usage:
   include "seaweedfs-operator.image" (dict "imageRoot" .Values.image "tag" "1.2.3" "global" .Values.global)
 */}}

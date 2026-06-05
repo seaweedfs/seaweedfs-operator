@@ -1,8 +1,5 @@
-# -- Global Docker image parameters
-# When set, global.imageRegistry overrides the registry of every image in this
-# chart (operator and webhook certgen), e.g. to point at an internal mirror.
-# Leave empty to use each image's own registry.
-# Current available global Docker image parameters: imageRegistry
+# -- Global Docker image parameters. global.imageRegistry, when set, overrides
+# the registry of every image in the chart; leave empty to use each image's own.
 global:
   imageRegistry: ""
 

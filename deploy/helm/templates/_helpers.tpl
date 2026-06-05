@@ -51,6 +51,24 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Resolve a Docker image reference. global.imageRegistry, when set, overrides the
+image's own registry (chart-wide mirror, e.g. air-gapped).
+Usage:
+  include "seaweedfs-operator.image" (dict "imageRoot" .Values.image "tag" "1.2.3" "global" .Values.global)
+*/}}
+{{- define "seaweedfs-operator.image" -}}
+{{- $registry := .imageRoot.registry -}}
+{{- if .global -}}
+{{- $registry = default .imageRoot.registry .global.imageRegistry -}}
+{{- end -}}
+{{- if $registry -}}
+{{- printf "%s/%s:%s" $registry .imageRoot.repository .tag -}}
+{{- else -}}
+{{- printf "%s:%s" .imageRoot.repository .tag -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Docker registry image pull secret
 */}}
 {{- define "seaweedfs-operator.imagePullSecret" }}

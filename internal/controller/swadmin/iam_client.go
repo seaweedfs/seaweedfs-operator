@@ -93,7 +93,7 @@ func NewIAMClient(filer string, adminSigningKey []byte) *IAMClient {
 // and invokes fn. Errors are returned verbatim so callers can classify gRPC
 // status codes.
 func (c *IAMClient) withClient(ctx context.Context, fn func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error) error {
-	return pb.WithGrpcClient(false, 0, func(conn *grpc.ClientConn) error {
+	return pb.WithGrpcClient(ctx, false, 0, func(conn *grpc.ClientConn) error {
 		callCtx, cancel := context.WithTimeout(c.authContext(ctx), iamRequestTimeout)
 		defer cancel()
 		return fn(callCtx, iam_pb.NewSeaweedIdentityAccessManagementClient(conn))

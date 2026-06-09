@@ -357,7 +357,7 @@ spec:
                     type: object
                     x-kubernetes-validations:
                       - message: exactly one of namespace or namespaceSelector must be set
-                        rule: has(self.namespace) != has(self.namespaceSelector)
+                        rule: has(self.__namespace__) != has(self.namespaceSelector)
                   maxItems: 16
                   minItems: 1
                   type: array

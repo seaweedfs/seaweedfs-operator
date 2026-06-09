@@ -25,7 +25,9 @@ import (
 // matched either by exact name (Namespace) or by label (NamespaceSelector);
 // exactly one of the two must be set.
 //
-// +kubebuilder:validation:XValidation:rule="has(self.namespace) != has(self.namespaceSelector)",message="exactly one of namespace or namespaceSelector must be set"
+// "namespace" is a CEL reserved keyword, so it must be escaped as
+// "__namespace__" in the validation rule.
+// +kubebuilder:validation:XValidation:rule="has(self.__namespace__) != has(self.namespaceSelector)",message="exactly one of namespace or namespaceSelector must be set"
 type ReferenceGrantFrom struct {
 	// Group of the referencing resource; core group is "".
 	// +kubebuilder:validation:MaxLength=253

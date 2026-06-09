@@ -142,9 +142,8 @@ func fromEntryMatches(f *seaweedv1.ReferenceGrantFrom, from referent, resolveLab
 	if f.Group != from.Group || f.Kind != from.Kind {
 		return false, nil
 	}
-	// Setting both matchers is rejected by the CRD's CEL rule, but clusters
-	// without CEL do not enforce it; fail closed rather than silently letting
-	// the selector widen an entry that also names a namespace.
+	// Fail closed if both matchers are set; the CRD's CEL rule rejects it, but
+	// clusters without CEL do not.
 	if f.Namespace != "" && f.NamespaceSelector != nil {
 		return false, nil
 	}
@@ -155,7 +154,7 @@ func fromEntryMatches(f *seaweedv1.ReferenceGrantFrom, from referent, resolveLab
 	if err != nil {
 		return false, err
 	}
-	// An empty selector matches every namespace, so the labels are irrelevant.
+	// An empty selector matches every namespace, so skip the label lookup.
 	if selector.Empty() {
 		return true, nil
 	}

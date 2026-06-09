@@ -149,8 +149,7 @@ func TestGrantAllows(t *testing.T) {
 			want: false,
 		},
 		{
-			// Rejected by the CRD's CEL rule, but a cluster without CEL must still
-			// fail closed instead of letting the selector widen the entry.
+			// Fail closed without CEL enforcement.
 			name: "both namespace and selector set is denied",
 			spec: grant(
 				[]seaweedv1.ReferenceGrantFrom{{
@@ -237,9 +236,8 @@ func TestReferenceGrantPermits_NamespaceSelector(t *testing.T) {
 }
 
 // TestReferenceGrantPermits_EmptyNamespaceSelector_SkipsLookup pins that an
-// empty selector ({}) permits every source namespace without reading it — the
-// interceptor fails the test on any namespace Get, and the source namespace is
-// not even seeded, so a lookup would also error.
+// empty selector ({}) permits every source namespace without reading it: the
+// interceptor fails the test on any namespace Get, and the namespace is unseeded.
 func TestReferenceGrantPermits_EmptyNamespaceSelector_SkipsLookup(t *testing.T) {
 	scheme := iamTestScheme(t)
 	grant := &seaweedv1.ResourceReferenceGrant{

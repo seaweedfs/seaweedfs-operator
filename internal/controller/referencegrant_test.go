@@ -27,6 +27,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -146,6 +148,18 @@ func TestGrantAllows(t *testing.T) {
 				[]seaweedv1.ReferenceGrantTo{to(groupCore, kindSecret, "")}),
 			want: false,
 		},
+		{
+			// Rejected by the CRD's CEL rule, but a cluster without CEL must still
+			// fail closed instead of letting the selector widen the entry.
+			name: "both namespace and selector set is denied",
+			spec: grant(
+				[]seaweedv1.ReferenceGrantFrom{{
+					Group: groupSeaweed, Kind: kindS3Credentials, Namespace: "app",
+					NamespaceSelector: &metav1.LabelSelector{},
+				}},
+				[]seaweedv1.ReferenceGrantTo{to(groupCore, kindSecret, "")}),
+			want: false,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -219,6 +233,40 @@ func TestReferenceGrantPermits_NamespaceSelector(t *testing.T) {
 	// Source namespace missing the label is denied.
 	if ok, err := secretRefPermitted(ctx, cli, "secrets", "shared", "other"); err != nil || ok {
 		t.Fatalf("expected denied for unlabeled namespace, ok=%v err=%v", ok, err)
+	}
+}
+
+// TestReferenceGrantPermits_EmptyNamespaceSelector_SkipsLookup pins that an
+// empty selector ({}) permits every source namespace without reading it — the
+// interceptor fails the test on any namespace Get, and the source namespace is
+// not even seeded, so a lookup would also error.
+func TestReferenceGrantPermits_EmptyNamespaceSelector_SkipsLookup(t *testing.T) {
+	scheme := iamTestScheme(t)
+	grant := &seaweedv1.ResourceReferenceGrant{
+		ObjectMeta: metav1.ObjectMeta{Name: "g", Namespace: "secrets"},
+		Spec: seaweedv1.ResourceReferenceGrantSpec{
+			From: []seaweedv1.ReferenceGrantFrom{{
+				Group: groupSeaweed, Kind: kindS3Credentials,
+				NamespaceSelector: &metav1.LabelSelector{},
+			}},
+			To: []seaweedv1.ReferenceGrantTo{{Group: groupCore, Kind: kindSecret}},
+		},
+	}
+	cli := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(grant).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*corev1.Namespace); ok {
+					t.Errorf("namespace %q should not be fetched for an empty selector", key.Name)
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		}).
+		Build()
+
+	if ok, err := secretRefPermitted(context.Background(), cli, "secrets", "shared", "app"); err != nil || !ok {
+		t.Fatalf("empty selector should permit without a namespace lookup, ok=%v err=%v", ok, err)
 	}
 }
 

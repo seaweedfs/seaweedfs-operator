@@ -142,12 +142,22 @@ func fromEntryMatches(f *seaweedv1.ReferenceGrantFrom, from referent, resolveLab
 	if f.Group != from.Group || f.Kind != from.Kind {
 		return false, nil
 	}
+	// Setting both matchers is rejected by the CRD's CEL rule, but clusters
+	// without CEL do not enforce it; fail closed rather than silently letting
+	// the selector widen an entry that also names a namespace.
+	if f.Namespace != "" && f.NamespaceSelector != nil {
+		return false, nil
+	}
 	if f.NamespaceSelector == nil {
 		return f.Namespace == from.Namespace, nil
 	}
 	selector, err := metav1.LabelSelectorAsSelector(f.NamespaceSelector)
 	if err != nil {
 		return false, err
+	}
+	// An empty selector matches every namespace, so the labels are irrelevant.
+	if selector.Empty() {
+		return true, nil
 	}
 	nsLabels, err := resolveLabels()
 	if err != nil {

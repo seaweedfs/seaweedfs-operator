@@ -424,10 +424,12 @@ the namespace that owns the resource being pointed at — not the requester —
 decides who may reach in.
 
 The grant lives in the namespace of the resource being referenced. Its
-`spec.from` lists the trusted `{group, kind, namespace}` sources and its
-`spec.to` lists the `{group, kind, name?}` referents in that namespace
-(omit `name` to allow every resource of that kind). A reference is allowed
-when it matches at least one `from` and one `to` entry.
+`spec.from` lists the trusted sources — each names a `{group, kind}` plus the
+source namespaces, given either as an exact `namespace` or as a
+`namespaceSelector` (exactly one per entry) — and its `spec.to` lists the
+`{group, kind, name?}` referents in that namespace (omit `name` to allow every
+resource of that kind). A reference is allowed when it matches at least one
+`from` and one `to` entry.
 
 ```yaml
 # In the cluster's namespace: let the "media" namespace's Buckets and
@@ -443,6 +445,31 @@ spec:
     - { group: seaweed.seaweedfs.com, kind: S3Credentials, namespace: media }
   to:
     - { group: seaweed.seaweedfs.com, kind: Seaweed }   # any Seaweed here
+```
+
+For environments where source namespaces are created on demand (per tenant,
+per PR, ...) and cannot be enumerated ahead of time, a `from` entry may select
+namespaces by label with `namespaceSelector` instead of naming one. Every
+namespace whose labels match is trusted, so labelling a freshly created
+namespace grants access without editing the grant. An empty selector (`{}`)
+matches **all** namespaces.
+
+```yaml
+# Trust every namespace labelled seaweedfs-access=true to reference any
+# Seaweed cluster in this namespace.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: allow-labeled-buckets
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespaceSelector:
+        matchLabels: { seaweedfs-access: "true" }
+  to:
+    - { group: seaweed.seaweedfs.com, kind: Seaweed }
 ```
 
 While a required grant is missing the referencing resource stays `Pending`

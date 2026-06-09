@@ -53,3 +53,25 @@ spec:
     - group: ""
       kind: Secret
       name: shared-s3-secret
+---
+# Instead of naming each source namespace, a from entry can select them by
+# label with namespaceSelector — useful when namespaces are created on demand
+# (per-tenant, per-PR, ...) and cannot be enumerated ahead of time. Every
+# namespace whose labels match is trusted, so labelling a new namespace grants
+# access without editing this object. An empty selector ({}) matches every
+# namespace. Exactly one of namespace or namespaceSelector may be set per entry.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: allow-labeled-buckets
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespaceSelector:
+        matchLabels:
+          seaweedfs-access: "true"
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed

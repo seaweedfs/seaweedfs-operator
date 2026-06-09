@@ -525,6 +525,45 @@ func TestReconcile_DeleteOnDelete_CallsDeleteBucket(t *testing.T) {
 	}
 }
 
+// TestReconcile_DeleteOnDelete_NonOwnerDoesNotDeleteForeignBucket pins #272: a
+// Bucket whose adoption was refused (the physical bucket exists but this CR
+// never created it, so Status.BucketName is empty) must not delete that bucket
+// on its own deletion — even with ReclaimPolicy=Delete — because another CR owns
+// it. It just drops the finalizer.
+func TestReconcile_DeleteOnDelete_NonOwnerDoesNotDeleteForeignBucket(t *testing.T) {
+	now := metav1.Now()
+	bucket := newTestBucket("photos")
+	bucket.Spec.ReclaimPolicy = seaweedv1.BucketReclaimDelete
+	bucket.Status.BucketName = "" // adoption was refused; this CR owns nothing
+	bucket.Finalizers = []string{BucketFinalizer}
+	bucket.DeletionTimestamp = &now
+
+	fa := newFakeAdmin()
+	fa.existsResp["photos"] = true // the bucket exists, owned by another CR
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	for _, c := range fa.calls {
+		if strings.HasPrefix(c, "Delete:") {
+			t.Errorf("a non-owning Bucket must not call DeleteBucket, got: %s", c)
+		}
+	}
+	if _, ok := fa.existsResp["photos"]; !ok {
+		t.Error("the foreign bucket must survive deletion of a non-owning CR")
+	}
+	// The CR itself is reaped once the finalizer is removed.
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err == nil {
+		t.Errorf("expected the CR to be deleted after finalizer removal; still present: %+v", got)
+	} else if !apierrors.IsNotFound(err) {
+		t.Errorf("unexpected error getting deleted CR: %v", err)
+	}
+}
+
 func TestReconcile_DeleteBlockedByRetention_KeepsFinalizer(t *testing.T) {
 	now := metav1.Now()
 	bucket := newTestBucket("photos")

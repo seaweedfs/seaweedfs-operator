@@ -525,11 +525,9 @@ func TestReconcile_DeleteOnDelete_CallsDeleteBucket(t *testing.T) {
 	}
 }
 
-// TestReconcile_DeleteOnDelete_NonOwnerDoesNotDeleteForeignBucket pins #272: a
-// Bucket whose adoption was refused (the physical bucket exists but this CR
-// never created it, so Status.BucketName is empty) must not delete that bucket
-// on its own deletion — even with ReclaimPolicy=Delete — because another CR owns
-// it. It just drops the finalizer.
+// TestReconcile_DeleteOnDelete_NonOwnerDoesNotDeleteForeignBucket: a Bucket whose
+// adoption was refused (Status.BucketName empty) must not delete the existing
+// bucket on its own deletion under ReclaimPolicy=Delete; it just drops the finalizer.
 func TestReconcile_DeleteOnDelete_NonOwnerDoesNotDeleteForeignBucket(t *testing.T) {
 	now := metav1.Now()
 	bucket := newTestBucket("photos")

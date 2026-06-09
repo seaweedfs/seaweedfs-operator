@@ -274,7 +274,9 @@ Supported per-bucket configuration:
   name and is not configurable.
 - `reclaimPolicy`: `Retain` (default) leaves data untouched on CR
   delete; `Delete` removes the bucket on CR delete (refused while
-  Object Lock retention applies).
+  Object Lock retention applies). `Delete` only removes a bucket this
+  CR actually created — a CR whose adoption was refused
+  (`BucketAlreadyExists`) never deletes a bucket another resource owns.
 - Cross-namespace `clusterRef` is **denied by default**: it resolves only
   when a [`ResourceReferenceGrant`](#cross-namespace-references-resourcereferencegrant)
   in the target `Seaweed`'s namespace permits it. The bucket stays

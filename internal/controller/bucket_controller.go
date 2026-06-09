@@ -352,7 +352,9 @@ func (r *BucketReconciler) handleDeletion(ctx context.Context, bucket *seaweedv1
 
 	bucket.Status.Phase = seaweedv1.BucketPhaseTerminating
 
-	if bucket.Spec.ReclaimPolicy == seaweedv1.BucketReclaimDelete {
+	// Only delete the bucket this CR created: Status.BucketName is empty when
+	// adoption was refused, so such a CR must not delete a bucket it doesn't own.
+	if bucket.Spec.ReclaimPolicy == seaweedv1.BucketReclaimDelete && bucket.Status.BucketName == bucketName {
 		err := admin.DeleteBucket(ctx, bucketName)
 		switch {
 		case err == nil, errors.Is(err, ErrBucketNotFound):

@@ -159,6 +159,17 @@ func TestGrantAllows(t *testing.T) {
 				[]seaweedv1.ReferenceGrantTo{to(groupCore, kindSecret, "")}),
 			want: false,
 		},
+		{
+			// A malformed selector is treated as non-matching, not an error.
+			name: "invalid selector operator does not match",
+			spec: grant(
+				[]seaweedv1.ReferenceGrantFrom{fromSelector(groupSeaweed, kindS3Credentials,
+					&metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{
+						{Key: "team", Operator: "BadOperator"},
+					}})},
+				[]seaweedv1.ReferenceGrantTo{to(groupCore, kindSecret, "")}),
+			want: false,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -265,6 +276,38 @@ func TestReferenceGrantPermits_EmptyNamespaceSelector_SkipsLookup(t *testing.T) 
 
 	if ok, err := secretRefPermitted(context.Background(), cli, "secrets", "shared", "app"); err != nil || !ok {
 		t.Fatalf("empty selector should permit without a namespace lookup, ok=%v err=%v", ok, err)
+	}
+}
+
+// TestReferenceGrantPermits_MalformedGrantDoesNotBlockValidGrant pins that a
+// grant whose selector cannot be parsed is skipped (not fatal): a second, valid
+// grant in the same namespace still permits the reference, and the check never
+// errors out.
+func TestReferenceGrantPermits_MalformedGrantDoesNotBlockValidGrant(t *testing.T) {
+	scheme := iamTestScheme(t)
+	badGrant := &seaweedv1.ResourceReferenceGrant{
+		ObjectMeta: metav1.ObjectMeta{Name: "bad", Namespace: "secrets"},
+		Spec: seaweedv1.ResourceReferenceGrantSpec{
+			From: []seaweedv1.ReferenceGrantFrom{{
+				Group: groupSeaweed, Kind: kindS3Credentials,
+				NamespaceSelector: &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{
+					{Key: "team", Operator: "BadOperator"},
+				}},
+			}},
+			To: []seaweedv1.ReferenceGrantTo{{Group: groupCore, Kind: kindSecret}},
+		},
+	}
+	goodGrant := &seaweedv1.ResourceReferenceGrant{
+		ObjectMeta: metav1.ObjectMeta{Name: "good", Namespace: "secrets"},
+		Spec: seaweedv1.ResourceReferenceGrantSpec{
+			From: []seaweedv1.ReferenceGrantFrom{{Group: groupSeaweed, Kind: kindS3Credentials, Namespace: "app"}},
+			To:   []seaweedv1.ReferenceGrantTo{{Group: groupCore, Kind: kindSecret}},
+		},
+	}
+	cli := iamTestClientNoGrants(t, scheme, badGrant, goodGrant)
+
+	if ok, err := secretRefPermitted(context.Background(), cli, "secrets", "shared", "app"); err != nil || !ok {
+		t.Fatalf("a malformed grant must not block a valid one, ok=%v err=%v", ok, err)
 	}
 }
 

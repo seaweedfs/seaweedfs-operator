@@ -152,7 +152,10 @@ func fromEntryMatches(f *seaweedv1.ReferenceGrantFrom, from referent, resolveLab
 	}
 	selector, err := metav1.LabelSelectorAsSelector(f.NamespaceSelector)
 	if err != nil {
-		return false, err
+		// A malformed selector can never match; treat it as non-matching rather
+		// than erroring, so one bad grant can't block valid grants or storm
+		// reconciles. (resolveLabels errors below are transient and do propagate.)
+		return false, nil
 	}
 	// An empty selector matches every namespace, so skip the label lookup.
 	if selector.Empty() {

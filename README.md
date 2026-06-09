@@ -424,10 +424,14 @@ the namespace that owns the resource being pointed at — not the requester —
 decides who may reach in.
 
 The grant lives in the namespace of the resource being referenced. Its
-`spec.from` lists the trusted `{group, kind, namespace}` sources and its
-`spec.to` lists the `{group, kind, name?}` referents in that namespace
-(omit `name` to allow every resource of that kind). A reference is allowed
-when it matches at least one `from` and one `to` entry.
+`spec.from` lists the trusted sources and its `spec.to` lists the
+`{group, kind, name?}` referents in that namespace (omit `name` to allow every
+resource of that kind). A reference is allowed when it matches at least one
+`from` and one `to` entry.
+
+Each `from` entry names a `{group, kind}` and identifies the source namespaces
+either by exact name (`namespace`) or by label (`namespaceSelector`) — exactly
+one of the two per entry.
 
 ```yaml
 # In the cluster's namespace: let the "media" namespace's Buckets and
@@ -443,6 +447,29 @@ spec:
     - { group: seaweed.seaweedfs.com, kind: S3Credentials, namespace: media }
   to:
     - { group: seaweed.seaweedfs.com, kind: Seaweed }   # any Seaweed here
+```
+
+When referencing namespaces are created on demand (per-PR, per-tenant) and
+cannot be listed up front, match them by label with `namespaceSelector`
+(`matchLabels`/`matchExpressions`, the standard Kubernetes label selector). An
+empty selector (`{}`) matches every namespace.
+
+```yaml
+# Let Buckets in any namespace labelled `seaweedfs-access: "true"` reach "prod".
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: allow-labeled-namespaces
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespaceSelector:
+        matchLabels:
+          seaweedfs-access: "true"
+  to:
+    - { group: seaweed.seaweedfs.com, kind: Seaweed, name: prod }
 ```
 
 While a required grant is missing the referencing resource stays `Pending`

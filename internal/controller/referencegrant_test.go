@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,12 +38,19 @@ import (
 func TestGrantAllows(t *testing.T) {
 	credsFrom := referent{Group: groupSeaweed, Kind: kindS3Credentials, Namespace: "app"}
 	secretTo := referent{Group: groupCore, Kind: kindSecret, Namespace: "secrets", Name: "shared"}
+	// The source namespace "app" carries these labels for the selector cases.
+	appNamespaceLabels := func() (labels.Set, error) {
+		return labels.Set{"team": "app", "tier": "frontend"}, nil
+	}
 
 	grant := func(from []seaweedv1.ReferenceGrantFrom, to []seaweedv1.ReferenceGrantTo) *seaweedv1.ResourceReferenceGrantSpec {
 		return &seaweedv1.ResourceReferenceGrantSpec{From: from, To: to}
 	}
 	from := func(g, k, ns string) seaweedv1.ReferenceGrantFrom {
 		return seaweedv1.ReferenceGrantFrom{Group: g, Kind: k, Namespace: ns}
+	}
+	fromSelector := func(g, k string, sel *metav1.LabelSelector) seaweedv1.ReferenceGrantFrom {
+		return seaweedv1.ReferenceGrantFrom{Group: g, Kind: k, NamespaceSelector: sel}
 	}
 	to := func(g, k, n string) seaweedv1.ReferenceGrantTo {
 		return seaweedv1.ReferenceGrantTo{Group: g, Kind: k, Name: n}
@@ -108,10 +116,44 @@ func TestGrantAllows(t *testing.T) {
 				}),
 			want: true,
 		},
+		{
+			name: "empty namespace selector matches every namespace",
+			spec: grant(
+				[]seaweedv1.ReferenceGrantFrom{fromSelector(groupSeaweed, kindS3Credentials, &metav1.LabelSelector{})},
+				[]seaweedv1.ReferenceGrantTo{to(groupCore, kindSecret, "")}),
+			want: true,
+		},
+		{
+			name: "matchLabels selector matches the source namespace labels",
+			spec: grant(
+				[]seaweedv1.ReferenceGrantFrom{fromSelector(groupSeaweed, kindS3Credentials,
+					&metav1.LabelSelector{MatchLabels: map[string]string{"team": "app"}})},
+				[]seaweedv1.ReferenceGrantTo{to(groupCore, kindSecret, "")}),
+			want: true,
+		},
+		{
+			name: "matchLabels selector mismatch denied",
+			spec: grant(
+				[]seaweedv1.ReferenceGrantFrom{fromSelector(groupSeaweed, kindS3Credentials,
+					&metav1.LabelSelector{MatchLabels: map[string]string{"team": "other"}})},
+				[]seaweedv1.ReferenceGrantTo{to(groupCore, kindSecret, "")}),
+			want: false,
+		},
+		{
+			name: "selector requires the matching source kind",
+			spec: grant(
+				[]seaweedv1.ReferenceGrantFrom{fromSelector(groupSeaweed, kindS3Identity, &metav1.LabelSelector{})},
+				[]seaweedv1.ReferenceGrantTo{to(groupCore, kindSecret, "")}),
+			want: false,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := grantAllows(tc.spec, credsFrom, secretTo); got != tc.want {
+			got, err := grantAllows(tc.spec, credsFrom, secretTo, appNamespaceLabels)
+			if err != nil {
+				t.Fatalf("grantAllows error: %v", err)
+			}
+			if got != tc.want {
 				t.Errorf("grantAllows = %v, want %v", got, tc.want)
 			}
 		})
@@ -146,6 +188,37 @@ func TestReferenceGrantPermits(t *testing.T) {
 	// Cross-namespace reference from an un-granted source namespace is denied.
 	if ok, err := secretRefPermitted(ctx, cli, "secrets", "shared", "other"); err != nil || ok {
 		t.Fatalf("expected denied for un-granted source, ok=%v err=%v", ok, err)
+	}
+}
+
+// TestReferenceGrantPermits_NamespaceSelector covers a grant that trusts source
+// namespaces by label (issue #271): the source namespace's labels are resolved
+// and only those satisfying the selector are permitted.
+func TestReferenceGrantPermits_NamespaceSelector(t *testing.T) {
+	scheme := iamTestScheme(t)
+	grant := &seaweedv1.ResourceReferenceGrant{
+		ObjectMeta: metav1.ObjectMeta{Name: "g", Namespace: "secrets"},
+		Spec: seaweedv1.ResourceReferenceGrantSpec{
+			From: []seaweedv1.ReferenceGrantFrom{{
+				Group: groupSeaweed, Kind: kindS3Credentials,
+				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"seaweedfs-access": "true"}},
+			}},
+			To: []seaweedv1.ReferenceGrantTo{{Group: groupCore, Kind: kindSecret}},
+		},
+	}
+	labeledNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name: "app", Labels: map[string]string{"seaweedfs-access": "true"}}}
+	unlabeledNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "other"}}
+	cli := iamTestClientNoGrants(t, scheme, grant, labeledNS, unlabeledNS)
+	ctx := context.Background()
+
+	// Source namespace carrying the selector's label is permitted.
+	if ok, err := secretRefPermitted(ctx, cli, "secrets", "shared", "app"); err != nil || !ok {
+		t.Fatalf("expected permitted for labeled namespace, ok=%v err=%v", ok, err)
+	}
+	// Source namespace missing the label is denied.
+	if ok, err := secretRefPermitted(ctx, cli, "secrets", "shared", "other"); err != nil || ok {
+		t.Fatalf("expected denied for unlabeled namespace, ok=%v err=%v", ok, err)
 	}
 }
 

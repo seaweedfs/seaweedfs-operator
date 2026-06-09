@@ -29,6 +29,7 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - namespaces
   - pods
   verbs:
   - get

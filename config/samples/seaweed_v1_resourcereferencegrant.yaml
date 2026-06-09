@@ -36,6 +36,29 @@ spec:
     - group: seaweed.seaweedfs.com
       kind: Seaweed
 ---
+# A from entry can match source namespaces by label instead of by exact name —
+# handy when referencing namespaces are created on demand (per-PR, per-tenant)
+# and cannot be enumerated up front. This grant lets a Bucket in ANY namespace
+# labelled `seaweedfs-access: "true"` reach the "prod" cluster. Set
+# namespaceSelector to an empty object ({}) to match every namespace.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: allow-labeled-namespaces
+  namespace: seaweedfs
+spec:
+  from:
+    # Exactly one of `namespace` or `namespaceSelector` may be set per entry.
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespaceSelector:
+        matchLabels:
+          seaweedfs-access: "true"
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: prod
+---
 # A second grant in the namespace that owns a shared Secret, letting an
 # S3Credentials in "app-team" mirror its key pair into the Secret
 # "shared-s3-secret" in the "secrets" namespace (spec.secretRef.namespace).

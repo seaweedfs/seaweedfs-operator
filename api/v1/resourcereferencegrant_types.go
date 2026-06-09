@@ -20,8 +20,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ReferenceGrantFrom is a trusted source: a kind in a namespace allowed to
-// reference into this grant's namespace.
+// ReferenceGrantFrom is a trusted source: a kind in one or more namespaces
+// allowed to reference into this grant's namespace. The source namespace is
+// matched either by exact name (Namespace) or by label (NamespaceSelector);
+// exactly one of the two must be set.
+//
+// +kubebuilder:validation:XValidation:rule="has(self.namespace) != has(self.namespaceSelector)",message="exactly one of namespace or namespaceSelector must be set"
 type ReferenceGrantFrom struct {
 	// Group of the referencing resource; core group is "".
 	// +kubebuilder:validation:MaxLength=253
@@ -34,11 +38,19 @@ type ReferenceGrantFrom struct {
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$`
 	Kind string `json:"kind"`
 
-	// Namespace of the referencing resource.
+	// Namespace pins a single source namespace by exact name. Mutually exclusive
+	// with NamespaceSelector.
+	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
-	Namespace string `json:"namespace"`
+	Namespace string `json:"namespace,omitempty"`
+
+	// NamespaceSelector matches source namespaces by label, for namespaces
+	// created on demand that cannot be enumerated up front. An empty selector
+	// ({}) matches every namespace. Mutually exclusive with Namespace.
+	// +optional
+	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty"`
 }
 
 // ReferenceGrantTo is a referent in this grant's namespace, optionally pinned to

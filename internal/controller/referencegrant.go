@@ -20,6 +20,9 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
@@ -42,6 +45,7 @@ const (
 )
 
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=resourcereferencegrants,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 
 // referent is one side of a reference; Name is only consulted on the "to" side.
 type referent struct {
@@ -49,6 +53,32 @@ type referent struct {
 	Kind      string
 	Namespace string
 	Name      string
+}
+
+// nsLabelResolver lazily returns the source namespace's labels, invoked only
+// for NamespaceSelector entries so exact-name grants skip the lookup.
+type nsLabelResolver func() (labels.Set, error)
+
+// newNamespaceLabelResolver fetches the namespace's labels at most once,
+// caching the result (or error) across selector entries.
+func newNamespaceLabelResolver(ctx context.Context, c client.Client, namespace string) nsLabelResolver {
+	var (
+		set    labels.Set
+		err    error
+		loaded bool
+	)
+	return func() (labels.Set, error) {
+		if !loaded {
+			loaded = true
+			var ns corev1.Namespace
+			if e := c.Get(ctx, client.ObjectKey{Name: namespace}, &ns); e != nil {
+				err = e
+			} else {
+				set = labels.Set(ns.Labels)
+			}
+		}
+		return set, err
+	}
 }
 
 // referenceGrantPermits reports whether a from->to reference is allowed. Same
@@ -64,8 +94,13 @@ func referenceGrantPermits(ctx context.Context, c client.Client, from, to refere
 	if err := c.List(ctx, &grants, client.InNamespace(to.Namespace)); err != nil {
 		return false, err
 	}
+	resolveLabels := newNamespaceLabelResolver(ctx, c, from.Namespace)
 	for i := range grants.Items {
-		if grantAllows(&grants.Items[i].Spec, from, to) {
+		ok, err := grantAllows(&grants.Items[i].Spec, from, to, resolveLabels)
+		if err != nil {
+			return false, err
+		}
+		if ok {
 			return true, nil
 		}
 	}
@@ -74,26 +109,51 @@ func referenceGrantPermits(ctx context.Context, c client.Client, from, to refere
 
 // grantAllows reports whether a grant spec matches both a from entry and a to
 // entry. An empty to.Name is a wildcard over the group/kind.
-func grantAllows(spec *seaweedv1.ResourceReferenceGrantSpec, from, to referent) bool {
+func grantAllows(spec *seaweedv1.ResourceReferenceGrantSpec, from, to referent, resolveLabels nsLabelResolver) (bool, error) {
 	fromMatched := false
-	for _, f := range spec.From {
-		if f.Group == from.Group && f.Kind == from.Kind && f.Namespace == from.Namespace {
+	for i := range spec.From {
+		ok, err := fromEntryMatches(&spec.From[i], from, resolveLabels)
+		if err != nil {
+			return false, err
+		}
+		if ok {
 			fromMatched = true
 			break
 		}
 	}
 	if !fromMatched {
-		return false
+		return false, nil
 	}
 	for _, t := range spec.To {
 		if t.Group != to.Group || t.Kind != to.Kind {
 			continue
 		}
 		if t.Name == "" || t.Name == to.Name {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
+}
+
+// fromEntryMatches reports whether a from entry trusts the source referent,
+// matching the namespace by exact Namespace or by NamespaceSelector (an empty
+// selector matches every namespace).
+func fromEntryMatches(f *seaweedv1.ReferenceGrantFrom, from referent, resolveLabels nsLabelResolver) (bool, error) {
+	if f.Group != from.Group || f.Kind != from.Kind {
+		return false, nil
+	}
+	if f.NamespaceSelector == nil {
+		return f.Namespace == from.Namespace, nil
+	}
+	selector, err := metav1.LabelSelectorAsSelector(f.NamespaceSelector)
+	if err != nil {
+		return false, err
+	}
+	nsLabels, err := resolveLabels()
+	if err != nil {
+		return false, err
+	}
+	return selector.Matches(nsLabels), nil
 }
 
 // seaweedRefPermitted reports whether fromKind in fromNamespace may resolve ref.

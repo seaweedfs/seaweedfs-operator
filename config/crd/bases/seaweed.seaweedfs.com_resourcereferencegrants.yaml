@@ -51,11 +51,40 @@ spec:
                       minLength: 1
                       pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                       type: string
+                    namespaceSelector:
+                      properties:
+                        matchExpressions:
+                          items:
+                            properties:
+                              key:
+                                type: string
+                              operator:
+                                type: string
+                              values:
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            required:
+                            - key
+                            - operator
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        matchLabels:
+                          additionalProperties:
+                            type: string
+                          type: object
+                      type: object
+                      x-kubernetes-map-type: atomic
                   required:
                   - group
                   - kind
-                  - namespace
                   type: object
+                  x-kubernetes-validations:
+                  - message: exactly one of namespace or namespaceSelector must be
+                      set
+                    rule: has(self.namespace) != has(self.namespaceSelector)
                 maxItems: 16
                 minItems: 1
                 type: array

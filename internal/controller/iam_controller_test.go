@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/go-logr/logr"
+	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -138,7 +139,7 @@ func reconcileOnce(t *testing.T, r reconcile.Reconciler, key types.NamespacedNam
 }
 
 func fakeIAMFactory(fa IAMAdmin) IAMAdminFactory {
-	return func(_ string, _ []byte, _ logr.Logger) (IAMAdmin, error) { return fa, nil }
+	return func(_ string, _ []byte, _ grpc.DialOption, _ logr.Logger) (IAMAdmin, error) { return fa, nil }
 }
 
 // --- S3Identity ---
@@ -808,18 +809,18 @@ func TestResolveSeaweedFiler_LoadsAdminSigningKey(t *testing.T) {
 	}
 	cli := iamTestClient(t, scheme, sw, cm)
 
-	filer, key, found, err := resolveSeaweedFiler(context.Background(), cli, iamSeaweedRef(), "media")
+	target, found, err := resolveSeaweedFiler(context.Background(), cli, iamSeaweedRef(), "media")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 	if !found {
 		t.Fatal("expected cluster to be found")
 	}
-	if filer == "" {
+	if target.address == "" {
 		t.Fatal("expected non-empty filer address")
 	}
-	if string(key) != "abc123==" {
-		t.Fatalf("admin signing key = %q, want %q", string(key), "abc123==")
+	if string(target.adminSigningKey) != "abc123==" {
+		t.Fatalf("admin signing key = %q, want %q", string(target.adminSigningKey), "abc123==")
 	}
 }
 
@@ -828,15 +829,15 @@ func TestResolveSeaweedFiler_MissingConfigMapReturnsEmptyKey(t *testing.T) {
 	sw := newTestSeaweedWithFiler()
 	cli := iamTestClient(t, scheme, sw)
 
-	_, key, found, err := resolveSeaweedFiler(context.Background(), cli, iamSeaweedRef(), "media")
+	target, found, err := resolveSeaweedFiler(context.Background(), cli, iamSeaweedRef(), "media")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 	if !found {
 		t.Fatal("expected cluster to be found")
 	}
-	if len(key) != 0 {
-		t.Fatalf("expected empty key when ConfigMap missing, got %q", string(key))
+	if len(target.adminSigningKey) != 0 {
+		t.Fatalf("expected empty key when ConfigMap missing, got %q", string(target.adminSigningKey))
 	}
 }
 

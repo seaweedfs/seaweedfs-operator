@@ -24,7 +24,7 @@ import (
 // failed with "Unauthenticated desc = missing authorization metadata".
 func TestIAMClient_AuthContext_AppendsBearerWhenKeySet(t *testing.T) {
 	key := []byte("test-jwt-signing-key")
-	c := NewIAMClient("seaweed-filer.invalid:8888", key)
+	c := NewIAMClient("seaweed-filer.invalid:8888", key, nil)
 
 	ctx := c.authContext(context.Background())
 	md, ok := metadata.FromOutgoingContext(ctx)
@@ -57,7 +57,7 @@ func TestIAMClient_AuthContext_AppendsBearerWhenKeySet(t *testing.T) {
 // path so clusters whose security.toml has no jwt.filer_signing.key keep
 // working — matching the filer's checkAdminAuth no-op branch.
 func TestIAMClient_AuthContext_NoMetadataWhenKeyEmpty(t *testing.T) {
-	c := NewIAMClient("seaweed-filer.invalid:8888", nil)
+	c := NewIAMClient("seaweed-filer.invalid:8888", nil, nil)
 	ctx := c.authContext(context.Background())
 	md, ok := metadata.FromOutgoingContext(ctx)
 	if ok && len(md.Get("authorization")) > 0 {
@@ -92,7 +92,7 @@ func TestIAMClient_GetUser_SendsBearer(t *testing.T) {
 		t.Skipf("ephemeral gRPC port %d too low to map to a valid HTTP port", grpcPort)
 	}
 	httpPort := grpcPort - 10000
-	c := NewIAMClient(net.JoinHostPort("127.0.0.1", strconv.Itoa(httpPort)), key)
+	c := NewIAMClient(net.JoinHostPort("127.0.0.1", strconv.Itoa(httpPort)), key, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

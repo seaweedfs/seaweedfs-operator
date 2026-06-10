@@ -35,10 +35,15 @@ type SeaweedAdmin struct {
 
 // NewSeaweedAdmin builds a SeaweedAdmin that mirrors `weed shell`. filer is
 // required for s3.bucket.* / fs.* callers; master-only callers (volume.list,
-// volume.balance) may pass "".
-func NewSeaweedAdmin(masters, filer string, output io.Writer) *SeaweedAdmin {
+// volume.balance) may pass "". dialOption carries the transport credentials
+// for clusters with [grpc] mTLS (see ClientTLSDialOption); pass nil to dial
+// without TLS.
+func NewSeaweedAdmin(masters, filer string, dialOption grpc.DialOption, output io.Writer) *SeaweedAdmin {
+	if dialOption == nil {
+		dialOption = grpc.WithTransportCredentials(insecure.NewCredentials())
+	}
 	var shellOptions shell.ShellOptions
-	shellOptions.GrpcDialOption = grpc.WithTransportCredentials(insecure.NewCredentials())
+	shellOptions.GrpcDialOption = dialOption
 	shellOptions.Masters = &masters
 	shellOptions.FilerAddress = pb.ServerAddress(filer)
 	// shell.NewCommandEnv unconditionally dereferences FilerGroup; leaving

@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -24,6 +25,7 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
+	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -32,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+	"github.com/seaweedfs/seaweedfs-operator/internal/controller/swadmin"
 )
 
 // Finalizers protecting each IAM CR from deletion until the reconciler has
@@ -57,23 +60,24 @@ type iamAdminProvider struct {
 	mu    sync.Mutex
 }
 
-func (p *iamAdminProvider) getIAMAdmin(filer string, adminSigningKey []byte, log logr.Logger) (IAMAdmin, error) {
+func (p *iamAdminProvider) getIAMAdmin(target filerTarget, log logr.Logger) (IAMAdmin, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.cache == nil {
 		p.cache = make(map[string]IAMAdmin)
 	}
-	// Cache key folds in a hash of the signing key so that key rotation (a
-	// user editing the security.toml ConfigMap) invalidates the cached
-	// client instead of leaving a stale Bearer issuer behind.
-	cacheKey := filer + "\x00" + signingKeyFingerprint(adminSigningKey)
+	// Cache key folds in hashes of the signing key and TLS material so that
+	// rotating either (a user editing the security.toml ConfigMap,
+	// cert-manager renewing the server certificate) invalidates the cached
+	// client instead of leaving stale credentials behind.
+	cacheKey := target.address + "\x00" + signingKeyFingerprint(target.adminSigningKey) + "\x00" + target.tlsFingerprint
 	if a, ok := p.cache[cacheKey]; ok {
 		return a, nil
 	}
 	if p.AdminFactory == nil {
 		return nil, fmt.Errorf("iam admin factory is not configured")
 	}
-	a, err := p.AdminFactory(filer, adminSigningKey, log)
+	a, err := p.AdminFactory(target.address, target.adminSigningKey, target.grpcDialOption, log)
 	if err != nil {
 		return nil, err
 	}
@@ -89,11 +93,33 @@ func signingKeyFingerprint(key []byte) string {
 	return hex.EncodeToString(sum[:8])
 }
 
+// tlsMaterialFingerprint hashes the PEM material behind a TLS dial option so
+// admin caches can key on it.
+func tlsMaterialFingerprint(ca, cert, key []byte) string {
+	sum := sha256.Sum256(bytes.Join([][]byte{ca, cert, key}, []byte{0}))
+	return hex.EncodeToString(sum[:8])
+}
+
+// filerTarget bundles everything a gRPC client needs to reach a Seaweed
+// cluster's filer: the address, the admin Bearer signing key, and transport
+// credentials matching the cluster's [grpc] mTLS state.
+type filerTarget struct {
+	address         string
+	adminSigningKey []byte
+	// grpcDialOption is non-nil when the cluster's gRPC ports require mTLS;
+	// nil means dial without TLS.
+	grpcDialOption grpc.DialOption
+	// tlsFingerprint identifies the TLS material behind grpcDialOption so
+	// admin caches roll over when cert-manager renews the certificate.
+	tlsFingerprint string
+}
+
 // resolveSeaweedFiler looks up the Seaweed CR named by ref and returns its
 // filer address along with the admin signing key the operator rendered into
 // the cluster's security.toml ConfigMap (issue #257: the filer's IAM gRPC
 // service rejects unauthenticated calls when jwt.filer_signing.key is set, so
-// the operator must sign its own Bearer tokens with the same key). found is
+// the operator must sign its own Bearer tokens with the same key) and the
+// gRPC transport credentials matching the cluster's mTLS state. found is
 // false (with a nil error) when the Seaweed CR does not exist, so callers can
 // surface a transient "cluster not found" condition and requeue rather than
 // treating it as a hard error.
@@ -103,7 +129,7 @@ func signingKeyFingerprint(key []byte) string {
 // provisioned by this operator (no ConfigMap to read). In those cases the IAM
 // client falls back to unauthenticated calls, matching the cluster's likely
 // configuration.
-func resolveSeaweedFiler(ctx context.Context, c client.Client, ref seaweedv1.SeaweedReference, ownNamespace string) (filer string, adminSigningKey []byte, found bool, err error) {
+func resolveSeaweedFiler(ctx context.Context, c client.Client, ref seaweedv1.SeaweedReference, ownNamespace string) (target filerTarget, found bool, err error) {
 	ns := ref.Namespace
 	if ns == "" {
 		ns = ownNamespace
@@ -111,15 +137,24 @@ func resolveSeaweedFiler(ctx context.Context, c client.Client, ref seaweedv1.Sea
 	var sw seaweedv1.Seaweed
 	if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: ref.Name}, &sw); err != nil {
 		if apierrors.IsNotFound(err) {
-			return "", nil, false, nil
+			return filerTarget{}, false, nil
 		}
-		return "", nil, false, err
+		return filerTarget{}, false, err
 	}
 	key, err := loadFilerAdminSigningKey(ctx, c, &sw)
 	if err != nil {
-		return "", nil, false, err
+		return filerTarget{}, false, err
 	}
-	return getFilerAddress(&sw), key, true, nil
+	dialOption, tlsFingerprint, err := loadSeaweedGrpcDialOption(ctx, c, &sw)
+	if err != nil {
+		return filerTarget{}, false, err
+	}
+	return filerTarget{
+		address:         getFilerAddress(&sw),
+		adminSigningKey: key,
+		grpcDialOption:  dialOption,
+		tlsFingerprint:  tlsFingerprint,
+	}, true, nil
 }
 
 // loadFilerAdminSigningKey reads jwt.filer_signing.key from the
@@ -144,6 +179,37 @@ func loadFilerAdminSigningKey(ctx context.Context, c client.Client, sw *seaweedv
 		return nil, nil
 	}
 	return []byte(raw), nil
+}
+
+// loadSeaweedGrpcDialOption returns the transport credentials the operator's
+// gRPC clients must use to reach sw's components, plus a fingerprint of the
+// TLS material for admin cache keys. Both are zero when the cluster's gRPC
+// ports run without TLS: spec.tls disabled, or the server TLS Secret not
+// issued (yet) — pods only mount the Secret once cert-manager has produced
+// it, so its absence means the cluster is (still) running plaintext gRPC and
+// dialing insecure matches. An incomplete Secret is treated the same way:
+// when ca.crt is missing the pods' own security.toml points at a missing
+// file and seaweedfs falls back to plaintext too.
+func loadSeaweedGrpcDialOption(ctx context.Context, c client.Client, sw *seaweedv1.Seaweed) (grpc.DialOption, string, error) {
+	if !tlsEnabled(sw) {
+		return nil, "", nil
+	}
+	var sec corev1.Secret
+	if err := c.Get(ctx, types.NamespacedName{Namespace: sw.Namespace, Name: TLSServerSecretName(sw)}, &sec); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, "", nil
+		}
+		return nil, "", err
+	}
+	ca, cert, key := sec.Data["ca.crt"], sec.Data["tls.crt"], sec.Data["tls.key"]
+	if len(ca) == 0 || len(cert) == 0 || len(key) == 0 {
+		return nil, "", nil
+	}
+	dialOption, err := swadmin.ClientTLSDialOption(ca, cert, key)
+	if err != nil {
+		return nil, "", fmt.Errorf("build gRPC TLS credentials from secret %s/%s: %w", sw.Namespace, TLSServerSecretName(sw), err)
+	}
+	return dialOption, tlsMaterialFingerprint(ca, cert, key), nil
 }
 
 // setIAMCondition upserts a condition on an IAM CR's condition list, stamping

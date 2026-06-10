@@ -29,7 +29,7 @@ func TestIAMClient_SetBucketAccess_SendsBearer(t *testing.T) {
 	srv := newBucketAccessIAM(key)
 	filer := startBucketAccessIAM(t, srv)
 
-	c := NewIAMClient(filer, key)
+	c := NewIAMClient(filer, key, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -49,7 +49,7 @@ func TestIAMClient_SetBucketAccess_NoKeyUnauthenticated(t *testing.T) {
 	srv := newBucketAccessIAM([]byte("test-jwt-signing-key"))
 	filer := startBucketAccessIAM(t, srv)
 
-	c := NewIAMClient(filer, nil) // no signing key wired
+	c := NewIAMClient(filer, nil, nil) // no signing key wired
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -78,7 +78,7 @@ func TestIAMClient_SetBucketAccess_PreservesOtherGrants(t *testing.T) {
 	})
 	filer := startBucketAccessIAM(t, srv)
 
-	c := NewIAMClient(filer, key)
+	c := NewIAMClient(filer, key, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

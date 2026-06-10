@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"google.golang.org/grpc"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -159,7 +160,11 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	admin, err := r.getAdmin(seaweedNS, seaweed.Name, masters, filer, adminKey, log)
+	dialOption, tlsFingerprint, err := loadSeaweedGrpcDialOption(ctx, r.Client, &seaweed)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	admin, err := r.getAdmin(seaweedNS, seaweed.Name, masters, filer, adminKey, dialOption, tlsFingerprint, log)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -420,12 +425,13 @@ func (r *BucketReconciler) clearCondition(bucket *seaweedv1.Bucket, condType str
 }
 
 // getAdmin returns a cached BucketAdmin for the (Seaweed CR, masters, filer,
-// signing key) tuple. The signing-key fingerprint is part of the cache key so
-// rotating jwt.filer_signing.key (editing the security ConfigMap) yields a
-// fresh admin rather than a stale Bearer issuer. See the comment on adminCache
-// about the goroutine-leak trade-off.
-func (r *BucketReconciler) getAdmin(ns, name, masters, filer string, signingKey []byte, log logr.Logger) (BucketAdmin, error) {
-	key := ns + "/" + name + "@" + masters + "|" + filer + "|" + signingKeyFingerprint(signingKey)
+// signing key, TLS material) tuple. The signing-key and TLS fingerprints are
+// part of the cache key so rotating jwt.filer_signing.key (editing the
+// security ConfigMap) or the server certificate (cert-manager renewal) yields
+// a fresh admin rather than one holding stale credentials. See the comment on
+// adminCache about the goroutine-leak trade-off.
+func (r *BucketReconciler) getAdmin(ns, name, masters, filer string, signingKey []byte, dialOption grpc.DialOption, tlsFingerprint string, log logr.Logger) (BucketAdmin, error) {
+	key := ns + "/" + name + "@" + masters + "|" + filer + "|" + signingKeyFingerprint(signingKey) + "|" + tlsFingerprint
 	r.adminMu.Lock()
 	defer r.adminMu.Unlock()
 	if r.adminCache == nil {
@@ -434,7 +440,7 @@ func (r *BucketReconciler) getAdmin(ns, name, masters, filer string, signingKey 
 	if a, ok := r.adminCache[key]; ok {
 		return a, nil
 	}
-	a, err := r.AdminFactory(masters, filer, signingKey, log)
+	a, err := r.AdminFactory(masters, filer, signingKey, dialOption, log)
 	if err != nil {
 		return nil, err
 	}

@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/go-logr/logr"
+	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -185,7 +186,7 @@ func testReconcilerNoGrants(t *testing.T, fa *fakeBucketAdmin, objs ...client.Ob
 		Client: cli,
 		Log:    logf.FromContext(context.Background()),
 		Scheme: scheme,
-		AdminFactory: func(_, _ string, _ []byte, _ logr.Logger) (BucketAdmin, error) {
+		AdminFactory: func(_, _ string, _ []byte, _ grpc.DialOption, _ logr.Logger) (BucketAdmin, error) {
 			return fa, nil
 		},
 	}
@@ -276,7 +277,7 @@ func TestReconcile_PassesAdminSigningKeyToFactory(t *testing.T) {
 
 	fa := newFakeAdmin()
 	var gotKey []byte
-	r, _ := testReconcilerWithFactory(t, func(_, _ string, key []byte, _ logr.Logger) (BucketAdmin, error) {
+	r, _ := testReconcilerWithFactory(t, func(_, _ string, key []byte, _ grpc.DialOption, _ logr.Logger) (BucketAdmin, error) {
 		gotKey = key
 		return fa, nil
 	}, sw, cm, bucket)
@@ -299,7 +300,7 @@ func TestReconcile_NoSecurityConfigPassesEmptyKey(t *testing.T) {
 
 	fa := newFakeAdmin()
 	gotKey := []byte("sentinel")
-	r, _ := testReconcilerWithFactory(t, func(_, _ string, key []byte, _ logr.Logger) (BucketAdmin, error) {
+	r, _ := testReconcilerWithFactory(t, func(_, _ string, key []byte, _ grpc.DialOption, _ logr.Logger) (BucketAdmin, error) {
 		gotKey = key
 		return fa, nil
 	}, sw, bucket)

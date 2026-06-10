@@ -28,6 +28,7 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
+	"google.golang.org/grpc"
 
 	"github.com/seaweedfs/seaweedfs-operator/internal/controller/swadmin"
 )
@@ -77,8 +78,9 @@ type BucketCollectionStats struct {
 // BucketAdminFactory creates a BucketAdmin for a target Seaweed cluster.
 // signingKey is jwt.filer_signing.key from the cluster's security.toml
 // (nil/empty when the cluster does not require an admin Bearer token).
-// Replaceable in tests.
-type BucketAdminFactory func(masters, filer string, signingKey []byte, log logr.Logger) (BucketAdmin, error)
+// grpcDialOption carries the transport credentials for clusters with [grpc]
+// mTLS (nil to dial without TLS). Replaceable in tests.
+type BucketAdminFactory func(masters, filer string, signingKey []byte, grpcDialOption grpc.DialOption, log logr.Logger) (BucketAdmin, error)
 
 // Sentinel errors returned by BucketAdmin implementations.
 var (
@@ -114,10 +116,11 @@ type swadminBucketAdmin struct {
 // through the embedded `weed shell` (filer gRPC, unauthenticated). Access
 // grants go through swadmin.IAMClient instead: those hit the filer's IAM gRPC
 // service, which requires an admin Bearer token signed with signingKey
-// (jwt.filer_signing.key) once the cluster configures one.
-func NewSwadminBucketAdmin(masters, filer string, signingKey []byte, log logr.Logger) (BucketAdmin, error) {
-	sa := swadmin.NewSeaweedAdmin(masters, filer, io.Discard)
-	return &swadminBucketAdmin{sa: sa, iam: swadmin.NewIAMClient(filer, signingKey), log: log}, nil
+// (jwt.filer_signing.key) once the cluster configures one. Both clients dial
+// with grpcDialOption (nil for clusters without [grpc] mTLS).
+func NewSwadminBucketAdmin(masters, filer string, signingKey []byte, grpcDialOption grpc.DialOption, log logr.Logger) (BucketAdmin, error) {
+	sa := swadmin.NewSeaweedAdmin(masters, filer, grpcDialOption, io.Discard)
+	return &swadminBucketAdmin{sa: sa, iam: swadmin.NewIAMClient(filer, signingKey, grpcDialOption), log: log}, nil
 }
 
 func (a *swadminBucketAdmin) run(cmd string) (string, error) {

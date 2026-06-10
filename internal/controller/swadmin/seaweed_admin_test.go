@@ -13,7 +13,7 @@ import (
 // shell.ShellOptions.FilerGroup nil panicked inside shell.NewCommandEnv the
 // moment any Bucket reached the reconciler.
 func TestNewSeaweedAdmin_DoesNotPanic(t *testing.T) {
-	sa := NewSeaweedAdmin("seaweed-master.invalid:9333", "seaweed-filer.invalid:8888", io.Discard)
+	sa := NewSeaweedAdmin("seaweed-master.invalid:9333", "seaweed-filer.invalid:8888", nil, io.Discard)
 	if sa == nil {
 		t.Fatal("NewSeaweedAdmin returned nil")
 	}
@@ -27,7 +27,7 @@ func TestNewSeaweedAdmin_DoesNotPanic(t *testing.T) {
 // ShellOptions.FilerAddress was never set so every s3.bucket.* command
 // dialed gRPC with an empty target.
 func TestNewSeaweedAdmin_FilerAddressWired(t *testing.T) {
-	sa := NewSeaweedAdmin("seaweed-master.invalid:9333", "seaweed-filer.invalid:8888", io.Discard)
+	sa := NewSeaweedAdmin("seaweed-master.invalid:9333", "seaweed-filer.invalid:8888", nil, io.Discard)
 	err := sa.commandEnv.WithFilerClient(false, func(filer_pb.SeaweedFilerClient) error {
 		return nil
 	})

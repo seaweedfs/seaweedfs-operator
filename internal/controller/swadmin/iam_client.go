@@ -62,8 +62,7 @@ var iamUserLocks = &keyedMutex{}
 // file-based policy I/O and stderr-only secret printing) so the operator can
 // run with a read-only root filesystem and capture every result.
 //
-// Like the bucket admin's master connection, this dials without TLS. When
-// adminSigningKey is non-empty (the operator reads it from the rendered
+// When adminSigningKey is non-empty (the operator reads it from the rendered
 // security.toml ConfigMap) every RPC is stamped with a freshly minted admin
 // Bearer token in the "authorization" metadata — matching the upstream
 // `weed shell` IAM client. When the key is empty the calls are
@@ -79,11 +78,16 @@ type IAMClient struct {
 // HTTP host:port (as returned by getFilerAddress); seaweedfs derives the gRPC
 // port from it internally. adminSigningKey is the jwt.filer_signing.key from
 // the cluster's security.toml; pass nil/empty when the cluster does not
-// require admin Bearer auth.
-func NewIAMClient(filer string, adminSigningKey []byte) *IAMClient {
+// require admin Bearer auth. dialOption carries the transport credentials for
+// clusters with [grpc] mTLS (see ClientTLSDialOption); pass nil to dial
+// without TLS.
+func NewIAMClient(filer string, adminSigningKey []byte, dialOption grpc.DialOption) *IAMClient {
+	if dialOption == nil {
+		dialOption = grpc.WithTransportCredentials(insecure.NewCredentials())
+	}
 	return &IAMClient{
 		filerGrpcAddress: pb.ServerAddress(filer).ToGrpcAddress(),
-		dialOption:       grpc.WithTransportCredentials(insecure.NewCredentials()),
+		dialOption:       dialOption,
 		adminSigningKey:  security.SigningKey(adminSigningKey),
 	}
 }

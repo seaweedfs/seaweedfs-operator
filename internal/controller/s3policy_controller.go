@@ -28,6 +28,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
@@ -77,6 +79,18 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return r.refForbidden(ctx, &policy, seaweedRefDeniedMessage(policy.Spec.SeaweedRef, kindS3Policy, policy.Namespace))
 		}
 		clearIAMCondition(&policy.Status.Conditions, seaweedv1.S3ConditionReferenceGranted)
+
+		// IAM policy names are global per cluster: the oldest CR claiming a
+		// name owns it, later claimants conflict instead of co-managing it.
+		owner, err := policyConflict(ctx, r.Client, &policy, name)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if owner != nil {
+			return r.fail(ctx, &policy, "Conflict",
+				fmt.Sprintf("IAM policy %q on Seaweed %s is already managed by S3Policy %s/%s",
+					name, seaweedRefKey(policy.Spec.SeaweedRef, policy.Namespace), owner.Namespace, owner.Name))
+		}
 	}
 
 	target, found, err := resolveSeaweedFiler(ctx, r.Client, policy.Spec.SeaweedRef, policy.Namespace)
@@ -130,7 +144,14 @@ func (r *S3PolicyReconciler) handleDeletion(ctx context.Context, policy *seaweed
 	}
 	policy.Status.Phase = seaweedv1.S3PhaseTerminating
 
-	if policy.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain {
+	// A surviving claimant takes the policy over instead of having it deleted
+	// out from under it.
+	claimants, err := policyClaimants(ctx, r.Client, policy, name)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if policy.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain && len(claimants) == 0 {
 		// Idempotent: a policy already gone must not block finalizer removal.
 		if err := admin.DeletePolicy(ctx, name); err != nil && !errors.Is(err, ErrIAMNotFound) {
 			setIAMCondition(&policy.Status.Conditions, policy.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DeleteFailed", err.Error())
@@ -179,6 +200,25 @@ func (r *S3PolicyReconciler) fail(ctx context.Context, policy *seaweedv1.S3Polic
 	return ctrl.Result{RequeueAfter: requeueAfterTransient}, nil
 }
 
+// mapToNameClaimants enqueues the other claimants of a policy's IAM name so a
+// conflicted CR is promoted as soon as the owning CR changes or goes away,
+// instead of waiting for its periodic requeue.
+func (r *S3PolicyReconciler) mapToNameClaimants(ctx context.Context, obj client.Object) []reconcile.Request {
+	p, ok := obj.(*seaweedv1.S3Policy)
+	if !ok {
+		return nil
+	}
+	peers, err := policyClaimants(ctx, r.Client, p, policyIAMName(p))
+	if err != nil {
+		return nil
+	}
+	reqs := make([]reconcile.Request, 0, len(peers))
+	for _, peer := range peers {
+		reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(peer)})
+	}
+	return reqs
+}
+
 // SetupWithManager wires the reconciler into the manager.
 func (r *S3PolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.AdminFactory == nil {
@@ -186,5 +226,6 @@ func (r *S3PolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&seaweedv1.S3Policy{}).
+		Watches(&seaweedv1.S3Policy{}, handler.EnqueueRequestsFromMapFunc(r.mapToNameClaimants)).
 		Complete(r)
 }

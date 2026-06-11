@@ -28,6 +28,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 	"github.com/seaweedfs/seaweedfs-operator/internal/controller/swadmin"
@@ -79,6 +81,18 @@ func (r *S3IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			return r.refForbidden(ctx, &identity, seaweedRefDeniedMessage(identity.Spec.SeaweedRef, kindS3Identity, identity.Namespace))
 		}
 		clearIAMCondition(&identity.Status.Conditions, seaweedv1.S3ConditionReferenceGranted)
+
+		// IAM user names are global per cluster: the oldest CR claiming a
+		// name owns it, later claimants conflict instead of co-managing it.
+		owner, err := identityConflict(ctx, r.Client, &identity, name)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if owner != nil {
+			return r.fail(ctx, &identity, "Conflict",
+				fmt.Sprintf("IAM user %q on Seaweed %s is already managed by S3Identity %s/%s",
+					name, seaweedRefKey(identity.Spec.SeaweedRef, identity.Namespace), owner.Namespace, owner.Name))
+		}
 	}
 
 	target, found, err := resolveSeaweedFiler(ctx, r.Client, identity.Spec.SeaweedRef, identity.Namespace)
@@ -148,7 +162,14 @@ func (r *S3IdentityReconciler) handleDeletion(ctx context.Context, identity *sea
 	}
 	identity.Status.Phase = seaweedv1.S3PhaseTerminating
 
-	if identity.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain {
+	// A surviving claimant takes the user over instead of having it deleted
+	// out from under it.
+	claimants, err := identityClaimants(ctx, r.Client, identity, name)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if identity.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain && len(claimants) == 0 {
 		// Idempotent: a user already gone (deleted out-of-band) must not
 		// block finalizer removal.
 		if err := admin.DeleteUser(ctx, name); err != nil && !errors.Is(err, ErrIAMNotFound) {
@@ -207,6 +228,25 @@ func userStateDiffers(user *swadmin.IAMUser, displayName, email string, disabled
 	return user.DisplayName != displayName || user.Email != email || user.Disabled != disabled
 }
 
+// mapToNameClaimants enqueues the other claimants of an identity's IAM name
+// so a conflicted CR is promoted as soon as the owning CR changes or goes
+// away, instead of waiting for its periodic requeue.
+func (r *S3IdentityReconciler) mapToNameClaimants(ctx context.Context, obj client.Object) []reconcile.Request {
+	id, ok := obj.(*seaweedv1.S3Identity)
+	if !ok {
+		return nil
+	}
+	peers, err := identityClaimants(ctx, r.Client, id, identityIAMName(id))
+	if err != nil {
+		return nil
+	}
+	reqs := make([]reconcile.Request, 0, len(peers))
+	for _, p := range peers {
+		reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(p)})
+	}
+	return reqs
+}
+
 // SetupWithManager wires the reconciler into the manager.
 func (r *S3IdentityReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.AdminFactory == nil {
@@ -214,5 +254,6 @@ func (r *S3IdentityReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&seaweedv1.S3Identity{}).
+		Watches(&seaweedv1.S3Identity{}, handler.EnqueueRequestsFromMapFunc(r.mapToNameClaimants)).
 		Complete(r)
 }

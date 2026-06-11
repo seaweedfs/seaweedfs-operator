@@ -20,10 +20,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// S3PolicyRef references the IAM policy to attach. The Name is the IAM policy
-// name, which equals the target S3Policy's resolved name.
+// S3PolicyRef references the IAM policy to attach. The Name resolves to an
+// S3Policy of that name in the same namespace (using its effective IAM policy
+// name, so a spec.name override is transparent); when no such S3Policy
+// exists, Name is taken as the IAM policy name itself.
 type S3PolicyRef struct {
-	// Name is the IAM policy name.
+	// Name of the S3Policy in the same namespace, or the IAM policy name
+	// for a policy not managed by an S3Policy resource.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=128
 	Name string `json:"name"`
@@ -46,8 +49,8 @@ type S3Subject struct {
 	// +kubebuilder:default:=S3Identity
 	Kind S3SubjectKind `json:"kind,omitempty"`
 
-	// Name is the IAM user name of the subject. This equals the target
-	// S3Identity's resolved name.
+	// Name of the S3Identity in the same namespace, or the IAM user name
+	// for an identity not managed by an S3Identity resource.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256
 	Name string `json:"name"`
@@ -109,6 +112,10 @@ type S3PolicyBindingStatus struct {
 	// +optional
 	// +listType=atomic
 	AttachedSubjects []string `json:"attachedSubjects,omitempty"`
+
+	// PolicyName is the IAM policy name the policyRef resolved to.
+	// +optional
+	PolicyName string `json:"policyName,omitempty"`
 }
 
 // +kubebuilder:object:root=true

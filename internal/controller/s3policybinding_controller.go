@@ -47,6 +47,7 @@ type S3PolicyBindingReconciler struct {
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=s3policybindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=s3policybindings/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=s3policybindings/finalizers,verbs=update
+// +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=s3policies;s3identities,verbs=get;list;watch
 
 // Reconcile drives an S3PolicyBinding so the policy is attached to exactly the
 // listed subjects.
@@ -58,7 +59,24 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	policyName := binding.Spec.PolicyRef.Name
+	// Once attached the binding is pinned to the IAM policy it attached, so a
+	// later resource change cannot silently retarget it. Attached subjects
+	// recorded without a policy name predate pinning and used the literal
+	// reference name.
+	var policyName string
+	switch {
+	case binding.Status.PolicyName != "":
+		policyName = binding.Status.PolicyName
+	case len(binding.Status.AttachedSubjects) > 0:
+		policyName = binding.Spec.PolicyRef.Name
+	default:
+		var err error
+		policyName, err = resolvePolicyIAMName(ctx, r.Client, binding.Namespace, binding.Spec.PolicyRef.Name,
+			seaweedRefKey(binding.Spec.SeaweedRef, binding.Namespace))
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	// Cross-namespace seaweedRef needs a grant; skip on deletion to not block cleanup.
 	if binding.DeletionTimestamp.IsZero() {
@@ -98,7 +116,9 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Wait for the policy to exist before attaching it to anyone.
+	// Wait for the policy to exist before attaching it to anyone. The pin is
+	// recorded only past this point, so a binding still waiting on its policy
+	// keeps following resolution changes.
 	if _, err := admin.GetPolicy(ctx, policyName); err != nil {
 		if errors.Is(err, ErrIAMNotFound) {
 			return r.pending(ctx, &binding, "PolicyMissing",
@@ -106,8 +126,12 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		return r.fail(ctx, &binding, "PolicyLookupFailed", err.Error())
 	}
+	binding.Status.PolicyName = policyName
 
-	desired := desiredSubjects(binding.Spec.Subjects)
+	desired, err := resolveSubjects(ctx, r.Client, &binding)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// Detach subjects no longer listed (compared against the last applied set).
 	desiredSet := map[string]struct{}{}
@@ -223,20 +247,25 @@ func (r *S3PolicyBindingReconciler) fail(ctx context.Context, binding *seaweedv1
 	return ctrl.Result{RequeueAfter: requeueAfterTransient}, nil
 }
 
-// desiredSubjects returns the deduplicated, sorted list of IAM user names from
-// the binding's subjects.
-func desiredSubjects(subjects []seaweedv1.S3Subject) []string {
+// resolveSubjects returns the deduplicated, sorted list of IAM user names the
+// binding's subjects resolve to.
+func resolveSubjects(ctx context.Context, c client.Client, binding *seaweedv1.S3PolicyBinding) ([]string, error) {
+	clusterKey := seaweedRefKey(binding.Spec.SeaweedRef, binding.Namespace)
 	seen := map[string]struct{}{}
-	out := make([]string, 0, len(subjects))
-	for _, s := range subjects {
-		if _, dup := seen[s.Name]; dup {
+	out := make([]string, 0, len(binding.Spec.Subjects))
+	for _, s := range binding.Spec.Subjects {
+		name, err := resolveIdentityIAMName(ctx, c, binding.Namespace, s.Name, clusterKey)
+		if err != nil {
+			return nil, err
+		}
+		if _, dup := seen[name]; dup {
 			continue
 		}
-		seen[s.Name] = struct{}{}
-		out = append(out, s.Name)
+		seen[name] = struct{}{}
+		out = append(out, name)
 	}
 	sort.Strings(out)
-	return out
+	return out, nil
 }
 
 // SetupWithManager wires the reconciler into the manager.

@@ -536,6 +536,8 @@ spec:
                   x-kubernetes-list-map-keys:
                     - type
                   x-kubernetes-list-type: map
+                identityName:
+                  type: string
                 observedGeneration:
                   format: int64
                   type: integer
@@ -1164,6 +1166,8 @@ spec:
                     - Ready
                     - Failed
                     - Terminating
+                  type: string
+                policyName:
                   type: string
               type: object
           type: object

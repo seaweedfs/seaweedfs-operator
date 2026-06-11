@@ -46,7 +46,9 @@ type S3IdentitySpec struct {
 
 	// Name is the IAM user name. Defaults to .metadata.name. Immutable once
 	// set — IAM user renames are not supported, recreate the resource to
-	// change the name.
+	// change the name. IAM user names are global to the cluster: the oldest
+	// CR claiming a name owns it, and later claimants are marked Failed
+	// with a Conflict condition.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256

@@ -214,6 +214,20 @@ func TestS3Policy_SameNameAcrossNamespaces_OldestWins(t *testing.T) {
 	}
 }
 
+func TestS3Identity_MapToNameClaimants_EnqueuesPeers(t *testing.T) {
+	scheme := iamTestScheme(t)
+	older := identityAt("media", "myapp", 2*time.Hour)
+	newer := identityAt("staging", "myapp", time.Hour)
+	unrelated := identityAt("media", "other", time.Hour)
+	cli := iamTestClient(t, scheme, newTestSeaweed(), stagingRefGrant(), older, newer, unrelated)
+	r := &S3IdentityReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+
+	reqs := r.mapToNameClaimants(context.Background(), older)
+	if len(reqs) != 1 || reqs[0].NamespacedName != (types.NamespacedName{Namespace: "staging", Name: "myapp"}) {
+		t.Errorf("requests = %v, want only staging/myapp", reqs)
+	}
+}
+
 func TestS3Credentials_IdentityRefResolvesResourceName(t *testing.T) {
 	scheme := iamTestScheme(t)
 	id := identityAt("media", "myapp", time.Hour)

@@ -28,6 +28,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
@@ -198,6 +200,25 @@ func (r *S3PolicyReconciler) fail(ctx context.Context, policy *seaweedv1.S3Polic
 	return ctrl.Result{RequeueAfter: requeueAfterTransient}, nil
 }
 
+// mapToNameClaimants enqueues the other claimants of a policy's IAM name so a
+// conflicted CR is promoted as soon as the owning CR changes or goes away,
+// instead of waiting for its periodic requeue.
+func (r *S3PolicyReconciler) mapToNameClaimants(ctx context.Context, obj client.Object) []reconcile.Request {
+	p, ok := obj.(*seaweedv1.S3Policy)
+	if !ok {
+		return nil
+	}
+	peers, err := policyClaimants(ctx, r.Client, p, policyIAMName(p))
+	if err != nil {
+		return nil
+	}
+	reqs := make([]reconcile.Request, 0, len(peers))
+	for _, peer := range peers {
+		reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(peer)})
+	}
+	return reqs
+}
+
 // SetupWithManager wires the reconciler into the manager.
 func (r *S3PolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.AdminFactory == nil {
@@ -205,5 +226,6 @@ func (r *S3PolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&seaweedv1.S3Policy{}).
+		Watches(&seaweedv1.S3Policy{}, handler.EnqueueRequestsFromMapFunc(r.mapToNameClaimants)).
 		Complete(r)
 }

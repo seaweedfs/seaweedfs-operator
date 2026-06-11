@@ -72,15 +72,18 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	user, err := resolveIdentityIAMName(ctx, r.Client, cred.Namespace, cred.Spec.IdentityRef.Name,
-		seaweedRefKey(cred.Spec.SeaweedRef, cred.Namespace))
-	if err != nil {
-		return ctrl.Result{}, err
-	}
 	// Deletion cleans up the key on the identity it was provisioned for, even
 	// if the referenced S3Identity is already gone.
+	var user string
 	if !cred.DeletionTimestamp.IsZero() && cred.Status.IdentityName != "" {
 		user = cred.Status.IdentityName
+	} else {
+		var err error
+		user, err = resolveIdentityIAMName(ctx, r.Client, cred.Namespace, cred.Spec.IdentityRef.Name,
+			seaweedRefKey(cred.Spec.SeaweedRef, cred.Namespace))
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	secretName := cred.Spec.SecretRef.Name
 	if secretName == "" {

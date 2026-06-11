@@ -59,15 +59,18 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	policyName, err := resolvePolicyIAMName(ctx, r.Client, binding.Namespace, binding.Spec.PolicyRef.Name,
-		seaweedRefKey(binding.Spec.SeaweedRef, binding.Namespace))
-	if err != nil {
-		return ctrl.Result{}, err
-	}
 	// Deletion detaches the policy it attached, even if the referenced
 	// S3Policy is already gone.
+	var policyName string
 	if !binding.DeletionTimestamp.IsZero() && binding.Status.PolicyName != "" {
 		policyName = binding.Status.PolicyName
+	} else {
+		var err error
+		policyName, err = resolvePolicyIAMName(ctx, r.Client, binding.Namespace, binding.Spec.PolicyRef.Name,
+			seaweedRefKey(binding.Spec.SeaweedRef, binding.Namespace))
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Cross-namespace seaweedRef needs a grant; skip on deletion to not block cleanup.

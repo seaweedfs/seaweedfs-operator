@@ -402,6 +402,17 @@ underlying IAM object. Set `reclaimPolicy: Retain` to opt out.
       - { kind: S3Identity, name: bob }
   ```
 
+IAM user and policy names are **global to the cluster** while these CRs
+are namespaced. When CRs in different namespaces claim the same IAM name
+on the same cluster, the oldest claim owns it and later claimants are
+marked `Failed` with a `Ready=False` / `reason: Conflict` condition naming
+the owning CR (set `spec.name` to give each namespace a distinct IAM
+name). `identityRef`, `policyRef`, and `subjects` name the referenced
+`S3Identity` / `S3Policy` **resource** in the same namespace and follow
+its effective IAM name, so a `spec.name` override stays transparent to
+referencing resources; a name with no matching resource is used as the
+IAM name directly (for objects not managed by a CR).
+
 `S3Credentials` and `S3PolicyBinding` wait (status `Pending`) until the
 identity / policy they reference exists, so apply order does not matter.
 As with `Bucket`, a cross-namespace `seaweedRef` (and the `S3Credentials`

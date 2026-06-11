@@ -21,10 +21,13 @@ import (
 )
 
 // S3IdentityRef references the IAM identity (user) that owns a credential.
-// The Name is the IAM user name, which equals the target S3Identity's
-// resolved name (its spec.name, or metadata.name when spec.name is unset).
+// The Name resolves to an S3Identity of that name in the same namespace
+// (using its effective IAM user name, so a spec.name override is
+// transparent); when no such S3Identity exists, Name is taken as the IAM
+// user name itself.
 type S3IdentityRef struct {
-	// Name is the IAM user name the credential belongs to.
+	// Name of the S3Identity in the same namespace, or the IAM user name
+	// for an identity not managed by an S3Identity resource.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256
 	Name string `json:"name"`
@@ -123,6 +126,10 @@ type S3CredentialsStatus struct {
 	// referenced Secret.
 	// +optional
 	AccessKey string `json:"accessKey,omitempty"`
+
+	// IdentityName is the IAM user name the identityRef resolved to.
+	// +optional
+	IdentityName string `json:"identityName,omitempty"`
 
 	// SecretName is the resolved name of the Secret holding the key pair.
 	// +optional

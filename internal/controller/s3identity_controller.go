@@ -79,6 +79,18 @@ func (r *S3IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			return r.refForbidden(ctx, &identity, seaweedRefDeniedMessage(identity.Spec.SeaweedRef, kindS3Identity, identity.Namespace))
 		}
 		clearIAMCondition(&identity.Status.Conditions, seaweedv1.S3ConditionReferenceGranted)
+
+		// IAM user names are global per cluster: the oldest CR claiming a
+		// name owns it, later claimants conflict instead of co-managing it.
+		owner, err := identityConflict(ctx, r.Client, &identity, name)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if owner != nil {
+			return r.fail(ctx, &identity, "Conflict",
+				fmt.Sprintf("IAM user %q on Seaweed %s is already managed by S3Identity %s/%s",
+					name, seaweedRefKey(identity.Spec.SeaweedRef, identity.Namespace), owner.Namespace, owner.Name))
+		}
 	}
 
 	target, found, err := resolveSeaweedFiler(ctx, r.Client, identity.Spec.SeaweedRef, identity.Namespace)
@@ -148,7 +160,14 @@ func (r *S3IdentityReconciler) handleDeletion(ctx context.Context, identity *sea
 	}
 	identity.Status.Phase = seaweedv1.S3PhaseTerminating
 
-	if identity.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain {
+	// A surviving claimant takes the user over instead of having it deleted
+	// out from under it.
+	claimants, err := identityClaimants(ctx, r.Client, identity, name)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if identity.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain && len(claimants) == 0 {
 		// Idempotent: a user already gone (deleted out-of-band) must not
 		// block finalizer removal.
 		if err := admin.DeleteUser(ctx, name); err != nil && !errors.Is(err, ErrIAMNotFound) {

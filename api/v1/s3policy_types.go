@@ -73,7 +73,9 @@ type S3PolicySpec struct {
 	SeaweedRef SeaweedReference `json:"seaweedRef"`
 
 	// Name is the IAM policy name. Defaults to .metadata.name. Immutable
-	// once set.
+	// once set. IAM policy names are global to the cluster: the oldest CR
+	// claiming a name owns it, and later claimants are marked Failed with
+	// a Conflict condition.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=128

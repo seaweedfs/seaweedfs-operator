@@ -59,6 +59,7 @@ type S3CredentialsReconciler struct {
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=s3credentials,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=s3credentials/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=s3credentials/finalizers,verbs=update
+// +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=s3identities,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile drives an S3Credentials so the identity owns the access key held
@@ -71,7 +72,16 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	user := cred.Spec.IdentityRef.Name
+	user, err := resolveIdentityIAMName(ctx, r.Client, cred.Namespace, cred.Spec.IdentityRef.Name,
+		seaweedRefKey(cred.Spec.SeaweedRef, cred.Namespace))
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	// Deletion cleans up the key on the identity it was provisioned for, even
+	// if the referenced S3Identity is already gone.
+	if !cred.DeletionTimestamp.IsZero() && cred.Status.IdentityName != "" {
+		user = cred.Status.IdentityName
+	}
 	secretName := cred.Spec.SecretRef.Name
 	if secretName == "" {
 		secretName = cred.Name
@@ -200,6 +210,7 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 	}
 
 	cred.Status.AccessKey = desiredAK
+	cred.Status.IdentityName = user
 	if secretNamespace != cred.Namespace {
 		cred.Status.SecretName = secretNamespace + "/" + secretName
 	} else {

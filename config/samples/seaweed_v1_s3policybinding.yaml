@@ -6,7 +6,8 @@ metadata:
 spec:
   seaweedRef:
     name: seaweed-sample
-  # The IAM policy to attach (equals the resolved name of an S3Policy).
+  # The S3Policy to attach (by resource name, same namespace). A name with
+  # no matching S3Policy is used as the IAM policy name directly.
   policyRef:
     name: rw-uploads
   # The identities the policy is attached to. The controller reconciles to

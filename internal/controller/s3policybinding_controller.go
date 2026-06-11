@@ -59,12 +59,17 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Deletion detaches the policy it attached, even if the referenced
-	// S3Policy is already gone.
+	// Once attached the binding is pinned to the IAM policy it attached, so a
+	// later resource change cannot silently retarget it. Attached subjects
+	// recorded without a policy name predate pinning and used the literal
+	// reference name.
 	var policyName string
-	if !binding.DeletionTimestamp.IsZero() && binding.Status.PolicyName != "" {
+	switch {
+	case binding.Status.PolicyName != "":
 		policyName = binding.Status.PolicyName
-	} else {
+	case len(binding.Status.AttachedSubjects) > 0:
+		policyName = binding.Spec.PolicyRef.Name
+	default:
 		var err error
 		policyName, err = resolvePolicyIAMName(ctx, r.Client, binding.Namespace, binding.Spec.PolicyRef.Name,
 			seaweedRefKey(binding.Spec.SeaweedRef, binding.Namespace))
@@ -111,9 +116,9 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	binding.Status.PolicyName = policyName
-
-	// Wait for the policy to exist before attaching it to anyone.
+	// Wait for the policy to exist before attaching it to anyone. The pin is
+	// recorded only past this point, so a binding still waiting on its policy
+	// keeps following resolution changes.
 	if _, err := admin.GetPolicy(ctx, policyName); err != nil {
 		if errors.Is(err, ErrIAMNotFound) {
 			return r.pending(ctx, &binding, "PolicyMissing",
@@ -121,6 +126,7 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		return r.fail(ctx, &binding, "PolicyLookupFailed", err.Error())
 	}
+	binding.Status.PolicyName = policyName
 
 	desired, err := resolveSubjects(ctx, r.Client, &binding)
 	if err != nil {

@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -98,6 +99,35 @@ func TestS3Identity_SameNameAcrossNamespaces_OldestWins(t *testing.T) {
 	cond := meta.FindStatusCondition(loser.Status.Conditions, seaweedv1.S3ConditionReady)
 	if cond == nil || cond.Reason != "Conflict" {
 		t.Errorf("loser Ready condition = %+v, want reason Conflict", cond)
+	}
+}
+
+func TestS3Identity_EqualTimestamps_NamespaceTiebreak(t *testing.T) {
+	scheme := iamTestScheme(t)
+	first := identityAt("media", "myapp", time.Hour)
+	second := identityAt("staging", "myapp", time.Hour)
+	second.CreationTimestamp = first.CreationTimestamp
+	cli := iamTestClient(t, scheme, newTestSeaweed(), stagingRefGrant(), first, second)
+	fa := newFakeIAMAdmin()
+	r := &S3IdentityReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+
+	reconcileStable(t, r, types.NamespacedName{Namespace: "media", Name: "myapp"}, 5)
+	reconcileOnce(t, r, types.NamespacedName{Namespace: "staging", Name: "myapp"})
+
+	var winner seaweedv1.S3Identity
+	if err := cli.Get(context.Background(), types.NamespacedName{Namespace: "media", Name: "myapp"}, &winner); err != nil {
+		t.Fatalf("get winner: %v", err)
+	}
+	if winner.Status.Phase != seaweedv1.S3PhaseReady {
+		t.Errorf("winner phase = %q, want Ready (media precedes staging)", winner.Status.Phase)
+	}
+	var loser seaweedv1.S3Identity
+	if err := cli.Get(context.Background(), types.NamespacedName{Namespace: "staging", Name: "myapp"}, &loser); err != nil {
+		t.Fatalf("get loser: %v", err)
+	}
+	if loser.Status.Phase != seaweedv1.S3PhaseFailed {
+		t.Errorf("loser phase = %q, want Failed", loser.Status.Phase)
 	}
 }
 
@@ -330,6 +360,164 @@ func TestS3Credentials_Delete_CleansUpResolvedIdentity(t *testing.T) {
 	}
 	if len(user.AccessKeys) != 0 {
 		t.Errorf("access keys = %v, want the provisioned key removed", user.AccessKeys)
+	}
+}
+
+func TestS3Credentials_PinnedIdentitySurvivesShadowingResource(t *testing.T) {
+	scheme := iamTestScheme(t)
+	// Provisioned under the literal name "external"; an S3Identity of that
+	// resource name appears later with a different IAM name.
+	shadow := identityAt("media", "external", time.Hour)
+	shadow.Spec.Name = "external-media"
+	cred := &seaweedv1.S3Credentials{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "ext-creds",
+			Namespace:  "media",
+			Finalizers: []string{s3CredentialsFinalizer},
+		},
+		Spec: seaweedv1.S3CredentialsSpec{
+			SeaweedRef:  iamSeaweedRef(),
+			IdentityRef: seaweedv1.S3IdentityRef{Name: "external"},
+		},
+		Status: seaweedv1.S3CredentialsStatus{AccessKey: "AKIA123", IdentityName: "external"},
+	}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "ext-creds", Namespace: "media"},
+		Data:       map[string][]byte{"accessKey": []byte("AKIA123"), "secretKey": []byte("sk")},
+	}
+	cli := iamTestClient(t, scheme, newTestSeaweed(), shadow, cred, secret)
+	fa := newFakeIAMAdmin()
+	fa.seedUser("external")
+	fa.seedUser("external-media")
+	if err := fa.CreateAccessKey(context.Background(), "external", "AKIA123", "sk"); err != nil {
+		t.Fatalf("seed key: %v", err)
+	}
+	r := &S3CredentialsReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "ext-creds"}
+	reconcileStable(t, r, key, 5)
+
+	var got seaweedv1.S3Credentials
+	if err := cli.Get(context.Background(), key, &got); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status.IdentityName != "external" {
+		t.Errorf("status.identityName = %q, want the pinned external", got.Status.IdentityName)
+	}
+	shadowUser, err := fa.GetUser(context.Background(), "external-media")
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if len(shadowUser.AccessKeys) != 0 {
+		t.Errorf("keys on external-media = %v, want none (key must not move)", shadowUser.AccessKeys)
+	}
+}
+
+func TestS3PolicyBinding_PinnedPolicySurvivesShadowingResource(t *testing.T) {
+	scheme := iamTestScheme(t)
+	shadow := policyAt("media", "rw", time.Hour, `{"Version":"2012-10-17","Statement":[]}`)
+	shadow.Spec.Name = "rw-media"
+	binding := &seaweedv1.S3PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "bob-rw",
+			Namespace:  "media",
+			Finalizers: []string{s3PolicyBindingFinalizer},
+		},
+		Spec: seaweedv1.S3PolicyBindingSpec{
+			SeaweedRef: iamSeaweedRef(),
+			PolicyRef:  seaweedv1.S3PolicyRef{Name: "rw"},
+			Subjects:   []seaweedv1.S3Subject{{Kind: seaweedv1.S3SubjectKindIdentity, Name: "bob"}},
+		},
+		Status: seaweedv1.S3PolicyBindingStatus{PolicyName: "rw", AttachedSubjects: []string{"bob"}},
+	}
+	cli := iamTestClient(t, scheme, newTestSeaweed(), shadow, binding)
+	fa := newFakeIAMAdmin()
+	fa.seedUser("bob")
+	fa.policies["rw"] = `{}`
+	fa.policies["rw-media"] = `{}`
+	if err := fa.AttachPolicy(context.Background(), "bob", "rw"); err != nil {
+		t.Fatalf("seed attach: %v", err)
+	}
+	r := &S3PolicyBindingReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "bob-rw"}
+	reconcileStable(t, r, key, 5)
+
+	var got seaweedv1.S3PolicyBinding
+	if err := cli.Get(context.Background(), key, &got); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status.PolicyName != "rw" {
+		t.Errorf("status.policyName = %q, want the pinned rw", got.Status.PolicyName)
+	}
+	user, err := fa.GetUser(context.Background(), "bob")
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if len(user.PolicyNames) != 1 || user.PolicyNames[0] != "rw" {
+		t.Errorf("policies on bob = %v, want [rw] (attachment must not move)", user.PolicyNames)
+	}
+}
+
+func TestS3PolicyBinding_PendingBindingFollowsResolution(t *testing.T) {
+	scheme := iamTestScheme(t)
+	binding := &seaweedv1.S3PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "bob-rw", Namespace: "media"},
+		Spec: seaweedv1.S3PolicyBindingSpec{
+			SeaweedRef: iamSeaweedRef(),
+			PolicyRef:  seaweedv1.S3PolicyRef{Name: "rw"},
+			Subjects:   []seaweedv1.S3Subject{{Kind: seaweedv1.S3SubjectKindIdentity, Name: "bob"}},
+		},
+	}
+	cli := iamTestClient(t, scheme, newTestSeaweed(), binding)
+	fa := newFakeIAMAdmin()
+	fa.seedUser("bob")
+	r := &S3PolicyBindingReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "bob-rw"}
+	reconcileOnce(t, r, key) // finalizer
+	reconcileOnce(t, r, key) // pending: policy missing
+
+	var pendingState seaweedv1.S3PolicyBinding
+	if err := cli.Get(context.Background(), key, &pendingState); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if pendingState.Status.Phase != seaweedv1.S3PhasePending {
+		t.Fatalf("phase = %q, want Pending while the policy is missing", pendingState.Status.Phase)
+	}
+	if pendingState.Status.PolicyName != "" {
+		t.Fatalf("status.policyName = %q, want unpinned while pending", pendingState.Status.PolicyName)
+	}
+
+	// The S3Policy arrives late with an IAM name override; the waiting
+	// binding must follow the resource-backed resolution.
+	pol := policyAt("media", "rw", time.Hour, `{}`)
+	pol.Spec.Name = "rw-media"
+	if err := cli.Create(context.Background(), pol); err != nil {
+		t.Fatalf("create policy: %v", err)
+	}
+	fa.policies["rw-media"] = `{}`
+
+	reconcileStable(t, r, key, 5)
+	var got seaweedv1.S3PolicyBinding
+	if err := cli.Get(context.Background(), key, &got); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.S3PhaseReady {
+		t.Fatalf("phase = %q, want Ready", got.Status.Phase)
+	}
+	if got.Status.PolicyName != "rw-media" {
+		t.Errorf("status.policyName = %q, want rw-media", got.Status.PolicyName)
+	}
+	user, err := fa.GetUser(context.Background(), "bob")
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if len(user.PolicyNames) != 1 || user.PolicyNames[0] != "rw-media" {
+		t.Errorf("policies on bob = %v, want [rw-media]", user.PolicyNames)
 	}
 }
 

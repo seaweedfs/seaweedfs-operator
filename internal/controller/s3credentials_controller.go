@@ -72,12 +72,17 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Deletion cleans up the key on the identity it was provisioned for, even
-	// if the referenced S3Identity is already gone.
+	// Once a key is provisioned the credential is pinned to the IAM user it
+	// was provisioned for, so a later resource change cannot silently move
+	// the key to another user. A key recorded without an identity name
+	// predates pinning and was provisioned under the literal reference name.
 	var user string
-	if !cred.DeletionTimestamp.IsZero() && cred.Status.IdentityName != "" {
+	switch {
+	case cred.Status.IdentityName != "":
 		user = cred.Status.IdentityName
-	} else {
+	case cred.Status.AccessKey != "":
+		user = cred.Spec.IdentityRef.Name
+	default:
 		var err error
 		user, err = resolveIdentityIAMName(ctx, r.Client, cred.Namespace, cred.Spec.IdentityRef.Name,
 			seaweedRefKey(cred.Spec.SeaweedRef, cred.Namespace))

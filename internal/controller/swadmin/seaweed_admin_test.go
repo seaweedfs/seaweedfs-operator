@@ -1,9 +1,12 @@
 package swadmin
 
 import (
+	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 )
@@ -14,6 +17,7 @@ import (
 // moment any Bucket reached the reconciler.
 func TestNewSeaweedAdmin_DoesNotPanic(t *testing.T) {
 	sa := NewSeaweedAdmin("seaweed-master.invalid:9333", "seaweed-filer.invalid:8888", nil, io.Discard)
+	t.Cleanup(func() { _ = sa.Close() })
 	if sa == nil {
 		t.Fatal("NewSeaweedAdmin returned nil")
 	}
@@ -28,10 +32,27 @@ func TestNewSeaweedAdmin_DoesNotPanic(t *testing.T) {
 // dialed gRPC with an empty target.
 func TestNewSeaweedAdmin_FilerAddressWired(t *testing.T) {
 	sa := NewSeaweedAdmin("seaweed-master.invalid:9333", "seaweed-filer.invalid:8888", nil, io.Discard)
+	t.Cleanup(func() { _ = sa.Close() })
 	err := sa.commandEnv.WithFilerClient(false, func(filer_pb.SeaweedFilerClient) error {
 		return nil
 	})
 	if err != nil && strings.Contains(err.Error(), "received empty target") {
 		t.Fatalf("regression of issue #237: empty target leaked through despite non-empty filer arg: %v", err)
+	}
+}
+
+func TestSeaweedAdmin_ProcessCommand_CanceledWhileWaiting(t *testing.T) {
+	sa := NewSeaweedAdmin("seaweed-master.invalid:9333", "", nil, io.Discard)
+	t.Cleanup(func() { _ = sa.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start := time.Now()
+	err := sa.ProcessCommand(ctx, "volume.list")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("ProcessCommand error = %v, want context.Canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("canceled master wait took %v", elapsed)
 	}
 }

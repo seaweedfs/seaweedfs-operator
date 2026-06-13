@@ -92,16 +92,21 @@ func NewIAMClient(filer string, adminSigningKey []byte, dialOption grpc.DialOpti
 	}
 }
 
-// withClient opens a short-lived connection to the filer IAM service, applies
-// the request timeout, attaches an admin Bearer token when one is configured,
-// and invokes fn. Errors are returned verbatim so callers can classify gRPC
+// withClient runs fn against the filer IAM service on a fresh, short-lived
+// connection. Dialing per call instead of through seaweedfs' process-global
+// gRPC cache keeps the operator from pinning to a filer IP that moved during a
+// Seaweed rollout. Errors are returned verbatim so callers can classify gRPC
 // status codes.
 func (c *IAMClient) withClient(ctx context.Context, fn func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error) error {
-	return pb.WithGrpcClient(ctx, false, 0, func(conn *grpc.ClientConn) error {
-		callCtx, cancel := context.WithTimeout(c.authContext(ctx), iamRequestTimeout)
-		defer cancel()
-		return fn(callCtx, iam_pb.NewSeaweedIdentityAccessManagementClient(conn))
-	}, c.filerGrpcAddress, false, c.dialOption)
+	conn, err := grpc.NewClient(c.filerGrpcAddress, c.dialOption)
+	if err != nil {
+		return fmt.Errorf("dial IAM service %s: %w", c.filerGrpcAddress, err)
+	}
+	defer conn.Close()
+
+	callCtx, cancel := context.WithTimeout(c.authContext(ctx), iamRequestTimeout)
+	defer cancel()
+	return fn(callCtx, iam_pb.NewSeaweedIdentityAccessManagementClient(conn))
 }
 
 // authContext returns ctx with an admin Bearer token appended to the outgoing

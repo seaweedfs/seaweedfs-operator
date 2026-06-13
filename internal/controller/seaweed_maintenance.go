@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 
@@ -17,20 +18,22 @@ func (r *SeaweedReconciler) maintenance(m *seaweedv1.Seaweed) (done bool, result
 
 	// this step blocks since the operator can not access the masters when running from outside of the k8s cluster
 	sa := swadmin.NewSeaweedAdmin(masters, "", nil, ioutil.Discard)
+	defer sa.Close()
+	ctx := context.Background()
 
 	// For now this is an example of the admin commands
 	// master by default has some maintenance commands already.
 	r.Log.V(0).Info("volume.list")
 	sa.Output = os.Stdout
-	if err := sa.ProcessCommand("volume.list"); err != nil {
+	if err := sa.ProcessCommand(ctx, "volume.list"); err != nil {
 		r.Log.V(0).Info("volume.list", "error", err)
 	}
 
-	sa.ProcessCommand("lock")
-	if err := sa.ProcessCommand("volume.balance -force"); err != nil {
+	sa.ProcessCommand(ctx, "lock")
+	if err := sa.ProcessCommand(ctx, "volume.balance -force"); err != nil {
 		r.Log.V(0).Info("volume.balance", "error", err)
 	}
-	sa.ProcessCommand("unlock")
+	sa.ProcessCommand(ctx, "unlock")
 
 	return ReconcileResult(nil)
 

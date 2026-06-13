@@ -61,6 +61,16 @@ type fakeBucketAdmin struct {
 	collectionErr   error
 }
 
+type closingFakeBucketAdmin struct {
+	*fakeBucketAdmin
+	closeCalls *int
+}
+
+func (f *closingFakeBucketAdmin) Close() error {
+	(*f.closeCalls)++
+	return nil
+}
+
 func newFakeAdmin() *fakeBucketAdmin {
 	return &fakeBucketAdmin{existsResp: map[string]bool{}}
 }
@@ -310,6 +320,32 @@ func TestReconcile_NoSecurityConfigPassesEmptyKey(t *testing.T) {
 
 	if len(gotKey) != 0 {
 		t.Fatalf("expected empty key when no security ConfigMap, got %q", string(gotKey))
+	}
+}
+
+func TestReconcile_ClosesAdminAfterPass(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Finalizers = []string{BucketFinalizer}
+	bucket.Status.BucketName = "photos"
+
+	closeCalls := 0
+	factoryCalls := 0
+	r, _ := testReconcilerWithFactory(t, func(_, _ string, _ []byte, _ grpc.DialOption, _ logr.Logger) (BucketAdmin, error) {
+		factoryCalls++
+		fa := newFakeAdmin()
+		fa.existsResp["photos"] = true
+		return &closingFakeBucketAdmin{fakeBucketAdmin: fa, closeCalls: &closeCalls}, nil
+	}, newTestSeaweed(), bucket)
+
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if factoryCalls != 1 {
+		t.Fatalf("factory calls = %d, want 1", factoryCalls)
+	}
+	if closeCalls != 1 {
+		t.Fatalf("close calls = %d, want 1", closeCalls)
 	}
 }
 

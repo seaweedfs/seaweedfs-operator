@@ -6,13 +6,15 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"github.com/seaweedfs/seaweedfs/weed/shell"
 	"github.com/seaweedfs/seaweedfs/weed/util/fla9"
-	"google.golang.org/grpc"
 )
 
 func init() {
@@ -31,7 +33,11 @@ type SeaweedAdmin struct {
 	commandReg *regexp.Regexp
 	commandEnv *shell.CommandEnv
 	Output     io.Writer
+	cancel     context.CancelFunc
+	closeOnce  sync.Once
 }
+
+const masterConnectionTimeout = 30 * time.Second
 
 // NewSeaweedAdmin builds a SeaweedAdmin that mirrors `weed shell`. filer is
 // required for s3.bucket.* / fs.* callers; master-only callers (volume.list,
@@ -54,27 +60,36 @@ func NewSeaweedAdmin(masters, filer string, dialOption grpc.DialOption, output i
 	commandEnv := shell.NewCommandEnv(&shellOptions)
 	reg, _ := regexp.Compile(`'.*?'|".*?"|\S+`)
 
-	go commandEnv.MasterClient.KeepConnectedToMaster(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	go commandEnv.MasterClient.KeepConnectedToMaster(ctx)
 
 	return &SeaweedAdmin{
 		commandEnv: commandEnv,
 		commandReg: reg,
 		Output:     output,
+		cancel:     cancel,
 	}
 }
 
-// ProcessCommands cmds can be semi-colon separated commands
-func (sa *SeaweedAdmin) ProcessCommands(cmds string) error {
+// Close stops the background master connection loop.
+func (sa *SeaweedAdmin) Close() error {
+	sa.closeOnce.Do(sa.cancel)
+	return nil
+}
+
+// ProcessCommands runs semicolon-separated commands in order.
+func (sa *SeaweedAdmin) ProcessCommands(ctx context.Context, cmds string) error {
 	for _, c := range strings.Split(cmds, ";") {
-		if err := sa.ProcessCommand(c); err != nil {
+		if err := sa.ProcessCommand(ctx, c); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (sa *SeaweedAdmin) ProcessCommand(cmd string) error {
-	sa.commandEnv.MasterClient.WaitUntilConnected(context.Background())
+// ProcessCommand runs one shell command, capping the wait for a master
+// connection at masterConnectionTimeout and observing ctx.
+func (sa *SeaweedAdmin) ProcessCommand(ctx context.Context, cmd string) error {
 	cmds := sa.commandReg.FindAllString(cmd, -1)
 	if len(cmds) == 0 {
 		return nil
@@ -88,6 +103,13 @@ func (sa *SeaweedAdmin) ProcessCommand(cmd string) error {
 
 	for _, c := range shell.Commands {
 		if c.Name() == cmds[0] || c.Name() == "fs."+cmds[0] {
+			waitCtx, cancel := context.WithTimeout(ctx, masterConnectionTimeout)
+			defer cancel()
+			// Trust the resolved master, not waitCtx.Err(): a connection that
+			// lands as the deadline fires must not read as a timeout.
+			if sa.commandEnv.MasterClient.GetMaster(waitCtx) == "" {
+				return fmt.Errorf("wait for master connection: %w", waitCtx.Err())
+			}
 			return c.Do(args, sa.commandEnv, sa.Output)
 		}
 	}

@@ -98,13 +98,7 @@ var (
 )
 
 // swadminBucketAdmin is the default BucketAdmin, backed by swadmin.SeaweedAdmin.
-//
-// Reconcile goroutines (one per Bucket worker, plus the periodic
-// usage-stats loop) share a single instance via the reconciler's admin
-// cache, so concurrent ProcessCommand calls would race on the embedded
-// SeaweedAdmin's Output writer. The mu serializes every command in this
-// admin's lifetime — coarse but sufficient: shell commands are short and
-// per-bucket reconciles don't fan out further than the worker count.
+// mu serializes command execution (which swaps the shared Output writer) and Close.
 type swadminBucketAdmin struct {
 	sa  *swadmin.SeaweedAdmin
 	iam *swadmin.IAMClient
@@ -123,12 +117,19 @@ func NewSwadminBucketAdmin(masters, filer string, signingKey []byte, grpcDialOpt
 	return &swadminBucketAdmin{sa: sa, iam: swadmin.NewIAMClient(filer, signingKey, grpcDialOption), log: log}, nil
 }
 
-func (a *swadminBucketAdmin) run(cmd string) (string, error) {
+// Close stops the embedded shell's background master connection.
+func (a *swadminBucketAdmin) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.sa.Close()
+}
+
+func (a *swadminBucketAdmin) run(ctx context.Context, cmd string) (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	var buf bytes.Buffer
 	a.sa.Output = &buf
-	err := a.sa.ProcessCommand(cmd)
+	err := a.sa.ProcessCommand(ctx, cmd)
 	if err != nil {
 		a.log.V(2).Info("swadmin command failed", "cmd", cmd, "stdout", buf.String(), "err", err.Error())
 	} else {
@@ -141,7 +142,7 @@ func (a *swadminBucketAdmin) run(cmd string) (string, error) {
 // no other flags — a read-only call that returns the current state when the
 // bucket is present and an explicit "lookup bucket" error when it is not.
 func (a *swadminBucketAdmin) BucketExists(ctx context.Context, name string) (bool, error) {
-	_, err := a.run(fmt.Sprintf("s3.bucket.versioning -name %s", name))
+	_, err := a.run(ctx, fmt.Sprintf("s3.bucket.versioning -name %s", name))
 	if err == nil {
 		return true, nil
 	}
@@ -159,7 +160,7 @@ func (a *swadminBucketAdmin) CreateBucket(ctx context.Context, name, owner strin
 	if withLock {
 		parts = append(parts, "-withLock")
 	}
-	_, err := a.run(strings.Join(parts, " "))
+	_, err := a.run(ctx, strings.Join(parts, " "))
 	if err == nil {
 		return nil
 	}
@@ -170,7 +171,7 @@ func (a *swadminBucketAdmin) CreateBucket(ctx context.Context, name, owner strin
 }
 
 func (a *swadminBucketAdmin) DeleteBucket(ctx context.Context, name string) error {
-	_, err := a.run(fmt.Sprintf("s3.bucket.delete -name %s", name))
+	_, err := a.run(ctx, fmt.Sprintf("s3.bucket.delete -name %s", name))
 	if err == nil {
 		return nil
 	}
@@ -184,7 +185,7 @@ func (a *swadminBucketAdmin) DeleteBucket(ctx context.Context, name string) erro
 }
 
 func (a *swadminBucketAdmin) SetVersioning(ctx context.Context, name, status string) error {
-	_, err := a.run(fmt.Sprintf("s3.bucket.versioning -name %s -status %s", name, status))
+	_, err := a.run(ctx, fmt.Sprintf("s3.bucket.versioning -name %s -status %s", name, status))
 	if err == nil {
 		return nil
 	}
@@ -195,34 +196,34 @@ func (a *swadminBucketAdmin) SetVersioning(ctx context.Context, name, status str
 }
 
 func (a *swadminBucketAdmin) EnableObjectLock(ctx context.Context, name string) error {
-	_, err := a.run(fmt.Sprintf("s3.bucket.lock -name %s -enable", name))
+	_, err := a.run(ctx, fmt.Sprintf("s3.bucket.lock -name %s -enable", name))
 	return err
 }
 
 func (a *swadminBucketAdmin) SetQuota(ctx context.Context, name string, sizeMiB int64, enforce bool) error {
-	if _, err := a.run(fmt.Sprintf("s3.bucket.quota -name %s -op set -sizeMB %d", name, sizeMiB)); err != nil {
+	if _, err := a.run(ctx, fmt.Sprintf("s3.bucket.quota -name %s -op set -sizeMB %d", name, sizeMiB)); err != nil {
 		return err
 	}
 	op := "enable"
 	if !enforce {
 		op = "disable"
 	}
-	_, err := a.run(fmt.Sprintf("s3.bucket.quota -name %s -op %s", name, op))
+	_, err := a.run(ctx, fmt.Sprintf("s3.bucket.quota -name %s -op %s", name, op))
 	return err
 }
 
 func (a *swadminBucketAdmin) RemoveQuota(ctx context.Context, name string) error {
-	_, err := a.run(fmt.Sprintf("s3.bucket.quota -name %s -op remove", name))
+	_, err := a.run(ctx, fmt.Sprintf("s3.bucket.quota -name %s -op remove", name))
 	return err
 }
 
 func (a *swadminBucketAdmin) SetOwner(ctx context.Context, name, owner string) error {
-	_, err := a.run(fmt.Sprintf("s3.bucket.owner -name %s -owner %s", name, owner))
+	_, err := a.run(ctx, fmt.Sprintf("s3.bucket.owner -name %s -owner %s", name, owner))
 	return err
 }
 
 func (a *swadminBucketAdmin) RemoveOwner(ctx context.Context, name string) error {
-	_, err := a.run(fmt.Sprintf("s3.bucket.owner -name %s -delete", name))
+	_, err := a.run(ctx, fmt.Sprintf("s3.bucket.owner -name %s -delete", name))
 	return err
 }
 
@@ -237,12 +238,12 @@ func (a *swadminBucketAdmin) Configure(ctx context.Context, prefix string, args 
 	parts := []string{"fs.configure", "-locationPrefix=" + prefix}
 	parts = append(parts, args...)
 	parts = append(parts, "-apply")
-	_, err := a.run(strings.Join(parts, " "))
+	_, err := a.run(ctx, strings.Join(parts, " "))
 	return err
 }
 
 func (a *swadminBucketAdmin) ListCollectionStats(ctx context.Context) (map[string]BucketCollectionStats, error) {
-	out, err := a.run("collection.list")
+	out, err := a.run(ctx, "collection.list")
 	if err != nil {
 		return nil, err
 	}

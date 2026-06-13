@@ -113,16 +113,17 @@ func (r *BucketReconciler) refreshClusterUsage(ctx context.Context, log logr.Log
 		log.Error(err, "load admin signing key for usage refresh", "seaweed", seaweedName)
 		return
 	}
-	dialOption, tlsFingerprint, err := loadSeaweedGrpcDialOption(ctx, r.Client, &seaweed)
+	dialOption, _, err := loadSeaweedGrpcDialOption(ctx, r.Client, &seaweed)
 	if err != nil {
 		log.Error(err, "load gRPC TLS credentials for usage refresh", "seaweed", seaweedName)
 		return
 	}
-	admin, err := r.getAdmin(seaweedNS, seaweedName, masters, filer, adminKey, dialOption, tlsFingerprint, r.Log)
+	admin, err := r.AdminFactory(masters, filer, adminKey, dialOption, r.Log)
 	if err != nil {
 		log.Error(err, "build admin for usage refresh", "seaweed", seaweedName)
 		return
 	}
+	defer closeBucketAdmin(admin, log)
 
 	stats, err := admin.ListCollectionStats(ctx)
 	if err != nil {

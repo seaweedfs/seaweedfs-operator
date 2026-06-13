@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -69,7 +70,7 @@ func TestIAMClient_AuthContext_NoMetadataWhenKeyEmpty(t *testing.T) {
 // reaches the filer's IAM gRPC server by spinning up an in-process gRPC
 // server that asserts the incoming metadata. This is the regression test the
 // previous fake-IAMAdmin tests could never catch: it exercises the actual
-// withClient → pb.WithGrpcClient → unary call path.
+// withClient -> gRPC unary call path.
 func TestIAMClient_GetUser_SendsBearer(t *testing.T) {
 	key := []byte("test-jwt-signing-key")
 
@@ -106,6 +107,57 @@ func TestIAMClient_GetUser_SendsBearer(t *testing.T) {
 	if rec.authErr != nil {
 		t.Fatalf("filer rejected the token: %v", rec.authErr)
 	}
+}
+
+// TestIAMClient_GetUser_DialsFreshConnectionPerCall asserts each call dials a
+// new transport: seaweedfs' shared gRPC cache could otherwise pin the operator
+// to a filer that changed IP, so two calls must produce two accepted conns.
+func TestIAMClient_GetUser_DialsFreshConnectionPerCall(t *testing.T) {
+	key := []byte("test-jwt-signing-key")
+
+	srv := grpc.NewServer()
+	t.Cleanup(srv.Stop)
+	rec := &authRecordingIAM{adminSigningKey: security.SigningKey(key)}
+	iam_pb.RegisterSeaweedIdentityAccessManagementServer(srv, rec)
+
+	baseListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	lis := &countingListener{Listener: baseListener}
+	go func() { _ = srv.Serve(lis) }()
+
+	grpcPort := baseListener.Addr().(*net.TCPAddr).Port
+	if grpcPort < 10001 {
+		t.Skipf("ephemeral gRPC port %d too low to map to a valid HTTP port", grpcPort)
+	}
+	httpPort := grpcPort - 10000
+	c := NewIAMClient(net.JoinHostPort("127.0.0.1", strconv.Itoa(httpPort)), key, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for i := 0; i < 2; i++ {
+		if _, err := c.GetUser(ctx, "alice"); err != nil {
+			t.Fatalf("GetUser call %d: %v", i+1, err)
+		}
+	}
+
+	if got := lis.accepts.Load(); got < 2 {
+		t.Fatalf("accepted connections = %d, want at least 2 fresh connections", got)
+	}
+}
+
+type countingListener struct {
+	net.Listener
+	accepts atomic.Int32
+}
+
+func (l *countingListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err == nil {
+		l.accepts.Add(1)
+	}
+	return conn, err
 }
 
 // authRecordingIAM is a minimal IAM gRPC server stand-in that records whether

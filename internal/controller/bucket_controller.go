@@ -22,11 +22,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
-	"google.golang.org/grpc"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -76,18 +74,6 @@ type BucketReconciler struct {
 	// loop. Zero disables the loop entirely; the default in main.go is
 	// DefaultUsageRefreshInterval (5 minutes).
 	UsageRefreshInterval time.Duration
-
-	// adminCache holds one BucketAdmin per (Seaweed CR identity, masters
-	// string). swadmin.NewSeaweedAdmin spawns a background goroutine that
-	// keeps a master connection alive, so caching avoids leaking one
-	// goroutine per Reconcile. Entries are not actively evicted; if the
-	// underlying Seaweed CR's master replica count changes, the next
-	// Reconcile inserts a new entry under a different key and the old
-	// connection lingers until operator restart. That is consistent with
-	// the existing seaweed_maintenance.go pattern; a follow-up can plumb
-	// a cancelable context through swadmin.SeaweedAdmin to do better.
-	adminCache map[string]BucketAdmin
-	adminMu    sync.Mutex
 }
 
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=buckets,verbs=get;list;watch;create;update;patch;delete
@@ -160,14 +146,17 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	dialOption, tlsFingerprint, err := loadSeaweedGrpcDialOption(ctx, r.Client, &seaweed)
+	dialOption, _, err := loadSeaweedGrpcDialOption(ctx, r.Client, &seaweed)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	admin, err := r.getAdmin(seaweedNS, seaweed.Name, masters, filer, adminKey, dialOption, tlsFingerprint, log)
+	// One admin per pass: a cached weed-shell client can pin its master
+	// connection to a pod IP that vanished during a Seaweed rollout.
+	admin, err := r.AdminFactory(masters, filer, adminKey, dialOption, log)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	defer closeBucketAdmin(admin, log)
 
 	// Deletion path.
 	if !bucket.DeletionTimestamp.IsZero() {
@@ -424,28 +413,14 @@ func (r *BucketReconciler) clearCondition(bucket *seaweedv1.Bucket, condType str
 	meta.RemoveStatusCondition(&bucket.Status.Conditions, condType)
 }
 
-// getAdmin returns a cached BucketAdmin for the (Seaweed CR, masters, filer,
-// signing key, TLS material) tuple. The signing-key and TLS fingerprints are
-// part of the cache key so rotating jwt.filer_signing.key (editing the
-// security ConfigMap) or the server certificate (cert-manager renewal) yields
-// a fresh admin rather than one holding stale credentials. See the comment on
-// adminCache about the goroutine-leak trade-off.
-func (r *BucketReconciler) getAdmin(ns, name, masters, filer string, signingKey []byte, dialOption grpc.DialOption, tlsFingerprint string, log logr.Logger) (BucketAdmin, error) {
-	key := ns + "/" + name + "@" + masters + "|" + filer + "|" + signingKeyFingerprint(signingKey) + "|" + tlsFingerprint
-	r.adminMu.Lock()
-	defer r.adminMu.Unlock()
-	if r.adminCache == nil {
-		r.adminCache = make(map[string]BucketAdmin)
+func closeBucketAdmin(admin BucketAdmin, log logr.Logger) {
+	closer, ok := admin.(interface{ Close() error })
+	if !ok {
+		return
 	}
-	if a, ok := r.adminCache[key]; ok {
-		return a, nil
+	if err := closer.Close(); err != nil {
+		log.Error(err, "close bucket admin")
 	}
-	a, err := r.AdminFactory(masters, filer, signingKey, dialOption, log)
-	if err != nil {
-		return nil, err
-	}
-	r.adminCache[key] = a
-	return a, nil
 }
 
 // SetupWithManager wires the reconciler into the controller-runtime manager.

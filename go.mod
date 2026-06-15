@@ -270,7 +270,7 @@ require (
 	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/seaweedfs/goexif v1.0.3 // indirect
-	github.com/seaweedfs/seaweedfs v0.0.0-20260611053118-79ac279fe1c7
+	github.com/seaweedfs/seaweedfs v0.0.0-20260615044410-7df43ad9b5d0
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect

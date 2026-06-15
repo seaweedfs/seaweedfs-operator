@@ -230,7 +230,7 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 	if err := r.Status().Update(ctx, cred); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: iamResyncInterval}, nil
 }
 
 // writeSecret creates or updates the Secret holding the key pair. A Secret the

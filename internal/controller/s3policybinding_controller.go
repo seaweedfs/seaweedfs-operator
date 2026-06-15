@@ -177,7 +177,7 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err := r.Status().Update(ctx, &binding); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: iamResyncInterval}, nil
 }
 
 func (r *S3PolicyBindingReconciler) handleDeletion(ctx context.Context, binding *seaweedv1.S3PolicyBinding, policyName string, admin IAMAdmin) (ctrl.Result, error) {

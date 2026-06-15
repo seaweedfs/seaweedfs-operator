@@ -135,7 +135,7 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err := r.Status().Update(ctx, &policy); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: iamResyncInterval}, nil
 }
 
 func (r *S3PolicyReconciler) handleDeletion(ctx context.Context, policy *seaweedv1.S3Policy, name string, admin IAMAdmin) (ctrl.Result, error) {

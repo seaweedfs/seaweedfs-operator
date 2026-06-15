@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
@@ -46,6 +47,12 @@ const (
 	s3PolicyBindingFinalizer = "seaweed.seaweedfs.com/s3policybinding-protection"
 	s3OIDCProviderFinalizer  = "seaweed.seaweedfs.com/s3oidcprovider-protection"
 )
+
+// iamResyncInterval re-runs a Ready IAM resource periodically so state lost when
+// the filer's ephemeral store restarts is re-provisioned without a spec change.
+// Each IAM reconcile is idempotent; this mirrors the Seaweed reconciler's
+// safety-net requeue.
+const iamResyncInterval = 5 * time.Minute
 
 // iamAdminProvider supplies (and caches) IAMAdmin instances per target filer.
 // Embedded in each IAM reconciler so they share the construction and caching

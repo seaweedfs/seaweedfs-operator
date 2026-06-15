@@ -112,9 +112,9 @@ func iamSeaweedRef() seaweedv1.SeaweedReference {
 	return seaweedv1.SeaweedReference{Name: "prod", Namespace: "seaweedfs"}
 }
 
-// reconcileStable hammers Reconcile until the result is neither Requeue nor a
-// timed requeue, mirroring reconcileUntilStable for the generic Reconciler
-// interface.
+// reconcileStable hammers Reconcile until it reaches steady state: no requeue,
+// or only the periodic resync a successful IAM reconcile requests. A transient
+// backoff (waiting on a dependency) keeps the loop going.
 func reconcileStable(t *testing.T, r reconcile.Reconciler, key types.NamespacedName, maxSteps int) {
 	t.Helper()
 	for i := 0; i < maxSteps; i++ {
@@ -122,7 +122,7 @@ func reconcileStable(t *testing.T, r reconcile.Reconciler, key types.NamespacedN
 		if err != nil {
 			t.Fatalf("reconcile step %d: %v", i, err)
 		}
-		if !res.Requeue && res.RequeueAfter == 0 {
+		if !res.Requeue && (res.RequeueAfter == 0 || res.RequeueAfter == iamResyncInterval) {
 			return
 		}
 	}

@@ -153,7 +153,7 @@ func (r *S3IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err := r.Status().Update(ctx, &identity); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: iamResyncInterval}, nil
 }
 
 func (r *S3IdentityReconciler) handleDeletion(ctx context.Context, identity *seaweedv1.S3Identity, name string, admin IAMAdmin) (ctrl.Result, error) {

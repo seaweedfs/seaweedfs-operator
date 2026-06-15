@@ -230,7 +230,9 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 	if err := r.Status().Update(ctx, cred); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{}, nil
+	// Resync periodically so a filer that lost its ephemeral IAM state gets the
+	// access key re-registered on the identity without waiting for a spec change.
+	return ctrl.Result{RequeueAfter: iamResyncInterval}, nil
 }
 
 // writeSecret creates or updates the Secret holding the key pair. A Secret the

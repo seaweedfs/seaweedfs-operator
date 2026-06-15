@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
@@ -46,6 +47,18 @@ const (
 	s3PolicyBindingFinalizer = "seaweed.seaweedfs.com/s3policybinding-protection"
 	s3OIDCProviderFinalizer  = "seaweed.seaweedfs.com/s3oidcprovider-protection"
 )
+
+// iamResyncInterval is how often a successfully reconciled IAM resource pulls
+// itself back through Reconcile even when its spec has not changed. The state
+// these controllers provision — users, access keys, policies, bindings, OIDC
+// providers — lives in the filer; if the filer's store is ephemeral, a filer
+// restart wipes it while the CR keeps reporting Ready. Without a periodic
+// resync nothing would re-trigger reconciliation, so the IAM state would stay
+// gone until the spec changed or the operator restarted. Re-running on this
+// cadence re-provisions whatever is missing, since every IAM reconcile is
+// idempotent (it checks existence and only creates what is absent). It mirrors
+// the safety-net requeue the Seaweed reconciler already performs.
+const iamResyncInterval = 5 * time.Minute
 
 // iamAdminProvider supplies (and caches) IAMAdmin instances per target filer.
 // Embedded in each IAM reconciler so they share the construction and caching

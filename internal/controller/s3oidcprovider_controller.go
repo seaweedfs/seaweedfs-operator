@@ -123,7 +123,9 @@ func (r *S3OIDCProviderReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := r.Status().Update(ctx, &provider); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{}, nil
+	// Resync periodically so a filer that lost its ephemeral IAM state gets the
+	// OIDC provider re-registered without waiting for a spec change.
+	return ctrl.Result{RequeueAfter: iamResyncInterval}, nil
 }
 
 func (r *S3OIDCProviderReconciler) handleDeletion(ctx context.Context, provider *seaweedv1.S3OIDCProvider, issuer string, admin IAMAdmin) (ctrl.Result, error) {

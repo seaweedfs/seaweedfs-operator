@@ -153,8 +153,6 @@ func (r *S3IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err := r.Status().Update(ctx, &identity); err != nil {
 		return ctrl.Result{}, err
 	}
-	// Resync periodically so a filer that lost its ephemeral IAM state gets the
-	// user re-provisioned without waiting for a spec change.
 	return ctrl.Result{RequeueAfter: iamResyncInterval}, nil
 }
 

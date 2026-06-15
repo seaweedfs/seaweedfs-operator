@@ -30,19 +30,18 @@ import (
 )
 
 // simulateFilerRestart drops all IAM state the fake holds, mimicking a filer
-// whose ephemeral store is wiped when its pod restarts. The Kubernetes CRs are
-// untouched and keep reporting Ready, reproducing the lost-state scenario.
+// whose ephemeral store is wiped on pod restart while the CRs stay Ready.
 func (f *fakeIAMAdmin) simulateFilerRestart() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.users = map[string]*swadmin.IAMUser{}
 	f.policies = map[string]string{}
 	f.providers = map[string]string{}
+	f.secretKeys = map[string]string{}
 }
 
-// TestS3Identity_ResyncReprovisionsUserAfterFilerRestart verifies the success
-// path schedules a periodic resync and that re-running it re-creates a user the
-// filer lost, without any spec change.
+// Success schedules a periodic resync, and re-running it re-creates a user the
+// filer lost — no spec change.
 func TestS3Identity_ResyncReprovisionsUserAfterFilerRestart(t *testing.T) {
 	scheme := iamTestScheme(t)
 	id := &seaweedv1.S3Identity{
@@ -77,9 +76,7 @@ func TestS3Identity_ResyncReprovisionsUserAfterFilerRestart(t *testing.T) {
 	}
 }
 
-// TestS3Credentials_ResyncReregistersKeyAfterFilerRestart verifies a lost
-// access key is re-registered on the identity from the key still held in the
-// Secret, on a plain resync pass.
+// A resync re-registers a lost access key from the key still held in the Secret.
 func TestS3Credentials_ResyncReregistersKeyAfterFilerRestart(t *testing.T) {
 	scheme := iamTestScheme(t)
 	cred := &seaweedv1.S3Credentials{
@@ -129,8 +126,7 @@ func TestS3Credentials_ResyncReregistersKeyAfterFilerRestart(t *testing.T) {
 	}
 }
 
-// TestS3Policy_ResyncReappliesPolicyAfterFilerRestart verifies a lost policy
-// document is re-applied on a plain resync pass.
+// A resync re-applies a lost policy document.
 func TestS3Policy_ResyncReappliesPolicyAfterFilerRestart(t *testing.T) {
 	scheme := iamTestScheme(t)
 	pol := &seaweedv1.S3Policy{

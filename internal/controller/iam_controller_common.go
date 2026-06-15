@@ -48,16 +48,10 @@ const (
 	s3OIDCProviderFinalizer  = "seaweed.seaweedfs.com/s3oidcprovider-protection"
 )
 
-// iamResyncInterval is how often a successfully reconciled IAM resource pulls
-// itself back through Reconcile even when its spec has not changed. The state
-// these controllers provision — users, access keys, policies, bindings, OIDC
-// providers — lives in the filer; if the filer's store is ephemeral, a filer
-// restart wipes it while the CR keeps reporting Ready. Without a periodic
-// resync nothing would re-trigger reconciliation, so the IAM state would stay
-// gone until the spec changed or the operator restarted. Re-running on this
-// cadence re-provisions whatever is missing, since every IAM reconcile is
-// idempotent (it checks existence and only creates what is absent). It mirrors
-// the safety-net requeue the Seaweed reconciler already performs.
+// iamResyncInterval re-runs a Ready IAM resource periodically so state lost when
+// the filer's ephemeral store restarts is re-provisioned without a spec change.
+// Each IAM reconcile is idempotent; this mirrors the Seaweed reconciler's
+// safety-net requeue.
 const iamResyncInterval = 5 * time.Minute
 
 // iamAdminProvider supplies (and caches) IAMAdmin instances per target filer.

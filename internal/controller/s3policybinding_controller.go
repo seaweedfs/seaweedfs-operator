@@ -177,8 +177,6 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err := r.Status().Update(ctx, &binding); err != nil {
 		return ctrl.Result{}, err
 	}
-	// Resync periodically so a filer that lost its ephemeral IAM state gets the
-	// policy re-attached to its subjects without waiting for a spec change.
 	return ctrl.Result{RequeueAfter: iamResyncInterval}, nil
 }
 

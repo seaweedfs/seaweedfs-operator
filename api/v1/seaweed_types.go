@@ -549,6 +549,15 @@ type FilerSpec struct {
 	// S3 can live on a different hostname than the filer HTTP UI.
 	// +optional
 	S3Ingress *IngressSpec `json:"s3Ingress,omitempty"`
+
+	// GRPCIngress configuration for the filer gRPC port (FilerHTTPPort +
+	// 10000), used by clients such as `weed mount` and the HDFS connector.
+	// HTTP and gRPC live on separate ports and an Ingress backend carries
+	// one protocol, so gRPC needs its own Ingress on its own hostname. Set
+	// the controller's gRPC backend-protocol annotation (for ingress-nginx,
+	// nginx.ingress.kubernetes.io/backend-protocol: "GRPC") via Annotations.
+	// +optional
+	GRPCIngress *IngressSpec `json:"grpcIngress,omitempty"`
 }
 
 // IcebergEffectivePort returns the port to use for the Iceberg catalog REST API.

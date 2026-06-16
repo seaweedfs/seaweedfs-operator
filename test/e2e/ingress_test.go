@@ -113,6 +113,16 @@ var _ = Describe("Per-component Ingress", Ordered, func() {
 							SecretName: "filer-tls",
 						}},
 					},
+					// The filer serves gRPC on a separate port (HTTP +
+					// 10000), so it gets its own Ingress on its own host
+					// with the controller's gRPC backend-protocol annotation.
+					GRPCIngress: &seaweedv1.IngressSpec{
+						Enabled: true,
+						Host:    "filer-grpc.seaweed.local",
+						Annotations: map[string]string{
+							"nginx.ingress.kubernetes.io/backend-protocol": "GRPC",
+						},
+					},
 				},
 			},
 		}
@@ -120,16 +130,20 @@ var _ = Describe("Per-component Ingress", Ordered, func() {
 
 		By("looking up each rendered Ingress")
 		for _, tc := range []struct {
-			component string
-			host      string
-			service   string
-			checkTLS  bool
+			ingressName string
+			host        string
+			service     string
+			port        int32
+			checkTLS    bool
 		}{
-			{"master", "master.seaweed.local", seaweedName + "-master", false},
-			{"volume", "volume.seaweed.local", seaweedName + "-volume", false},
-			{"filer", "filer.seaweed.local", seaweedName + "-filer", true},
+			{"master", "master.seaweed.local", seaweedName + "-master", seaweedv1.MasterHTTPPort, false},
+			{"volume", "volume.seaweed.local", seaweedName + "-volume", seaweedv1.VolumeHTTPPort, false},
+			{"filer", "filer.seaweed.local", seaweedName + "-filer", seaweedv1.FilerHTTPPort, true},
+			// The gRPC Ingress points at the same filer Service but on the
+			// gRPC port, on its own hostname.
+			{"filer-grpc", "filer-grpc.seaweed.local", seaweedName + "-filer", seaweedv1.FilerGRPCPort, false},
 		} {
-			name := seaweedName + "-" + tc.component + "-ingress"
+			name := seaweedName + "-" + tc.ingressName + "-ingress"
 			ing := &networkingv1.Ingress{}
 			Eventually(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: testNamespace}, ing)
@@ -139,6 +153,7 @@ var _ = Describe("Per-component Ingress", Ordered, func() {
 			Expect(ing.Spec.Rules[0].Host).To(Equal(tc.host))
 			Expect(ing.Spec.Rules[0].HTTP.Paths).To(HaveLen(1))
 			Expect(ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Name).To(Equal(tc.service))
+			Expect(ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number).To(Equal(tc.port))
 
 			if tc.checkTLS {
 				Expect(ing.Spec.TLS).To(HaveLen(1))
@@ -146,6 +161,15 @@ var _ = Describe("Per-component Ingress", Ordered, func() {
 				Expect(ing.Spec.TLS[0].Hosts).To(ConsistOf("filer.seaweed.local"))
 			}
 		}
+
+		By("asserting the filer gRPC Ingress carries the backend-protocol annotation")
+		grpcIng := &networkingv1.Ingress{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      seaweedName + "-filer-grpc-ingress",
+			Namespace: testNamespace,
+		}, grpcIng)).To(Succeed())
+		Expect(grpcIng.Annotations).To(HaveKeyWithValue(
+			"nginx.ingress.kubernetes.io/backend-protocol", "GRPC"))
 
 		By("asserting the master Ingress picked up IngressClassName + annotations")
 		master := &networkingv1.Ingress{}

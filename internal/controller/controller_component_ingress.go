@@ -73,6 +73,9 @@ func (r *SeaweedReconciler) ensureComponentIngresses(ctx context.Context, m *sea
 		m.Spec.Filer.S3 != nil && m.Spec.Filer.S3.Enabled {
 		wanted[m.Name+"-s3-ingress"] = desired{"s3", m.Name + "-filer", seaweedv1.FilerS3Port, m.Spec.Filer.S3Ingress}
 	}
+	if m.Spec.Filer != nil && m.Spec.Filer.GRPCIngress != nil && m.Spec.Filer.GRPCIngress.Enabled {
+		wanted[m.Name+"-filer-grpc-ingress"] = desired{"filer-grpc", m.Name + "-filer", seaweedv1.FilerGRPCPort, m.Spec.Filer.GRPCIngress}
+	}
 	if m.Spec.Admin != nil && m.Spec.Admin.Ingress != nil && m.Spec.Admin.Ingress.Enabled {
 		wanted[m.Name+"-admin-ingress"] = desired{"admin", m.Name + "-admin", seaweedv1.AdminHTTPPort, m.Spec.Admin.Ingress}
 	}

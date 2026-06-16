@@ -8,6 +8,11 @@ spec:
     spec:
       containers:
       - name: manager
+        # Applied only when webhooks are enabled, so turn the webhook server on
+        # here; otherwise the webhook configs are registered but never served.
+        env:
+        - name: ENABLE_WEBHOOKS
+          value: "true"
         ports:
         - containerPort: 9443
           name: webhook-server

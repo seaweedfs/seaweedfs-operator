@@ -17,24 +17,24 @@ limitations under the License.
 package v1
 
 import (
+	"context"
 	"errors"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // log is for logging in this package.
 var seaweedlog = logf.Log.WithName("seaweed-resource")
 
 func (r *Seaweed) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(r).
+	return ctrl.NewWebhookManagedBy(mgr, &Seaweed{}).
+		WithDefaulter(&SeaweedCustomDefaulter{}).
+		WithValidator(&SeaweedCustomValidator{}).
 		Complete()
 }
 
@@ -42,67 +42,76 @@ func (r *Seaweed) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 // +kubebuilder:webhook:path=/mutate-seaweed-seaweedfs-com-v1-seaweed,mutating=true,failurePolicy=fail,sideEffects=None,groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=create;update,versions=v1,name=mseaweed.kb.io,admissionReviewVersions=v1
 
-var _ webhook.Defaulter = &Seaweed{}
+// SeaweedCustomDefaulter sets defaults on Seaweed resources.
+// +kubebuilder:object:generate=false
+type SeaweedCustomDefaulter struct{}
 
-// Default implements webhook.Defaulter so a webhook will be registered for the type
-func (r *Seaweed) Default() {
-	seaweedlog.Info("default", "name", r.Name)
+var _ admission.Defaulter[*Seaweed] = &SeaweedCustomDefaulter{}
+
+// Default implements admission.Defaulter so a webhook will be registered for the type
+func (d *SeaweedCustomDefaulter) Default(_ context.Context, obj *Seaweed) error {
+	seaweedlog.Info("default", "name", obj.Name)
 
 	// TODO(user): fill in your defaulting logic.
+	return nil
 }
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
 // +kubebuilder:webhook:verbs=create;update,path=/validate-seaweed-seaweedfs-com-v1-seaweed,mutating=false,failurePolicy=fail,sideEffects=None,groups=seaweed.seaweedfs.com,resources=seaweeds,versions=v1,name=vseaweed.kb.io,admissionReviewVersions=v1
 
-var _ webhook.Validator = &Seaweed{}
+// SeaweedCustomValidator validates Seaweed resources.
+// +kubebuilder:object:generate=false
+type SeaweedCustomValidator struct{}
 
-// ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *Seaweed) ValidateCreate() (admission.Warnings, error) {
-	seaweedlog.Info("validate create", "name", r.Name)
+var _ admission.Validator[*Seaweed] = &SeaweedCustomValidator{}
+
+// ValidateCreate implements admission.Validator so a webhook will be registered for the type
+func (v *SeaweedCustomValidator) ValidateCreate(_ context.Context, obj *Seaweed) (admission.Warnings, error) {
+	seaweedlog.Info("validate create", "name", obj.Name)
 	errs := []error{}
 
-	if r.Spec.Master == nil {
+	if obj.Spec.Master == nil {
 		errs = append(errs, errors.New("missing master spec"))
 	}
 
-	if r.Spec.Volume == nil {
+	if obj.Spec.Volume == nil {
 		errs = append(errs, errors.New("missing volume spec"))
 	} else {
-		if r.Spec.Volume.Requests[corev1.ResourceStorage].Equal(resource.MustParse("0")) {
+		if obj.Spec.Volume.Requests[corev1.ResourceStorage].Equal(resource.MustParse("0")) {
 			errs = append(errs, errors.New("volume storage request cannot be zero"))
 		}
 	}
 
-	if r.Spec.Worker != nil && r.Spec.Admin == nil {
+	if obj.Spec.Worker != nil && obj.Spec.Admin == nil {
 		errs = append(errs, errors.New("spec.worker requires spec.admin to be configured"))
 	}
 
-	if err := r.validateS3Exclusivity(); err != nil {
+	if err := obj.validateS3Exclusivity(); err != nil {
 		errs = append(errs, err)
 	}
-	if err := r.validateSFTP(); err != nil {
+	if err := obj.validateSFTP(); err != nil {
 		errs = append(errs, err)
 	}
 
-	return r.s3DeprecationWarnings(), utilerrors.NewAggregate(errs)
+	return obj.s3DeprecationWarnings(), utilerrors.NewAggregate(errs)
 }
 
-// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *Seaweed) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
-	seaweedlog.Info("validate update", "name", r.Name)
+// ValidateUpdate implements admission.Validator so a webhook will be registered for the type
+func (v *SeaweedCustomValidator) ValidateUpdate(_ context.Context, _, obj *Seaweed) (admission.Warnings, error) {
+	seaweedlog.Info("validate update", "name", obj.Name)
 	errs := []error{}
 
-	if r.Spec.Worker != nil && r.Spec.Admin == nil {
+	if obj.Spec.Worker != nil && obj.Spec.Admin == nil {
 		errs = append(errs, errors.New("spec.worker requires spec.admin to be configured"))
 	}
-	if err := r.validateS3Exclusivity(); err != nil {
+	if err := obj.validateS3Exclusivity(); err != nil {
 		errs = append(errs, err)
 	}
-	if err := r.validateSFTP(); err != nil {
+	if err := obj.validateSFTP(); err != nil {
 		errs = append(errs, err)
 	}
 
-	return r.s3DeprecationWarnings(), utilerrors.NewAggregate(errs)
+	return obj.s3DeprecationWarnings(), utilerrors.NewAggregate(errs)
 }
 
 // validateS3Exclusivity forbids setting both the standalone S3 gateway
@@ -141,9 +150,9 @@ func (r *Seaweed) s3DeprecationWarnings() admission.Warnings {
 	return nil
 }
 
-// ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *Seaweed) ValidateDelete() (admission.Warnings, error) {
-	seaweedlog.Info("validate delete", "name", r.Name)
+// ValidateDelete implements admission.Validator so a webhook will be registered for the type
+func (v *SeaweedCustomValidator) ValidateDelete(_ context.Context, obj *Seaweed) (admission.Warnings, error) {
+	seaweedlog.Info("validate delete", "name", obj.Name)
 
 	// TODO(user): fill in your validation logic upon object deletion.
 	return nil, nil

@@ -1,0 +1,81 @@
+# Local volumes as cache + a cloud bucket as remote storage (Cloud Drive).
+#
+# This is the "local block storage/cache, plus remote cloud storage" pattern:
+# SeaweedFS keeps a fast local copy on its volume-server PVCs while
+# transparently backing a directory with a remote object store (S3, GCS,
+# Azure, ...). Reads are cached locally; writes are asynchronously pushed to
+# the remote by a `weed filer.remote.sync` process, which we run as a filer
+# sidecar so the operator manages its lifecycle.
+#
+# IMPORTANT: the remote storage binding itself is a runtime operation, not a
+# CRD field. After this cluster is Running you configure the remote once via
+# `weed shell` (the sidecar just keeps it in sync). See the steps at the
+# bottom of this file.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-remote-storage
+  namespace: default
+spec:
+  image: chrislusf/seaweedfs:latest
+  volumeServerDiskCount: 1
+
+  master:
+    replicas: 1
+    volumeSizeLimitMB: 1024
+
+  volume:
+    # Local volume servers act as the hot tier / read cache for remote data.
+    replicas: 2
+    requests:
+      storage: 50Gi
+
+  filer:
+    replicas: 1
+    s3:
+      enabled: true
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"
+
+    # Sidecar: a long-running `weed filer.remote.sync` that pushes local writes
+    # under the mounted directory back to the remote bucket and keeps metadata
+    # in sync. It shares the Pod's network with the filer container, so it dials
+    # the filer on localhost:8888. It reads the remote credentials from the
+    # filer (stored by `remote.configure` below), so no extra Secret is needed
+    # here. Until the remote directory is mounted it will retry -- that is
+    # expected before you run the steps below.
+    sidecars:
+      - name: remote-sync
+        image: chrislusf/seaweedfs:latest
+        command: ["weed"]
+        args:
+          - "filer.remote.sync"
+          - "-filer=localhost:8888"
+          - "-dir=/buckets/cloud"
+#
+# ---------------------------------------------------------------------------
+# One-time setup after the cluster is Running
+# ---------------------------------------------------------------------------
+# 1. Open a weed shell against the master (exec into a master Pod; master is a
+#    StatefulSet, so the first Pod is <name>-master-0):
+#
+#      kubectl exec -it seaweed-remote-storage-master-0 -- weed shell
+#
+# 2. Register the remote store. Replace the keys/region/endpoint for your
+#    provider. The name (s3_1) is an arbitrary handle reused in step 3:
+#
+#      remote.configure -name=s3_1 -type=s3 \
+#        -s3.access_key=AKIA... -s3.secret_key=... -s3.region=us-east-1
+#
+#    For non-AWS S3 (MinIO, Backblaze, R2, ...) also pass -s3.endpoint=...
+#
+# 3. Mount a remote bucket onto a filer directory. The directory here matches
+#    the sidecar's -dir flag above:
+#
+#      remote.mount -dir=/buckets/cloud -remote=s3_1/my-cloud-bucket -nonempty
+#
+# From now on, files written under /buckets/cloud (including via the S3 API)
+# are cached locally and asynchronously uploaded to my-cloud-bucket by the
+# sidecar. See https://github.com/seaweedfs/seaweedfs/wiki/Cloud-Drive-Architecture

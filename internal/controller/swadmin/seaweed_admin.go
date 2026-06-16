@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb"
+	"github.com/seaweedfs/seaweedfs/weed/pb/master_pb"
 	"github.com/seaweedfs/seaweedfs/weed/shell"
 	"github.com/seaweedfs/seaweedfs/weed/util/fla9"
 )
@@ -116,4 +117,56 @@ func (sa *SeaweedAdmin) ProcessCommand(ctx context.Context, cmd string) error {
 
 	return fmt.Errorf("unknown command: %v", cmd)
 
+}
+
+// VolumeServerVolumeCounts asks the master for the cluster topology and returns
+// the number of volumes (normal volumes plus EC shards) each volume server
+// currently hosts, keyed by the server's node id (its <host>:<port>, the same
+// identifier `volumeServer.evacuate -node` expects). A server present in the
+// topology with no data maps to 0; a server absent from the topology (not
+// registered with the master) is simply missing from the map. The caller uses
+// this to decide when an evacuated volume server is safe to remove.
+func (sa *SeaweedAdmin) VolumeServerVolumeCounts(ctx context.Context) (map[string]int, error) {
+	// WithClient resolves the master via a blocking GetMaster(Background()); cap
+	// the wait here the same way ProcessCommand does so a cluster the operator
+	// cannot reach surfaces a timeout instead of hanging the caller forever.
+	waitCtx, cancel := context.WithTimeout(ctx, masterConnectionTimeout)
+	defer cancel()
+	if sa.commandEnv.MasterClient.GetMaster(waitCtx) == "" {
+		return nil, fmt.Errorf("wait for master connection: %w", waitCtx.Err())
+	}
+
+	var resp *master_pb.VolumeListResponse
+	err := sa.commandEnv.MasterClient.WithClient(false, func(client master_pb.SeaweedClient) error {
+		r, e := client.VolumeList(ctx, &master_pb.VolumeListRequest{})
+		if e != nil {
+			return e
+		}
+		resp = r
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return volumeServerVolumeCounts(resp.GetTopologyInfo()), nil
+}
+
+// volumeServerVolumeCounts walks a master TopologyInfo and totals the volumes
+// and EC shards hosted on each data node. Split out from the RPC call so the
+// aggregation is unit-testable without a live cluster.
+func volumeServerVolumeCounts(topo *master_pb.TopologyInfo) map[string]int {
+	counts := map[string]int{}
+	for _, dc := range topo.GetDataCenterInfos() {
+		for _, rack := range dc.GetRackInfos() {
+			for _, dn := range rack.GetDataNodeInfos() {
+				n := 0
+				for _, disk := range dn.GetDiskInfos() {
+					n += len(disk.GetVolumeInfos()) + len(disk.GetEcShardInfos())
+				}
+				counts[dn.GetId()] = n
+			}
+		}
+	}
+	return counts
 }

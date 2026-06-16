@@ -90,6 +90,13 @@ type SeaweedReconciler struct {
 	Log      logr.Logger
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
+
+	// VolumeAdminFactory builds the master-side admin used to evacuate volume
+	// servers before a scale-down removes them. Defaulted in SetupWithManager;
+	// tests inject a fake.
+	VolumeAdminFactory VolumeAdminFactory
+	// evac tracks in-flight background volume server evacuations.
+	evac *evacuationTracker
 }
 
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=get;list;watch;create;update;patch;delete
@@ -223,6 +230,12 @@ func (r *SeaweedReconciler) findSeaweedCustomResourceInstance(ctx context.Contex
 }
 
 func (r *SeaweedReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.VolumeAdminFactory == nil {
+		r.VolumeAdminFactory = NewSwadminVolumeAdmin
+	}
+	if r.evac == nil {
+		r.evac = newEvacuationTracker()
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&seaweedv1.Seaweed{}).
 		Complete(r)

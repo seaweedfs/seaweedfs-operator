@@ -55,7 +55,17 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(ctx context.Context, s
 	if err := controllerutil.SetControllerReference(seaweedCR, volumeServerStatefulSet, r.Scheme); err != nil {
 		return ReconcileResult(err)
 	}
-	_, err := r.CreateOrUpdate(volumeServerStatefulSet, func(existing, desired runtime.Object) error {
+
+	// Gate scale-down on evacuation: cap the replica count so a volume server
+	// pod is removed only after its data has drained to the other servers.
+	allowed, err := r.allowedVolumeServerReplicas(ctx, seaweedCR, volumeServerStatefulSet.Name, seaweedCR.Spec.Volume.Replicas,
+		func(ord int32) string { return volumeServerNodeAddress(seaweedCR, ord) })
+	if err != nil {
+		return ReconcileResult(err)
+	}
+	volumeServerStatefulSet.Spec.Replicas = &allowed
+
+	_, err = r.CreateOrUpdate(volumeServerStatefulSet, func(existing, desired runtime.Object) error {
 		existingStatefulSet := existing.(*appsv1.StatefulSet)
 		desiredStatefulSet := desired.(*appsv1.StatefulSet)
 
@@ -181,7 +191,16 @@ func (r *SeaweedReconciler) ensureVolumeServerTopologyStatefulSet(ctx context.Co
 	if err := controllerutil.SetControllerReference(seaweedCR, volumeServerStatefulSet, r.Scheme); err != nil {
 		return ReconcileResult(err)
 	}
-	_, err := r.CreateOrUpdate(volumeServerStatefulSet, func(existing, desired runtime.Object) error {
+
+	// Gate scale-down on evacuation, as for the flat volume StatefulSet.
+	allowed, err := r.allowedVolumeServerReplicas(ctx, seaweedCR, volumeServerStatefulSet.Name, topologySpec.Replicas,
+		func(ord int32) string { return volumeServerTopologyNodeAddress(seaweedCR, topologyName, ord) })
+	if err != nil {
+		return ReconcileResult(err)
+	}
+	volumeServerStatefulSet.Spec.Replicas = &allowed
+
+	_, err = r.CreateOrUpdate(volumeServerStatefulSet, func(existing, desired runtime.Object) error {
 		existingStatefulSet := existing.(*appsv1.StatefulSet)
 		desiredStatefulSet := desired.(*appsv1.StatefulSet)
 

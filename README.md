@@ -199,7 +199,7 @@ A `Seaweed` cluster is built from three core components, each run as its own
 StatefulSet. Every `replicas` value becomes that many Pods:
 
 - **`master`** — coordinates the cluster and assigns volumes. Use 3 replicas for HA, 1 for dev.
-- **`volume`** — stores the file data on disk. Each replica is a Pod with its own PersistentVolumeClaim(s).
+- **`volume`** — stores the file data on disk. Each replica is a Pod with its own PersistentVolumeClaim(s). Lowering `volume.replicas` triggers a graceful scale-down: before removing a volume-server Pod the operator evacuates its data to the remaining servers (highest ordinal first, one at a time) and only deletes the Pod once the master confirms the server holds no volumes. A server whose data cannot be moved safely (e.g. no replication-compliant destination) blocks the scale-down rather than risking data loss.
 - **`filer`** — serves the namespace and the S3/WebDAV/HTTP APIs.
 
 Fields that commonly cause confusion:

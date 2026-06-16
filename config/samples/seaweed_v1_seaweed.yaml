@@ -20,12 +20,16 @@ spec:
     dataCenter: "dc1"
   filer:
     replicas: 2
-    s3:
-      enabled: true
-      configSecret:
-        name: test-secret
-        key: seaweedfs_s3_config.json
     config: |
       [leveldb2]
       enabled = true
       dir = "/data/filerldb2"
+  # Standalone S3 gateway. This is the preferred way to expose the S3 API.
+  # It creates a "seaweed1-s3" ClusterIP Service on port 8333 (embedded IAM
+  # is enabled on the same port by default). The gateway dials the filer, so
+  # the filer above must be enabled.
+  s3:
+    replicas: 1
+    # configSecret:   # optional: wire S3 identities (the -s3.config equivalent)
+    #   name: my-s3-config
+    #   key: seaweedfs_s3_config.json

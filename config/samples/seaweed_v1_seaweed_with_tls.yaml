@@ -1,0 +1,44 @@
+# mTLS between SeaweedFS components, provisioned via cert-manager.
+#
+# Requires cert-manager (https://cert-manager.io/docs/installation/) to be
+# installed in the cluster. When spec.tls.enabled is true the operator
+# provisions a cert-manager Certificate covering every component's headless
+# Service and renders a security.toml that wires mTLS into every gRPC
+# endpoint. If the cert-manager CRDs are missing the operator surfaces a
+# condition on the Seaweed CR and leaves TLS off rather than failing.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-tls
+  namespace: default
+spec:
+  image: chrislusf/seaweedfs:latest
+  volumeServerDiskCount: 1
+  master:
+    replicas: 3
+    volumeSizeLimitMB: 1024
+  volume:
+    replicas: 1
+    requests:
+      storage: 2Gi
+  filer:
+    replicas: 2
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"
+  s3:
+    replicas: 1
+  tls:
+    enabled: true
+    # issuerRef is optional. Omit it (as below, commented out) to let the
+    # operator provision a self-signed Issuer + CA + CA-Issuer chain owned by
+    # this Seaweed CR — the same behavior as the default Helm chart.
+    #
+    # Set issuerRef to sign the server certificate from an existing
+    # cert-manager Issuer or ClusterIssuer you already manage:
+    #
+    # issuerRef:
+    #   name: my-ca-issuer
+    #   kind: ClusterIssuer      # or Issuer (default)
+    #   group: cert-manager.io   # default

@@ -311,13 +311,13 @@ func tlsEffective(m *seaweedv1.Seaweed) bool {
 }
 
 // tlsVolumesAndMounts returns the set of pod volumes and container mounts
-// that wire the shared TLS Secret and security.toml ConfigMap into a
-// component pod. Returns empty slices when neither TLS nor the security
-// ConfigMap is needed — callers can safely append unconditionally. Every
-// component that speaks gRPC should use this helper so the paths stay in
-// sync with renderSecurityTOML.
+// that wire the shared TLS Secret and security.toml Secret into a component
+// pod. Returns empty slices when neither TLS nor the security config is
+// needed — callers can safely append unconditionally. Every component that
+// speaks gRPC should use this helper so the paths stay in sync with
+// renderSecurityTOML.
 //
-// The security ConfigMap mount is included independently of the TLS Secret
+// The security Secret mount is included independently of the TLS Secret
 // mount, so filer + admin pods can pick up jwt.filer_signing.key (needed for
 // the IAM gRPC service the Admin UI Users tab calls) without requiring
 // cert-manager.
@@ -328,10 +328,8 @@ func tlsVolumesAndMounts(m *seaweedv1.Seaweed) ([]corev1.Volume, []corev1.Volume
 		volumes = append(volumes, corev1.Volume{
 			Name: securityVolumeName,
 			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: SecurityConfigMapName(m),
-					},
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: SecurityConfigSecretName(m),
 				},
 			},
 		})

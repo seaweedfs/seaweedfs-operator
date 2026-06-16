@@ -273,14 +273,14 @@ func newTestBucket(name string) *seaweedv1.Bucket {
 
 // TestReconcile_PassesAdminSigningKeyToFactory pins the issue #265 fix: the
 // reconciler must read jwt.filer_signing.key from the cluster's rendered
-// security ConfigMap and hand it to the BucketAdminFactory. Without it,
+// security Secret and hand it to the BucketAdminFactory. Without it,
 // s3.bucket.access (and every filer IAM call) is sent unauthenticated and the
 // bucket stays Failed with reason AccessFailed.
 func TestReconcile_PassesAdminSigningKeyToFactory(t *testing.T) {
 	sw := newTestSeaweedWithFiler()
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: SecurityConfigMapName(sw), Namespace: sw.Namespace},
-		Data:       map[string]string{"security.toml": "[jwt.filer_signing]\nkey = \"abc123==\"\n"},
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: SecurityConfigSecretName(sw), Namespace: sw.Namespace},
+		Data:       map[string][]byte{"security.toml": []byte("[jwt.filer_signing]\nkey = \"abc123==\"\n")},
 	}
 	bucket := newTestBucket("photos")
 	bucket.Finalizers = []string{BucketFinalizer}
@@ -290,7 +290,7 @@ func TestReconcile_PassesAdminSigningKeyToFactory(t *testing.T) {
 	r, _ := testReconcilerWithFactory(t, func(_, _ string, key []byte, _ grpc.DialOption, _ logr.Logger) (BucketAdmin, error) {
 		gotKey = key
 		return fa, nil
-	}, sw, cm, bucket)
+	}, sw, secret, bucket)
 
 	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
 	reconcileUntilStable(t, r, key, 5)
@@ -301,10 +301,10 @@ func TestReconcile_PassesAdminSigningKeyToFactory(t *testing.T) {
 }
 
 // TestReconcile_NoSecurityConfigPassesEmptyKey pins the unauthenticated path:
-// a cluster with no rendered security ConfigMap hands the factory an empty key
+// a cluster with no rendered security Secret hands the factory an empty key
 // so the filer IAM calls stay unauthenticated, matching its no-key branch.
 func TestReconcile_NoSecurityConfigPassesEmptyKey(t *testing.T) {
-	sw := newTestSeaweedWithFiler() // filer present, but no security ConfigMap seeded
+	sw := newTestSeaweedWithFiler() // filer present, but no security Secret seeded
 	bucket := newTestBucket("photos")
 	bucket.Finalizers = []string{BucketFinalizer}
 
@@ -319,7 +319,7 @@ func TestReconcile_NoSecurityConfigPassesEmptyKey(t *testing.T) {
 	reconcileUntilStable(t, r, key, 5)
 
 	if len(gotKey) != 0 {
-		t.Fatalf("expected empty key when no security ConfigMap, got %q", string(gotKey))
+		t.Fatalf("expected empty key when no security Secret, got %q", string(gotKey))
 	}
 }
 

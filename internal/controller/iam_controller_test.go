@@ -792,22 +792,22 @@ var (
 
 // TestResolveSeaweedFiler_LoadsAdminSigningKey pins the issue #257 fix:
 // resolveSeaweedFiler must surface jwt.filer_signing.key from the rendered
-// security ConfigMap so the IAM client can mint admin Bearer tokens. A
-// missing ConfigMap (cluster mid-reconcile, or an externally managed cluster)
+// security Secret so the IAM client can mint admin Bearer tokens. A
+// missing Secret (cluster mid-reconcile, or an externally managed cluster)
 // degrades to an empty key — matching the filer's unauthenticated branch.
 func TestResolveSeaweedFiler_LoadsAdminSigningKey(t *testing.T) {
 	scheme := iamTestScheme(t)
 	sw := newTestSeaweedWithFiler()
-	cm := &corev1.ConfigMap{
+	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      SecurityConfigMapName(sw),
+			Name:      SecurityConfigSecretName(sw),
 			Namespace: sw.Namespace,
 		},
-		Data: map[string]string{
-			"security.toml": "[jwt.filer_signing]\nkey = \"abc123==\"\n",
+		Data: map[string][]byte{
+			"security.toml": []byte("[jwt.filer_signing]\nkey = \"abc123==\"\n"),
 		},
 	}
-	cli := iamTestClient(t, scheme, sw, cm)
+	cli := iamTestClient(t, scheme, sw, secret)
 
 	target, found, err := resolveSeaweedFiler(context.Background(), cli, iamSeaweedRef(), "media")
 	if err != nil {
@@ -824,7 +824,7 @@ func TestResolveSeaweedFiler_LoadsAdminSigningKey(t *testing.T) {
 	}
 }
 
-func TestResolveSeaweedFiler_MissingConfigMapReturnsEmptyKey(t *testing.T) {
+func TestResolveSeaweedFiler_MissingSecretReturnsEmptyKey(t *testing.T) {
 	scheme := iamTestScheme(t)
 	sw := newTestSeaweedWithFiler()
 	cli := iamTestClient(t, scheme, sw)
@@ -837,7 +837,7 @@ func TestResolveSeaweedFiler_MissingConfigMapReturnsEmptyKey(t *testing.T) {
 		t.Fatal("expected cluster to be found")
 	}
 	if len(target.adminSigningKey) != 0 {
-		t.Fatalf("expected empty key when ConfigMap missing, got %q", string(target.adminSigningKey))
+		t.Fatalf("expected empty key when Secret missing, got %q", string(target.adminSigningKey))
 	}
 }
 
@@ -992,7 +992,7 @@ func assertOIDCGone(t *testing.T, cli client.Client, key types.NamespacedName) {
 
 // newTestSeaweedWithFiler returns the standard test Seaweed CR with a Filer
 // spec so securityConfigNeeded returns true and the operator would render a
-// security.toml ConfigMap with jwt.filer_signing.key.
+// security.toml Secret with jwt.filer_signing.key.
 func newTestSeaweedWithFiler() *seaweedv1.Seaweed {
 	sw := newTestSeaweed()
 	sw.Spec.Filer = &seaweedv1.FilerSpec{Replicas: 1}

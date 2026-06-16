@@ -23,6 +23,10 @@ limitations under the License.
 // in the Helm chart down to one server cert (+ CA chain when using the
 // default self-signed issuer).
 //
+// security.toml itself is provisioned as a Secret rather than a ConfigMap:
+// it carries the jwt.filer_signing HMAC keys, which are credentials (anyone
+// holding them can mint valid JWTs), so they must not sit in a ConfigMap.
+//
 // We talk to cert-manager via unstructured.Unstructured instead of taking
 // a hard import dependency on the cert-manager Go module. Pulling in
 // cert-manager transitively pulls the AWS SDK, gateway-api, and dozens of
@@ -36,7 +40,7 @@ limitations under the License.
 //	Certificate <name>-ca            → Secret <name>-ca
 //	Issuer <name>-ca-issuer          (CA from <name>-ca)
 //	Certificate <name>-server        → Secret <name>-server-tls
-//	ConfigMap <name>-security-config (security.toml)
+//	Secret <name>-security-config    (security.toml)
 //
 // When TLSSpec.IssuerRef is set the operator skips the self-signed +
 // CA pair and issues <name>-server directly from the user's issuer.
@@ -71,7 +75,7 @@ const (
 	// cert/key values.
 	tlsMountPath = "/etc/sw-tls"
 
-	// securityConfigMountPath holds the security.toml ConfigMap. Separate
+	// securityConfigMountPath holds the security.toml Secret. Separate
 	// from the per-component filer.toml/master.toml path so TLS can be
 	// enabled independently of user-supplied component configs.
 	securityConfigMountPath = "/etc/sw-security"
@@ -79,12 +83,12 @@ const (
 	tlsVolumeName      = "sw-tls"
 	securityVolumeName = "sw-security"
 
-	tlsSecretSuffix         = "-server-tls"
-	caSecretSuffix          = "-ca"
-	selfSignedIssuerSuffix  = "-selfsigned"
-	caIssuerSuffix          = "-ca-issuer"
-	securityConfigMapSuffix = "-security-config"
-	serverCertSuffix        = "-server"
+	tlsSecretSuffix        = "-server-tls"
+	caSecretSuffix         = "-ca"
+	selfSignedIssuerSuffix = "-selfsigned"
+	caIssuerSuffix         = "-ca-issuer"
+	securitySecretSuffix   = "-security-config"
+	serverCertSuffix       = "-server"
 
 	certManagerGroup   = "cert-manager.io"
 	certManagerVersion = "v1"
@@ -106,9 +110,9 @@ func TLSServerSecretName(m *seaweedv1.Seaweed) string {
 	return m.Name + tlsSecretSuffix
 }
 
-// SecurityConfigMapName is the ConfigMap holding security.toml.
-func SecurityConfigMapName(m *seaweedv1.Seaweed) string {
-	return m.Name + securityConfigMapSuffix
+// SecurityConfigSecretName is the Secret holding security.toml.
+func SecurityConfigSecretName(m *seaweedv1.Seaweed) string {
+	return m.Name + securitySecretSuffix
 }
 
 // ensureTLS is called from the top-level Reconcile before any component is
@@ -142,7 +146,7 @@ func (r *SeaweedReconciler) ensureTLS(ctx context.Context, m *seaweedv1.Seaweed)
 	return ReconcileResult(nil)
 }
 
-// ensureSecurityConfig provisions the security.toml ConfigMap whenever the
+// ensureSecurityConfig provisions the security.toml Secret whenever the
 // filer or admin server is in spec, regardless of TLS state. The filer needs
 // jwt.filer_signing.key to register the IAM gRPC service the Admin UI Users
 // tab calls; the admin needs the same key to sign Bearer tokens. Bundling
@@ -152,10 +156,10 @@ func (r *SeaweedReconciler) ensureSecurityConfig(ctx context.Context, m *seaweed
 	if !securityConfigNeeded(m) {
 		return ReconcileResult(nil)
 	}
-	return r.ensureSecurityConfigMap(ctx, m)
+	return r.ensureSecuritySecret(ctx, m)
 }
 
-// securityConfigNeeded reports whether the security.toml ConfigMap should
+// securityConfigNeeded reports whether the security.toml Secret should
 // exist for this CR. True when filer or admin is in spec, or whenever TLS
 // is enabled (the [grpc.*] sections live in the same file).
 func securityConfigNeeded(m *seaweedv1.Seaweed) bool {
@@ -283,22 +287,18 @@ func (r *SeaweedReconciler) ensureServerCertificate(ctx context.Context, m *seaw
 	return ReconcileResult(r.applyUnstructured(ctx, m, u))
 }
 
-// ensureSecurityConfigMap writes the security.toml that every component
-// reads via -config_dir. All [grpc.<component>] stanzas point at the single
-// shared cert/key pair.
+// ensureSecuritySecret writes the security.toml that every component reads
+// via -config_dir. All [grpc.<component>] stanzas point at the single shared
+// cert/key pair. It is a Secret rather than a ConfigMap because the
+// jwt.filer_signing keys it carries are HMAC credentials.
 //
-// JWT keys are generated once and preserved across reconciliations by
-// reading the existing ConfigMap before rewriting it. This avoids silently
-// rotating JWT signing keys on every reconcile.
-func (r *SeaweedReconciler) ensureSecurityConfigMap(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	name := SecurityConfigMapName(m)
-	existing := &corev1.ConfigMap{}
-	err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: m.Namespace}, existing)
-	var jwtFilerWrite, jwtFilerRead string
-	if err == nil && existing.Data != nil {
-		jwtFilerWrite = extractTOMLKey(existing.Data["security.toml"], "jwt.filer_signing", "key")
-		jwtFilerRead = extractTOMLKey(existing.Data["security.toml"], "jwt.filer_signing.read", "key")
-	} else if err != nil && !apierrors.IsNotFound(err) {
+// JWT keys are generated once and preserved across reconciliations by reading
+// the existing material before rewriting it. This avoids silently rotating
+// JWT signing keys on every reconcile, which would invalidate live tokens.
+func (r *SeaweedReconciler) ensureSecuritySecret(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	name := SecurityConfigSecretName(m)
+	jwtFilerWrite, jwtFilerRead, err := r.existingJWTSigningKeys(ctx, m, name)
+	if err != nil {
 		return ReconcileResult(err)
 	}
 	if jwtFilerWrite == "" {
@@ -308,21 +308,74 @@ func (r *SeaweedReconciler) ensureSecurityConfigMap(ctx context.Context, m *seaw
 		jwtFilerRead = randKey()
 	}
 
-	cm := &corev1.ConfigMap{
+	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: m.Namespace,
 			Labels:    labelsForCR(m),
 		},
-		Data: map[string]string{
-			"security.toml": renderSecurityTOML(jwtFilerWrite, jwtFilerRead, tlsEffective(m)),
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			"security.toml": []byte(renderSecurityTOML(jwtFilerWrite, jwtFilerRead, tlsEffective(m))),
 		},
 	}
-	if err := controllerutil.SetControllerReference(m, cm, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(m, secret, r.Scheme); err != nil {
 		return ReconcileResult(err)
 	}
-	_, err = r.CreateOrUpdateConfigMap(cm)
-	return ReconcileResult(err)
+	if _, err := r.CreateOrUpdateSecret(secret); err != nil {
+		return ReconcileResult(err)
+	}
+	// Remove the legacy ConfigMap left behind by operator versions that stored
+	// security.toml (and thus the JWT signing keys) in a ConfigMap.
+	if err := r.deleteLegacySecurityConfigMap(ctx, name, m.Namespace); err != nil {
+		return ReconcileResult(err)
+	}
+	return ReconcileResult(nil)
+}
+
+// existingJWTSigningKeys returns the JWT signing keys already provisioned for
+// m, so a reconcile preserves them instead of rotating. It prefers the
+// security Secret and falls back to the legacy ConfigMap (operator versions
+// before security.toml moved to a Secret), keeping keys stable across the
+// upgrade. Empty strings mean none exist yet — the caller generates fresh ones.
+func (r *SeaweedReconciler) existingJWTSigningKeys(ctx context.Context, m *seaweedv1.Seaweed, name string) (write, read string, err error) {
+	key := client.ObjectKey{Name: name, Namespace: m.Namespace}
+
+	secret := &corev1.Secret{}
+	err = r.Get(ctx, key, secret)
+	if err == nil {
+		toml := string(secret.Data["security.toml"])
+		return extractTOMLKey(toml, "jwt.filer_signing", "key"),
+			extractTOMLKey(toml, "jwt.filer_signing.read", "key"), nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return "", "", err
+	}
+
+	cm := &corev1.ConfigMap{}
+	err = r.Get(ctx, key, cm)
+	if err == nil {
+		toml := cm.Data["security.toml"]
+		return extractTOMLKey(toml, "jwt.filer_signing", "key"),
+			extractTOMLKey(toml, "jwt.filer_signing.read", "key"), nil
+	}
+	if apierrors.IsNotFound(err) {
+		return "", "", nil
+	}
+	return "", "", err
+}
+
+// deleteLegacySecurityConfigMap removes the pre-Secret security.toml ConfigMap
+// if it is still around. A missing ConfigMap (the steady state on fresh
+// installs) is not an error.
+func (r *SeaweedReconciler) deleteLegacySecurityConfigMap(ctx context.Context, name, namespace string) error {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+	}
+	if err := r.Delete(ctx, cm); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
 }
 
 // renderSecurityTOML emits the [jwt.filer_signing*] sections always (filer

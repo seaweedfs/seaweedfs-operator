@@ -165,23 +165,23 @@ func resolveSeaweedFiler(ctx context.Context, c client.Client, ref seaweedv1.Sea
 }
 
 // loadFilerAdminSigningKey reads jwt.filer_signing.key from the
-// seaweedfs-security-config ConfigMap the operator renders for sw. Returns
-// nil with no error when the ConfigMap does not exist or its security.toml
+// seaweedfs-security-config Secret the operator renders for sw. Returns
+// nil with no error when the Secret does not exist or its security.toml
 // has no key (the cluster will be running unauthenticated in that case).
 // A non-NotFound API error is propagated so the reconciler can requeue.
 func loadFilerAdminSigningKey(ctx context.Context, c client.Client, sw *seaweedv1.Seaweed) ([]byte, error) {
 	if !securityConfigNeeded(sw) {
 		return nil, nil
 	}
-	var cm corev1.ConfigMap
-	err := c.Get(ctx, types.NamespacedName{Namespace: sw.Namespace, Name: SecurityConfigMapName(sw)}, &cm)
+	var secret corev1.Secret
+	err := c.Get(ctx, types.NamespacedName{Namespace: sw.Namespace, Name: SecurityConfigSecretName(sw)}, &secret)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	raw := extractTOMLKey(cm.Data["security.toml"], "jwt.filer_signing", "key")
+	raw := extractTOMLKey(string(secret.Data["security.toml"]), "jwt.filer_signing", "key")
 	if raw == "" {
 		return nil, nil
 	}

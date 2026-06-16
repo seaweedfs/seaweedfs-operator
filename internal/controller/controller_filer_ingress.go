@@ -22,7 +22,8 @@ func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1
 			Labels:    labels,
 		},
 		Spec: networkingv1.IngressSpec{
-			// TLS:   ingressSpec.TLS,
+			// The legacy HostSuffix Ingress is HTTP-only. For TLS, use the
+			// per-component ingress blocks (e.g. filer.s3Ingress.tls).
 			Rules: []networkingv1.IngressRule{
 				{
 					Host: "filer." + *m.Spec.HostSuffix,

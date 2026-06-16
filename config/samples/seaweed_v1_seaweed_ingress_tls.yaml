@@ -1,0 +1,82 @@
+# SeaweedFS cluster exposed over TLS through per-component Ingress.
+#
+# This answers the common question "how do I reach the S3 API over an
+# https:// URL via Ingress?". Each component declares its own `ingress:`
+# block, so you can put the S3 API and the filer UI on separate hostnames,
+# each with its own TLS certificate. This is independent of (and preferred
+# over) the legacy all-in-one `hostSuffix`, which is HTTP-only.
+#
+# Prerequisites:
+#   1. An Ingress controller is installed (e.g. ingress-nginx, Traefik).
+#   2. DNS for the hosts below points at the Ingress controller.
+#   3. A TLS certificate exists, either:
+#      a) created by hand as a kubernetes.io/tls Secret, e.g.
+#         kubectl create secret tls seaweed-s3-tls \
+#           --cert=tls.crt --key=tls.key -n default
+#      or
+#      b) issued automatically by cert-manager — set the issuer annotation
+#         under each ingress (shown commented out below) and cert-manager
+#         will populate the secretName for you.
+#
+# Apply with:
+#   kubectl apply -f seaweed_v1_seaweed_ingress_tls.yaml
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-ingress-tls
+  namespace: default
+spec:
+  image: chrislusf/seaweedfs:latest
+  volumeServerDiskCount: 1
+  master:
+    replicas: 1
+    volumeSizeLimitMB: 1024
+  volume:
+    replicas: 1
+    requests:
+      storage: 10Gi
+  filer:
+    replicas: 1
+    s3:
+      # Enable the S3 API on port 8333 (IAM is embedded on the same port).
+      enabled: true
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"
+
+    # Expose the filer's S3 API at https://s3.seaweed.example.com.
+    s3Ingress:
+      enabled: true
+      className: nginx
+      host: s3.seaweed.example.com
+      annotations:
+        # cert-manager: uncomment to have a certificate issued automatically
+        # into the `secretName` below.
+        # cert-manager.io/cluster-issuer: letsencrypt-prod
+        #
+        # S3 clients upload large objects; raise the body size limit so the
+        # ingress controller does not reject multi-part PUTs.
+        nginx.ingress.kubernetes.io/proxy-body-size: "0"
+      tls:
+        - hosts:
+            - s3.seaweed.example.com
+          secretName: seaweed-s3-tls
+
+    # Optionally expose the filer HTTP UI / REST API on its own hostname.
+    ingress:
+      enabled: true
+      className: nginx
+      host: filer.seaweed.example.com
+      tls:
+        - hosts:
+            - filer.seaweed.example.com
+          secretName: seaweed-filer-tls
+
+# Once applied and the certificate is ready, point an S3 client at the URL:
+#
+#   aws --endpoint-url https://s3.seaweed.example.com s3 ls
+#
+# For a standalone S3 gateway (scales independently of the filer) use the
+# top-level `s3:` block with its own `ingress:` instead of filer.s3Ingress —
+# the IngressSpec fields (host, className, annotations, tls) are identical.

@@ -297,7 +297,7 @@ func (r *SeaweedReconciler) ensureServerCertificate(ctx context.Context, m *seaw
 // JWT signing keys on every reconcile, which would invalidate live tokens.
 func (r *SeaweedReconciler) ensureSecuritySecret(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	name := SecurityConfigSecretName(m)
-	jwtFilerWrite, jwtFilerRead, err := r.existingJWTSigningKeys(ctx, m, name)
+	jwtFilerWrite, jwtFilerRead, fromLegacyConfigMap, err := r.existingJWTSigningKeys(ctx, m, name)
 	if err != nil {
 		return ReconcileResult(err)
 	}
@@ -325,10 +325,13 @@ func (r *SeaweedReconciler) ensureSecuritySecret(ctx context.Context, m *seaweed
 	if _, err := r.CreateOrUpdateSecret(secret); err != nil {
 		return ReconcileResult(err)
 	}
-	// Remove the legacy ConfigMap left behind by operator versions that stored
-	// security.toml (and thus the JWT signing keys) in a ConfigMap.
-	if err := r.deleteLegacySecurityConfigMap(ctx, name, m.Namespace); err != nil {
-		return ReconcileResult(err)
+	// Remove the legacy ConfigMap only when this reconcile actually read the
+	// keys out of it — i.e. the one migrating reconcile. Skipping it otherwise
+	// avoids a wasted Delete round-trip on every steady-state reconcile.
+	if fromLegacyConfigMap {
+		if err := r.deleteLegacySecurityConfigMap(ctx, name, m.Namespace); err != nil {
+			return ReconcileResult(err)
+		}
 	}
 	return ReconcileResult(nil)
 }
@@ -337,8 +340,10 @@ func (r *SeaweedReconciler) ensureSecuritySecret(ctx context.Context, m *seaweed
 // m, so a reconcile preserves them instead of rotating. It prefers the
 // security Secret and falls back to the legacy ConfigMap (operator versions
 // before security.toml moved to a Secret), keeping keys stable across the
-// upgrade. Empty strings mean none exist yet — the caller generates fresh ones.
-func (r *SeaweedReconciler) existingJWTSigningKeys(ctx context.Context, m *seaweedv1.Seaweed, name string) (write, read string, err error) {
+// upgrade. fromLegacyConfigMap is true only when the keys came from that
+// ConfigMap, signalling the caller to clean it up. Empty strings mean none
+// exist yet — the caller generates fresh ones.
+func (r *SeaweedReconciler) existingJWTSigningKeys(ctx context.Context, m *seaweedv1.Seaweed, name string) (write, read string, fromLegacyConfigMap bool, err error) {
 	key := client.ObjectKey{Name: name, Namespace: m.Namespace}
 
 	secret := &corev1.Secret{}
@@ -346,10 +351,10 @@ func (r *SeaweedReconciler) existingJWTSigningKeys(ctx context.Context, m *seawe
 	if err == nil {
 		toml := string(secret.Data["security.toml"])
 		return extractTOMLKey(toml, "jwt.filer_signing", "key"),
-			extractTOMLKey(toml, "jwt.filer_signing.read", "key"), nil
+			extractTOMLKey(toml, "jwt.filer_signing.read", "key"), false, nil
 	}
 	if !apierrors.IsNotFound(err) {
-		return "", "", err
+		return "", "", false, err
 	}
 
 	cm := &corev1.ConfigMap{}
@@ -357,12 +362,12 @@ func (r *SeaweedReconciler) existingJWTSigningKeys(ctx context.Context, m *seawe
 	if err == nil {
 		toml := cm.Data["security.toml"]
 		return extractTOMLKey(toml, "jwt.filer_signing", "key"),
-			extractTOMLKey(toml, "jwt.filer_signing.read", "key"), nil
+			extractTOMLKey(toml, "jwt.filer_signing.read", "key"), true, nil
 	}
 	if apierrors.IsNotFound(err) {
-		return "", "", nil
+		return "", "", false, nil
 	}
-	return "", "", err
+	return "", "", false, err
 }
 
 // deleteLegacySecurityConfigMap removes the pre-Secret security.toml ConfigMap

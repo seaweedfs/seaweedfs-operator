@@ -201,3 +201,29 @@ func TestEnsureSecuritySecret_MigratesLegacyConfigMap(t *testing.T) {
 		t.Errorf("expected legacy ConfigMap deleted, got err=%v", err)
 	}
 }
+
+// Once the Secret holds the keys, a reconcile reads from it and must not issue
+// a Delete for the legacy ConfigMap — the migration is a one-time event, not a
+// per-reconcile cleanup.
+func TestEnsureSecuritySecret_SkipsLegacyDeleteWhenSecretPresent(t *testing.T) {
+	m := newSecurityTestSeaweed()
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: SecurityConfigSecretName(m), Namespace: m.Namespace},
+		Type:       corev1.SecretTypeOpaque,
+		Data:       map[string][]byte{"security.toml": []byte("[jwt.filer_signing]\nkey = \"existing\"\n")},
+	}
+	stray := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: SecurityConfigSecretName(m), Namespace: m.Namespace},
+		Data:       map[string]string{"security.toml": "stray"},
+	}
+	r := securityTestReconciler(t, m, secret, stray)
+
+	if _, _, err := r.ensureSecuritySecret(context.Background(), m); err != nil {
+		t.Fatalf("ensureSecuritySecret: %v", err)
+	}
+
+	cm := &corev1.ConfigMap{}
+	if err := r.Get(context.Background(), client.ObjectKey{Name: SecurityConfigSecretName(m), Namespace: m.Namespace}, cm); err != nil {
+		t.Errorf("legacy ConfigMap should be left untouched when the Secret already holds keys, got err=%v", err)
+	}
+}

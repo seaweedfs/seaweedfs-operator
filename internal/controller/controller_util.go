@@ -239,6 +239,28 @@ func (r *SeaweedReconciler) CreateOrUpdateConfigMap(configMap *corev1.ConfigMap)
 	return result.(*corev1.ConfigMap), nil
 }
 
+func (r *SeaweedReconciler) CreateOrUpdateSecret(secret *corev1.Secret) (*corev1.Secret, error) {
+	result, err := r.CreateOrUpdate(secret, func(existing, desired runtime.Object) error {
+		existingSecret := existing.(*corev1.Secret)
+		desiredSecret := desired.(*corev1.Secret)
+
+		if existingSecret.Annotations == nil {
+			existingSecret.Annotations = map[string]string{}
+		}
+		for k, v := range desiredSecret.Annotations {
+			existingSecret.Annotations[k] = v
+		}
+		existingSecret.Labels = desiredSecret.Labels
+		// Type is immutable, so it is left untouched on the existing object.
+		existingSecret.Data = desiredSecret.Data
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.(*corev1.Secret), nil
+}
+
 // CreateOrUpdateServiceMonitor upserts a ServiceMonitor, but treats a missing
 // monitoring.coreos.com CRD as a soft no-op. This lets the operator run
 // cleanly in clusters that do not have the Prometheus Operator installed

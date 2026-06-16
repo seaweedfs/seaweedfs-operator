@@ -117,7 +117,7 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// TLS must be reconciled first: component pod specs reference the
-	// server Secret and security ConfigMap names, and skipping these when
+	// server Secret and security Secret names, and skipping these when
 	// cert-manager is absent is the difference between reconciling cleanly
 	// and crashlooping pods whose VolumeMounts can never be satisfied.
 	if done, result, err = r.ensureTLS(ctx, seaweedCR); done {

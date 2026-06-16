@@ -9,7 +9,7 @@ You may obtain a copy of the License at
 */
 
 // TLS integration test: verifies the operator provisions the self-signed
-// issuer chain, the wildcard server Certificate, the security ConfigMap,
+// issuer chain, the wildcard server Certificate, the security Secret,
 // and wires them into every component pod so the cluster still comes up
 // cleanly. Kind test clusters provisioned by `make kind-prepare` already
 // install cert-manager, so this spec can run without additional setup.
@@ -124,7 +124,7 @@ var _ = Describe("SeaweedFS TLS via cert-manager", Ordered, Label("integration")
 			return isCertManagerReady(ctx, k8sClient, testNamespace, seaweedName+"-server", "Certificate")
 		}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "server Certificate did not become Ready")
 
-		By("confirming the server Secret and security ConfigMap exist")
+		By("confirming the server Secret and security Secret exist")
 		secret := &corev1.Secret{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{
 			Name:      seaweedName + "-server-tls",
@@ -134,14 +134,15 @@ var _ = Describe("SeaweedFS TLS via cert-manager", Ordered, Label("integration")
 		Expect(secret.Data).To(HaveKey("tls.key"))
 		Expect(secret.Data).To(HaveKey("ca.crt"))
 
-		cm := &corev1.ConfigMap{}
+		securitySecret := &corev1.Secret{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{
 			Name:      seaweedName + "-security-config",
 			Namespace: testNamespace,
-		}, cm)).To(Succeed())
-		Expect(cm.Data["security.toml"]).To(ContainSubstring(`ca = "/etc/sw-tls/ca.crt"`))
-		Expect(cm.Data["security.toml"]).To(ContainSubstring(`[grpc.master]`))
-		Expect(cm.Data["security.toml"]).To(ContainSubstring(`[grpc.filer]`))
+		}, securitySecret)).To(Succeed())
+		securityTOML := string(securitySecret.Data["security.toml"])
+		Expect(securityTOML).To(ContainSubstring(`ca = "/etc/sw-tls/ca.crt"`))
+		Expect(securityTOML).To(ContainSubstring(`[grpc.master]`))
+		Expect(securityTOML).To(ContainSubstring(`[grpc.filer]`))
 
 		By("confirming pods mount the TLS Secret and security.toml")
 		pods := &corev1.PodList{}

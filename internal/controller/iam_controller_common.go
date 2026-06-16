@@ -123,7 +123,7 @@ type filerTarget struct {
 
 // resolveSeaweedFiler looks up the Seaweed CR named by ref and returns its
 // filer address along with the admin signing key the operator rendered into
-// the cluster's security.toml ConfigMap (issue #257: the filer's IAM gRPC
+// the cluster's security.toml Secret (issue #257: the filer's IAM gRPC
 // service rejects unauthenticated calls when jwt.filer_signing.key is set, so
 // the operator must sign its own Bearer tokens with the same key) and the
 // gRPC transport credentials matching the cluster's mTLS state. found is
@@ -131,9 +131,9 @@ type filerTarget struct {
 // surface a transient "cluster not found" condition and requeue rather than
 // treating it as a hard error.
 //
-// adminSigningKey is nil when the security ConfigMap has not been reconciled
+// adminSigningKey is nil when the security Secret has not been reconciled
 // yet, when its data is missing/malformed, or when the cluster was not
-// provisioned by this operator (no ConfigMap to read). In those cases the IAM
+// provisioned by this operator (no Secret to read). In those cases the IAM
 // client falls back to unauthenticated calls, matching the cluster's likely
 // configuration.
 func resolveSeaweedFiler(ctx context.Context, c client.Client, ref seaweedv1.SeaweedReference, ownNamespace string) (target filerTarget, found bool, err error) {
@@ -165,23 +165,23 @@ func resolveSeaweedFiler(ctx context.Context, c client.Client, ref seaweedv1.Sea
 }
 
 // loadFilerAdminSigningKey reads jwt.filer_signing.key from the
-// seaweedfs-security-config ConfigMap the operator renders for sw. Returns
-// nil with no error when the ConfigMap does not exist or its security.toml
+// seaweedfs-security-config Secret the operator renders for sw. Returns
+// nil with no error when the Secret does not exist or its security.toml
 // has no key (the cluster will be running unauthenticated in that case).
 // A non-NotFound API error is propagated so the reconciler can requeue.
 func loadFilerAdminSigningKey(ctx context.Context, c client.Client, sw *seaweedv1.Seaweed) ([]byte, error) {
 	if !securityConfigNeeded(sw) {
 		return nil, nil
 	}
-	var cm corev1.ConfigMap
-	err := c.Get(ctx, types.NamespacedName{Namespace: sw.Namespace, Name: SecurityConfigMapName(sw)}, &cm)
+	var secret corev1.Secret
+	err := c.Get(ctx, types.NamespacedName{Namespace: sw.Namespace, Name: SecurityConfigSecretName(sw)}, &secret)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	raw := extractTOMLKey(cm.Data["security.toml"], "jwt.filer_signing", "key")
+	raw := extractTOMLKey(string(secret.Data["security.toml"]), "jwt.filer_signing", "key")
 	if raw == "" {
 		return nil, nil
 	}

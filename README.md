@@ -425,9 +425,10 @@ identity / policy they reference exists, so apply order does not matter.
 As with `Bucket`, a cross-namespace `seaweedRef` (and the `S3Credentials`
 `secretRef`) is **denied by default** and requires a
 [`ResourceReferenceGrant`](#cross-namespace-references-resourcereferencegrant)
-in the target namespace. Clusters that set `jwt.filer_signing.key` in
-`security.toml` (which makes the filer reject unauthenticated IAM gRPC
-calls) are not yet supported.
+in the target namespace. When the filer enforces `jwt.filer_signing.key`
+(rendered into the cluster's `security.toml` whenever a filer or admin is in
+spec), the operator reads that key and signs its own IAM gRPC calls with it,
+so authenticated filers are handled automatically.
 
 See the `config/samples/seaweed_v1_s3*.yaml` files for end-to-end examples.
 

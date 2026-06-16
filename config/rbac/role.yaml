@@ -47,6 +47,18 @@ rules:
   - update
   - watch
 - apiGroups:
+  - batch
+  resources:
+  - cronjobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - cert-manager.io
   resources:
   - certificates
@@ -116,6 +128,7 @@ rules:
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:
+  - adminscripts
   - buckets
   - s3credentials
   - s3identities
@@ -135,6 +148,7 @@ rules:
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:
+  - adminscripts/finalizers
   - buckets/finalizers
   - s3credentials/finalizers
   - s3identities/finalizers
@@ -147,6 +161,7 @@ rules:
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:
+  - adminscripts/status
   - buckets/status
   - s3credentials/status
   - s3identities/status

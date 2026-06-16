@@ -562,6 +562,51 @@ Pods then request a PVC against the `seaweedfs` `StorageClass`. See
 list of managed objects. Example:
 `config/samples/seaweed_v1_seaweedcsidriver.yaml`.
 
+### Scheduled admin scripts (AdminScript)
+
+The `AdminScript` CRD (`seaweed.seaweedfs.com/v1`) runs a `weed shell` script
+on a cron schedule against a cluster — for recurring maintenance such as
+`volume.balance`, `volume.fix.replication`, `ec.encode`, or `volume.vacuum`.
+The operator reconciles each `AdminScript` into a native Kubernetes `CronJob`
+in the same namespace, owned by the CR (so deleting the `AdminScript` removes
+the `CronJob`). Each run pipes the `script` into `weed shell -master=<cluster
+masters>` (and `-filer=<cluster filer>` when the cluster runs a filer). The run
+pod mirrors the cluster's admin/worker pods — it uses the cluster image and,
+when the cluster has mTLS enabled, mounts the same `security.toml`/TLS material
+so the shell authenticates to the masters over gRPC.
+
+```yaml
+apiVersion: seaweed.seaweedfs.com/v1
+kind: AdminScript
+metadata:
+  name: nightly-balance
+  namespace: default
+spec:
+  clusterRef:
+    name: seaweed-sample        # a Seaweed CR in the same namespace
+  schedule: "0 2 * * *"         # daily at 02:00
+  script: |
+    lock
+    volume.balance -force
+    volume.fix.replication
+    unlock
+```
+
+- `concurrencyPolicy` defaults to `Forbid` so overlapping maintenance runs
+  never stack up; `suspend: true` pauses scheduling without deleting the CR.
+- `successfulJobsHistoryLimit` / `failedJobsHistoryLimit` / `backoffLimit` /
+  `activeDeadlineSeconds` / `startingDeadlineSeconds` / `timeZone` are passed
+  through to the generated `CronJob`/`Job`.
+- `image` overrides the container image (defaults to the cluster's image), and
+  `credentialsSecret` projects a Secret's keys into the run pod as environment
+  variables for scripts that need them (defaults to the cluster's admin
+  `credentialsSecret` when set).
+- Status surfaces `phase` (`Pending`/`Active`/`Suspended`), the managed
+  `cronJobName`, and the CronJob's `lastScheduleTime`/`lastSuccessfulTime`.
+
+`kubectl get adminscripts` (short name `swas`) lists them. Example:
+`config/samples/seaweed_v1_adminscript.yaml`.
+
 ## Maintenance and Uninstallation
 
 - TBD

@@ -15,7 +15,7 @@ Goals:
 
 - [x] Automatically deploy and manage a SeaweedFS cluster
 - [x] Ability to be managed by other Operators
-- [ ] Compability with [seaweedfs-csi-driver](https://github.com/seaweedfs/seaweedfs-csi-driver)
+- [x] Compatibility with [seaweedfs-csi-driver](https://github.com/seaweedfs/seaweedfs-csi-driver) (deploy it via the `SeaweedCSIDriver` CR — see [CSI_SUPPORT.md](CSI_SUPPORT.md))
 - [x] Auto rolling upgrade and restart
 - [x] Ingress for volume server, filer and S3, to support HDFS, REST filer, S3 API and cross-cluster replication
 - [x] IAM (Identity and Access Management) service support for S3 API authentication and authorization
@@ -505,6 +505,40 @@ does **not** retroactively tear down objects already provisioned under it.
 Deleting a resource is **never** blocked by a missing grant, so revoking one
 cannot strand a finalizer. See
 `config/samples/seaweed_v1_resourcereferencegrant.yaml`.
+
+### CSI Driver (mount volumes as PersistentVolumes)
+
+The operator can also deploy the
+[seaweedfs-csi-driver](https://github.com/seaweedfs/seaweedfs-csi-driver) so
+that pods mount a SeaweedFS filer as ordinary `PersistentVolume`s (a POSIX FUSE
+mount), including `ReadWriteMany` volumes shared across nodes. This is the
+filesystem alternative to the S3 API above.
+
+A CSI driver is node-global, so it is managed through its own opt-in
+`SeaweedCSIDriver` resource rather than a field on the `Seaweed` CR, and the
+controller is **off by default** — enable it with `ENABLE_CSI_DRIVER=true` on
+the operator manager. The driver can mount an operator-managed cluster
+(`seaweedRef`, grant-gated across namespaces) or any external filer
+(`filerAddress`):
+
+```yaml
+apiVersion: seaweed.seaweedfs.com/v1
+kind: SeaweedCSIDriver
+metadata:
+  name: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweed1
+  storageClass:
+    name: seaweedfs
+    parameters:
+      replication: "000"
+```
+
+Pods then request a PVC against the `seaweedfs` `StorageClass`. See
+[CSI_SUPPORT.md](CSI_SUPPORT.md) for the full guide, API reference, and the
+list of managed objects. Example:
+`config/samples/seaweed_v1_seaweedcsidriver.yaml`.
 
 ## Maintenance and Uninstallation
 

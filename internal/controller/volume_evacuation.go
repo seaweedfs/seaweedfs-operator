@@ -38,6 +38,14 @@ import (
 // every pass.
 const evacuationRetryBackoff = 30 * time.Second
 
+// evacuationTimeout is the outer ceiling on a single background evacuation. It
+// bounds the master-connection waits the shell observes and acts as a deadline
+// for the move work should a future SeaweedFS release thread the context
+// through; today the move loop carries its own per-RPC timeouts. Because
+// evacuation is re-entrant, a drain cut off here simply resumes on the next
+// reconcile pass, so the ceiling is generous rather than tight.
+const evacuationTimeout = time.Hour
+
 // evacuationTracker is the controller's in-memory registry of background volume
 // server evacuations, keyed by node id (<host>:<port>). It is purely a
 // concurrency guard and retry throttle: the authoritative "is this server
@@ -210,10 +218,17 @@ func (r *SeaweedReconciler) startVolumeServerEvacuation(ctx context.Context, m *
 	started := r.evac.start(node, func() error {
 		admin, err := r.VolumeAdminFactory(masters, dialOption, r.Log)
 		if err != nil {
+			r.Log.Error(err, "cannot build volume admin for evacuation", "node", node)
 			return err
 		}
 		defer admin.Close()
-		return admin.EvacuateServer(context.Background(), node)
+		evacCtx, cancel := context.WithTimeout(context.Background(), evacuationTimeout)
+		defer cancel()
+		if err := admin.EvacuateServer(evacCtx, node); err != nil {
+			r.Log.Error(err, "volume server evacuation failed", "node", node)
+			return err
+		}
+		return nil
 	})
 	if !started {
 		return // already running, or waiting out the retry backoff

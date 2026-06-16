@@ -23,6 +23,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
@@ -51,6 +52,10 @@ type VolumeAdmin interface {
 // grpcDialOption carries the transport credentials for clusters with [grpc]
 // mTLS (nil to dial without TLS). Replaceable in tests.
 type VolumeAdminFactory func(masters string, grpcDialOption grpc.DialOption, log logr.Logger) (VolumeAdmin, error)
+
+// unlockTimeout bounds the master-connection wait when releasing the shell lock
+// after an evacuation, so a defer never hangs on an unresponsive master.
+const unlockTimeout = 15 * time.Second
 
 // swadminVolumeAdmin is the default VolumeAdmin, backed by swadmin.SeaweedAdmin.
 // mu serializes command execution (which swaps the shared Output writer) and Close.
@@ -86,10 +91,14 @@ func (a *swadminVolumeAdmin) EvacuateServer(ctx context.Context, node string) er
 		return fmt.Errorf("lock masters: %w", err)
 	}
 	// Release the lock even if ctx is already done; a leaked lock would block
-	// every later admin command until the master's lease expires.
+	// every later admin command until the master's lease expires. Use a fresh,
+	// short-bounded context so an unresponsive master caps the unlock's
+	// master-connection wait instead of stalling this defer.
 	defer func() {
 		a.sa.Output = io.Discard
-		_ = a.sa.ProcessCommand(context.Background(), "unlock")
+		unlockCtx, cancel := context.WithTimeout(context.Background(), unlockTimeout)
+		defer cancel()
+		_ = a.sa.ProcessCommand(unlockCtx, "unlock")
 	}()
 
 	// No -skipNonMoveable: a volume that cannot be moved must fail the

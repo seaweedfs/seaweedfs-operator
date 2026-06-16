@@ -123,7 +123,7 @@ type filerTarget struct {
 
 // resolveSeaweedFiler looks up the Seaweed CR named by ref and returns its
 // filer address along with the admin signing key the operator rendered into
-// the cluster's security.toml ConfigMap (issue #257: the filer's IAM gRPC
+// the cluster's security.toml Secret (issue #257: the filer's IAM gRPC
 // service rejects unauthenticated calls when jwt.filer_signing.key is set, so
 // the operator must sign its own Bearer tokens with the same key) and the
 // gRPC transport credentials matching the cluster's mTLS state. found is
@@ -131,9 +131,9 @@ type filerTarget struct {
 // surface a transient "cluster not found" condition and requeue rather than
 // treating it as a hard error.
 //
-// adminSigningKey is nil when the security ConfigMap has not been reconciled
+// adminSigningKey is nil when the security Secret has not been reconciled
 // yet, when its data is missing/malformed, or when the cluster was not
-// provisioned by this operator (no ConfigMap to read). In those cases the IAM
+// provisioned by this operator (no Secret to read). In those cases the IAM
 // client falls back to unauthenticated calls, matching the cluster's likely
 // configuration.
 func resolveSeaweedFiler(ctx context.Context, c client.Client, ref seaweedv1.SeaweedReference, ownNamespace string) (target filerTarget, found bool, err error) {

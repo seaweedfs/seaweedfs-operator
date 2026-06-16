@@ -162,6 +162,12 @@ type SeaweedSpec struct {
 	// +optional
 	SFTP *SFTPSpec `json:"sftp,omitempty"`
 
+	// Backup configures cluster backup: named destinations (storages),
+	// cron-driven metadata snapshot schedules, and continuous data mirrors.
+	// See BackupSpec and BACKUP_SUPPORT.md.
+	// +optional
+	Backup *BackupSpec `json:"backup,omitempty"`
+
 	// Note: Standalone IAM has been removed. IAM is now embedded in S3 by default.
 	// When filer.s3.enabled=true, IAM API is available on the same S3 port.
 	// Use filer.iam=false to disable embedded IAM if needed.
@@ -269,6 +275,13 @@ type SeaweedStatus struct {
 	// SFTP standalone gateway status (SeaweedSpec.SFTP)
 	// +optional
 	SFTP ComponentStatus `json:"sftp,omitempty"`
+
+	// BackupMirrors reports the state of the continuous data-mirror
+	// Deployments managed for spec.backup.dataMirror.
+	// +optional
+	// +listType=map
+	// +listMapKey=storageName
+	BackupMirrors []BackupMirrorStatus `json:"backupMirrors,omitempty"`
 }
 
 // ComponentStatus represents the status of a seaweedfs component

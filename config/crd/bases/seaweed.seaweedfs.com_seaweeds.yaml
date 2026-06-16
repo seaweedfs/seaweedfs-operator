@@ -2088,6 +2088,160 @@ spec:
                 additionalProperties:
                   type: string
                 type: object
+              backup:
+                properties:
+                  dataMirror:
+                    items:
+                      properties:
+                        filerPath:
+                          default: /
+                          type: string
+                        storageName:
+                          minLength: 1
+                          type: string
+                      required:
+                      - storageName
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - storageName
+                    x-kubernetes-list-type: map
+                  image:
+                    type: string
+                  schedule:
+                    items:
+                      properties:
+                        filerPath:
+                          default: /
+                          type: string
+                        keep:
+                          minimum: 0
+                          type: integer
+                        name:
+                          minLength: 1
+                          type: string
+                        schedule:
+                          minLength: 1
+                          type: string
+                        storageName:
+                          minLength: 1
+                          type: string
+                        suspend:
+                          default: false
+                          type: boolean
+                      required:
+                      - name
+                      - schedule
+                      - storageName
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  storages:
+                    additionalProperties:
+                      properties:
+                        azure:
+                          properties:
+                            accountName:
+                              minLength: 1
+                              type: string
+                            container:
+                              minLength: 1
+                              type: string
+                            directory:
+                              default: /
+                              type: string
+                          required:
+                          - accountName
+                          - container
+                          type: object
+                        b2:
+                          properties:
+                            bucket:
+                              minLength: 1
+                              type: string
+                            directory:
+                              default: /
+                              type: string
+                            region:
+                              type: string
+                          required:
+                          - bucket
+                          type: object
+                        credentialsSecret:
+                          type: string
+                        filesystem:
+                          properties:
+                            existingClaim:
+                              minLength: 1
+                              type: string
+                            mountPath:
+                              default: /backup
+                              type: string
+                            subPath:
+                              type: string
+                          required:
+                          - existingClaim
+                          type: object
+                        gcs:
+                          properties:
+                            bucket:
+                              minLength: 1
+                              type: string
+                            directory:
+                              default: /
+                              type: string
+                          required:
+                          - bucket
+                          type: object
+                        s3:
+                          properties:
+                            bucket:
+                              minLength: 1
+                              type: string
+                            directory:
+                              default: /
+                              type: string
+                            endpoint:
+                              type: string
+                            forcePathStyle:
+                              default: true
+                              type: boolean
+                            region:
+                              type: string
+                          required:
+                          - bucket
+                          type: object
+                        type:
+                          enum:
+                          - s3
+                          - gcs
+                          - azure
+                          - b2
+                          - filesystem
+                          type: string
+                      required:
+                      - type
+                      type: object
+                    minProperties: 1
+                    type: object
+                required:
+                - storages
+                type: object
+                x-kubernetes-validations:
+                - message: each storage must set the sub-block matching its type
+                  rule: self.storages.all(k, (self.storages[k].type != 's3' || has(self.storages[k].s3))
+                    && (self.storages[k].type != 'gcs' || has(self.storages[k].gcs))
+                    && (self.storages[k].type != 'azure' || has(self.storages[k].azure))
+                    && (self.storages[k].type != 'b2' || has(self.storages[k].b2))
+                    && (self.storages[k].type != 'filesystem' || has(self.storages[k].filesystem)))
+                - message: schedule.storageName must reference a defined storage
+                  rule: '!has(self.schedule) || self.schedule.all(s, s.storageName
+                    in self.storages)'
+                - message: dataMirror.storageName must reference a defined storage
+                  rule: '!has(self.dataMirror) || self.dataMirror.all(m, m.storageName
+                    in self.storages)'
               enablePVReclaim:
                 type: boolean
               filer:
@@ -13857,6 +14011,22 @@ spec:
                     minimum: 0
                     type: integer
                 type: object
+              backupMirrors:
+                items:
+                  properties:
+                    deploymentName:
+                      type: string
+                    ready:
+                      type: boolean
+                    storageName:
+                      type: string
+                  required:
+                  - storageName
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - storageName
+                x-kubernetes-list-type: map
               conditions:
                 items:
                   properties:

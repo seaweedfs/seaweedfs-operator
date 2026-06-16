@@ -171,6 +171,12 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return result, err
 	}
 
+	// Continuous backup data mirrors (spec.backup.dataMirror). Runs the prune
+	// pass even when backup is unset so removed mirrors are cleaned up.
+	if done, result, err = r.ensureBackupMirrors(ctx, seaweedCR); done {
+		return result, err
+	}
+
 	if done, result, err = r.ensureSeaweedIngress(seaweedCR); done {
 		return result, err
 	}

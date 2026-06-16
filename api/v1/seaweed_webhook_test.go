@@ -116,3 +116,56 @@ func TestS3DeprecationWarnings(t *testing.T) {
 		}
 	})
 }
+
+func strptr(s string) *string { return &s }
+
+func TestValidateBackup(t *testing.T) {
+	t.Run("nil backup is fine", func(t *testing.T) {
+		sw := baseValid()
+		if errs := sw.validateBackup(); len(errs) != 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+	})
+
+	t.Run("filesystem needs no credentials", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Backup = &BackupSpec{Storages: map[string]BackupStorageSpec{
+			"pvc": {Type: BackupStorageFilesystem, Filesystem: &FilesystemBackupStore{ExistingClaim: "c"}},
+		}}
+		if errs := sw.validateBackup(); len(errs) != 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+	})
+
+	t.Run("azure requires credentialsSecret", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Backup = &BackupSpec{Storages: map[string]BackupStorageSpec{
+			"az": {Type: BackupStorageAzure, Azure: &AzureBackupStore{AccountName: "a", Container: "c"}},
+		}}
+		errs := sw.validateBackup()
+		if len(errs) == 0 || !strings.Contains(errs[0].Error(), "credentialsSecret") {
+			t.Fatalf("expected credentialsSecret error, got %v", errs)
+		}
+	})
+
+	t.Run("b2 with credentials is fine", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Backup = &BackupSpec{Storages: map[string]BackupStorageSpec{
+			"b2": {Type: BackupStorageB2, B2: &B2BackupStore{Bucket: "b"}, CredentialsSecret: strptr("creds")},
+		}}
+		if errs := sw.validateBackup(); len(errs) != 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+	})
+
+	t.Run("invalid storage name is rejected", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Backup = &BackupSpec{Storages: map[string]BackupStorageSpec{
+			"Bad_Name": {Type: BackupStorageFilesystem, Filesystem: &FilesystemBackupStore{ExistingClaim: "c"}},
+		}}
+		errs := sw.validateBackup()
+		if len(errs) == 0 || !strings.Contains(errs[0].Error(), "RFC1123") {
+			t.Fatalf("expected RFC1123 name error, got %v", errs)
+		}
+	})
+}

@@ -1182,6 +1182,141 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.19.0
     helm.sh/resource-policy: keep
+  name: seaweedbackups.seaweed.seaweedfs.com
+spec:
+  group: seaweed.seaweedfs.com
+  names:
+    categories:
+      - seaweedfs
+    kind: SeaweedBackup
+    listKind: SeaweedBackupList
+    plural: seaweedbackups
+    shortNames:
+      - swbk
+    singular: seaweedbackup
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .spec.clusterName
+          name: Cluster
+          type: string
+        - jsonPath: .spec.storageName
+          name: Storage
+          type: string
+        - jsonPath: .status.phase
+          name: Phase
+          type: string
+        - jsonPath: .status.completionTime
+          name: Completed
+          type: date
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1
+      schema:
+        openAPIV3Schema:
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                clusterName:
+                  minLength: 1
+                  type: string
+                  x-kubernetes-validations:
+                    - message: clusterName is immutable
+                      rule: self == oldSelf
+                filerPath:
+                  default: /
+                  type: string
+                storageName:
+                  minLength: 1
+                  type: string
+                  x-kubernetes-validations:
+                    - message: storageName is immutable
+                      rule: self == oldSelf
+              required:
+                - clusterName
+                - storageName
+              type: object
+            status:
+              properties:
+                completionTime:
+                  format: date-time
+                  type: string
+                conditions:
+                  items:
+                    properties:
+                      lastTransitionTime:
+                        format: date-time
+                        type: string
+                      message:
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                        type: string
+                      type:
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
+                destination:
+                  type: string
+                jobName:
+                  type: string
+                observedGeneration:
+                  format: int64
+                  type: integer
+                phase:
+                  enum:
+                    - Pending
+                    - Running
+                    - Completed
+                    - Failed
+                  type: string
+                startTime:
+                  format: date-time
+                  type: string
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+    helm.sh/resource-policy: keep
   name: seaweedcsidrivers.seaweed.seaweedfs.com
 spec:
   group: seaweed.seaweedfs.com
@@ -2035,6 +2170,149 @@ spec:
                     - Terminating
                   type: string
                 resolvedFilerAddress:
+                  type: string
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+    helm.sh/resource-policy: keep
+  name: seaweedrestores.seaweed.seaweedfs.com
+spec:
+  group: seaweed.seaweedfs.com
+  names:
+    categories:
+      - seaweedfs
+    kind: SeaweedRestore
+    listKind: SeaweedRestoreList
+    plural: seaweedrestores
+    shortNames:
+      - swr
+    singular: seaweedrestore
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .spec.clusterName
+          name: Cluster
+          type: string
+        - jsonPath: .spec.backupName
+          name: Backup
+          type: string
+        - jsonPath: .status.phase
+          name: Phase
+          type: string
+        - jsonPath: .status.completionTime
+          name: Completed
+          type: date
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1
+      schema:
+        openAPIV3Schema:
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                backupName:
+                  type: string
+                backupSource:
+                  properties:
+                    metaPath:
+                      minLength: 1
+                      type: string
+                    storageName:
+                      minLength: 1
+                      type: string
+                  required:
+                    - metaPath
+                    - storageName
+                  type: object
+                clusterName:
+                  minLength: 1
+                  type: string
+                  x-kubernetes-validations:
+                    - message: clusterName is immutable
+                      rule: self == oldSelf
+                filerPath:
+                  default: /
+                  type: string
+              required:
+                - clusterName
+              type: object
+              x-kubernetes-validations:
+                - message: exactly one of backupName or backupSource must be set
+                  rule: has(self.backupName) != has(self.backupSource)
+            status:
+              properties:
+                completionTime:
+                  format: date-time
+                  type: string
+                conditions:
+                  items:
+                    properties:
+                      lastTransitionTime:
+                        format: date-time
+                        type: string
+                      message:
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                        type: string
+                      type:
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
+                jobName:
+                  type: string
+                observedGeneration:
+                  format: int64
+                  type: integer
+                phase:
+                  enum:
+                    - Pending
+                    - Running
+                    - Completed
+                    - Failed
+                  type: string
+                startTime:
+                  format: date-time
                   type: string
               type: object
           type: object
@@ -4133,6 +4411,154 @@ spec:
                   additionalProperties:
                     type: string
                   type: object
+                backup:
+                  properties:
+                    dataMirror:
+                      items:
+                        properties:
+                          filerPath:
+                            default: /
+                            type: string
+                          storageName:
+                            minLength: 1
+                            type: string
+                        required:
+                          - storageName
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                        - storageName
+                      x-kubernetes-list-type: map
+                    image:
+                      type: string
+                    schedule:
+                      items:
+                        properties:
+                          filerPath:
+                            default: /
+                            type: string
+                          keep:
+                            minimum: 0
+                            type: integer
+                          name:
+                            minLength: 1
+                            type: string
+                          schedule:
+                            minLength: 1
+                            type: string
+                          storageName:
+                            minLength: 1
+                            type: string
+                          suspend:
+                            default: false
+                            type: boolean
+                        required:
+                          - name
+                          - schedule
+                          - storageName
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                        - name
+                      x-kubernetes-list-type: map
+                    storages:
+                      additionalProperties:
+                        properties:
+                          azure:
+                            properties:
+                              accountName:
+                                minLength: 1
+                                type: string
+                              container:
+                                minLength: 1
+                                type: string
+                              directory:
+                                default: /
+                                type: string
+                            required:
+                              - accountName
+                              - container
+                            type: object
+                          b2:
+                            properties:
+                              bucket:
+                                minLength: 1
+                                type: string
+                              directory:
+                                default: /
+                                type: string
+                              region:
+                                type: string
+                            required:
+                              - bucket
+                            type: object
+                          credentialsSecret:
+                            type: string
+                          filesystem:
+                            properties:
+                              existingClaim:
+                                minLength: 1
+                                type: string
+                              mountPath:
+                                default: /backup
+                                type: string
+                              subPath:
+                                type: string
+                            required:
+                              - existingClaim
+                            type: object
+                          gcs:
+                            properties:
+                              bucket:
+                                minLength: 1
+                                type: string
+                              directory:
+                                default: /
+                                type: string
+                            required:
+                              - bucket
+                            type: object
+                          s3:
+                            properties:
+                              bucket:
+                                minLength: 1
+                                type: string
+                              directory:
+                                default: /
+                                type: string
+                              endpoint:
+                                type: string
+                              forcePathStyle:
+                                default: true
+                                type: boolean
+                              region:
+                                type: string
+                            required:
+                              - bucket
+                            type: object
+                          type:
+                            enum:
+                              - s3
+                              - gcs
+                              - azure
+                              - b2
+                              - filesystem
+                            type: string
+                        required:
+                          - type
+                        type: object
+                      minProperties: 1
+                      type: object
+                  required:
+                    - storages
+                  type: object
+                  x-kubernetes-validations:
+                    - message: each storage must set the sub-block matching its type
+                      rule: self.storages.all(k, (self.storages[k].type != 's3' || has(self.storages[k].s3)) && (self.storages[k].type != 'gcs' || has(self.storages[k].gcs)) && (self.storages[k].type != 'azure' || has(self.storages[k].azure)) && (self.storages[k].type != 'b2' || has(self.storages[k].b2)) && (self.storages[k].type != 'filesystem' || has(self.storages[k].filesystem)))
+                    - message: schedule.storageName must reference a defined storage
+                      rule: '!has(self.schedule) || self.schedule.all(s, s.storageName in self.storages)'
+                    - message: dataMirror.storageName must reference a defined storage
+                      rule: '!has(self.dataMirror) || self.dataMirror.all(m, m.storageName in self.storages)'
                 enablePVReclaim:
                   type: boolean
                 filer:
@@ -15902,6 +16328,22 @@ spec:
                       minimum: 0
                       type: integer
                   type: object
+                backupMirrors:
+                  items:
+                    properties:
+                      deploymentName:
+                        type: string
+                      ready:
+                        type: boolean
+                      storageName:
+                        type: string
+                    required:
+                      - storageName
+                    type: object
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - storageName
+                  x-kubernetes-list-type: map
                 conditions:
                   items:
                     properties:

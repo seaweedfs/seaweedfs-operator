@@ -1,0 +1,14 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: SeaweedBackup
+metadata:
+  labels:
+    app.kubernetes.io/name: seaweedfs-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: seaweedbackup-sample
+spec:
+  # The Seaweed cluster (same namespace) to snapshot.
+  clusterName: seaweed-sample
+  # A storage defined in that cluster's spec.backup.storages.
+  storageName: pvc
+  # Filer subtree to snapshot.
+  filerPath: /

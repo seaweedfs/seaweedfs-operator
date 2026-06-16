@@ -11,3 +11,5 @@ resources:
 - seaweed_v1_s3policybinding.yaml
 - seaweed_v1_resourcereferencegrant.yaml
 - seaweed_v1_seaweedcsidriver.yaml
+- seaweed_v1_seaweedbackup.yaml
+- seaweed_v1_seaweedrestore.yaml

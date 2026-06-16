@@ -30,6 +30,12 @@ resources:
 - group: seaweed
   kind: SeaweedCSIDriver
   version: v1
+- group: seaweed
+  kind: SeaweedBackup
+  version: v1
+- group: seaweed
+  kind: SeaweedRestore
+  version: v1
 version: 3-alpha
 plugins:
   go.operator-sdk.io/v2-alpha: {}

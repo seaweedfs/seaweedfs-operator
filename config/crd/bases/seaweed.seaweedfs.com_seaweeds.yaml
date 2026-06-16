@@ -2706,6 +2706,33 @@ spec:
                       type: string
                     type: array
                     x-kubernetes-list-type: atomic
+                  grpcIngress:
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      className:
+                        type: string
+                      enabled:
+                        type: boolean
+                      host:
+                        type: string
+                      path:
+                        default: /
+                        type: string
+                      tls:
+                        items:
+                          properties:
+                            hosts:
+                              items:
+                                type: string
+                              type: array
+                            secretName:
+                              type: string
+                          type: object
+                        type: array
+                    type: object
                   hostNetwork:
                     type: boolean
                   iam:

@@ -151,6 +151,32 @@ func TestValidateVolume(t *testing.T) {
 		}
 	})
 
+	t.Run("duplicate hostPath is rejected", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume.HostPath = []VolumeServerHostPath{{Path: "/mnt/disk0"}, {Path: "/mnt/disk0"}}
+		err := sw.validateVolume()
+		if err == nil {
+			t.Fatal("expected rejection for duplicate hostPath, got nil")
+		}
+		if !strings.Contains(err.Error(), "duplicated") {
+			t.Fatalf("error does not mention duplication: %v", err)
+		}
+	})
+
+	t.Run("DaemonSet with volumeTopology is rejected", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume.Kind = VolumeServerDaemonSet
+		sw.Spec.Volume.HostPath = []VolumeServerHostPath{{Path: "/mnt/disk0"}}
+		sw.Spec.VolumeTopology = map[string]*VolumeTopologySpec{"dc1": {Replicas: 1, Rack: "r1", DataCenter: "dc1"}}
+		err := sw.validateVolume()
+		if err == nil {
+			t.Fatal("expected rejection for DaemonSet + volumeTopology, got nil")
+		}
+		if !strings.Contains(err.Error(), "volumeTopology") {
+			t.Fatalf("error does not mention volumeTopology: %v", err)
+		}
+	})
+
 	t.Run("nil volume is a no-op", func(t *testing.T) {
 		sw := baseValid()
 		sw.Spec.Volume = nil

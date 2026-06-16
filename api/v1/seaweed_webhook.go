@@ -101,7 +101,9 @@ func (v *SeaweedCustomValidator) ValidateUpdate(_ context.Context, _, obj *Seawe
 	seaweedlog.Info("validate update", "name", obj.Name)
 	errs := []error{}
 
-	if err := obj.validateVolume(); err != nil {
+	if obj.Spec.Volume == nil {
+		errs = append(errs, errors.New("missing volume spec"))
+	} else if err := obj.validateVolume(); err != nil {
 		errs = append(errs, err)
 	}
 	if obj.Spec.Worker != nil && obj.Spec.Admin == nil {
@@ -130,10 +132,18 @@ func (r *Seaweed) validateVolume() error {
 	if vol.IsDaemonSet() && !usesHostPath {
 		errs = append(errs, errors.New("spec.volume.kind=DaemonSet requires spec.volume.hostPath to be set; DaemonSets cannot use PVC volumeClaimTemplates"))
 	}
+	if vol.IsDaemonSet() && len(r.Spec.VolumeTopology) > 0 {
+		errs = append(errs, errors.New("spec.volume.kind=DaemonSet is not supported together with spec.volumeTopology"))
+	}
+	seen := map[string]bool{}
 	for i, hp := range vol.HostPath {
 		if !path.IsAbs(hp.Path) {
 			errs = append(errs, fmt.Errorf("spec.volume.hostPath[%d].path %q must be an absolute path", i, hp.Path))
 		}
+		if seen[hp.Path] {
+			errs = append(errs, fmt.Errorf("spec.volume.hostPath[%d].path %q is duplicated", i, hp.Path))
+		}
+		seen[hp.Path] = true
 	}
 	// Storage request only provisions PVCs; with HostPath, zero is expected.
 	if !usesHostPath && vol.Requests[corev1.ResourceStorage].Equal(resource.MustParse("0")) {

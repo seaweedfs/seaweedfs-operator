@@ -338,6 +338,35 @@ type VolumeServerConfig struct {
 	MinFreeSpacePercent *int32 `json:"minFreeSpacePercent,omitempty"`
 }
 
+// VolumeServerKind selects the workload used to run volume servers.
+type VolumeServerKind string
+
+const (
+	VolumeServerStatefulSet VolumeServerKind = "StatefulSet"
+	VolumeServerDaemonSet   VolumeServerKind = "DaemonSet"
+)
+
+// VolumeServerHostPath maps a node-local directory into a volume server as a
+// data directory.
+type VolumeServerHostPath struct {
+	// Path is the absolute host directory, mounted at /data<index> and passed
+	// to `weed volume -dir`.
+	// +kubebuilder:validation:MinLength=1
+	Path string `json:"path"`
+
+	// MaxVolumeCount caps volumes in this directory (0 = until the disk fills).
+	// When any entry sets it, the operator emits a per-directory -max list;
+	// otherwise the single MaxVolumeCounts value applies.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	MaxVolumeCount *int32 `json:"maxVolumeCount,omitempty"`
+
+	// Type is the hostPath type checked by the kubelet before mounting.
+	// +kubebuilder:default:="DirectoryOrCreate"
+	// +optional
+	Type *corev1.HostPathType `json:"type,omitempty"`
+}
+
 // VolumeSpec is the spec for volume servers
 type VolumeSpec struct {
 	VolumeServerConfig `json:",inline"`
@@ -345,6 +374,23 @@ type VolumeSpec struct {
 	// The desired ready replicas
 	// +kubebuilder:validation:Minimum=0
 	Replicas int32 `json:"replicas"`
+
+	// Kind selects how volume servers are deployed. "StatefulSet" (the default)
+	// scales PVC-backed replicas by Replicas; "DaemonSet" runs one volume
+	// server per selected node, ignores Replicas, and requires HostPath.
+	// Changing Kind makes the operator delete the previous workload.
+	// +kubebuilder:validation:Enum=StatefulSet;DaemonSet
+	// +kubebuilder:default:=StatefulSet
+	// +optional
+	Kind VolumeServerKind `json:"kind,omitempty"`
+
+	// HostPath uses node-local directories as the volume server's data dirs
+	// instead of PVCs: each is mounted at /data<index> and passed to
+	// `weed volume -dir`. Required for DaemonSet mode (no volumeClaimTemplates);
+	// with a StatefulSet, pair it with node anti-affinity.
+	// +optional
+	// +listType=atomic
+	HostPath []VolumeServerHostPath `json:"hostPath,omitempty"`
 
 	// Topology configuration for rack/datacenter-aware placement
 	// +kubebuilder:validation:Optional
@@ -355,6 +401,12 @@ type VolumeSpec struct {
 	// Ingress configuration for the volume server HTTP port.
 	// +optional
 	Ingress *IngressSpec `json:"ingress,omitempty"`
+}
+
+// IsDaemonSet reports whether volume servers run as a DaemonSet (unset Kind
+// means StatefulSet).
+func (v *VolumeSpec) IsDaemonSet() bool {
+	return v != nil && v.Kind == VolumeServerDaemonSet
 }
 
 // VolumeTopologySpec defines a volume server group with specific topology placement

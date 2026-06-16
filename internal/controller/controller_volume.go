@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	appsv1 "k8s.io/api/apps/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
@@ -22,8 +24,10 @@ func (r *SeaweedReconciler) ensureVolumeServers(ctx context.Context, seaweedCR *
 		return r.ensureVolumeServersWithTopology(ctx, seaweedCR)
 	}
 
-	// Fallback to single volume server group (legacy behavior)
-	if seaweedCR.Spec.Volume == nil || seaweedCR.Spec.Volume.Replicas == 0 {
+	// Fallback to single volume server group (legacy behavior).
+	// DaemonSet mode ignores Replicas, so don't short-circuit on Replicas == 0.
+	vol := seaweedCR.Spec.Volume
+	if vol == nil || (!vol.IsDaemonSet() && vol.Replicas == 0) {
 		return // No volume servers to deploy
 	}
 
@@ -31,15 +35,23 @@ func (r *SeaweedReconciler) ensureVolumeServers(ctx context.Context, seaweedCR *
 		return
 	}
 
-	if done, result, err = r.ensureVolumeServerServices(seaweedCR); done {
-		return
+	if vol.IsDaemonSet() {
+		// DaemonSet pods have no ordinal identity; the per-replica Services
+		// don't apply, so the headless peer Service covers discovery.
+		if done, result, err = r.ensureVolumeServerDaemonSet(ctx, seaweedCR); done {
+			return
+		}
+	} else {
+		if done, result, err = r.ensureVolumeServerServices(seaweedCR); done {
+			return
+		}
+
+		if done, result, err = r.ensureVolumeServerStatefulSet(ctx, seaweedCR); done {
+			return
+		}
 	}
 
-	if done, result, err = r.ensureVolumeServerStatefulSet(ctx, seaweedCR); done {
-		return
-	}
-
-	if seaweedCR.Spec.Volume.MetricsPort != nil {
+	if vol.MetricsPort != nil {
 		if done, result, err = r.ensureVolumeServerServiceMonitor(seaweedCR); done {
 			return
 		}
@@ -48,8 +60,24 @@ func (r *SeaweedReconciler) ensureVolumeServers(ctx context.Context, seaweedCR *
 	return
 }
 
+// deleteVolumeWorkloadIfExists removes a prior flat volume workload that shares
+// the <cr>-volume name, so switching spec.volume.kind doesn't leave both the
+// StatefulSet and DaemonSet running. obj must have Name and Namespace set.
+func (r *SeaweedReconciler) deleteVolumeWorkloadIfExists(ctx context.Context, obj client.Object) error {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	return client.IgnoreNotFound(r.Delete(ctx, obj))
+}
+
 func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-volume-statefulset", seaweedCR.Name)
+
+	// Remove a DaemonSet left from a previous kind=DaemonSet config.
+	staleDaemonSet := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: seaweedCR.Name + "-volume", Namespace: seaweedCR.Namespace}}
+	if err := r.deleteVolumeWorkloadIfExists(ctx, staleDaemonSet); err != nil {
+		return ReconcileResult(err)
+	}
 
 	volumeServerStatefulSet := r.createVolumeServerStatefulSet(seaweedCR)
 	if err := controllerutil.SetControllerReference(seaweedCR, volumeServerStatefulSet, r.Scheme); err != nil {
@@ -71,6 +99,34 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(ctx context.Context, s
 	}
 
 	log.Info("ensure volume stateful set " + volumeServerStatefulSet.Name)
+	return ReconcileResult(err)
+}
+
+func (r *SeaweedReconciler) ensureVolumeServerDaemonSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-volume-daemonset", seaweedCR.Name)
+
+	// Remove a StatefulSet left from a previous kind=StatefulSet config.
+	staleStatefulSet := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: seaweedCR.Name + "-volume", Namespace: seaweedCR.Namespace}}
+	if err := r.deleteVolumeWorkloadIfExists(ctx, staleStatefulSet); err != nil {
+		return ReconcileResult(err)
+	}
+
+	volumeServerDaemonSet := r.createVolumeServerDaemonSet(seaweedCR)
+	if err := controllerutil.SetControllerReference(seaweedCR, volumeServerDaemonSet, r.Scheme); err != nil {
+		return ReconcileResult(err)
+	}
+	_, err := r.CreateOrUpdate(volumeServerDaemonSet, func(existing, desired runtime.Object) error {
+		existingDaemonSet := existing.(*appsv1.DaemonSet)
+		desiredDaemonSet := desired.(*appsv1.DaemonSet)
+
+		existingDaemonSet.Spec.Template.ObjectMeta = desiredDaemonSet.Spec.Template.ObjectMeta
+		existingDaemonSet.Spec.Template.Spec = desiredDaemonSet.Spec.Template.Spec
+		existingDaemonSet.Spec.UpdateStrategy = desiredDaemonSet.Spec.UpdateStrategy
+
+		return nil
+	})
+
+	log.Info("ensure volume daemon set " + volumeServerDaemonSet.Name)
 	return ReconcileResult(err)
 }
 

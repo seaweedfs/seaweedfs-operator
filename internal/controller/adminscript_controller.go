@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -34,6 +33,8 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 	"github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
@@ -130,7 +131,11 @@ func (r *AdminScriptReconciler) buildCronJob(script *seaweedv1.AdminScript, clus
 	if cluster.Spec.Filer != nil {
 		weedCmd = append(weedCmd, "-filer="+getFilerAddress(cluster))
 	}
-	shellScript := `printf '%s\n' "$` + adminScriptEnvVar + `" | ` + strings.Join(weedCmd, " ")
+	// The weed invocation is passed as positional parameters and run via
+	// "$@", so the wrapping shell never re-splits an argument that contains
+	// spaces or metacharacters (e.g. a logging flag). This matches how the
+	// admin/worker startup scripts handle argv.
+	shellScript := `printf '%s\n' "$` + adminScriptEnvVar + `" | "$@"`
 
 	podSpec := corev1.PodSpec{
 		RestartPolicy:    adminScriptRestartPolicy(script),
@@ -165,7 +170,7 @@ func (r *AdminScriptReconciler) buildCronJob(script *seaweedv1.AdminScript, clus
 		Name:            "weed-shell",
 		Image:           image,
 		ImagePullPolicy: cluster.BaseAdminSpec().ImagePullPolicy(),
-		Command:         []string{"/bin/sh", "-ec", shellScript},
+		Command:         append([]string{"/bin/sh", "-ec", shellScript, "--"}, weedCmd...),
 		Env:             env,
 		EnvFrom:         envFrom,
 		Resources:       filterContainerResources(script.Spec.Resources),
@@ -329,10 +334,35 @@ func adminScriptCredentialsSecretName(script *seaweedv1.AdminScript, cluster *se
 
 func ptrBool(b bool) *bool { return &b }
 
-// SetupWithManager wires the reconciler into the manager.
+// SetupWithManager wires the reconciler into the manager. AdminScripts are
+// re-reconciled when their referenced Seaweed cluster changes, since the
+// rendered CronJob (image, filer flag, mTLS mounts, credentials) is derived
+// from that cluster.
 func (r *AdminScriptReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&seaweedv1.AdminScript{}).
 		Owns(&batchv1.CronJob{}).
+		Watches(&seaweedv1.Seaweed{}, handler.EnqueueRequestsFromMapFunc(r.mapSeaweedToAdminScripts)).
 		Complete(r)
+}
+
+// mapSeaweedToAdminScripts enqueues every AdminScript in the changed cluster's
+// namespace that references it, so a cluster mutation (image upgrade, mTLS
+// toggle, filer add/remove) re-renders the affected CronJobs.
+func (r *AdminScriptReconciler) mapSeaweedToAdminScripts(ctx context.Context, obj client.Object) []reconcile.Request {
+	cluster, ok := obj.(*seaweedv1.Seaweed)
+	if !ok {
+		return nil
+	}
+	var list seaweedv1.AdminScriptList
+	if err := r.List(ctx, &list, client.InNamespace(cluster.Namespace)); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for i := range list.Items {
+		if list.Items[i].Spec.ClusterRef.Name == cluster.Name {
+			reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&list.Items[i])})
+		}
+	}
+	return reqs
 }

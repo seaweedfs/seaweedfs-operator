@@ -69,13 +69,20 @@ func TestBuildCronJob(t *testing.T) {
 		t.Errorf("restartPolicy = %q, want Never", cron.Spec.JobTemplate.Spec.Template.Spec.RestartPolicy)
 	}
 
-	// The script is held in an env var and replayed via printf into weed shell.
-	cmd := strings.Join(c.Command, " ")
-	if !strings.Contains(cmd, `printf '%s\n' "$WEED_SHELL_SCRIPT" | weed`) {
-		t.Errorf("command does not pipe the script into weed shell: %q", cmd)
+	// The script is held in an env var and replayed via printf into the weed
+	// invocation, which is passed as positional parameters and run via "$@".
+	if len(c.Command) < 6 || c.Command[0] != "/bin/sh" || c.Command[1] != "-ec" {
+		t.Fatalf("unexpected command prefix: %v", c.Command)
 	}
-	if !strings.Contains(cmd, " shell -master=seaweed-sample-master-0.") {
-		t.Errorf("command does not run weed shell against the masters: %q", cmd)
+	if c.Command[2] != `printf '%s\n' "$WEED_SHELL_SCRIPT" | "$@"` {
+		t.Errorf("inline script does not pipe via \"$@\": %q", c.Command[2])
+	}
+	if c.Command[3] != "--" || c.Command[4] != "weed" {
+		t.Errorf("weed argv is not passed as positional params: %v", c.Command[4:])
+	}
+	argv := strings.Join(c.Command[4:], " ")
+	if !strings.Contains(argv, "shell -master=seaweed-sample-master-0.") {
+		t.Errorf("command does not run weed shell against the masters: %q", argv)
 	}
 
 	var scriptEnv string

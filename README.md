@@ -117,7 +117,7 @@ NOTE: Due to an issue with the way the `seaweedfs-operator-webhook-server-cert` 
 
 This operator uses `kustomize` for deployment. Please [install kustomize](https://kubectl.docs.kubernetes.io/installation/kustomize/) if you do not have it.
 
-By default, the defaulting and validation webhooks are disabled. We strongly recommend to enable the webhooks.
+By default, the defaulting and validation webhooks are disabled, so `make deploy` works on any cluster without `cert-manager`. We strongly recommend enabling the webhooks for production use.
 
 First clone the repository:
 
@@ -125,8 +125,8 @@ First clone the repository:
 git clone https://github.com/seaweedfs/seaweedfs-operator --depth=1
 ```
 
-To deploy the operator with webhooks enabled, make sure you have installed the `cert-manager`(Installation docs: <https://cert-manager.io/docs/installation/>) in your cluster, then follow the instructions in the `config/default/kustomization.yaml` file to uncomment the components you need.
-Lastly, change the value of `ENABLE_WEBHOOKS` to `"true"` in `config/manager/manager.yaml`
+To deploy the operator with webhooks enabled, make sure you have installed the `cert-manager`(Installation docs: <https://cert-manager.io/docs/installation/>) in your cluster, then follow the instructions in the `config/default/kustomization.yaml` file to uncomment all the `[WEBHOOK]` and `[CERTMANAGER]` sections (including the one in `config/crd/kustomization.yaml`).
+Uncommenting those sections also flips `ENABLE_WEBHOOKS` to `"true"` for you via `config/default/manager_webhook_patch.yaml`, so no separate edit of `config/manager/manager.yaml` is needed.
 
 Manager image must be locally built and published into a registry accessible from your k8s cluster:
 

@@ -76,15 +76,14 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 	return strings.Join(commands, " ")
 }
 
-func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string, extraArgs ...string) string {
+// buildVolumeServerStartupScript renders the flat volume server command. maxArg
+// is the `-max` value (single count or per-directory list) and ipArg is the
+// advertised address (peer DNS for a StatefulSet, $(POD_IP) for a DaemonSet).
+func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string, maxArg, ipArg string, extraArgs ...string) string {
 	commands := weedPreamble(m, m.BaseVolumeSpec().LoggingArgs(), "volume")
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
-	if m.Spec.Volume.MaxVolumeCounts != nil && *m.Spec.Volume.MaxVolumeCounts > 0 {
-		commands = append(commands, fmt.Sprintf("-max=%d", *m.Spec.Volume.MaxVolumeCounts))
-	} else {
-		commands = append(commands, "-max=0")
-	}
-	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-volume-peer.%s", m.Name, m.Namespace))
+	commands = append(commands, "-max="+maxArg)
+	commands = append(commands, "-ip="+ipArg)
 	if m.Spec.HostSuffix != nil && *m.Spec.HostSuffix != "" {
 		commands = append(commands, fmt.Sprintf("-publicUrl=$(POD_NAME).%s", *m.Spec.HostSuffix))
 	}
@@ -125,36 +124,33 @@ func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string, extraAr
 	return strings.Join(commands, " ")
 }
 
-func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
-	labels := labelsForVolumeServer(m.Name)
-	podLabels := mergePodLabels(labels, m.BaseVolumeSpec().Labels())
-	annotations := m.Spec.Volume.Annotations
-	ports := []corev1.ContainerPort{
-		{
-			ContainerPort: seaweedv1.VolumeHTTPPort,
-			Name:          "volume-http",
-		},
-		{
-			ContainerPort: seaweedv1.VolumeGRPCPort,
-			Name:          "volume-grpc",
-		},
-	}
-	if m.Spec.Volume.MetricsPort != nil {
-		ports = append(ports, corev1.ContainerPort{
-			ContainerPort: *m.Spec.Volume.MetricsPort,
-			Name:          "volume-metrics",
-		})
-	}
-	replicas := int32(m.Spec.Volume.Replicas)
-	rollingUpdatePartition := int32(0)
-	enableServiceLinks := false
+// volumeServerDisks is the rendered storage for a flat volume server: container
+// mounts, pod volumes, optional PVC templates, the -dir list, and the matching
+// -max argument.
+type volumeServerDisks struct {
+	mounts  []corev1.VolumeMount
+	volumes []corev1.Volume
+	pvcs    []corev1.PersistentVolumeClaim
+	dirs    []string
+	maxArg  string
+}
 
-	var volumeCount int
+// volumeServerDisksFor renders node-local HostPath disks when configured,
+// otherwise the default PVC-per-disk layout.
+func volumeServerDisksFor(m *seaweedv1.Seaweed) volumeServerDisks {
+	if len(m.Spec.Volume.HostPath) > 0 {
+		return hostPathVolumeDisks(m.Spec.Volume)
+	}
+	return pvcVolumeDisks(m)
+}
+
+// pvcVolumeDisks renders one PVC-backed disk per spec.volumeServerDiskCount.
+func pvcVolumeDisks(m *seaweedv1.Seaweed) volumeServerDisks {
+	volumeCount := 1 // default value
 	if m.Spec.VolumeServerDiskCount != nil {
 		volumeCount = int(*m.Spec.VolumeServerDiskCount)
-	} else {
-		volumeCount = 1 // default value
 	}
+
 	volumeRequests := corev1.ResourceList{}
 	if m.Spec.Volume.Requests != nil {
 		if storageRequest, ok := m.Spec.Volume.Requests[corev1.ResourceStorage]; ok {
@@ -162,18 +158,14 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 		}
 	}
 
-	// connect all the disks
-	var volumeMounts []corev1.VolumeMount
-	var volumes []corev1.Volume
-	var persistentVolumeClaims []corev1.PersistentVolumeClaim
-	var dirs []string
+	var d volumeServerDisks
 	for i := 0; i < volumeCount; i++ {
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+		d.mounts = append(d.mounts, corev1.VolumeMount{
 			Name:      fmt.Sprintf("mount%d", i),
 			ReadOnly:  false,
 			MountPath: fmt.Sprintf("/data%d/", i),
 		})
-		volumes = append(volumes, corev1.Volume{
+		d.volumes = append(d.volumes, corev1.Volume{
 			Name: fmt.Sprintf("mount%d", i),
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
@@ -182,7 +174,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 				},
 			},
 		})
-		persistentVolumeClaims = append(persistentVolumeClaims, corev1.PersistentVolumeClaim{
+		d.pvcs = append(d.pvcs, corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: fmt.Sprintf("mount%d", i),
 			},
@@ -197,15 +189,86 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 				},
 			},
 		})
-		dirs = append(dirs, fmt.Sprintf("/data%d", i))
+		d.dirs = append(d.dirs, fmt.Sprintf("/data%d", i))
 	}
+	d.maxArg = volumeServerGlobalMaxArg(m.Spec.Volume.MaxVolumeCounts)
+	return d
+}
 
-	volumePodSpec := m.BaseVolumeSpec().BuildPodSpec()
-	volumePodSpec.EnableServiceLinks = &enableServiceLinks
+// hostPathVolumeDisks renders one node-local hostPath disk per HostPath entry
+// and creates no PVCs. A per-directory -max list is emitted when any entry sets
+// MaxVolumeCount (0 for unset entries), otherwise the single global value.
+func hostPathVolumeDisks(vol *seaweedv1.VolumeSpec) volumeServerDisks {
+	var d volumeServerDisks
+	maxParts := make([]string, len(vol.HostPath))
+	perDirMax := false
+	for i, hp := range vol.HostPath {
+		name := fmt.Sprintf("mount%d", i)
+		d.mounts = append(d.mounts, corev1.VolumeMount{
+			Name:      name,
+			ReadOnly:  false,
+			MountPath: fmt.Sprintf("/data%d/", i),
+		})
+		hostPathType := corev1.HostPathDirectoryOrCreate
+		if hp.Type != nil {
+			hostPathType = *hp.Type
+		}
+		d.volumes = append(d.volumes, corev1.Volume{
+			Name: name,
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: hp.Path,
+					Type: &hostPathType,
+				},
+			},
+		})
+		d.dirs = append(d.dirs, fmt.Sprintf("/data%d", i))
+		if hp.MaxVolumeCount != nil {
+			perDirMax = true
+			maxParts[i] = fmt.Sprintf("%d", *hp.MaxVolumeCount)
+		} else {
+			maxParts[i] = "0"
+		}
+	}
+	if perDirMax {
+		d.maxArg = strings.Join(maxParts, ",")
+	} else {
+		d.maxArg = volumeServerGlobalMaxArg(vol.MaxVolumeCounts)
+	}
+	return d
+}
+
+// volumeServerGlobalMaxArg mirrors the historical single-value -max: the count
+// when positive, otherwise 0 (auto-size against free disk space).
+func volumeServerGlobalMaxArg(maxVolumeCounts *int32) string {
+	if maxVolumeCounts != nil && *maxVolumeCounts > 0 {
+		return fmt.Sprintf("%d", *maxVolumeCounts)
+	}
+	return "0"
+}
+
+// buildFlatVolumePodSpec assembles the pod spec shared by the flat volume
+// StatefulSet and DaemonSet. ipArg is the address advertised to the masters.
+func (r *SeaweedReconciler) buildFlatVolumePodSpec(m *seaweedv1.Seaweed, disks volumeServerDisks, ipArg string) corev1.PodSpec {
+	enableServiceLinks := false
+
+	volumeMounts := disks.mounts
+	volumes := disks.volumes
 	if tlsVols, tlsMounts := tlsVolumesAndMounts(m); len(tlsVols) > 0 {
 		volumes = append(volumes, tlsVols...)
 		volumeMounts = append(volumeMounts, tlsMounts...)
 	}
+
+	ports := []corev1.ContainerPort{
+		{ContainerPort: seaweedv1.VolumeHTTPPort, Name: "volume-http"},
+		{ContainerPort: seaweedv1.VolumeGRPCPort, Name: "volume-grpc"},
+	}
+	if m.Spec.Volume.MetricsPort != nil {
+		ports = append(ports, corev1.ContainerPort{ContainerPort: *m.Spec.Volume.MetricsPort, Name: "volume-metrics"})
+	}
+
+	volumePodSpec := m.BaseVolumeSpec().BuildPodSpec()
+	volumePodSpec.EnableServiceLinks = &enableServiceLinks
 	volumePodSpec.Containers = []corev1.Container{{
 		Name:            "volume",
 		Image:           m.Spec.Image,
@@ -216,7 +279,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 		Command: []string{
 			"/bin/sh",
 			"-ec",
-			buildVolumeServerStartupScript(m, dirs, m.BaseVolumeSpec().ExtraArgs()...),
+			buildVolumeServerStartupScript(m, disks.dirs, disks.maxArg, ipArg, m.BaseVolumeSpec().ExtraArgs()...),
 		},
 		Ports: ports,
 		ReadinessProbe: &corev1.Probe{
@@ -252,6 +315,19 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 	volumePodSpec.Containers = append(volumePodSpec.Containers, m.BaseVolumeSpec().Sidecars()...)
 	volumePodSpec.InitContainers = append(volumePodSpec.InitContainers, m.BaseVolumeSpec().InitContainers()...)
 	volumePodSpec.Volumes = append(volumePodSpec.Volumes, volumes...)
+	return volumePodSpec
+}
+
+func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
+	labels := labelsForVolumeServer(m.Name)
+	podLabels := mergePodLabels(labels, m.BaseVolumeSpec().Labels())
+	annotations := m.Spec.Volume.Annotations
+	replicas := int32(m.Spec.Volume.Replicas)
+	rollingUpdatePartition := int32(0)
+
+	disks := volumeServerDisksFor(m)
+	ipArg := fmt.Sprintf("$(POD_NAME).%s-volume-peer.%s", m.Name, m.Namespace)
+	volumePodSpec := r.buildFlatVolumePodSpec(m, disks, ipArg)
 
 	dep := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -278,10 +354,43 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 				},
 				Spec: volumePodSpec,
 			},
-			VolumeClaimTemplates: persistentVolumeClaims,
+			VolumeClaimTemplates: disks.pvcs,
 		},
 	}
 	return dep
+}
+
+// createVolumeServerDaemonSet renders the flat volume server as a DaemonSet
+// (one per selected node) backed by HostPath disks, advertising $(POD_IP).
+func (r *SeaweedReconciler) createVolumeServerDaemonSet(m *seaweedv1.Seaweed) *appsv1.DaemonSet {
+	labels := labelsForVolumeServer(m.Name)
+	podLabels := mergePodLabels(labels, m.BaseVolumeSpec().Labels())
+	annotations := m.Spec.Volume.Annotations
+
+	disks := volumeServerDisksFor(m)
+	volumePodSpec := r.buildFlatVolumePodSpec(m, disks, "$(POD_IP)")
+
+	return &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      m.Name + "-volume",
+			Namespace: m.Namespace,
+		},
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: labels,
+			},
+			UpdateStrategy: appsv1.DaemonSetUpdateStrategy{
+				Type: appsv1.RollingUpdateDaemonSetStrategyType,
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels:      podLabels,
+					Annotations: annotations,
+				},
+				Spec: volumePodSpec,
+			},
+		},
+	}
 }
 
 func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.Seaweed, topologyName string, topologySpec *seaweedv1.VolumeTopologySpec) *appsv1.StatefulSet {

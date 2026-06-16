@@ -9,7 +9,13 @@ rules:
   - ""
   resources:
   - configmaps
+  - events
+  - nodes
+  - persistentvolumeclaims
+  - persistentvolumes
+  - pods
   - secrets
+  - serviceaccounts
   - services
   verbs:
   - create
@@ -22,15 +28,7 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - events
-  verbs:
-  - create
-  - patch
-- apiGroups:
-  - ""
-  resources:
   - namespaces
-  - pods
   verbs:
   - get
   - list
@@ -38,6 +36,7 @@ rules:
 - apiGroups:
   - apps
   resources:
+  - daemonsets
   - deployments
   - statefulsets
   verbs:
@@ -62,6 +61,18 @@ rules:
   - update
   - watch
 - apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - extensions
   - networking.k8s.io
   resources:
@@ -69,6 +80,35 @@ rules:
   verbs:
   - create
   - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterrolebindings
+  - clusterroles
+  - rolebindings
+  - roles
+  verbs:
+  - bind
+  - create
+  - delete
+  - escalate
   - get
   - list
   - patch
@@ -83,6 +123,7 @@ rules:
   - s3oidcproviders
   - s3policies
   - s3policybindings
+  - seaweedcsidrivers
   - seaweeds
   verbs:
   - create
@@ -101,6 +142,7 @@ rules:
   - s3oidcproviders/finalizers
   - s3policies/finalizers
   - s3policybindings/finalizers
+  - seaweedcsidrivers/finalizers
   verbs:
   - update
 - apiGroups:
@@ -112,6 +154,7 @@ rules:
   - s3oidcproviders/status
   - s3policies/status
   - s3policybindings/status
+  - seaweedcsidrivers/status
   - seaweeds/status
   verbs:
   - get
@@ -126,12 +169,32 @@ rules:
   - list
   - watch
 - apiGroups:
-  - monitoring.coreos.com
+  - snapshot.storage.k8s.io
   resources:
-  - servicemonitors
+  - volumesnapshotcontents
+  - volumesnapshots
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - csidrivers
+  - storageclasses
   verbs:
   - create
   - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - csinodes
+  - volumeattachments
+  verbs:
   - get
   - list
   - patch

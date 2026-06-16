@@ -42,6 +42,8 @@ const (
 	kindS3PolicyBinding = "S3PolicyBinding"
 	kindS3OIDCProvider  = "S3OIDCProvider"
 	kindBucket          = "Bucket"
+
+	kindSeaweedCSIDriver = "SeaweedCSIDriver"
 )
 
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=resourcereferencegrants,verbs=get;list;watch

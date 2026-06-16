@@ -10,6 +10,7 @@ resources:
 - bases/seaweed.seaweedfs.com_s3policybindings.yaml
 - bases/seaweed.seaweedfs.com_s3oidcproviders.yaml
 - bases/seaweed.seaweedfs.com_resourcereferencegrants.yaml
+- bases/seaweed.seaweedfs.com_seaweedcsidrivers.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

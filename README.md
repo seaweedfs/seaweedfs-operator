@@ -239,21 +239,105 @@ spec:
       storage: 2Gi
   filer:
     replicas: 2
-    s3:
-      enabled: true   # Enable S3 API (IAM is enabled by default)
-    # iam: true       # Optional: IAM is enabled by default when S3 is enabled
     config: |
       [leveldb2]
       enabled = true
       dir = "/data/filerldb2"
+  # Standalone S3 gateway — the preferred way to expose the S3 API. Creates a
+  # "seaweed-sample-s3" Service on port 8333 (IAM is embedded on the same port
+  # by default). See "S3 API" below.
+  s3:
+    replicas: 1
 ```
 
 For more examples, see the `config/samples/` directory:
-- `seaweed_v1_seaweed.yaml` - Basic deployment
+- `seaweed_v1_seaweed.yaml` - Basic deployment with the standalone S3 gateway
 - `seaweed_v1_seaweed_annotated.yaml` - Basic deployment with every field explained
 - `seaweed_v1_seaweed_existing_storage.yaml` - Specific StorageClass / pre-provisioned PVs for local block storage
 - `seaweed_v1_seaweed_remote_storage.yaml` - Local cache plus a remote cloud bucket (Cloud Drive)
 - `seaweed_v1_seaweed_with_iam_embedded.yaml` - S3 with embedded IAM
+- `seaweed_v1_seaweed_with_tls.yaml` - mTLS between components via cert-manager
+
+### S3 API
+
+There are two ways to expose the S3 API. Prefer the **standalone S3 gateway** for new clusters.
+
+**Standalone S3 gateway (recommended)** — set the top-level `spec.s3` block. The
+operator runs S3 as its own stateless Deployment and puts a dedicated Service in
+front of it named `<cluster-name>-s3` (for a cluster named `seaweed1`, the
+Service is `seaweed1-s3`), listening on port `8333`:
+
+```yaml
+spec:
+  filer:
+    replicas: 2          # the gateway dials the filer, so it must be enabled
+  s3:
+    replicas: 1          # stateless — scale freely
+    # port: 8333         # override the default S3 port
+    # domainName: s3.example.com   # for virtual-hosted-style buckets
+    # metricsPort: 9327  # enable the Prometheus listener + a ServiceMonitor
+    configSecret:        # optional: S3 identities (the -s3.config equivalent)
+      name: my-s3-config
+      key: seaweedfs_s3_config.json
+    # service:           # optional: change the Service that fronts the gateway
+    #   type: LoadBalancer
+    #   annotations: {}
+    # ingress:           # optional: per-component Ingress
+    #   enabled: true
+```
+
+Reach it in-cluster at `http://<cluster-name>-s3.<namespace>.svc:8333`. To expose
+it externally, set `spec.s3.service.type: LoadBalancer` or add an `spec.s3.ingress`
+block (or use the top-level `hostSuffix`, which publishes `s3.<hostSuffix>`).
+
+**Embedded filer S3 (deprecated)** — the older `spec.filer.s3.enabled: true` runs
+S3 inside every filer pod and exposes it as the `filer-s3` port on the
+`<cluster-name>-filer` Service. There is **no** `<cluster-name>-s3` Service in this
+mode. It is retained for backward compatibility but deprecated; the admission
+webhook rejects setting both paths at once and warns when the embedded path is
+used. Migrate by moving the config to the top-level `spec.s3` block above.
+
+IAM (S3 authentication) is embedded in the S3 server and runs on the same port.
+See [IAM_SUPPORT.md](./IAM_SUPPORT.md).
+
+### TLS Between Components (cert-manager)
+
+The operator can provision mTLS between the SeaweedFS components (master, volume,
+filer, S3) using [cert-manager](https://cert-manager.io/docs/installation/), which
+must be installed in the cluster. When `spec.tls.enabled` is true, the operator
+creates a cert-manager `Certificate` covering every component's headless Service
+and renders a `security.toml` that wires mTLS into every gRPC endpoint. If the
+cert-manager CRDs are absent, the operator records a condition on the `Seaweed` CR
+and leaves TLS off instead of failing.
+
+By default (no `issuerRef`) the operator provisions a self-signed `Issuer` + CA
+`Certificate` + CA `Issuer` chain owned by the `Seaweed` CR — no external issuer
+required:
+
+```yaml
+spec:
+  tls:
+    enabled: true
+```
+
+To sign the server certificate from a cert-manager `Issuer` or `ClusterIssuer` you
+already manage, set `issuerRef` and the operator skips the self-signed chain:
+
+```yaml
+spec:
+  tls:
+    enabled: true
+    issuerRef:
+      name: my-ca-issuer
+      kind: ClusterIssuer      # or Issuer (the default)
+      group: cert-manager.io   # default
+```
+
+> Note: this `spec.tls` block configures mTLS *between SeaweedFS components*. It is
+> independent of the operator's own admission-webhook serving certificate, which is
+> covered under [Installation → Manual](#manual).
+
+See `config/samples/seaweed_v1_seaweed_with_tls.yaml` for a full example.
 
 ### Declarative Buckets
 

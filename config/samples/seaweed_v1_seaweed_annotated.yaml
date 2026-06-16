@@ -1,0 +1,85 @@
+# Fully annotated SeaweedFS cluster.
+#
+# This is the same shape as seaweed_v1_seaweed.yaml, but every field is
+# explained so you can see what the operator actually creates and where the
+# storage comes from. Apply it with:
+#
+#   kubectl apply -f seaweed_v1_seaweed_annotated.yaml
+#
+# A SeaweedFS cluster has three core components. The operator runs each as its
+# own workload, and every `replicas` below turns into that many Pods:
+#
+#   master  -> StatefulSet. Coordinates the cluster and assigns volumes.
+#   volume  -> StatefulSet. Stores the actual file data on disk (PVCs).
+#   filer   -> StatefulSet. Serves the POSIX-like namespace + S3/WebDAV/HTTP.
+#
+# StatefulSets (not Deployments) are used for these three because each Pod
+# needs a stable identity and its own persistent disk.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-annotated
+  namespace: default
+spec:
+  # Container image for every component. Pin a version in production instead
+  # of :latest, e.g. chrislusf/seaweedfs:3.80.
+  image: chrislusf/seaweedfs:latest
+
+  # Number of data disks attached to EACH volume-server Pod. The operator
+  # creates this many PVCs per Pod (mount0, mount1, ...), mounts them at
+  # /data0, /data1, ... and starts the volume server with
+  # `-dir=/data0,/data1,...`. With volumeServerDiskCount: 2 and volume.replicas: 3
+  # you get 3 Pods x 2 PVCs = 6 PersistentVolumeClaims total. Leave at 1 unless
+  # a node exposes multiple physical disks you want to use independently.
+  volumeServerDiskCount: 1
+
+  # OPTIONAL. Legacy "one Ingress for everything" helper. When set, the
+  # operator creates a single Ingress exposing the cluster under these
+  # hostnames (you must run an Ingress controller and point DNS at it):
+  #   filer.<hostSuffix>                  -> filer HTTP UI / API
+  #   s3.<hostSuffix>                     -> S3 API (when filer.s3.enabled)
+  #   <name>-volume-<n>.<hostSuffix>      -> each volume server
+  # It also sets each volume server's -publicUrl to <pod>.<hostSuffix> so
+  # clients can reach volume servers directly. Omit this field entirely if you
+  # only access the cluster from inside the cluster, or prefer the per-component
+  # `ingress:` blocks (master.ingress, filer.ingress, ...) for finer control.
+  # hostSuffix: seaweed.example.com
+
+  master:
+    # 3 master Pods => a quorum-based HA control plane. Use 1 for dev.
+    replicas: 3
+    # Max size (MiB) of a SINGLE logical volume file before the master stops
+    # writing to it and allocates a new one. This is NOT the cluster capacity
+    # or the PVC size -- it caps each .dat file so they stay manageable.
+    # 1024 = 1 GiB per volume file. Total capacity is driven by the volume
+    # servers' disks (see volume.requests.storage below).
+    volumeSizeLimitMB: 1024
+
+  volume:
+    # 2 volume-server Pods. Combined with volumeServerDiskCount: 1 above, the
+    # operator creates 2 PVCs (one per Pod) named mount0.
+    replicas: 2
+    requests:
+      # Size of EACH data PVC. This is where storage actually comes from:
+      # Kubernetes dynamically provisions a PersistentVolume of this size from
+      # the default StorageClass and binds it to the volume server's PVC. Set
+      # `storageClassName` here to choose a specific class (e.g. cloud block
+      # storage); see seaweed_v1_seaweed_existing_storage.yaml for binding to
+      # pre-provisioned PVs.
+      storage: 10Gi
+
+  filer:
+    # 2 filer Pods for HA metadata serving.
+    replicas: 2
+    s3:
+      # Expose the S3 API on port 8333 (IAM is embedded on the same port).
+      enabled: true
+    # The filer's metadata store. `config` is dropped verbatim into the
+    # filer's filer.toml -- so yes, you can paste your existing SeaweedFS filer
+    # config here. leveldb2 keeps metadata on the filer's local disk; for HA you
+    # would point this at an external store (postgres, mysql, redis, ...).
+    # NOTE: this is the component's own .toml, not an arbitrary catch-all config.
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"

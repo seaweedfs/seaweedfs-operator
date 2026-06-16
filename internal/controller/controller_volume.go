@@ -36,6 +36,11 @@ func (r *SeaweedReconciler) ensureVolumeServers(ctx context.Context, seaweedCR *
 	}
 
 	if vol.IsDaemonSet() {
+		// Defense in depth for installs without the validating webhook: a
+		// DaemonSet without hostPath would fall back to PVC disks it can't use.
+		if len(vol.HostPath) == 0 {
+			return true, ctrl.Result{}, errors.New("spec.volume.kind=DaemonSet requires spec.volume.hostPath to be set")
+		}
 		// DaemonSet pods have no ordinal identity; the per-replica Services
 		// don't apply, so the headless peer Service covers discovery.
 		if done, result, err = r.ensureVolumeServerDaemonSet(ctx, seaweedCR); done {
@@ -62,21 +67,27 @@ func (r *SeaweedReconciler) ensureVolumeServers(ctx context.Context, seaweedCR *
 
 // deleteVolumeWorkloadIfExists removes a prior flat volume workload that shares
 // the <cr>-volume name, so switching spec.volume.kind doesn't leave both the
-// StatefulSet and DaemonSet running. obj must have Name and Namespace set.
-func (r *SeaweedReconciler) deleteVolumeWorkloadIfExists(ctx context.Context, obj client.Object) error {
+// StatefulSet and DaemonSet running. obj must have Name and Namespace set. It
+// reports whether the workload still existed, so callers can requeue and wait
+// for deletion to finish before creating the new kind.
+func (r *SeaweedReconciler) deleteVolumeWorkloadIfExists(ctx context.Context, obj client.Object) (existed bool, err error) {
 	if err := r.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
-		return client.IgnoreNotFound(err)
+		return false, client.IgnoreNotFound(err)
 	}
-	return client.IgnoreNotFound(r.Delete(ctx, obj))
+	return true, client.IgnoreNotFound(r.Delete(ctx, obj))
 }
 
 func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-volume-statefulset", seaweedCR.Name)
 
-	// Remove a DaemonSet left from a previous kind=DaemonSet config.
+	// Remove a DaemonSet left from a previous kind=DaemonSet config, and wait
+	// for it to clear before creating the StatefulSet so they don't overlap.
 	staleDaemonSet := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: seaweedCR.Name + "-volume", Namespace: seaweedCR.Namespace}}
-	if err := r.deleteVolumeWorkloadIfExists(ctx, staleDaemonSet); err != nil {
+	if existed, err := r.deleteVolumeWorkloadIfExists(ctx, staleDaemonSet); err != nil {
 		return ReconcileResult(err)
+	} else if existed {
+		log.Info("waiting for prior volume DaemonSet deletion before creating StatefulSet")
+		return true, ctrl.Result{Requeue: true}, nil
 	}
 
 	volumeServerStatefulSet := r.createVolumeServerStatefulSet(seaweedCR)
@@ -105,10 +116,14 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(ctx context.Context, s
 func (r *SeaweedReconciler) ensureVolumeServerDaemonSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-volume-daemonset", seaweedCR.Name)
 
-	// Remove a StatefulSet left from a previous kind=StatefulSet config.
+	// Remove a StatefulSet left from a previous kind=StatefulSet config, and
+	// wait for it to clear before creating the DaemonSet so they don't overlap.
 	staleStatefulSet := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: seaweedCR.Name + "-volume", Namespace: seaweedCR.Namespace}}
-	if err := r.deleteVolumeWorkloadIfExists(ctx, staleStatefulSet); err != nil {
+	if existed, err := r.deleteVolumeWorkloadIfExists(ctx, staleStatefulSet); err != nil {
 		return ReconcileResult(err)
+	} else if existed {
+		log.Info("waiting for prior volume StatefulSet deletion before creating DaemonSet")
+		return true, ctrl.Result{Requeue: true}, nil
 	}
 
 	volumeServerDaemonSet := r.createVolumeServerDaemonSet(seaweedCR)

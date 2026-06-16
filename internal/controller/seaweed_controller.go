@@ -453,6 +453,20 @@ func (r *SeaweedReconciler) getStatefulSetStatus(ctx context.Context, namespace,
 	return status, nil
 }
 
+func (r *SeaweedReconciler) getDaemonSetStatus(ctx context.Context, namespace, name string) (seaweedv1.ComponentStatus, error) {
+	daemonSet := &appsv1.DaemonSet{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, daemonSet); err != nil {
+		if errors.IsNotFound(err) {
+			return seaweedv1.ComponentStatus{}, nil
+		}
+		return seaweedv1.ComponentStatus{}, err
+	}
+	return seaweedv1.ComponentStatus{
+		Replicas:      daemonSet.Status.DesiredNumberScheduled,
+		ReadyReplicas: daemonSet.Status.NumberReady,
+	}, nil
+}
+
 func (r *SeaweedReconciler) getDeploymentStatus(ctx context.Context, namespace, name string, desiredReplicas int32) (seaweedv1.ComponentStatus, error) {
 	status := seaweedv1.ComponentStatus{
 		Replicas: desiredReplicas,
@@ -479,7 +493,13 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 
 	// Check base volume spec
 	if seaweedCR.Spec.Volume != nil {
-		baseStatus, err := r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-volume", seaweedCR.Spec.Volume.Replicas)
+		var baseStatus seaweedv1.ComponentStatus
+		var err error
+		if seaweedCR.Spec.Volume.IsDaemonSet() {
+			baseStatus, err = r.getDaemonSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-volume")
+		} else {
+			baseStatus, err = r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-volume", seaweedCR.Spec.Volume.Replicas)
+		}
 		if err != nil {
 			return status, err
 		}

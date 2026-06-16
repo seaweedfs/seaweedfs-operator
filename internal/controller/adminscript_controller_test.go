@@ -96,6 +96,24 @@ func TestBuildCronJob(t *testing.T) {
 	}
 }
 
+func TestBuildCronJobNoAdminComponent(t *testing.T) {
+	// weed shell targets the masters, not the admin server, so a cluster
+	// without spec.admin must still render a CronJob (and must not panic
+	// dereferencing the absent admin component).
+	cluster := testCluster()
+	cluster.Spec.Admin = nil
+
+	cron := (&AdminScriptReconciler{}).buildCronJob(testAdminScript(), cluster)
+	c := cronContainer(t, cron)
+	if c.Image != "chrislusf/seaweedfs:test" {
+		t.Errorf("image = %q, want the cluster image", c.Image)
+	}
+	argv := strings.Join(c.Command[4:], " ")
+	if !strings.Contains(argv, "shell -master=seaweed-sample-master-0.") {
+		t.Errorf("command does not run weed shell against the masters: %q", argv)
+	}
+}
+
 func TestBuildCronJobFilerFlag(t *testing.T) {
 	r := &AdminScriptReconciler{}
 

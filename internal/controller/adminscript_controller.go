@@ -126,7 +126,7 @@ func (r *AdminScriptReconciler) buildCronJob(script *seaweedv1.AdminScript, clus
 	// script piped over stdin. weed shell reads commands line-by-line from a
 	// non-interactive stdin (see weed/shell RunShell), so the script is held
 	// in an env var and replayed by printf to avoid any shell re-parsing.
-	weedCmd := weedPreamble(cluster, cluster.BaseAdminSpec().LoggingArgs(), "shell")
+	weedCmd := weedPreamble(cluster, cluster.Spec.LoggingArgs, "shell")
 	weedCmd = append(weedCmd, "-master="+getMasterPeersString(cluster))
 	if cluster.Spec.Filer != nil {
 		weedCmd = append(weedCmd, "-filer="+getFilerAddress(cluster))
@@ -169,7 +169,7 @@ func (r *AdminScriptReconciler) buildCronJob(script *seaweedv1.AdminScript, clus
 	podSpec.Containers = []corev1.Container{{
 		Name:            "weed-shell",
 		Image:           image,
-		ImagePullPolicy: cluster.BaseAdminSpec().ImagePullPolicy(),
+		ImagePullPolicy: cluster.Spec.ImagePullPolicy,
 		Command:         append([]string{"/bin/sh", "-ec", shellScript, "--"}, weedCmd...),
 		Env:             env,
 		EnvFrom:         envFrom,
@@ -316,7 +316,7 @@ func adminScriptImagePullSecrets(script *seaweedv1.AdminScript, cluster *seaweed
 	if len(script.Spec.ImagePullSecrets) > 0 {
 		return script.Spec.ImagePullSecrets
 	}
-	return cluster.BaseAdminSpec().ImagePullSecrets()
+	return cluster.Spec.ImagePullSecrets
 }
 
 // adminScriptCredentialsSecretName resolves the Secret whose keys are exported

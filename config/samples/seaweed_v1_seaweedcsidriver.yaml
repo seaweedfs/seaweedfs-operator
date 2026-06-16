@@ -1,0 +1,27 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: SeaweedCSIDriver
+metadata:
+  name: seaweedfs
+  namespace: default
+spec:
+  # Mount an operator-managed Seaweed cluster. A cross-namespace reference
+  # requires a ResourceReferenceGrant in the target Seaweed's namespace.
+  # Use spec.filerAddress instead to mount an external, unmanaged filer.
+  seaweedRef:
+    name: seaweed1
+  # driverName is node-global and immutable; StorageClasses reference it.
+  driverName: seaweedfs-csi-driver
+  image: chrislusf/seaweedfs-csi-driver:latest
+  controller:
+    replicas: 1
+  node:
+    # Override on distros that relocate the kubelet root (k3s, MicroK8s).
+    kubeletPath: /var/lib/kubelet
+  storageClass:
+    name: seaweedfs
+    isDefaultClass: false
+    reclaimPolicy: Delete
+    volumeBindingMode: Immediate
+    allowVolumeExpansion: true
+    parameters:
+      replication: "000"

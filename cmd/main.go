@@ -211,6 +211,23 @@ func main() {
 		setupLog.Info("S3OIDCProvider controller disabled (set ENABLE_S3_OIDC_PROVIDER=true to enable; requires filer OIDC gRPC support)")
 	}
 
+	// The CSI driver deployment is a node-global concern and ships off by
+	// default: enabling it registers a cluster-wide CSIDriver plus privileged
+	// node and mount DaemonSets. Opt in with ENABLE_CSI_DRIVER=true.
+	if os.Getenv("ENABLE_CSI_DRIVER") == "true" {
+		if err = (&controller.SeaweedCSIDriverReconciler{
+			Client:   mgr.GetClient(),
+			Log:      ctrl.Log.WithName("controller").WithName("SeaweedCSIDriver"),
+			Scheme:   mgr.GetScheme(),
+			Recorder: mgr.GetEventRecorderFor("seaweedcsidriver-controller"),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "SeaweedCSIDriver")
+			os.Exit(1)
+		}
+	} else {
+		setupLog.Info("SeaweedCSIDriver controller disabled (set ENABLE_CSI_DRIVER=true to enable)")
+	}
+
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err = (&seaweedv1.Seaweed{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "Seaweed")

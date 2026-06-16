@@ -180,7 +180,7 @@ kube-system                 kube-controller-manager-kind-control-plane          
 kube-system                 kube-proxy-dqfg2                                         1/1     Running   0          34m
 kube-system                 kube-scheduler-kind-control-plane                        1/1     Running   0          34m
 local-path-storage          local-path-provisioner-78776bfc44-7zvxx                  1/1     Running   0          34m
-seaweedfs-operator-system   seaweedfs-operator-controller-manager-54cc768f4c-cwz2k   2/2     Running   0          34m
+seaweedfs-operator-system   seaweedfs-operator-controller-manager-54cc768f4c-cwz2k   1/1     Running   0          34m
 ```
 
 See the next section for example usage - **at this point you only deployed the Operator itself!**

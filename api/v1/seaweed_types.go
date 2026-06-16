@@ -362,6 +362,7 @@ type VolumeServerHostPath struct {
 	MaxVolumeCount *int32 `json:"maxVolumeCount,omitempty"`
 
 	// Type is the hostPath type checked by the kubelet before mounting.
+	// +kubebuilder:validation:Enum="";DirectoryOrCreate;Directory;FileOrCreate;File;Socket;CharDevice;BlockDevice
 	// +kubebuilder:default:="DirectoryOrCreate"
 	// +optional
 	Type *corev1.HostPathType `json:"type,omitempty"`

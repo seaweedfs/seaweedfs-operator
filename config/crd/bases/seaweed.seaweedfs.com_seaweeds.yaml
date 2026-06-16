@@ -9496,6 +9496,15 @@ spec:
                           type: string
                         type:
                           default: DirectoryOrCreate
+                          enum:
+                          - ""
+                          - DirectoryOrCreate
+                          - Directory
+                          - FileOrCreate
+                          - File
+                          - Socket
+                          - CharDevice
+                          - BlockDevice
                           type: string
                       required:
                       - path

@@ -18,7 +18,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -28,7 +28,7 @@ jobs:
           git config user.email "chrislusf@users.noreply.github.com"
 
       - name: Install Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
 
       - name: Determine tag
         id: get_tag
@@ -83,7 +83,7 @@ jobs:
           helm package deploy/helm -d .cr-release-packages
 
       - name: Upload chart to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: seaweedfs-operator-${{ steps.set_chart_version.outputs.chart_version }}
           files: .cr-release-packages/*.tgz

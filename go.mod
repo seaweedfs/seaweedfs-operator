@@ -226,7 +226,7 @@ require (
 
 require (
 	github.com/go-resty/resty/v2 v2.17.2
-	github.com/moby/spdystream v0.2.0 // indirect
+	github.com/moby/spdystream v0.5.1 // indirect
 )
 
 require (

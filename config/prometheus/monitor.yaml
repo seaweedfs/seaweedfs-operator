@@ -11,6 +11,13 @@ spec:
   endpoints:
     - path: /metrics
       port: https
+      scheme: https
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        # The manager serves metrics with a self-signed certificate generated at
+        # startup. Set insecureSkipVerify to scrape it; provide a CA and serverName
+        # instead if you front the endpoint with a trusted certificate.
+        insecureSkipVerify: true
   selector:
     matchLabels:
       control-plane: controller-manager

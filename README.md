@@ -191,7 +191,26 @@ See the next section for example usage - **at this point you only deployed the O
 
 ### Basic SeaweedFS Deployment
 
-For detailed configuration options and examples, see the sample configurations in the `config/samples/` directory.
+For detailed configuration options and examples, see the sample configurations in the `config/samples/` directory. For a line-by-line walkthrough of a full cluster, start with `config/samples/seaweed_v1_seaweed_annotated.yaml`.
+
+#### Key fields explained
+
+A `Seaweed` cluster is built from three core components, each run as its own
+StatefulSet. Every `replicas` value becomes that many Pods:
+
+- **`master`** — coordinates the cluster and assigns volumes. Use 3 replicas for HA, 1 for dev.
+- **`volume`** — stores the file data on disk. Each replica is a Pod with its own PersistentVolumeClaim(s).
+- **`filer`** — serves the namespace and the S3/WebDAV/HTTP APIs.
+
+Fields that commonly cause confusion:
+
+- **`volume.requests.storage`** — the size of each volume-server PVC. This is *where storage comes from*: Kubernetes dynamically provisions a PersistentVolume of this size from the default StorageClass (or `volume.storageClassName` if set) and binds it to the Pod. To use specific or pre-provisioned disks, see `config/samples/seaweed_v1_seaweed_existing_storage.yaml`.
+- **`volumeServerDiskCount`** — number of data disks (PVCs) attached to *each* volume-server Pod. They are mounted at `/data0`, `/data1`, … and passed to the volume server as `-dir`. Total PVCs = `volume.replicas × volumeServerDiskCount`. Leave at 1 unless a node exposes multiple disks.
+- **`master.volumeSizeLimitMB`** — the max size of a *single logical volume file* before the master allocates a new one (1024 = 1 GiB per file). This is **not** the cluster capacity and **not** the PVC size — total capacity is driven by the volume servers' disks.
+- **`hostSuffix`** — optional. Creates a single all-in-one Ingress exposing the cluster under `filer.<hostSuffix>`, `s3.<hostSuffix>`, and `<name>-volume-<n>.<hostSuffix>` (requires an Ingress controller). Omit it for in-cluster-only access, or use the per-component `ingress:` blocks for finer control.
+- **`master.config` / `filer.config`** — raw TOML dropped verbatim into that component's config file (`master.toml` / `filer.toml`). Yes, you can paste an existing SeaweedFS filer config here — for example to point the filer's metadata store at Postgres/MySQL/Redis instead of local leveldb2.
+
+To run with a cloud bucket as remote storage (Cloud Drive) backed by a local cache, see `config/samples/seaweed_v1_seaweed_remote_storage.yaml`.
 
 ### IAM Support
 
@@ -230,8 +249,11 @@ spec:
 ```
 
 For more examples, see the `config/samples/` directory:
-- `seaweed_v1_seaweed_with_iam_embedded.yaml` - S3 with embedded IAM
 - `seaweed_v1_seaweed.yaml` - Basic deployment
+- `seaweed_v1_seaweed_annotated.yaml` - Basic deployment with every field explained
+- `seaweed_v1_seaweed_existing_storage.yaml` - Specific StorageClass / pre-provisioned PVs for local block storage
+- `seaweed_v1_seaweed_remote_storage.yaml` - Local cache plus a remote cloud bucket (Cloud Drive)
+- `seaweed_v1_seaweed_with_iam_embedded.yaml` - S3 with embedded IAM
 
 ### Declarative Buckets
 

@@ -1,0 +1,79 @@
+# Running SeaweedFS on specific or pre-provisioned storage.
+#
+# Use this when you do not want the cluster to fall back to the default
+# StorageClass -- for example to land volume data on cloud block storage, on
+# local NVMe, or on PersistentVolumes you provisioned yourself.
+#
+# Three storage knobs are shown:
+#   1. volume.storageClassName  -> dynamic provisioning from a named class
+#   2. volume.storageSelector   -> bind to pre-provisioned PVs by label (static)
+#   3. filer.persistence        -> a dedicated disk for filer metadata
+#
+# Reminder on layout: the volume StatefulSet creates volumeServerDiskCount PVCs
+# per Pod, named mount0, mount1, ... So with replicas: 3 and
+# volumeServerDiskCount: 2 there are 6 PVCs, e.g.
+# mount0-<cluster>-volume-0, mount1-<cluster>-volume-0, mount0-<cluster>-volume-1, ...
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-existing-storage
+  namespace: default
+spec:
+  image: chrislusf/seaweedfs:latest
+
+  # Two data disks per volume server. Useful when each node exposes more than
+  # one block device you want SeaweedFS to use directly (mounted /data0, /data1).
+  volumeServerDiskCount: 2
+
+  master:
+    replicas: 3
+    volumeSizeLimitMB: 1024
+
+  volume:
+    replicas: 3
+    requests:
+      # Requested size of each PVC. With a cloud block-storage class this is the
+      # size of the provisioned disk (e.g. EBS/PD volume).
+      storage: 100Gi
+
+    # OPTION 1 -- dynamic provisioning from a specific StorageClass.
+    # The class must exist in the cluster. Common choices: a CSI block-storage
+    # class from your cloud provider, or "local-path" / a local-volume class for
+    # node-local NVMe. Remove this to use the cluster default class.
+    storageClassName: fast-block
+
+    # OPTION 2 -- bind PVCs to PersistentVolumes you pre-provisioned (static
+    # provisioning). The operator copies this selector onto every volume PVC, so
+    # PVCs only bind to PVs carrying matching labels. Label your PVs to match,
+    # e.g.  kubectl label pv my-pv seaweedfs-disk=volume
+    # When using purely static PVs, set storageClassName to "" so Kubernetes does
+    # not try to dynamically provision instead.
+    storageSelector:
+      matchLabels:
+        seaweedfs-disk: volume
+
+  filer:
+    # Single filer so the metadata PVC (ReadWriteOnce) has exactly one writer.
+    replicas: 1
+    s3:
+      enabled: true
+
+    # Give the filer its own persistent disk for metadata. Without this the
+    # filer's leveldb2 store lives on the Pod's ephemeral filesystem and is lost
+    # on reschedule.
+    persistence:
+      enabled: true
+      storageClassName: fast-block
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 20Gi
+      # To reuse a PVC you already created instead of provisioning a new one,
+      # drop the fields above and set:
+      # existingClaim: my-filer-metadata-pvc
+
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"

@@ -88,6 +88,94 @@ func TestValidateS3Exclusivity(t *testing.T) {
 	})
 }
 
+func TestValidateVolume(t *testing.T) {
+	t.Run("default PVC-backed volume is fine", func(t *testing.T) {
+		sw := baseValid()
+		if err := sw.validateVolume(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("PVC-backed volume with zero storage request is rejected", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume.Requests = nil
+		err := sw.validateVolume()
+		if err == nil {
+			t.Fatal("expected rejection for zero storage request, got nil")
+		}
+		if !strings.Contains(err.Error(), "storage request cannot be zero") {
+			t.Fatalf("error does not mention zero storage request: %v", err)
+		}
+	})
+
+	t.Run("hostPath without storage request is fine (no PVCs)", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume.Requests = nil
+		sw.Spec.Volume.HostPath = []VolumeServerHostPath{{Path: "/mnt/disk0"}}
+		if err := sw.validateVolume(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("DaemonSet without hostPath is rejected", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume.Kind = VolumeServerDaemonSet
+		err := sw.validateVolume()
+		if err == nil {
+			t.Fatal("expected rejection for DaemonSet without hostPath, got nil")
+		}
+		if !strings.Contains(err.Error(), "requires spec.volume.hostPath") {
+			t.Fatalf("error does not mention hostPath requirement: %v", err)
+		}
+	})
+
+	t.Run("DaemonSet with hostPath is fine", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume.Kind = VolumeServerDaemonSet
+		sw.Spec.Volume.Requests = nil
+		sw.Spec.Volume.HostPath = []VolumeServerHostPath{{Path: "/mnt/disk0"}, {Path: "/mnt/disk1"}}
+		if err := sw.validateVolume(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("relative hostPath is rejected", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume.HostPath = []VolumeServerHostPath{{Path: "relative/path"}}
+		err := sw.validateVolume()
+		if err == nil {
+			t.Fatal("expected rejection for relative hostPath, got nil")
+		}
+		if !strings.Contains(err.Error(), "must be an absolute path") {
+			t.Fatalf("error does not mention absolute path: %v", err)
+		}
+	})
+
+	t.Run("nil volume is a no-op", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume = nil
+		if err := sw.validateVolume(); err != nil {
+			t.Fatalf("unexpected error for nil volume: %v", err)
+		}
+	})
+}
+
+func TestVolumeSpecIsDaemonSet(t *testing.T) {
+	var nilSpec *VolumeSpec
+	if nilSpec.IsDaemonSet() {
+		t.Error("nil VolumeSpec must not report DaemonSet")
+	}
+	if (&VolumeSpec{}).IsDaemonSet() {
+		t.Error("empty Kind must default to StatefulSet, not DaemonSet")
+	}
+	if (&VolumeSpec{Kind: VolumeServerStatefulSet}).IsDaemonSet() {
+		t.Error("explicit StatefulSet must not report DaemonSet")
+	}
+	if !(&VolumeSpec{Kind: VolumeServerDaemonSet}).IsDaemonSet() {
+		t.Error("explicit DaemonSet must report DaemonSet")
+	}
+}
+
 func TestS3DeprecationWarnings(t *testing.T) {
 	t.Run("embedded enabled emits deprecation warning", func(t *testing.T) {
 		sw := baseValid()

@@ -254,6 +254,80 @@ For more examples, see the `config/samples/` directory:
 - `seaweed_v1_seaweed_existing_storage.yaml` - Specific StorageClass / pre-provisioned PVs for local block storage
 - `seaweed_v1_seaweed_remote_storage.yaml` - Local cache plus a remote cloud bucket (Cloud Drive)
 - `seaweed_v1_seaweed_with_iam_embedded.yaml` - S3 with embedded IAM
+- `seaweed_v1_seaweed_ingress_tls.yaml` - Expose the S3 API and filer over TLS via per-component Ingress
+
+### Exposing the cluster via Ingress (TLS)
+
+By default the operator only creates in-cluster `Service`s. There are two
+ways to expose components (S3 API, filer, master/admin UIs, volume servers)
+outside the cluster through an Ingress controller. Both require an Ingress
+controller (ingress-nginx, Traefik, …) and DNS pointing at it.
+
+- **`hostSuffix`** — the legacy all-in-one helper. One Ingress under
+  `filer.<hostSuffix>`, `s3.<hostSuffix>`, and `<name>-volume-<n>.<hostSuffix>`.
+  It is **HTTP-only** — it cannot terminate TLS.
+- **Per-component `ingress:` blocks** — the recommended path, and the only
+  one that supports TLS. Each component carries its own `IngressSpec`, so the
+  S3 API and the filer can sit on different hostnames with different
+  certificates.
+
+The `ingress:` block is available on `master`, `volume`, `filer`,
+`filer.s3Ingress` (the filer's embedded S3 port), `admin`, and the standalone
+`s3` and `sftp` gateways. Every block shares the same fields:
+
+| Field | Description |
+| --- | --- |
+| `enabled` | Create the Ingress for this component. |
+| `host` | Hostname the Ingress matches (required when enabled). |
+| `className` | `IngressClassName`, e.g. `nginx`. |
+| `path` | Path prefix to serve. Defaults to `/`. |
+| `annotations` | Controller-specific annotations (cert-manager issuer, nginx body size, …). |
+| `tls` | List of `{hosts, secretName}` — terminates TLS using a `kubernetes.io/tls` Secret. |
+
+To reach the S3 API over an `https://` URL, enable the S3 API and give it a
+TLS Ingress. With the **filer-embedded** S3 (`filer.s3.enabled`):
+
+```yaml
+spec:
+  filer:
+    replicas: 1
+    s3:
+      enabled: true            # S3 API on port 8333 (IAM embedded)
+    s3Ingress:
+      enabled: true
+      className: nginx
+      host: s3.seaweed.example.com
+      annotations:
+        # cert-manager issues the cert into secretName below; omit if you
+        # created the TLS Secret by hand.
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        nginx.ingress.kubernetes.io/proxy-body-size: "0"   # allow large S3 PUTs
+      tls:
+        - hosts: [s3.seaweed.example.com]
+          secretName: seaweed-s3-tls
+```
+
+If you are not using cert-manager, create the TLS Secret yourself and drop
+the issuer annotation:
+
+```bash
+kubectl create secret tls seaweed-s3-tls --cert=tls.crt --key=tls.key
+```
+
+Then point any S3 client at the TLS endpoint:
+
+```bash
+aws --endpoint-url https://s3.seaweed.example.com s3 ls
+```
+
+Prefer the **standalone S3 gateway** (scales independently of the filer) by
+putting the same `ingress:` block under the top-level `s3:` instead of
+`filer.s3Ingress` — the fields are identical. See
+`config/samples/seaweed_v1_seaweed_ingress_tls.yaml` for a complete manifest.
+
+> Note: this Ingress TLS terminates HTTPS at the Ingress controller. It is
+> separate from `spec.tls`, which provisions cert-manager-issued **mTLS**
+> between SeaweedFS components (master/volume/filer gRPC).
 
 ### Declarative Buckets
 

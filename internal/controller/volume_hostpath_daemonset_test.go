@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
@@ -143,6 +144,46 @@ func TestVolumeHostPath_PerDirectoryMaxVolumeCount(t *testing.T) {
 	// Unset entries fall back to 0 within the per-directory list.
 	if !strings.Contains(cmd, "-max=7,0,9") {
 		t.Errorf("per-directory -max mismatch; got %q", cmd)
+	}
+}
+
+func TestVolumeHostPath_PerDirMaxFallsBackToGlobalForUnsetEntries(t *testing.T) {
+	m := makeHostPathSeaweed(seaweedv1.VolumeServerDaemonSet, []seaweedv1.VolumeServerHostPath{
+		{Path: "/mnt/disk0", MaxVolumeCount: int32Ptr(7)},
+		{Path: "/mnt/disk1"},
+	})
+	m.Spec.Volume.MaxVolumeCounts = int32Ptr(5)
+
+	r := &SeaweedReconciler{}
+	ds := r.createVolumeServerDaemonSet(m)
+	cmd := volumeContainerCommand(t, ds.Spec.Template.Spec)
+
+	// Unset entry uses the global limit (5), not unlimited (0).
+	if !strings.Contains(cmd, "-max=7,5") {
+		t.Errorf("unset per-directory entry should fall back to global max; got %q", cmd)
+	}
+}
+
+func TestVolumeDaemonSet_SkipsPublicURL(t *testing.T) {
+	m := makeHostPathSeaweed(seaweedv1.VolumeServerDaemonSet, []seaweedv1.VolumeServerHostPath{
+		{Path: "/mnt/disk0"},
+	})
+	suffix := "seaweed.example.com"
+	m.Spec.HostSuffix = &suffix
+
+	r := &SeaweedReconciler{}
+	cmd := volumeContainerCommand(t, r.createVolumeServerDaemonSet(m).Spec.Template.Spec)
+	if strings.Contains(cmd, "-publicUrl") {
+		t.Errorf("DaemonSet must not advertise a publicUrl from the random pod name; got %q", cmd)
+	}
+
+	// A StatefulSet with the same HostSuffix still emits publicUrl.
+	m.Spec.Volume.Kind = seaweedv1.VolumeServerStatefulSet
+	m.Spec.Volume.HostPath = nil
+	m.Spec.Volume.Requests = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
+	stsCmd := volumeContainerCommand(t, r.createVolumeServerStatefulSet(m).Spec.Template.Spec)
+	if !strings.Contains(stsCmd, "-publicUrl=$(POD_NAME)."+suffix) {
+		t.Errorf("StatefulSet should still advertise publicUrl; got %q", stsCmd)
 	}
 }
 

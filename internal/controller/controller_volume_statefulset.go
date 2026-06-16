@@ -84,7 +84,9 @@ func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string, maxArg,
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
 	commands = append(commands, "-max="+maxArg)
 	commands = append(commands, "-ip="+ipArg)
-	if m.Spec.HostSuffix != nil && *m.Spec.HostSuffix != "" {
+	// $(POD_NAME) is a random suffix for DaemonSet pods, so a HostSuffix-based
+	// publicUrl would be unresolvable — only emit it for StatefulSet ordinals.
+	if m.Spec.HostSuffix != nil && *m.Spec.HostSuffix != "" && !m.Spec.Volume.IsDaemonSet() {
 		commands = append(commands, fmt.Sprintf("-publicUrl=$(POD_NAME).%s", *m.Spec.HostSuffix))
 	}
 	commands = append(commands, fmt.Sprintf("-mserver=%s", getMasterPeersString(m)))
@@ -227,7 +229,9 @@ func hostPathVolumeDisks(vol *seaweedv1.VolumeSpec) volumeServerDisks {
 			perDirMax = true
 			maxParts[i] = fmt.Sprintf("%d", *hp.MaxVolumeCount)
 		} else {
-			maxParts[i] = "0"
+			// Unset entries fall back to the global limit so a partially
+			// specified list does not silently make some disks unlimited.
+			maxParts[i] = volumeServerGlobalMaxArg(vol.MaxVolumeCounts)
 		}
 	}
 	if perDirMax {

@@ -212,6 +212,50 @@ Fields that commonly cause confusion:
 
 To run with a cloud bucket as remote storage (Cloud Drive) backed by a local cache, see `config/samples/seaweed_v1_seaweed_remote_storage.yaml`.
 
+#### Bare-metal volume servers (DaemonSet + node-local disks)
+
+By default volume servers run as a StatefulSet with one or more
+dynamically-provisioned PVCs per Pod. On on-prem / bare-metal clusters you often
+instead want **one volume server per node, writing straight to that node's
+physical disks**. Two `volume` fields enable this:
+
+- **`volume.kind: DaemonSet`** — runs exactly one volume server on every node
+  selected by the pod's `nodeSelector` / `affinity` / `tolerations`. `replicas`
+  is ignored in this mode (the DaemonSet tracks the node set). The default,
+  `StatefulSet`, is unchanged.
+- **`volume.hostPath`** — a list of node-local directories to use as data
+  directories. Each entry is mounted at `/data0`, `/data1`, … and passed to
+  `weed volume -dir`, so a single server can span several physical disks. The
+  optional per-entry `maxVolumeCount` caps volumes in that directory (`0` = fill
+  the disk); `type` defaults to `DirectoryOrCreate`. When set, no PVCs are
+  created.
+
+`hostPath` is required for `kind: DaemonSet` (DaemonSets cannot use
+volumeClaimTemplates) and the operator rejects the combination otherwise. It
+also works with a `StatefulSet` — pair it with node anti-affinity so two
+replicas never share a host directory.
+
+```yaml
+spec:
+  volume:
+    kind: DaemonSet
+    replicas: 0            # ignored for DaemonSet
+    hostPath:
+      - path: /mnt/disks/ssd0
+        maxVolumeCount: 100
+      - path: /mnt/disks/ssd1
+    nodeSelector:
+      seaweedfs.com/storage: "true"
+    tolerations:
+      - key: seaweedfs.com/storage
+        operator: Exists
+        effect: NoSchedule
+```
+
+See `config/samples/seaweed_v1_seaweed_hostpath_daemonset.yaml` for a full
+example. For rack/datacenter-aware placement across multiple volume groups, see
+[TOPOLOGY_SUPPORT.md](./TOPOLOGY_SUPPORT.md).
+
 ### IAM Support
 
 The operator supports IAM (Identity and Access Management) for S3 API authentication. IAM is **embedded in the S3 server** and runs on the same port (8333) as the S3 API.
@@ -252,6 +296,7 @@ For more examples, see the `config/samples/` directory:
 - `seaweed_v1_seaweed.yaml` - Basic deployment
 - `seaweed_v1_seaweed_annotated.yaml` - Basic deployment with every field explained
 - `seaweed_v1_seaweed_existing_storage.yaml` - Specific StorageClass / pre-provisioned PVs for local block storage
+- `seaweed_v1_seaweed_hostpath_daemonset.yaml` - Bare-metal volume servers as a DaemonSet on node-local hostPath disks
 - `seaweed_v1_seaweed_remote_storage.yaml` - Local cache plus a remote cloud bucket (Cloud Drive)
 - `seaweed_v1_seaweed_with_iam_embedded.yaml` - S3 with embedded IAM
 

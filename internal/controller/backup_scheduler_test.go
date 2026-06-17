@@ -109,6 +109,40 @@ func TestSchedulerDoesNotFireOnFirstObservation(t *testing.T) {
 	}
 }
 
+func TestSchedulerFiresAfterAnchorElapses(t *testing.T) {
+	sched := seaweedv1.BackupScheduleSpec{Name: "nightly", Schedule: "* * * * *", StorageName: "pvc"}
+	cli := newSchedulerClient(t)
+	// Anchor at 02:05:10; the next cron boundary is 02:06:00.
+	anchor := time.Date(2026, 6, 16, 2, 5, 10, 0, time.UTC)
+	s := schedulerWith(cli, anchor)
+	m := &seaweedv1.Seaweed{ObjectMeta: metav1.ObjectMeta{Name: "c1", Namespace: "ns1"}}
+
+	// First observation: anchors, does not fire.
+	if err := s.reconcileSchedule(context.Background(), m, sched, anchor); err != nil {
+		t.Fatalf("first tick: %v", err)
+	}
+	var list seaweedv1.SeaweedBackupList
+	if err := cli.List(context.Background(), &list, client.InNamespace("ns1")); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Items) != 0 {
+		t.Fatalf("expected no backup on the anchoring tick, got %d", len(list.Items))
+	}
+
+	// A later tick past the cron boundary fires, using the persisted anchor.
+	later := time.Date(2026, 6, 16, 2, 6, 5, 0, time.UTC)
+	if err := s.reconcileSchedule(context.Background(), m, sched, later); err != nil {
+		t.Fatalf("second tick: %v", err)
+	}
+	list = seaweedv1.SeaweedBackupList{}
+	if err := cli.List(context.Background(), &list, client.InNamespace("ns1")); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Items) != 1 {
+		t.Fatalf("expected a backup once the anchor's next cron time elapsed, got %d", len(list.Items))
+	}
+}
+
 func TestSchedulerInvalidCron(t *testing.T) {
 	cli := newSchedulerClient(t)
 	s := schedulerWith(cli, time.Now())

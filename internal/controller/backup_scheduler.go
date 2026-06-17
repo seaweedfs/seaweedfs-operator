@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -39,15 +40,46 @@ const backupSchedulerInterval = 30 * time.Second
 
 // BackupScheduler is a leader-elected Runnable that evaluates every Seaweed
 // cluster's spec.backup.schedule and creates SeaweedBackup CRs when due,
-// then prunes completed backups beyond each schedule's Keep. It derives the
-// last-run time from existing SeaweedBackups, so it holds no state of its own
-// and resumes cleanly across operator restarts.
+// then prunes completed backups beyond each schedule's Keep. The due time is
+// derived from the most recent existing SeaweedBackup for the schedule; when a
+// schedule has no history yet, the scheduler anchors on the first time it
+// observed the schedule (held in memory) so the first run fires at the next
+// cron time rather than immediately. Anchors are best-effort: an operator
+// restart re-anchors, which at worst delays one run by a single cron period.
 type BackupScheduler struct {
 	client.Client
 	Log      logr.Logger
 	Interval time.Duration
 	// now is overridable in tests.
 	now func() time.Time
+
+	// anchors records, per "ns/cluster/schedule", the first time a schedule
+	// with no backup history was observed, so the next-cron-time comparison
+	// is stable across ticks instead of re-anchoring to "now" every tick.
+	mu      sync.Mutex
+	anchors map[string]time.Time
+}
+
+// anchorFor returns the stored first-observation time for key, recording now
+// as the anchor the first time the key is seen.
+func (s *BackupScheduler) anchorFor(key string, now time.Time) time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.anchors == nil {
+		s.anchors = map[string]time.Time{}
+	}
+	if t, ok := s.anchors[key]; ok {
+		return t
+	}
+	s.anchors[key] = now
+	return now
+}
+
+// clearAnchor drops a schedule's anchor once it has real backup history.
+func (s *BackupScheduler) clearAnchor(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.anchors, key)
 }
 
 // SetupWithManager registers the scheduler with the manager.
@@ -122,17 +154,23 @@ func (s *BackupScheduler) reconcileSchedule(ctx context.Context, m *seaweedv1.Se
 		return err
 	}
 
+	key := m.Namespace + "/" + m.Name + "/" + sched.Name
 	lastRun := mostRecentCreation(existing)
 	if lastRun.IsZero() {
-		// First time we've seen this schedule and it has no history: anchor on
-		// now so the first backup fires at the next cron time, not immediately.
-		lastRun = now
+		// No history yet: anchor on the first observation (persisted across
+		// ticks) so the first backup fires at the next cron time, not
+		// immediately and not never.
+		lastRun = s.anchorFor(key, now)
+	} else {
+		s.clearAnchor(key)
 	}
 
 	if !cronSched.Next(lastRun).After(now) {
 		if err := s.createScheduledBackup(ctx, m, sched, now); err != nil {
 			return err
 		}
+		// The new backup is now the schedule's history; drop the anchor.
+		s.clearAnchor(key)
 	}
 
 	return s.pruneBackups(ctx, existing, sched.Keep)

@@ -146,13 +146,15 @@ var _ = Describe("Volume server DaemonSet with hostPath", Ordered, func() {
 	})
 
 	It("reports volume status from the DaemonSet", func() {
-		// DesiredNumberScheduled is populated by the DaemonSet controller from
-		// the matching node set (independent of pod readiness), so the operator
-		// reports a real desired count instead of StatefulSet 0.
+		// The operator mirrors the DaemonSet's desired count into status —
+		// compare against the live DaemonSet rather than assuming a node count,
+		// so the assertion holds regardless of cluster taints/eligibility.
 		Eventually(func(g Gomega) {
 			sw := &seaweedv1.Seaweed{}
+			ds := &appsv1.DaemonSet{}
 			g.Expect(k8sClient.Get(ctx, seaweedKey(), sw)).To(Succeed())
-			g.Expect(sw.Status.Volume.Replicas).To(BeNumerically(">=", 1))
+			g.Expect(k8sClient.Get(ctx, volumeKey(), ds)).To(Succeed())
+			g.Expect(sw.Status.Volume.Replicas).To(Equal(ds.Status.DesiredNumberScheduled))
 		}, time.Minute*2, time.Second*5).Should(Succeed())
 	})
 

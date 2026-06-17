@@ -1,0 +1,67 @@
+# Bare-metal volume servers on node-local disks.
+#
+# Use this on on-prem / bare-metal clusters where each storage node has its own
+# physical disks and you want exactly one volume server per node, writing
+# directly to those disks instead of to dynamically-provisioned PVCs.
+#
+# Two volume-server knobs make this work:
+#   1. volume.kind: DaemonSet  -> one volume server per matching node (Replicas
+#                                 is ignored; the DaemonSet tracks the node set).
+#   2. volume.hostPath         -> the node-local directories to use as data
+#                                 dirs. Each entry is mounted at /data<index>
+#                                 and passed to `weed volume -dir`, so a single
+#                                 server can span several physical disks.
+#
+# Nodes are selected with the standard pod-placement fields (nodeSelector,
+# affinity, tolerations). Here we target nodes labelled seaweedfs.com/storage=true
+# and tolerate a dedicated storage taint. Label your storage nodes to match:
+#   kubectl label node <node> seaweedfs.com/storage=true
+#
+# Because DaemonSets cannot use volumeClaimTemplates, hostPath is required in
+# this mode (the operator rejects kind: DaemonSet without it).
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-hostpath
+  namespace: default
+spec:
+  image: chrislusf/seaweedfs:latest
+
+  master:
+    replicas: 3
+    volumeSizeLimitMB: 1024
+
+  volume:
+    # Run a volume server on every selected node. Replicas is ignored for
+    # DaemonSet mode but the field is still part of the schema.
+    replicas: 0
+    kind: DaemonSet
+
+    # Node-local data directories. Each disk is mounted into the container at
+    # /data0, /data1, ... and used as a SeaweedFS data dir. The optional
+    # maxVolumeCount caps the number of volumes per directory (0 = fill the
+    # disk); when any entry sets it, the operator emits a per-directory -max
+    # list. type defaults to DirectoryOrCreate.
+    hostPath:
+      - path: /mnt/disks/ssd0
+        maxVolumeCount: 100
+      - path: /mnt/disks/ssd1
+        maxVolumeCount: 100
+
+    # Place volume servers only on labelled storage nodes, and tolerate a
+    # dedicated storage taint so general workloads stay off those nodes.
+    nodeSelector:
+      seaweedfs.com/storage: "true"
+    tolerations:
+      - key: seaweedfs.com/storage
+        operator: Exists
+        effect: NoSchedule
+
+  filer:
+    replicas: 1
+    s3:
+      enabled: true
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"

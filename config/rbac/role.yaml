@@ -49,6 +49,7 @@ rules:
 - apiGroups:
   - batch
   resources:
+  - cronjobs
   - jobs
   verbs:
   - create
@@ -128,6 +129,7 @@ rules:
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:
+  - adminscripts
   - buckets
   - s3credentials
   - s3identities
@@ -149,6 +151,7 @@ rules:
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:
+  - adminscripts/finalizers
   - buckets/finalizers
   - s3credentials/finalizers
   - s3identities/finalizers
@@ -163,6 +166,7 @@ rules:
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:
+  - adminscripts/status
   - buckets/status
   - s3credentials/status
   - s3identities/status

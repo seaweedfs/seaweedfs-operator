@@ -230,6 +230,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controller.AdminScriptReconciler{
+		Client:   mgr.GetClient(),
+		Log:      ctrl.Log.WithName("controller").WithName("AdminScript"),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("adminscript-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "AdminScript")
+		os.Exit(1)
+	}
+
 	// The S3OIDCProvider transport is not wired yet (the filer IAM gRPC service
 	// has no OIDC methods), so registering it would fail-loop on every cluster.
 	// Keep it off by default until the server-side RPCs land; opt in with

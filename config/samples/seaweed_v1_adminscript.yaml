@@ -1,0 +1,31 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: AdminScript
+metadata:
+  name: nightly-balance
+  namespace: default
+spec:
+  # The Seaweed cluster (same namespace) whose masters/filer the script runs against.
+  clusterRef:
+    name: seaweed-sample
+  # Standard cron schedule. This runs daily at 02:00.
+  schedule: "0 2 * * *"
+  # weed shell commands, one per line, piped to `weed shell` over stdin.
+  script: |
+    lock
+    volume.balance -force
+    volume.fix.replication
+    unlock
+  # concurrencyPolicy: Forbid          # default; admin scripts should not overlap
+  # timeZone: Etc/UTC                  # interpret the schedule in this IANA zone
+  # suspend: false                     # pause scheduling without deleting the CR
+  # successfulJobsHistoryLimit: 3
+  # failedJobsHistoryLimit: 1
+  # backoffLimit: 0                    # do not retry a failed run by default
+  # activeDeadlineSeconds: 3600        # cap a single run's wall-clock
+  # image: chrislusf/seaweedfs:latest  # defaults to the cluster's image
+  # credentialsSecret:                 # keys exported into the run pod as env vars
+  #   name: seaweed-admin-credentials
+  # resources:
+  #   requests:
+  #     cpu: 100m
+  #     memory: 128Mi

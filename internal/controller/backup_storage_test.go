@@ -25,8 +25,6 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-func ptrBool(b bool) *bool { return &b }
-
 func TestRenderReplicationTomlS3(t *testing.T) {
 	st := seaweedv1.BackupStorageSpec{
 		Type: seaweedv1.BackupStorageS3,

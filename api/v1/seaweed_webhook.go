@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"regexp"
 
 	corev1 "k8s.io/api/core/v1"
@@ -78,10 +79,8 @@ func (v *SeaweedCustomValidator) ValidateCreate(_ context.Context, obj *Seaweed)
 
 	if obj.Spec.Volume == nil {
 		errs = append(errs, errors.New("missing volume spec"))
-	} else {
-		if obj.Spec.Volume.Requests[corev1.ResourceStorage].Equal(resource.MustParse("0")) {
-			errs = append(errs, errors.New("volume storage request cannot be zero"))
-		}
+	} else if err := obj.validateVolume(); err != nil {
+		errs = append(errs, err)
 	}
 
 	if obj.Spec.Worker != nil && obj.Spec.Admin == nil {
@@ -104,6 +103,11 @@ func (v *SeaweedCustomValidator) ValidateUpdate(_ context.Context, _, obj *Seawe
 	seaweedlog.Info("validate update", "name", obj.Name)
 	errs := []error{}
 
+	if obj.Spec.Volume == nil {
+		errs = append(errs, errors.New("missing volume spec"))
+	} else if err := obj.validateVolume(); err != nil {
+		errs = append(errs, err)
+	}
 	if obj.Spec.Worker != nil && obj.Spec.Admin == nil {
 		errs = append(errs, errors.New("spec.worker requires spec.admin to be configured"))
 	}
@@ -116,6 +120,42 @@ func (v *SeaweedCustomValidator) ValidateUpdate(_ context.Context, _, obj *Seawe
 	errs = append(errs, obj.validateBackup()...)
 
 	return obj.s3DeprecationWarnings(), utilerrors.NewAggregate(errs)
+}
+
+// validateVolume checks volume constraints the OpenAPI schema cannot express.
+// Safe to call from both create and update; a nil spec.volume is a no-op.
+func (r *Seaweed) validateVolume() error {
+	vol := r.Spec.Volume
+	if vol == nil {
+		return nil
+	}
+	errs := []error{}
+
+	usesHostPath := len(vol.HostPath) > 0
+	if vol.IsDaemonSet() && !usesHostPath {
+		errs = append(errs, errors.New("spec.volume.kind=DaemonSet requires spec.volume.hostPath to be set; DaemonSets cannot use PVC volumeClaimTemplates"))
+	}
+	if vol.IsDaemonSet() && len(r.Spec.VolumeTopology) > 0 {
+		errs = append(errs, errors.New("spec.volume.kind=DaemonSet is not supported together with spec.volumeTopology"))
+	}
+	seen := map[string]bool{}
+	for i, hp := range vol.HostPath {
+		clean := path.Clean(hp.Path)
+		if !path.IsAbs(clean) {
+			errs = append(errs, fmt.Errorf("spec.volume.hostPath[%d].path %q must be an absolute path", i, hp.Path))
+		}
+		// Compare canonicalized paths so e.g. /data and /data/ are caught as duplicates.
+		if seen[clean] {
+			errs = append(errs, fmt.Errorf("spec.volume.hostPath[%d].path %q is duplicated", i, hp.Path))
+		}
+		seen[clean] = true
+	}
+	// Storage request only provisions PVCs; with HostPath, zero is expected.
+	if !usesHostPath && vol.Requests[corev1.ResourceStorage].Equal(resource.MustParse("0")) {
+		errs = append(errs, errors.New("volume storage request cannot be zero"))
+	}
+
+	return utilerrors.NewAggregate(errs)
 }
 
 // validateS3Exclusivity forbids setting both the standalone S3 gateway

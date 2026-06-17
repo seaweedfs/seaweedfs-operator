@@ -9512,6 +9512,32 @@ spec:
                     type: boolean
                   hostNetwork:
                     type: boolean
+                  hostPath:
+                    items:
+                      properties:
+                        maxVolumeCount:
+                          minimum: 0
+                          type: integer
+                        path:
+                          minLength: 1
+                          type: string
+                        type:
+                          default: DirectoryOrCreate
+                          enum:
+                          - ""
+                          - DirectoryOrCreate
+                          - Directory
+                          - FileOrCreate
+                          - File
+                          - Socket
+                          - CharDevice
+                          - BlockDevice
+                          type: string
+                      required:
+                      - path
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
                   idleTimeout:
                     type: integer
                   imagePullPolicy:
@@ -9554,6 +9580,12 @@ spec:
                     type: object
                   initContainers:
                     x-kubernetes-preserve-unknown-fields: true
+                  kind:
+                    default: StatefulSet
+                    enum:
+                    - StatefulSet
+                    - DaemonSet
+                    type: string
                   labels:
                     additionalProperties:
                       type: string

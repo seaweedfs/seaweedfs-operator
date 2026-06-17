@@ -95,6 +95,7 @@ type SeaweedReconciler struct {
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
@@ -452,6 +453,23 @@ func (r *SeaweedReconciler) getStatefulSetStatus(ctx context.Context, namespace,
 	return status, nil
 }
 
+func (r *SeaweedReconciler) getDaemonSetStatus(ctx context.Context, namespace, name string) (seaweedv1.ComponentStatus, error) {
+	daemonSet := &appsv1.DaemonSet{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, daemonSet); err != nil {
+		if errors.IsNotFound(err) {
+			// A DaemonSet has no spec replica count, so report a missing one as
+			// expected-but-not-ready (1/0) rather than 0/0, which the readiness
+			// rule would otherwise treat as ready.
+			return seaweedv1.ComponentStatus{Replicas: 1, ReadyReplicas: 0}, nil
+		}
+		return seaweedv1.ComponentStatus{}, err
+	}
+	return seaweedv1.ComponentStatus{
+		Replicas:      daemonSet.Status.DesiredNumberScheduled,
+		ReadyReplicas: daemonSet.Status.NumberReady,
+	}, nil
+}
+
 func (r *SeaweedReconciler) getDeploymentStatus(ctx context.Context, namespace, name string, desiredReplicas int32) (seaweedv1.ComponentStatus, error) {
 	status := seaweedv1.ComponentStatus{
 		Replicas: desiredReplicas,
@@ -478,7 +496,13 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 
 	// Check base volume spec
 	if seaweedCR.Spec.Volume != nil {
-		baseStatus, err := r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-volume", seaweedCR.Spec.Volume.Replicas)
+		var baseStatus seaweedv1.ComponentStatus
+		var err error
+		if seaweedCR.Spec.Volume.IsDaemonSet() {
+			baseStatus, err = r.getDaemonSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-volume")
+		} else {
+			baseStatus, err = r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-volume", seaweedCR.Spec.Volume.Replicas)
+		}
 		if err != nil {
 			return status, err
 		}

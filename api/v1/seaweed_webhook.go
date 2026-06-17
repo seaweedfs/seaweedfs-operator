@@ -137,13 +137,15 @@ func (r *Seaweed) validateVolume() error {
 	}
 	seen := map[string]bool{}
 	for i, hp := range vol.HostPath {
-		if !path.IsAbs(hp.Path) {
+		clean := path.Clean(hp.Path)
+		if !path.IsAbs(clean) {
 			errs = append(errs, fmt.Errorf("spec.volume.hostPath[%d].path %q must be an absolute path", i, hp.Path))
 		}
-		if seen[hp.Path] {
+		// Compare canonicalized paths so e.g. /data and /data/ are caught as duplicates.
+		if seen[clean] {
 			errs = append(errs, fmt.Errorf("spec.volume.hostPath[%d].path %q is duplicated", i, hp.Path))
 		}
-		seen[hp.Path] = true
+		seen[clean] = true
 	}
 	// Storage request only provisions PVCs; with HostPath, zero is expected.
 	if !usesHostPath && vol.Requests[corev1.ResourceStorage].Equal(resource.MustParse("0")) {

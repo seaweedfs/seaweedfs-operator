@@ -163,6 +163,18 @@ func TestValidateVolume(t *testing.T) {
 		}
 	})
 
+	t.Run("duplicate hostPath differing only by trailing slash is rejected", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume.HostPath = []VolumeServerHostPath{{Path: "/mnt/disk0"}, {Path: "/mnt/disk0/"}}
+		err := sw.validateVolume()
+		if err == nil {
+			t.Fatal("expected rejection for canonically-duplicate hostPath, got nil")
+		}
+		if !strings.Contains(err.Error(), "duplicated") {
+			t.Fatalf("error does not mention duplication: %v", err)
+		}
+	})
+
 	t.Run("DaemonSet with volumeTopology is rejected", func(t *testing.T) {
 		sw := baseValid()
 		sw.Spec.Volume.Kind = VolumeServerDaemonSet

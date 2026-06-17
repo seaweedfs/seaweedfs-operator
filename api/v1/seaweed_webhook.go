@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"regexp"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -92,6 +93,7 @@ func (v *SeaweedCustomValidator) ValidateCreate(_ context.Context, obj *Seaweed)
 	if err := obj.validateSFTP(); err != nil {
 		errs = append(errs, err)
 	}
+	errs = append(errs, obj.validateBackup()...)
 
 	return obj.s3DeprecationWarnings(), utilerrors.NewAggregate(errs)
 }
@@ -115,6 +117,7 @@ func (v *SeaweedCustomValidator) ValidateUpdate(_ context.Context, _, obj *Seawe
 	if err := obj.validateSFTP(); err != nil {
 		errs = append(errs, err)
 	}
+	errs = append(errs, obj.validateBackup()...)
 
 	return obj.s3DeprecationWarnings(), utilerrors.NewAggregate(errs)
 }
@@ -177,6 +180,45 @@ func (r *Seaweed) validateSFTP() error {
 		return errors.New("spec.sftp requires spec.filer to be configured")
 	}
 	return nil
+}
+
+// rfc1123Label matches a lowercase DNS label. Storage and schedule names are
+// embedded into generated resource names (Secrets, Deployments, SeaweedBackups)
+// so they must be DNS-safe.
+var rfc1123Label = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+
+// validateBackup checks the cross-field invariants of spec.backup that CEL
+// cannot express: credential requirements for sinks whose secrets must be
+// baked into the rendered replication.toml, and DNS-safety of names that
+// become Kubernetes object names.
+func (r *Seaweed) validateBackup() []error {
+	if r.Spec.Backup == nil {
+		return nil
+	}
+	var errs []error
+	b := r.Spec.Backup
+
+	for name, st := range b.Storages {
+		if !rfc1123Label.MatchString(name) || len(name) > 50 {
+			errs = append(errs, fmt.Errorf("spec.backup.storages: storage name %q must be a lowercase RFC1123 label of at most 50 characters", name))
+		}
+		// azure/b2 sinks read their key only from replication.toml, so the
+		// operator must be able to resolve it from a Secret. s3/gcs can fall
+		// back to ambient credentials / a mounted file.
+		switch st.Type {
+		case BackupStorageAzure, BackupStorageB2:
+			if st.CredentialsSecret == nil || *st.CredentialsSecret == "" {
+				errs = append(errs, fmt.Errorf("spec.backup.storages[%s]: type %q requires credentialsSecret", name, st.Type))
+			}
+		}
+	}
+
+	for _, s := range b.Schedule {
+		if !rfc1123Label.MatchString(s.Name) || len(s.Name) > 50 {
+			errs = append(errs, fmt.Errorf("spec.backup.schedule[%s]: name must be a lowercase RFC1123 label of at most 50 characters", s.Name))
+		}
+	}
+	return errs
 }
 
 // s3DeprecationWarnings surfaces admission.Warnings for the deprecated

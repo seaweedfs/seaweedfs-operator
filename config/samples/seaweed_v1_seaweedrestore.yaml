@@ -1,0 +1,17 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: SeaweedRestore
+metadata:
+  labels:
+    app.kubernetes.io/name: seaweedfs-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: seaweedrestore-sample
+spec:
+  # The Seaweed cluster (same namespace) to restore into.
+  clusterName: seaweed-sample
+  # Restore from a SeaweedBackup in the same namespace...
+  backupName: seaweedbackup-sample
+  # ...or, alternatively, from an explicit location (mutually exclusive with backupName):
+  # backupSource:
+  #   storageName: pvc
+  #   metaPath: seaweed-sample/seaweedbackup-sample/filer.meta.gz
+  filerPath: /

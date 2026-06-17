@@ -11,6 +11,8 @@ resources:
 - bases/seaweed.seaweedfs.com_s3oidcproviders.yaml
 - bases/seaweed.seaweedfs.com_resourcereferencegrants.yaml
 - bases/seaweed.seaweedfs.com_seaweedcsidrivers.yaml
+- bases/seaweed.seaweedfs.com_seaweedbackups.yaml
+- bases/seaweed.seaweedfs.com_seaweedrestores.yaml
 - bases/seaweed.seaweedfs.com_adminscripts.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 

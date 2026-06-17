@@ -51,6 +51,7 @@ rules:
   - batch
   resources:
   - cronjobs
+  - jobs
   verbs:
   - create
   - delete
@@ -136,7 +137,9 @@ rules:
   - s3oidcproviders
   - s3policies
   - s3policybindings
+  - seaweedbackups
   - seaweedcsidrivers
+  - seaweedrestores
   - seaweeds
   verbs:
   - create
@@ -156,7 +159,9 @@ rules:
   - s3oidcproviders/finalizers
   - s3policies/finalizers
   - s3policybindings/finalizers
+  - seaweedbackups/finalizers
   - seaweedcsidrivers/finalizers
+  - seaweedrestores/finalizers
   verbs:
   - update
 - apiGroups:
@@ -169,7 +174,9 @@ rules:
   - s3oidcproviders/status
   - s3policies/status
   - s3policybindings/status
+  - seaweedbackups/status
   - seaweedcsidrivers/status
+  - seaweedrestores/status
   - seaweeds/status
   verbs:
   - get

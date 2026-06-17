@@ -20,7 +20,7 @@ Goals:
 - [x] Ingress for volume server, filer and S3, to support HDFS, REST filer, S3 API and cross-cluster replication
 - [x] IAM (Identity and Access Management) service support for S3 API authentication and authorization
 - [ ] Support all major cloud Kubernetes: AWS, Google, Azure
-- [ ] Scheduled backup to cloud storage: S3, Google Cloud Storage , Azure
+- [x] Scheduled backup and restore: filer metadata snapshots + continuous data mirror to S3, Google Cloud Storage, Azure, Backblaze B2, or a PVC (see [BACKUP_SUPPORT.md](BACKUP_SUPPORT.md))
 - [ ] Put warm data to cloud storage tier: S3, Google Cloud Storage , Azure
 - [x] Grafana dashboard
 

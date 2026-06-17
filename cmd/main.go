@@ -202,6 +202,34 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controller.SeaweedBackupReconciler{
+		Client:   mgr.GetClient(),
+		Log:      ctrl.Log.WithName("controller").WithName("SeaweedBackup"),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("seaweedbackup-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "SeaweedBackup")
+		os.Exit(1)
+	}
+
+	if err = (&controller.SeaweedRestoreReconciler{
+		Client:   mgr.GetClient(),
+		Log:      ctrl.Log.WithName("controller").WithName("SeaweedRestore"),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("seaweedrestore-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "SeaweedRestore")
+		os.Exit(1)
+	}
+
+	if err = (&controller.BackupScheduler{
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("backup-scheduler"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create backup scheduler")
+		os.Exit(1)
+	}
+
 	if err = (&controller.AdminScriptReconciler{
 		Client:   mgr.GetClient(),
 		Log:      ctrl.Log.WithName("controller").WithName("AdminScript"),

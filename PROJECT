@@ -31,6 +31,12 @@ resources:
   kind: SeaweedCSIDriver
   version: v1
 - group: seaweed
+  kind: SeaweedBackup
+  version: v1
+- group: seaweed
+  kind: SeaweedRestore
+  version: v1
+- group: seaweed
   kind: AdminScript
   version: v1
 version: 3-alpha

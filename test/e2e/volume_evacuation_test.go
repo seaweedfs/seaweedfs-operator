@@ -165,8 +165,10 @@ var _ = Describe("Volume server evacuation on scale-down", Ordered, Label("integ
 		diskCount := int32(1)
 		// An explicit per-server max lets /vol/grow create volumes on the tiny
 		// test PVCs (with the default -max=0 the server derives its cap from
-		// free disk and a small PVC computes to ~0 writable volumes).
-		maxVolumeCounts := int32(10)
+		// free disk and a small PVC computes to ~0 writable volumes). Set well
+		// above the grow count so the surviving server has slots to spare for
+		// the evacuated volumes.
+		maxVolumeCounts := int32(20)
 		seaweed := &seaweedv1.Seaweed{
 			ObjectMeta: metav1.ObjectMeta{Name: seaweedName, Namespace: testNamespace},
 			Spec: seaweedv1.SeaweedSpec{
@@ -208,10 +210,15 @@ var _ = Describe("Volume server evacuation on scale-down", Ordered, Label("integ
 
 		By("growing volumes so both servers host data")
 		// replication=000 keeps every volume to a single copy, so the doomed
-		// server's volumes can always move onto the one remaining server.
+		// server's volumes can always move onto the one remaining server. Grow
+		// once (retrying only a transient HTTP error), then wait separately for
+		// the new volumes to register so a slow heartbeat does not re-grow.
 		Eventually(func(g Gomega) {
-			_, err := masterGet("/vol/grow?count=10&replication=000")
+			_, err := masterGet("/vol/grow?count=6&replication=000")
 			g.Expect(err).NotTo(HaveOccurred())
+		}, time.Minute, time.Second*5).Should(Succeed())
+
+		Eventually(func(g Gomega) {
 			ds, err := fetchTopology()
 			g.Expect(err).NotTo(HaveOccurred())
 			byNode := ds.volumesByNode()

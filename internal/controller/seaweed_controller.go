@@ -457,7 +457,10 @@ func (r *SeaweedReconciler) getDaemonSetStatus(ctx context.Context, namespace, n
 	daemonSet := &appsv1.DaemonSet{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, daemonSet); err != nil {
 		if errors.IsNotFound(err) {
-			return seaweedv1.ComponentStatus{}, nil
+			// A DaemonSet has no spec replica count, so report a missing one as
+			// expected-but-not-ready (1/0) rather than 0/0, which the readiness
+			// rule would otherwise treat as ready.
+			return seaweedv1.ComponentStatus{Replicas: 1, ReadyReplicas: 0}, nil
 		}
 		return seaweedv1.ComponentStatus{}, err
 	}

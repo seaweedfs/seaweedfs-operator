@@ -4420,11 +4420,13 @@ spec:
                             default: /
                             type: string
                           storageName:
+                            maxLength: 50
                             minLength: 1
                             type: string
                         required:
                           - storageName
                         type: object
+                      maxItems: 32
                       type: array
                       x-kubernetes-list-map-keys:
                         - storageName
@@ -4441,12 +4443,15 @@ spec:
                             minimum: 0
                             type: integer
                           name:
+                            maxLength: 50
                             minLength: 1
                             type: string
                           schedule:
+                            maxLength: 120
                             minLength: 1
                             type: string
                           storageName:
+                            maxLength: 50
                             minLength: 1
                             type: string
                           suspend:
@@ -4457,6 +4462,7 @@ spec:
                           - schedule
                           - storageName
                         type: object
+                      maxItems: 32
                       type: array
                       x-kubernetes-list-map-keys:
                         - name
@@ -4547,14 +4553,16 @@ spec:
                         required:
                           - type
                         type: object
+                        x-kubernetes-validations:
+                          - message: storage must set the sub-block matching its type
+                            rule: (self.type != 's3' || has(self.s3)) && (self.type != 'gcs' || has(self.gcs)) && (self.type != 'azure' || has(self.azure)) && (self.type != 'b2' || has(self.b2)) && (self.type != 'filesystem' || has(self.filesystem))
+                      maxProperties: 32
                       minProperties: 1
                       type: object
                   required:
                     - storages
                   type: object
                   x-kubernetes-validations:
-                    - message: each storage must set the sub-block matching its type
-                      rule: self.storages.all(k, (self.storages[k].type != 's3' || has(self.storages[k].s3)) && (self.storages[k].type != 'gcs' || has(self.storages[k].gcs)) && (self.storages[k].type != 'azure' || has(self.storages[k].azure)) && (self.storages[k].type != 'b2' || has(self.storages[k].b2)) && (self.storages[k].type != 'filesystem' || has(self.storages[k].filesystem)))
                     - message: schedule.storageName must reference a defined storage
                       rule: '!has(self.schedule) || self.schedule.all(s, s.storageName in self.storages)'
                     - message: dataMirror.storageName must reference a defined storage

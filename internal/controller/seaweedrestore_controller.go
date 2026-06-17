@@ -98,6 +98,9 @@ func (r *SeaweedRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if fp == "" || fp[0] != '/' {
 			fp = "/" + fp
 		}
+		// http:// is intentional even on TLS clusters: filer.cat reaches the
+		// filer over gRPC (mTLS via -config_dir); the filer's HTTP endpoint is
+		// plain HTTP under the operator's gRPC-only TLS model.
 		filerURL = fmt.Sprintf("http://%s%s", getFilerAddress(&cluster), fp)
 	}
 

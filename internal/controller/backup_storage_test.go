@@ -68,18 +68,34 @@ func TestRenderReplicationTomlGCS(t *testing.T) {
 		Type: seaweedv1.BackupStorageGCS,
 		GCS:  &seaweedv1.GCSBackupStore{Bucket: "gcs-bucket", Directory: "/"},
 	}
-	out, err := renderReplicationToml("gcsstore", st, "c1", nil)
+
+	// With a key supplied, the toml points at the mounted key file.
+	withKey, err := renderReplicationToml("gcsstore", st, "c1",
+		map[string][]byte{seaweedv1.BackupSecretKeyGCSCredentials: []byte(`{"type":"service_account"}`)})
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if !strings.Contains(out, "[sink.google_cloud_storage]") {
-		t.Errorf("missing gcs sink:\n%s", out)
+	if !strings.Contains(withKey, "[sink.google_cloud_storage]") {
+		t.Errorf("missing gcs sink:\n%s", withKey)
 	}
-	if !strings.Contains(out, `google_application_credentials = "/etc/seaweedfs/gcs.json"`) {
-		t.Errorf("gcs creds path not pointed at mounted key:\n%s", out)
+	if !strings.Contains(withKey, `google_application_credentials = "/etc/seaweedfs/gcs.json"`) {
+		t.Errorf("gcs creds path not pointed at mounted key:\n%s", withKey)
 	}
-	if !strings.Contains(out, `directory = "/c1/data"`) {
-		t.Errorf("gcs directory wrong:\n%s", out)
+	if !strings.Contains(withKey, `directory = "/c1/data"`) {
+		t.Errorf("gcs directory wrong:\n%s", withKey)
+	}
+
+	// With ambient credentials (no key), the credentials path must be omitted so
+	// the GCS client does not try to read a non-existent file.
+	ambient, err := renderReplicationToml("gcsstore", st, "c1", nil)
+	if err != nil {
+		t.Fatalf("render ambient: %v", err)
+	}
+	if strings.Contains(ambient, "google_application_credentials") {
+		t.Errorf("ambient GCS must not emit a credentials path:\n%s", ambient)
+	}
+	if !strings.Contains(ambient, `bucket = "gcs-bucket"`) {
+		t.Errorf("ambient GCS missing bucket:\n%s", ambient)
 	}
 }
 

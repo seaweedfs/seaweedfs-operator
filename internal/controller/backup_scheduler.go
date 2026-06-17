@@ -178,7 +178,10 @@ func (s *BackupScheduler) reconcileSchedule(ctx context.Context, m *seaweedv1.Se
 
 // createScheduledBackup creates one SeaweedBackup for a fired schedule.
 func (s *BackupScheduler) createScheduledBackup(ctx context.Context, m *seaweedv1.Seaweed, sched seaweedv1.BackupScheduleSpec, fireTime time.Time) error {
-	name := fmt.Sprintf("%s-%s-%s", m.Name, sched.Name, fireTime.UTC().Format("20060102150405"))
+	// Keep the generated name within the 63-char object-name limit even when
+	// the cluster + schedule names are long; the timestamp suffix is preserved
+	// so successive fires stay distinct and ordered.
+	name := boundedName(fmt.Sprintf("%s-%s", m.Name, sched.Name), "-"+fireTime.UTC().Format("20060102150405"))
 	backup := &seaweedv1.SeaweedBackup{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -204,8 +207,10 @@ func (s *BackupScheduler) createScheduledBackup(ctx context.Context, m *seaweedv
 	return nil
 }
 
-// pruneBackups deletes completed backups beyond Keep (most-recent retained).
-// Keep == 0 retains everything. Non-terminal backups are never deleted.
+// pruneBackups keeps the Keep most-recent terminal (Completed/Failed) backups
+// and deletes older terminal ones. Keep == 0 retains everything. Non-terminal
+// backups are never deleted and — importantly — never counted toward Keep, so a
+// burst of still-Running snapshots can't push completed ones out of retention.
 func (s *BackupScheduler) pruneBackups(ctx context.Context, backups []seaweedv1.SeaweedBackup, keep int32) error {
 	if keep <= 0 {
 		return nil
@@ -213,12 +218,14 @@ func (s *BackupScheduler) pruneBackups(ctx context.Context, backups []seaweedv1.
 	sort.Slice(backups, func(i, j int) bool {
 		return backups[i].CreationTimestamp.After(backups[j].CreationTimestamp.Time)
 	})
+	terminal := int32(0)
 	for i := range backups {
-		if i < int(keep) {
-			continue
-		}
 		b := &backups[i]
 		if b.Status.Phase != seaweedv1.BackupPhaseCompleted && b.Status.Phase != seaweedv1.BackupPhaseFailed {
+			continue
+		}
+		terminal++
+		if terminal <= keep {
 			continue
 		}
 		if err := s.Delete(ctx, b); err != nil && !apierrors.IsNotFound(err) {

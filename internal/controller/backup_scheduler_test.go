@@ -189,6 +189,30 @@ func TestPruneBackupsRetainsMostRecentCompleted(t *testing.T) {
 	}
 }
 
+func TestPruneBackupsRunningDoesNotEvictCompleted(t *testing.T) {
+	// Two Running snapshots are newer than two Completed ones. With keep=2 the
+	// completed ones must both survive — Running backups must not consume the
+	// retention slots (the bug this guards against).
+	base := time.Date(2026, 6, 16, 0, 0, 0, 0, time.UTC)
+	run1 := backupWithSchedule("c1-nightly-run1", "c1", "nightly", base.Add(3*time.Hour), seaweedv1.BackupPhaseRunning)
+	run2 := backupWithSchedule("c1-nightly-run2", "c1", "nightly", base.Add(4*time.Hour), seaweedv1.BackupPhaseRunning)
+	done1 := backupWithSchedule("c1-nightly-done1", "c1", "nightly", base.Add(time.Hour), seaweedv1.BackupPhaseCompleted)
+	done2 := backupWithSchedule("c1-nightly-done2", "c1", "nightly", base.Add(2*time.Hour), seaweedv1.BackupPhaseCompleted)
+	cli := newSchedulerClient(t, run1, run2, done1, done2)
+	s := schedulerWith(cli, base)
+
+	if err := s.pruneBackups(context.Background(), []seaweedv1.SeaweedBackup{*run1, *run2, *done1, *done2}, 2); err != nil {
+		t.Fatalf("pruneBackups: %v", err)
+	}
+	var list seaweedv1.SeaweedBackupList
+	if err := cli.List(context.Background(), &list, client.InNamespace("ns1")); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Items) != 4 {
+		t.Fatalf("expected all 4 retained (2 running not counted, 2 completed within keep), got %d", len(list.Items))
+	}
+}
+
 func TestPruneBackupsSkipsRunning(t *testing.T) {
 	base := time.Date(2026, 6, 16, 0, 0, 0, 0, time.UTC)
 	running := backupWithSchedule("c1-nightly-run", "c1", "nightly", base, seaweedv1.BackupPhaseRunning)

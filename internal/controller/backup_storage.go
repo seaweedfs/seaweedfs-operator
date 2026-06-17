@@ -165,7 +165,12 @@ func renderReplicationToml(storageName string, st seaweedv1.BackupStorageSpec, c
 			return "", fmt.Errorf("storage %q: type gcs requires the gcs block", storageName)
 		}
 		fmt.Fprintf(&b, "[sink.google_cloud_storage]\nenabled = true\n")
-		fmt.Fprintf(&b, "google_application_credentials = %s\n", tomlString(path.Join(backupConfigDir, gcsKeyFileName)))
+		// Only point at the key file when a key was supplied. With ambient
+		// credentials (Workload Identity) the file isn't mounted, and naming a
+		// non-existent path makes the GCS client fail to initialize.
+		if get(seaweedv1.BackupSecretKeyGCSCredentials) != "" {
+			fmt.Fprintf(&b, "google_application_credentials = %s\n", tomlString(path.Join(backupConfigDir, gcsKeyFileName)))
+		}
 		fmt.Fprintf(&b, "bucket = %s\n", tomlString(st.GCS.Bucket))
 		fmt.Fprintf(&b, "directory = %s\n", tomlString(dir))
 		fmt.Fprintf(&b, "is_incremental = false\n")

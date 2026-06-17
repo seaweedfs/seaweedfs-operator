@@ -168,9 +168,11 @@ type FilesystemBackupStore struct {
 	SubPath string `json:"subPath,omitempty"`
 }
 
-// BackupStorageSpec is one named destination. Exactly one of the per-type
-// sub-blocks must be set and must match Type — enforced by CEL on the
-// enclosing BackupSpec.
+// BackupStorageSpec is one named destination. The per-type sub-block matching
+// Type must be set — validated by a CEL rule on the element itself (rather than
+// iterating the map from the parent) so the rule cost stays a small constant.
+//
+// +kubebuilder:validation:XValidation:rule="(self.type != 's3' || has(self.s3)) && (self.type != 'gcs' || has(self.gcs)) && (self.type != 'azure' || has(self.azure)) && (self.type != 'b2' || has(self.b2)) && (self.type != 'filesystem' || has(self.filesystem))",message="storage must set the sub-block matching its type"
 type BackupStorageSpec struct {
 	// Type selects which sub-block below is used.
 	// +kubebuilder:validation:Required
@@ -201,14 +203,17 @@ type BackupStorageSpec struct {
 type BackupScheduleSpec struct {
 	// Name identifies the schedule and prefixes the SeaweedBackups it creates.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=50
 	Name string `json:"name"`
 
 	// Schedule is a standard cron expression, e.g. "0 2 * * *".
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=120
 	Schedule string `json:"schedule"`
 
 	// StorageName references a key in spec.backup.storages.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=50
 	StorageName string `json:"storageName"`
 
 	// Keep retains at most this many most-recent completed SeaweedBackups for
@@ -235,6 +240,7 @@ type BackupScheduleSpec struct {
 type BackupMirrorSpec struct {
 	// StorageName references a key in spec.backup.storages.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=50
 	StorageName string `json:"storageName"`
 
 	// FilerPath is the filer subtree to mirror. Defaults to "/".
@@ -245,11 +251,12 @@ type BackupMirrorSpec struct {
 
 // BackupSpec is the cluster-level backup configuration (Seaweed.spec.backup).
 //
-// CEL enforces that every storage's per-type sub-block matches its Type and
-// that schedules/mirrors reference a defined storage; cross-field checks that
-// CEL cannot express live in the validating webhook (validateBackup).
+// The per-storage type/sub-block check lives on BackupStorageSpec itself; here
+// CEL only checks that schedules/mirrors reference a defined storage. The
+// collections are bounded (MaxProperties/MaxItems) so these rules stay within
+// the apiserver's CEL cost budget. Cross-field checks CEL cannot express live
+// in the validating webhook (validateBackup).
 //
-// +kubebuilder:validation:XValidation:rule="self.storages.all(k, (self.storages[k].type != 's3' || has(self.storages[k].s3)) && (self.storages[k].type != 'gcs' || has(self.storages[k].gcs)) && (self.storages[k].type != 'azure' || has(self.storages[k].azure)) && (self.storages[k].type != 'b2' || has(self.storages[k].b2)) && (self.storages[k].type != 'filesystem' || has(self.storages[k].filesystem)))",message="each storage must set the sub-block matching its type"
 // +kubebuilder:validation:XValidation:rule="!has(self.schedule) || self.schedule.all(s, s.storageName in self.storages)",message="schedule.storageName must reference a defined storage"
 // +kubebuilder:validation:XValidation:rule="!has(self.dataMirror) || self.dataMirror.all(m, m.storageName in self.storages)",message="dataMirror.storageName must reference a defined storage"
 type BackupSpec struct {
@@ -260,18 +267,21 @@ type BackupSpec struct {
 
 	// Storages is the set of named backup destinations.
 	// +kubebuilder:validation:MinProperties=1
+	// +kubebuilder:validation:MaxProperties=32
 	Storages map[string]BackupStorageSpec `json:"storages"`
 
 	// Schedule is a list of cron-driven metadata snapshot schedules.
 	// +optional
 	// +listType=map
 	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=32
 	Schedule []BackupScheduleSpec `json:"schedule,omitempty"`
 
 	// DataMirror is a list of continuous data-replication mirrors.
 	// +optional
 	// +listType=map
 	// +listMapKey=storageName
+	// +kubebuilder:validation:MaxItems=32
 	DataMirror []BackupMirrorSpec `json:"dataMirror,omitempty"`
 }
 

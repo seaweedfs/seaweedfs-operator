@@ -98,6 +98,9 @@ func snapshotScript(m *seaweedv1.Seaweed, st seaweedv1.BackupStorageSpec, cluste
 	}
 
 	scratch := path.Join(backupScratchDir, "filer.meta.gz")
+	// http:// is intentional even on TLS clusters: the operator's TLS is gRPC
+	// mTLS (security.toml), and filer.copy talks to the filer over gRPC (wired
+	// via -config_dir); the filer's HTTP endpoint stays plain HTTP.
 	dstURL := fmt.Sprintf("http://%s%s/%s/", filer, reservedBackupFilerDir, backupName)
 	copyCmd := weedCmd(m, "filer.copy", scratch, dstURL)
 	staged := reservedFilerMetaPath(backupName)
@@ -223,7 +226,7 @@ func newJob(namespace, name string, labels map[string]string, pod corev1.PodSpec
 // buildMirrorDeployment returns the continuous `weed filer.backup` Deployment
 // for a data mirror. The rendered replication.toml (and, on TLS clusters,
 // security.toml + the GCS key) are projected into backupConfigDir.
-func buildMirrorDeployment(m *seaweedv1.Seaweed, name, replicationSecret string, mirror seaweedv1.BackupMirrorSpec, st seaweedv1.BackupStorageSpec) *appsv1.Deployment {
+func buildMirrorDeployment(m *seaweedv1.Seaweed, name, replicationSecret string, mirror seaweedv1.BackupMirrorSpec, st seaweedv1.BackupStorageSpec, hasGCSKey bool) *appsv1.Deployment {
 	filer := getFilerAddress(m)
 	fp := filerPathOrDefault(mirror.FilerPath)
 
@@ -253,7 +256,11 @@ func buildMirrorDeployment(m *seaweedv1.Seaweed, name, replicationSecret string,
 			},
 		},
 	}}
-	if st.Type == seaweedv1.BackupStorageGCS {
+	// Only project the GCS key file when it was actually rendered into the
+	// Secret (a key was supplied). Projecting a key that isn't in the Secret
+	// makes the kubelet fail the volume mount, so ambient-credential GCS
+	// mirrors must not reference it.
+	if st.Type == seaweedv1.BackupStorageGCS && hasGCSKey {
 		configSources[0].Secret.Items = append(configSources[0].Secret.Items, corev1.KeyToPath{Key: gcsKeyFileName, Path: gcsKeyFileName})
 	}
 

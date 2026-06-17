@@ -72,7 +72,8 @@ func (r *SeaweedReconciler) ensureBackupMirrors(ctx context.Context, m *seaweedv
 		}
 
 		depName := mirrorDeploymentName(m.Name, mirror.StorageName)
-		dep := buildMirrorDeployment(m, depName, secretName, mirror, st)
+		hasGCSKey := len(creds[seaweedv1.BackupSecretKeyGCSCredentials]) > 0
+		dep := buildMirrorDeployment(m, depName, secretName, mirror, st, hasGCSKey)
 		if err := controllerutil.SetControllerReference(m, dep, r.Scheme); err != nil {
 			return ReconcileResult(err)
 		}

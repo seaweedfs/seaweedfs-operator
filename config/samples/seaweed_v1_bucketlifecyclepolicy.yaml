@@ -1,0 +1,23 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: BucketLifecyclePolicy
+metadata:
+  name: expire-logs
+  namespace: media
+spec:
+  bucketRef:
+    name: photos
+  rules:
+    - id: expire-archived
+      prefix: archived/
+      status: Enabled
+      expiration:
+        days: 90
+    - id: cleanup-incomplete-uploads
+      status: Enabled
+      abortIncompleteMultipartUpload:
+        daysAfterInitiation: 7
+    - id: prune-old-versions
+      status: Enabled
+      noncurrentVersionExpiration:
+        noncurrentDays: 30
+        newerNoncurrentVersions: 3

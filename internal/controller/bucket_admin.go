@@ -58,6 +58,15 @@ type BucketAdmin interface {
 	// Configure issues a single fs.configure call; args are the flag list
 	// minus locationPrefix and -apply (the admin layer adds those).
 	Configure(ctx context.Context, prefix string, args []string) error
+	// GetBucketLifecycle returns the bucket's stored lifecycle configuration
+	// XML, or nil when none is set.
+	GetBucketLifecycle(ctx context.Context, name string) ([]byte, error)
+	// SetBucketLifecycle stores the bucket's lifecycle configuration XML.
+	// Empty xml clears the configuration.
+	SetBucketLifecycle(ctx context.Context, name string, xml []byte) error
+	// ClearLegacyBucketTTLs removes legacy per-path day-TTL filer.conf entries
+	// for the bucket. It is a no-op when none are present.
+	ClearLegacyBucketTTLs(ctx context.Context, name string) error
 	// ListCollectionStats fetches per-collection (= per-bucket) usage in
 	// a single round trip. The map is keyed by bucket/collection name;
 	// buckets that exist on the filer but have no objects yet may be
@@ -240,6 +249,26 @@ func (a *swadminBucketAdmin) Configure(ctx context.Context, prefix string, args 
 	parts = append(parts, "-apply")
 	_, err := a.run(ctx, strings.Join(parts, " "))
 	return err
+}
+
+func (a *swadminBucketAdmin) GetBucketLifecycle(ctx context.Context, name string) ([]byte, error) {
+	out, err := a.sa.GetBucketLifecycle(ctx, name)
+	if errors.Is(err, swadmin.ErrBucketNotFound) {
+		return nil, ErrBucketNotFound
+	}
+	return out, err
+}
+
+func (a *swadminBucketAdmin) SetBucketLifecycle(ctx context.Context, name string, xml []byte) error {
+	err := a.sa.SetBucketLifecycle(ctx, name, xml)
+	if errors.Is(err, swadmin.ErrBucketNotFound) {
+		return ErrBucketNotFound
+	}
+	return err
+}
+
+func (a *swadminBucketAdmin) ClearLegacyBucketTTLs(ctx context.Context, name string) error {
+	return a.sa.ClearLegacyBucketTTLs(ctx, name)
 }
 
 func (a *swadminBucketAdmin) ListCollectionStats(ctx context.Context) (map[string]BucketCollectionStats, error) {

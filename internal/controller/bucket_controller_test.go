@@ -59,6 +59,10 @@ type fakeBucketAdmin struct {
 
 	collectionStats map[string]BucketCollectionStats
 	collectionErr   error
+
+	lifecycle    map[string][]byte
+	lifecycleErr error
+	ttlErr       error
 }
 
 type closingFakeBucketAdmin struct {
@@ -126,6 +130,36 @@ func (f *fakeBucketAdmin) SetAccess(_ context.Context, name, user, actions strin
 func (f *fakeBucketAdmin) Configure(_ context.Context, prefix string, args []string) error {
 	f.record("Configure:" + prefix + ":" + strings.Join(args, ","))
 	return f.configureErr
+}
+func (f *fakeBucketAdmin) GetBucketLifecycle(_ context.Context, name string) ([]byte, error) {
+	f.record("GetLifecycle:" + name)
+	if f.lifecycleErr != nil {
+		return nil, f.lifecycleErr
+	}
+	v, ok := f.lifecycle[name]
+	if !ok {
+		return nil, nil
+	}
+	return append([]byte(nil), v...), nil
+}
+func (f *fakeBucketAdmin) SetBucketLifecycle(_ context.Context, name string, xml []byte) error {
+	f.record("SetLifecycle:" + name + ":" + string(xml))
+	if f.lifecycleErr != nil {
+		return f.lifecycleErr
+	}
+	if f.lifecycle == nil {
+		f.lifecycle = map[string][]byte{}
+	}
+	if len(xml) == 0 {
+		delete(f.lifecycle, name)
+	} else {
+		f.lifecycle[name] = append([]byte(nil), xml...)
+	}
+	return nil
+}
+func (f *fakeBucketAdmin) ClearLegacyBucketTTLs(_ context.Context, name string) error {
+	f.record("ClearLegacyTTLs:" + name)
+	return f.ttlErr
 }
 func (f *fakeBucketAdmin) ListCollectionStats(_ context.Context) (map[string]BucketCollectionStats, error) {
 	f.record("ListCollectionStats")

@@ -162,6 +162,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controller.BucketLifecyclePolicyReconciler{
+		Client:   mgr.GetClient(),
+		Log:      ctrl.Log.WithName("controller").WithName("BucketLifecyclePolicy"),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("bucketlifecyclepolicy-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "BucketLifecyclePolicy")
+		os.Exit(1)
+	}
+
 	if err = (&controller.S3IdentityReconciler{
 		Client:   mgr.GetClient(),
 		Log:      ctrl.Log.WithName("controller").WithName("S3Identity"),

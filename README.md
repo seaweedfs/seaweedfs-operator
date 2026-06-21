@@ -545,6 +545,55 @@ adopts or modifies a bucket created by the COSI driver — collisions are
 surfaced as `BucketAlreadyExists` in `status` rather than silently
 overwriting.
 
+#### Bucket lifecycle policies
+
+The `BucketLifecyclePolicy` CRD (`seaweed.seaweedfs.com/v1`) manages the
+S3 lifecycle configuration of a bucket declaratively, so object
+expiration and cleanup rules live in Git instead of being applied
+through the S3 API by hand.
+
+```yaml
+apiVersion: seaweed.seaweedfs.com/v1
+kind: BucketLifecyclePolicy
+metadata:
+  name: expire-logs
+  namespace: media
+spec:
+  bucketRef:
+    name: photos
+  rules:
+    - id: expire-archived
+      prefix: archived/
+      status: Enabled
+      expiration:
+        days: 90
+    - id: cleanup-incomplete-uploads
+      status: Enabled
+      abortIncompleteMultipartUpload:
+        daysAfterInitiation: 7
+```
+
+- `bucketRef` points at a `Bucket` in the same namespace; the cluster and
+  the resolved bucket name are taken from it. The policy stays `Pending`
+  until that bucket is provisioned. `bucketRef` is immutable.
+- Each rule needs an `id` and at least one action: `expiration`
+  (`days`, `expiredObjectDeleteMarker`), `noncurrentVersionExpiration`
+  (`noncurrentDays`, `newerNoncurrentVersions`), or
+  `abortIncompleteMultipartUpload` (`daysAfterInitiation`). `prefix`
+  scopes a rule to a key prefix; `status` toggles it (`Enabled` default).
+- A single policy owns a bucket's whole lifecycle configuration — the
+  controller reconciles the bucket to exactly the listed rules. If more
+  than one policy targets the same bucket, the oldest owns it and the
+  rest are marked with a `Conflict` condition and left inactive.
+- `reclaimPolicy`: `Delete` (default) removes the rules from the bucket
+  when the CR is deleted; `Retain` leaves them in place.
+- Taking over a bucket that used the older per-path day-TTL lifecycle
+  (`filer.conf` TTL entries) clears those entries so expiration is driven
+  only by the rules declared here.
+
+See `config/samples/seaweed_v1_bucketlifecyclepolicy.yaml` for a full
+example.
+
 ### Declarative IAM (identities, credentials, policies)
 
 Four CRDs (`seaweed.seaweedfs.com/v1`) manage the S3 IAM objects of a

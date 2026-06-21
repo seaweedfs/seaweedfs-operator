@@ -5,6 +5,7 @@ resources:
 - seaweed_v1_bucket_full.yaml
 - seaweed_v1_bucket_objectlock.yaml
 - seaweed_v1_bucket_cross_namespace.yaml
+- seaweed_v1_bucketlifecyclepolicy.yaml
 - seaweed_v1_s3identity.yaml
 - seaweed_v1_s3credentials.yaml
 - seaweed_v1_s3policy.yaml

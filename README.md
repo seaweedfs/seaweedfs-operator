@@ -582,7 +582,9 @@ spec:
   `abortIncompleteMultipartUpload` (`daysAfterInitiation`). `prefix`
   scopes a rule to a key prefix; `status` toggles it (`Enabled` default).
 - A single policy owns a bucket's whole lifecycle configuration — the
-  controller reconciles the bucket to exactly the listed rules.
+  controller reconciles the bucket to exactly the listed rules. If more
+  than one policy targets the same bucket, the oldest owns it and the
+  rest are marked with a `Conflict` condition and left inactive.
 - `reclaimPolicy`: `Delete` (default) removes the rules from the bucket
   when the CR is deleted; `Retain` leaves them in place.
 

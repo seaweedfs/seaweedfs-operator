@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,9 +29,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
@@ -60,7 +63,7 @@ type BucketLifecyclePolicyReconciler struct {
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=buckets,verbs=get;list;watch
 
 // Reconcile implements the lifecycle policy reconciliation logic.
-func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := r.Log.WithValues("bucketlifecyclepolicy", req.NamespacedName)
 
 	var policy seaweedv1.BucketLifecyclePolicy
@@ -84,6 +87,19 @@ func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	// Persist status once, and only when it actually changed, so a no-op
+	// reconcile doesn't emit an update event (which would re-trigger this
+	// controller and churn admin reads/writes).
+	base := policy.Status.DeepCopy()
+	defer func() {
+		if err != nil || reflect.DeepEqual(*base, policy.Status) {
+			return
+		}
+		if uerr := r.Status().Update(ctx, &policy); uerr != nil {
+			result, err = ctrl.Result{}, uerr
+		}
+	}()
+
 	// Resolve the referenced bucket (same namespace).
 	var bucket seaweedv1.Bucket
 	bucketKey := types.NamespacedName{Namespace: policy.Namespace, Name: policy.Spec.BucketRef.Name}
@@ -91,7 +107,7 @@ func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctr
 		if apierrors.IsNotFound(err) {
 			r.setCondition(&policy, seaweedv1.BucketLifecyclePolicyConditionBucketResolved, metav1.ConditionFalse, "BucketNotFound",
 				fmt.Sprintf("Bucket %q not found in namespace %q", policy.Spec.BucketRef.Name, policy.Namespace))
-			return r.pending(ctx, &policy)
+			return r.pending(&policy), nil
 		}
 		return ctrl.Result{}, err
 	}
@@ -100,7 +116,7 @@ func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctr
 	if bucketName == "" {
 		r.setCondition(&policy, seaweedv1.BucketLifecyclePolicyConditionBucketResolved, metav1.ConditionFalse, "BucketNotReady",
 			fmt.Sprintf("Bucket %q is not provisioned yet", policy.Spec.BucketRef.Name))
-		return r.pending(ctx, &policy)
+		return r.pending(&policy), nil
 	}
 	r.setCondition(&policy, seaweedv1.BucketLifecyclePolicyConditionBucketResolved, metav1.ConditionTrue, "Resolved", "")
 
@@ -112,7 +128,7 @@ func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, err
 	}
 	if owner != policy.Name {
-		return r.conflict(ctx, &policy, owner)
+		return r.conflict(&policy, owner), nil
 	}
 
 	seaweedNS := bucket.Spec.ClusterRef.Namespace
@@ -124,7 +140,7 @@ func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctr
 		if apierrors.IsNotFound(err) {
 			r.setCondition(&policy, seaweedv1.BucketLifecyclePolicyConditionBucketResolved, metav1.ConditionFalse, "ClusterRefNotFound",
 				fmt.Sprintf("Seaweed %q not found in namespace %q", bucket.Spec.ClusterRef.Name, seaweedNS))
-			return r.pending(ctx, &policy)
+			return r.pending(&policy), nil
 		}
 		return ctrl.Result{}, err
 	}
@@ -146,15 +162,15 @@ func (r *BucketLifecyclePolicyReconciler) reconcilePolicy(ctx context.Context, p
 
 	desired, err := buildLifecycleXML(policy.Spec.Rules)
 	if err != nil {
-		return r.failPhase(ctx, policy, "BuildFailed", err.Error())
+		return r.failPhase(policy, "BuildFailed", err.Error()), nil
 	}
 	current, err := admin.GetBucketLifecycle(ctx, bucketName)
 	if err != nil {
-		return r.failPhase(ctx, policy, "ReadFailed", err.Error())
+		return r.failPhase(policy, "ReadFailed", err.Error()), nil
 	}
 	if !lifecycleConfigEqual(current, desired) {
 		if err := admin.SetBucketLifecycle(ctx, bucketName, desired); err != nil {
-			return r.failPhase(ctx, policy, "ApplyFailed", err.Error())
+			return r.failPhase(policy, "ApplyFailed", err.Error()), nil
 		}
 		log.Info("applied lifecycle configuration", "bucket", bucketName, "rules", len(policy.Spec.Rules))
 	}
@@ -166,9 +182,6 @@ func (r *BucketLifecyclePolicyReconciler) reconcilePolicy(ctx context.Context, p
 	policy.Status.AppliedRules = int32(len(policy.Spec.Rules))
 	policy.Status.Phase = seaweedv1.BucketPhaseReady
 	r.setCondition(policy, seaweedv1.BucketLifecyclePolicyConditionReady, metav1.ConditionTrue, "Reconciled", "")
-	if err := r.Status().Update(ctx, policy); err != nil {
-		return ctrl.Result{}, err
-	}
 	return ctrl.Result{}, nil
 }
 
@@ -261,23 +274,20 @@ func policyPrecedes(a, b *seaweedv1.BucketLifecyclePolicy) bool {
 
 // conflict marks a policy that lost ownership of its bucket and relinquishes its
 // applied marker so it never cleans up another policy's configuration.
-func (r *BucketLifecyclePolicyReconciler) conflict(ctx context.Context, policy *seaweedv1.BucketLifecyclePolicy, owner string) (ctrl.Result, error) {
+func (r *BucketLifecyclePolicyReconciler) conflict(policy *seaweedv1.BucketLifecyclePolicy, owner string) ctrl.Result {
 	policy.Status.BucketName = ""
 	policy.Status.ClusterName = ""
 	policy.Status.ClusterNamespace = ""
 	policy.Status.AppliedRules = 0
-	return r.failPhase(ctx, policy, "Conflict",
+	return r.failPhase(policy, "Conflict",
 		fmt.Sprintf("bucket %q lifecycle is managed by BucketLifecyclePolicy %q", policy.Spec.BucketRef.Name, owner))
 }
 
 // pending records a Pending phase and requeues on the transient cadence so the
 // policy is retried once its bucket (or cluster) becomes available.
-func (r *BucketLifecyclePolicyReconciler) pending(ctx context.Context, policy *seaweedv1.BucketLifecyclePolicy) (ctrl.Result, error) {
+func (r *BucketLifecyclePolicyReconciler) pending(policy *seaweedv1.BucketLifecyclePolicy) ctrl.Result {
 	policy.Status.Phase = seaweedv1.BucketPhasePending
-	if err := r.Status().Update(ctx, policy); err != nil {
-		return ctrl.Result{}, err
-	}
-	return ctrl.Result{RequeueAfter: requeueAfterTransient}, nil
+	return ctrl.Result{RequeueAfter: requeueAfterTransient}
 }
 
 func (r *BucketLifecyclePolicyReconciler) removeFinalizer(ctx context.Context, policy *seaweedv1.BucketLifecyclePolicy) (ctrl.Result, error) {
@@ -291,14 +301,11 @@ func (r *BucketLifecyclePolicyReconciler) removeFinalizer(ctx context.Context, p
 	return ctrl.Result{}, nil
 }
 
-func (r *BucketLifecyclePolicyReconciler) failPhase(ctx context.Context, policy *seaweedv1.BucketLifecyclePolicy, reason, message string) (ctrl.Result, error) {
+func (r *BucketLifecyclePolicyReconciler) failPhase(policy *seaweedv1.BucketLifecyclePolicy, reason, message string) ctrl.Result {
 	r.Log.Info("reconcile failed", "reason", reason, "message", message)
 	policy.Status.Phase = seaweedv1.BucketPhaseFailed
 	r.setCondition(policy, seaweedv1.BucketLifecyclePolicyConditionReady, metav1.ConditionFalse, reason, message)
-	if err := r.Status().Update(ctx, policy); err != nil {
-		return ctrl.Result{}, err
-	}
-	return ctrl.Result{RequeueAfter: requeueAfterTransient}, nil
+	return ctrl.Result{RequeueAfter: requeueAfterTransient}
 }
 
 func (r *BucketLifecyclePolicyReconciler) setCondition(policy *seaweedv1.BucketLifecyclePolicy, condType string, status metav1.ConditionStatus, reason, message string) {
@@ -361,6 +368,9 @@ func (r *BucketLifecyclePolicyReconciler) SetupWithManager(mgr ctrl.Manager) err
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&seaweedv1.BucketLifecyclePolicy{}).
 		Watches(&seaweedv1.Bucket{}, handler.EnqueueRequestsFromMapFunc(r.mapBucketToPolicies)).
-		Watches(&seaweedv1.BucketLifecyclePolicy{}, handler.EnqueueRequestsFromMapFunc(r.mapPolicyToPeers)).
+		// Only react to peers on spec/create/delete, never status-only updates,
+		// so two same-bucket policies don't ping-pong off each other's status.
+		Watches(&seaweedv1.BucketLifecyclePolicy{}, handler.EnqueueRequestsFromMapFunc(r.mapPolicyToPeers),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Complete(r)
 }

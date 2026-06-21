@@ -191,18 +191,25 @@ func TestLifecyclePolicyApply(t *testing.T) {
 func TestLifecyclePolicyIdempotent(t *testing.T) {
 	fa := newFakeAdmin()
 	sw, bucket := newLifecycleTestObjects()
-	r, _ := testLifecycleReconciler(t, fa, sw, bucket, newTestLifecyclePolicy())
+	r, cli := testLifecycleReconciler(t, fa, sw, bucket, newTestLifecyclePolicy())
 
 	reconcileLifecycle(t, r, lifecyclePolicyKey)
 	before := countCalls(fa.calls, "SetLifecycle:")
 	if before == 0 {
 		t.Fatal("expected an initial SetLifecycle")
 	}
+	rv := getLifecyclePolicy(t, cli, lifecyclePolicyKey).ResourceVersion
+
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: lifecyclePolicyKey}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 	if after := countCalls(fa.calls, "SetLifecycle:"); after != before {
 		t.Errorf("SetLifecycle called again on steady state: before=%d after=%d", before, after)
+	}
+	// A no-op reconcile must not write status (which would emit an update event
+	// and re-trigger the controller).
+	if got := getLifecyclePolicy(t, cli, lifecyclePolicyKey).ResourceVersion; got != rv {
+		t.Errorf("steady-state reconcile wrote status: resourceVersion %s -> %s", rv, got)
 	}
 }
 

@@ -81,6 +81,10 @@ spec:
                         expiredObjectDeleteMarker:
                           type: boolean
                       type: object
+                      x-kubernetes-validations:
+                      - message: expiration must set days or expiredObjectDeleteMarker
+                        rule: has(self.days) || (has(self.expiredObjectDeleteMarker)
+                          && self.expiredObjectDeleteMarker)
                     id:
                       maxLength: 255
                       minLength: 1

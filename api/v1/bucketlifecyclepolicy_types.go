@@ -39,6 +39,7 @@ type BucketLifecycleRef struct {
 }
 
 // BucketLifecycleExpiration expires current object versions.
+// +kubebuilder:validation:XValidation:rule="has(self.days) || (has(self.expiredObjectDeleteMarker) && self.expiredObjectDeleteMarker)",message="expiration must set days or expiredObjectDeleteMarker"
 type BucketLifecycleExpiration struct {
 	// Days is the object age in days after which it is expired.
 	// +optional

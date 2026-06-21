@@ -59,6 +59,9 @@ type fakeBucketAdmin struct {
 
 	collectionStats map[string]BucketCollectionStats
 	collectionErr   error
+
+	lifecycle    map[string][]byte
+	lifecycleErr error
 }
 
 type closingFakeBucketAdmin struct {
@@ -126,6 +129,28 @@ func (f *fakeBucketAdmin) SetAccess(_ context.Context, name, user, actions strin
 func (f *fakeBucketAdmin) Configure(_ context.Context, prefix string, args []string) error {
 	f.record("Configure:" + prefix + ":" + strings.Join(args, ","))
 	return f.configureErr
+}
+func (f *fakeBucketAdmin) GetBucketLifecycle(_ context.Context, name string) ([]byte, error) {
+	f.record("GetLifecycle:" + name)
+	if f.lifecycleErr != nil {
+		return nil, f.lifecycleErr
+	}
+	return f.lifecycle[name], nil
+}
+func (f *fakeBucketAdmin) SetBucketLifecycle(_ context.Context, name string, xml []byte) error {
+	f.record("SetLifecycle:" + name + ":" + string(xml))
+	if f.lifecycleErr != nil {
+		return f.lifecycleErr
+	}
+	if f.lifecycle == nil {
+		f.lifecycle = map[string][]byte{}
+	}
+	if len(xml) == 0 {
+		delete(f.lifecycle, name)
+	} else {
+		f.lifecycle[name] = xml
+	}
+	return nil
 }
 func (f *fakeBucketAdmin) ListCollectionStats(_ context.Context) (map[string]BucketCollectionStats, error) {
 	f.record("ListCollectionStats")

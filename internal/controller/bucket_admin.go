@@ -58,6 +58,12 @@ type BucketAdmin interface {
 	// Configure issues a single fs.configure call; args are the flag list
 	// minus locationPrefix and -apply (the admin layer adds those).
 	Configure(ctx context.Context, prefix string, args []string) error
+	// GetBucketLifecycle returns the bucket's stored lifecycle configuration
+	// XML, or nil when none is set.
+	GetBucketLifecycle(ctx context.Context, name string) ([]byte, error)
+	// SetBucketLifecycle stores the bucket's lifecycle configuration XML.
+	// Empty xml clears the configuration.
+	SetBucketLifecycle(ctx context.Context, name string, xml []byte) error
 	// ListCollectionStats fetches per-collection (= per-bucket) usage in
 	// a single round trip. The map is keyed by bucket/collection name;
 	// buckets that exist on the filer but have no objects yet may be
@@ -240,6 +246,14 @@ func (a *swadminBucketAdmin) Configure(ctx context.Context, prefix string, args 
 	parts = append(parts, "-apply")
 	_, err := a.run(ctx, strings.Join(parts, " "))
 	return err
+}
+
+func (a *swadminBucketAdmin) GetBucketLifecycle(ctx context.Context, name string) ([]byte, error) {
+	return a.sa.GetBucketLifecycle(ctx, name)
+}
+
+func (a *swadminBucketAdmin) SetBucketLifecycle(ctx context.Context, name string, xml []byte) error {
+	return a.sa.SetBucketLifecycle(ctx, name, xml)
 }
 
 func (a *swadminBucketAdmin) ListCollectionStats(ctx context.Context) (map[string]BucketCollectionStats, error) {

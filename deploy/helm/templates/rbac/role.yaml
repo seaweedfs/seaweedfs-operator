@@ -131,6 +131,7 @@ rules:
   - seaweed.seaweedfs.com
   resources:
   - adminscripts
+  - bucketlifecyclepolicies
   - buckets
   - s3credentials
   - s3identities
@@ -153,6 +154,7 @@ rules:
   - seaweed.seaweedfs.com
   resources:
   - adminscripts/finalizers
+  - bucketlifecyclepolicies/finalizers
   - buckets/finalizers
   - s3credentials/finalizers
   - s3identities/finalizers
@@ -168,6 +170,7 @@ rules:
   - seaweed.seaweedfs.com
   resources:
   - adminscripts/status
+  - bucketlifecyclepolicies/status
   - buckets/status
   - s3credentials/status
   - s3identities/status

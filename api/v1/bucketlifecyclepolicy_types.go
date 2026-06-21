@@ -161,9 +161,20 @@ type BucketLifecyclePolicyStatus struct {
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 
-	// BucketName is the resolved bucket name the rules were applied to.
+	// BucketName is the resolved bucket name the rules were applied to. It is
+	// set only after a successful apply and acts as the marker that this policy
+	// owns the bucket's lifecycle configuration, so deletion cleanup never
+	// touches a config this policy did not write.
 	// +optional
 	BucketName string `json:"bucketName,omitempty"`
+
+	// ClusterName and ClusterNamespace record the Seaweed cluster the rules were
+	// applied to, so the configuration can be cleaned up on deletion even when
+	// the referenced Bucket has since been removed.
+	// +optional
+	ClusterName string `json:"clusterName,omitempty"`
+	// +optional
+	ClusterNamespace string `json:"clusterNamespace,omitempty"`
 
 	// AppliedRules is the number of rules currently applied to the bucket.
 	// +optional

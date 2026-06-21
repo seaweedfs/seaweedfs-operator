@@ -68,21 +68,27 @@ func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	deleting := !policy.DeletionTimestamp.IsZero()
-	if deleting && !controllerutil.ContainsFinalizer(&policy, BucketLifecyclePolicyFinalizer) {
-		return ctrl.Result{}, nil
+	// Deletion is driven entirely off recorded status so cleanup works even
+	// when the referenced Bucket is already gone.
+	if !policy.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &policy, log)
 	}
 
-	// Resolve the referenced bucket (same namespace). When the bucket — or its
-	// cluster, below — is already gone there is nothing left to clean up, so a
-	// deleting policy just drops its finalizer rather than blocking forever.
+	// Add the finalizer before doing any work, so a policy that later applies
+	// successfully is always cleaned up on deletion.
+	if !controllerutil.ContainsFinalizer(&policy, BucketLifecyclePolicyFinalizer) {
+		controllerutil.AddFinalizer(&policy, BucketLifecyclePolicyFinalizer)
+		if err := r.Update(ctx, &policy); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// Resolve the referenced bucket (same namespace).
 	var bucket seaweedv1.Bucket
 	bucketKey := types.NamespacedName{Namespace: policy.Namespace, Name: policy.Spec.BucketRef.Name}
 	if err := r.Get(ctx, bucketKey, &bucket); err != nil {
 		if apierrors.IsNotFound(err) {
-			if deleting {
-				return r.removeFinalizer(ctx, &policy)
-			}
 			r.setCondition(&policy, seaweedv1.BucketLifecyclePolicyConditionBucketResolved, metav1.ConditionFalse, "BucketNotFound",
 				fmt.Sprintf("Bucket %q not found in namespace %q", policy.Spec.BucketRef.Name, policy.Namespace))
 			return r.pending(ctx, &policy)
@@ -92,9 +98,6 @@ func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctr
 
 	bucketName := bucket.Status.BucketName
 	if bucketName == "" {
-		if deleting {
-			return r.removeFinalizer(ctx, &policy)
-		}
 		r.setCondition(&policy, seaweedv1.BucketLifecyclePolicyConditionBucketResolved, metav1.ConditionFalse, "BucketNotReady",
 			fmt.Sprintf("Bucket %q is not provisioned yet", policy.Spec.BucketRef.Name))
 		return r.pending(ctx, &policy)
@@ -108,9 +111,6 @@ func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctr
 	var seaweed seaweedv1.Seaweed
 	if err := r.Get(ctx, types.NamespacedName{Namespace: seaweedNS, Name: bucket.Spec.ClusterRef.Name}, &seaweed); err != nil {
 		if apierrors.IsNotFound(err) {
-			if deleting {
-				return r.removeFinalizer(ctx, &policy)
-			}
 			r.setCondition(&policy, seaweedv1.BucketLifecyclePolicyConditionBucketResolved, metav1.ConditionFalse, "ClusterRefNotFound",
 				fmt.Sprintf("Seaweed %q not found in namespace %q", bucket.Spec.ClusterRef.Name, seaweedNS))
 			return r.pending(ctx, &policy)
@@ -118,40 +118,19 @@ func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, err
 	}
 
-	masters := getMasterPeersString(&seaweed)
-	filer := getFilerAddress(&seaweed)
-	adminKey, err := loadFilerAdminSigningKey(ctx, r.Client, &seaweed)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	dialOption, _, err := loadSeaweedGrpcDialOption(ctx, r.Client, &seaweed)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	admin, err := r.AdminFactory(masters, filer, adminKey, dialOption, log)
+	admin, err := r.adminFor(ctx, &seaweed, log)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	defer closeBucketAdmin(admin, log)
 
-	if deleting {
-		return r.handleDeletion(ctx, &policy, bucketName, admin)
-	}
-
-	if !controllerutil.ContainsFinalizer(&policy, BucketLifecyclePolicyFinalizer) {
-		controllerutil.AddFinalizer(&policy, BucketLifecyclePolicyFinalizer)
-		if err := r.Update(ctx, &policy); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{Requeue: true}, nil
-	}
-
-	return r.reconcilePolicy(ctx, &policy, bucketName, admin)
+	return r.reconcilePolicy(ctx, &policy, seaweedNS, seaweed.Name, bucketName, admin)
 }
 
 // reconcilePolicy applies the desired lifecycle configuration to the bucket,
-// skipping the write when the bucket already matches.
-func (r *BucketLifecyclePolicyReconciler) reconcilePolicy(ctx context.Context, policy *seaweedv1.BucketLifecyclePolicy, bucketName string, admin BucketAdmin) (ctrl.Result, error) {
+// skipping the write when the bucket already matches, and records the resolved
+// target on status so deletion can clean up independently of the Bucket CR.
+func (r *BucketLifecyclePolicyReconciler) reconcilePolicy(ctx context.Context, policy *seaweedv1.BucketLifecyclePolicy, clusterNS, clusterName, bucketName string, admin BucketAdmin) (ctrl.Result, error) {
 	log := r.Log.WithValues("bucketlifecyclepolicy", types.NamespacedName{Namespace: policy.Namespace, Name: policy.Name})
 
 	desired, err := buildLifecycleXML(policy.Spec.Rules)
@@ -170,6 +149,8 @@ func (r *BucketLifecyclePolicyReconciler) reconcilePolicy(ctx context.Context, p
 	}
 
 	policy.Status.BucketName = bucketName
+	policy.Status.ClusterName = clusterName
+	policy.Status.ClusterNamespace = clusterNS
 	policy.Status.ObservedGeneration = policy.Generation
 	policy.Status.AppliedRules = int32(len(policy.Spec.Rules))
 	policy.Status.Phase = seaweedv1.BucketPhaseReady
@@ -180,22 +161,61 @@ func (r *BucketLifecyclePolicyReconciler) reconcilePolicy(ctx context.Context, p
 	return ctrl.Result{}, nil
 }
 
-// handleDeletion clears the lifecycle configuration when reclaimPolicy is
-// Delete, then removes the finalizer.
-func (r *BucketLifecyclePolicyReconciler) handleDeletion(ctx context.Context, policy *seaweedv1.BucketLifecyclePolicy, bucketName string, admin BucketAdmin) (ctrl.Result, error) {
-	policy.Status.Phase = seaweedv1.BucketPhaseTerminating
+// handleDeletion clears the lifecycle configuration when reclaimPolicy is Delete
+// and this policy actually applied one, then removes the finalizer. The target
+// cluster and bucket come from status, so a Bucket removed under reclaimPolicy
+// Retain still has its rules cleared.
+func (r *BucketLifecyclePolicyReconciler) handleDeletion(ctx context.Context, policy *seaweedv1.BucketLifecyclePolicy, log logr.Logger) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(policy, BucketLifecyclePolicyFinalizer) {
+		return ctrl.Result{}, nil
+	}
 
-	if policy.Spec.ReclaimPolicy != seaweedv1.BucketReclaimRetain {
-		if err := admin.SetBucketLifecycle(ctx, bucketName, nil); err != nil {
-			r.setCondition(policy, seaweedv1.BucketLifecyclePolicyConditionReady, metav1.ConditionFalse, "CleanupFailed", err.Error())
-			if updateErr := r.Status().Update(ctx, policy); updateErr != nil {
-				r.Log.Error(updateErr, "status update during deletion")
-			}
-			return ctrl.Result{}, err
+	// Nothing was applied (or the user opted out), so there is nothing this
+	// policy owns to clean up.
+	if policy.Status.BucketName == "" || policy.Spec.ReclaimPolicy == seaweedv1.BucketReclaimRetain {
+		return r.removeFinalizer(ctx, policy)
+	}
+
+	var seaweed seaweedv1.Seaweed
+	clusterKey := types.NamespacedName{Namespace: policy.Status.ClusterNamespace, Name: policy.Status.ClusterName}
+	if err := r.Get(ctx, clusterKey, &seaweed); err != nil {
+		if apierrors.IsNotFound(err) {
+			// The cluster is gone, and the bucket with it; release rather than block.
+			log.Info("recorded cluster not found; releasing without lifecycle cleanup", "cluster", clusterKey)
+			return r.removeFinalizer(ctx, policy)
 		}
+		return ctrl.Result{}, err
+	}
+
+	admin, err := r.adminFor(ctx, &seaweed, log)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	defer closeBucketAdmin(admin, log)
+
+	if err := admin.SetBucketLifecycle(ctx, policy.Status.BucketName, nil); err != nil {
+		policy.Status.Phase = seaweedv1.BucketPhaseTerminating
+		r.setCondition(policy, seaweedv1.BucketLifecyclePolicyConditionReady, metav1.ConditionFalse, "CleanupFailed", err.Error())
+		if updateErr := r.Status().Update(ctx, policy); updateErr != nil {
+			log.Error(updateErr, "status update during deletion")
+		}
+		return ctrl.Result{}, err
 	}
 
 	return r.removeFinalizer(ctx, policy)
+}
+
+// adminFor builds a BucketAdmin for the given Seaweed cluster.
+func (r *BucketLifecyclePolicyReconciler) adminFor(ctx context.Context, seaweed *seaweedv1.Seaweed, log logr.Logger) (BucketAdmin, error) {
+	adminKey, err := loadFilerAdminSigningKey(ctx, r.Client, seaweed)
+	if err != nil {
+		return nil, err
+	}
+	dialOption, _, err := loadSeaweedGrpcDialOption(ctx, r.Client, seaweed)
+	if err != nil {
+		return nil, err
+	}
+	return r.AdminFactory(getMasterPeersString(seaweed), getFilerAddress(seaweed), adminKey, dialOption, log)
 }
 
 // pending records a Pending phase and requeues on the transient cadence so the

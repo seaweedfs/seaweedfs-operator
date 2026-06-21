@@ -89,6 +89,9 @@ func newTestLifecyclePolicy() *seaweedv1.BucketLifecyclePolicy {
 	}
 }
 
+var lifecyclePolicyKey = types.NamespacedName{Namespace: "default", Name: "expire-logs"}
+
+// reconcileLifecycle drives Reconcile until it neither requeues nor errors.
 func reconcileLifecycle(t *testing.T, r *BucketLifecyclePolicyReconciler, key types.NamespacedName) {
 	t.Helper()
 	for i := 0; i < 5; i++ {
@@ -103,6 +106,21 @@ func reconcileLifecycle(t *testing.T, r *BucketLifecyclePolicyReconciler, key ty
 	t.Fatalf("reconcile did not converge")
 }
 
+// reconcileLifecycleN runs Reconcile n times and returns the last result, for
+// paths that settle on a steady requeue (Pending / Conflict) not convergence.
+func reconcileLifecycleN(t *testing.T, r *BucketLifecyclePolicyReconciler, key types.NamespacedName, n int) ctrl.Result {
+	t.Helper()
+	var res ctrl.Result
+	for i := 0; i < n; i++ {
+		var err error
+		res, err = r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+		if err != nil {
+			t.Fatalf("reconcile step %d: %v", i, err)
+		}
+	}
+	return res
+}
+
 func getLifecyclePolicy(t *testing.T, cli client.Client, key types.NamespacedName) *seaweedv1.BucketLifecyclePolicy {
 	t.Helper()
 	var p seaweedv1.BucketLifecyclePolicy
@@ -114,26 +132,21 @@ func getLifecyclePolicy(t *testing.T, cli client.Client, key types.NamespacedNam
 
 func TestLifecyclePolicyBucketNotFound(t *testing.T) {
 	fa := newFakeAdmin()
-	policy := newTestLifecyclePolicy()
-	r, cli := testLifecycleReconciler(t, fa, policy)
-	key := types.NamespacedName{Namespace: "default", Name: "expire-logs"}
+	r, cli := testLifecycleReconciler(t, fa, newTestLifecyclePolicy())
 
-	res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
-	if err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	res := reconcileLifecycleN(t, r, lifecyclePolicyKey, 2)
 	if res.RequeueAfter == 0 {
 		t.Error("expected a requeue while the bucket is missing")
 	}
-	p := getLifecyclePolicy(t, cli, key)
+	p := getLifecyclePolicy(t, cli, lifecyclePolicyKey)
 	if p.Status.Phase != seaweedv1.BucketPhasePending {
 		t.Errorf("phase = %q, want Pending", p.Status.Phase)
 	}
 	if c := meta.FindStatusCondition(p.Status.Conditions, seaweedv1.BucketLifecyclePolicyConditionBucketResolved); c == nil || c.Status != metav1.ConditionFalse {
 		t.Errorf("BucketResolved condition = %+v, want False", c)
 	}
-	if len(fa.calls) != 0 {
-		t.Errorf("admin should not be touched, got %v", fa.calls)
+	if countCalls(fa.calls, "SetLifecycle:") != 0 {
+		t.Errorf("admin lifecycle should not be touched, got %v", fa.calls)
 	}
 }
 
@@ -141,14 +154,10 @@ func TestLifecyclePolicyBucketNotProvisioned(t *testing.T) {
 	fa := newFakeAdmin()
 	sw, bucket := newLifecycleTestObjects()
 	bucket.Status.BucketName = ""
-	policy := newTestLifecyclePolicy()
-	r, cli := testLifecycleReconciler(t, fa, sw, bucket, policy)
-	key := types.NamespacedName{Namespace: "default", Name: "expire-logs"}
+	r, cli := testLifecycleReconciler(t, fa, sw, bucket, newTestLifecyclePolicy())
 
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
-	p := getLifecyclePolicy(t, cli, key)
+	reconcileLifecycleN(t, r, lifecyclePolicyKey, 2)
+	p := getLifecyclePolicy(t, cli, lifecyclePolicyKey)
 	if p.Status.Phase != seaweedv1.BucketPhasePending {
 		t.Errorf("phase = %q, want Pending", p.Status.Phase)
 	}
@@ -157,26 +166,24 @@ func TestLifecyclePolicyBucketNotProvisioned(t *testing.T) {
 func TestLifecyclePolicyApply(t *testing.T) {
 	fa := newFakeAdmin()
 	sw, bucket := newLifecycleTestObjects()
-	policy := newTestLifecyclePolicy()
-	r, cli := testLifecycleReconciler(t, fa, sw, bucket, policy)
-	key := types.NamespacedName{Namespace: "default", Name: "expire-logs"}
+	r, cli := testLifecycleReconciler(t, fa, sw, bucket, newTestLifecyclePolicy())
 
-	reconcileLifecycle(t, r, key)
+	reconcileLifecycle(t, r, lifecyclePolicyKey)
 
-	p := getLifecyclePolicy(t, cli, key)
+	p := getLifecyclePolicy(t, cli, lifecyclePolicyKey)
 	if p.Status.Phase != seaweedv1.BucketPhaseReady {
 		t.Errorf("phase = %q, want Ready", p.Status.Phase)
 	}
 	if p.Status.AppliedRules != 1 {
 		t.Errorf("appliedRules = %d, want 1", p.Status.AppliedRules)
 	}
-	if p.Status.BucketName != "my-bucket" {
-		t.Errorf("bucketName = %q, want my-bucket", p.Status.BucketName)
+	if p.Status.BucketName != "my-bucket" || p.Status.ClusterName != "prod" || p.Status.ClusterNamespace != "default" {
+		t.Errorf("recorded target = %q/%q/%q", p.Status.ClusterNamespace, p.Status.ClusterName, p.Status.BucketName)
 	}
 	if !controllerHasFinalizer(p) {
 		t.Error("expected finalizer to be added")
 	}
-	if applied := fa.lifecycle["my-bucket"]; len(applied) == 0 {
+	if len(fa.lifecycle["my-bucket"]) == 0 {
 		t.Fatal("expected lifecycle XML to be written")
 	}
 }
@@ -184,69 +191,94 @@ func TestLifecyclePolicyApply(t *testing.T) {
 func TestLifecyclePolicyIdempotent(t *testing.T) {
 	fa := newFakeAdmin()
 	sw, bucket := newLifecycleTestObjects()
-	policy := newTestLifecyclePolicy()
-	r, cli := testLifecycleReconciler(t, fa, sw, bucket, policy)
-	key := types.NamespacedName{Namespace: "default", Name: "expire-logs"}
+	r, _ := testLifecycleReconciler(t, fa, sw, bucket, newTestLifecyclePolicy())
 
-	reconcileLifecycle(t, r, key)
-
+	reconcileLifecycle(t, r, lifecyclePolicyKey)
 	before := countCalls(fa.calls, "SetLifecycle:")
 	if before == 0 {
 		t.Fatal("expected an initial SetLifecycle")
 	}
-	// A steady-state reconcile must not rewrite an already-matching config.
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: lifecyclePolicyKey}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 	if after := countCalls(fa.calls, "SetLifecycle:"); after != before {
 		t.Errorf("SetLifecycle called again on steady state: before=%d after=%d", before, after)
 	}
-	_ = cli
 }
 
 func TestLifecyclePolicyDeleteClearsConfig(t *testing.T) {
 	fa := newFakeAdmin()
 	sw, bucket := newLifecycleTestObjects()
-	fa.lifecycle = map[string][]byte{"my-bucket": []byte("<LifecycleConfiguration></LifecycleConfiguration>")}
-	policy := newTestLifecyclePolicy()
-	policy.Finalizers = []string{BucketLifecyclePolicyFinalizer}
-	r, cli := testLifecycleReconciler(t, fa, sw, bucket, policy)
-	key := types.NamespacedName{Namespace: "default", Name: "expire-logs"}
+	r, cli := testLifecycleReconciler(t, fa, sw, bucket, newTestLifecyclePolicy())
 
-	if err := cli.Delete(context.Background(), policy); err != nil {
-		t.Fatalf("delete: %v", err)
+	reconcileLifecycle(t, r, lifecyclePolicyKey)
+	if len(fa.lifecycle["my-bucket"]) == 0 {
+		t.Fatal("precondition: config should be applied")
 	}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+
+	deleteAndReconcile(t, r, cli, lifecyclePolicyKey)
+
 	if _, ok := fa.lifecycle["my-bucket"]; ok {
 		t.Error("expected lifecycle config to be cleared on delete")
 	}
-	var p seaweedv1.BucketLifecyclePolicy
-	if err := cli.Get(context.Background(), key, &p); !apierrors.IsNotFound(err) {
-		t.Errorf("expected policy to be gone after finalizer removal, got err=%v", err)
-	}
+	assertPolicyGone(t, cli, lifecyclePolicyKey)
 }
 
 func TestLifecyclePolicyDeleteRetain(t *testing.T) {
 	fa := newFakeAdmin()
 	sw, bucket := newLifecycleTestObjects()
-	fa.lifecycle = map[string][]byte{"my-bucket": []byte("<LifecycleConfiguration></LifecycleConfiguration>")}
 	policy := newTestLifecyclePolicy()
 	policy.Spec.ReclaimPolicy = seaweedv1.BucketReclaimRetain
-	policy.Finalizers = []string{BucketLifecyclePolicyFinalizer}
 	r, cli := testLifecycleReconciler(t, fa, sw, bucket, policy)
-	key := types.NamespacedName{Namespace: "default", Name: "expire-logs"}
 
-	if err := cli.Delete(context.Background(), policy); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	reconcileLifecycle(t, r, lifecyclePolicyKey)
+	deleteAndReconcile(t, r, cli, lifecyclePolicyKey)
+
 	if _, ok := fa.lifecycle["my-bucket"]; !ok {
 		t.Error("Retain must leave the lifecycle config in place")
 	}
+}
+
+// TestLifecyclePolicyDeleteBeforeApply pins that deleting a policy that never
+// applied does not erase a pre-existing (e.g. manual) lifecycle config.
+func TestLifecyclePolicyDeleteBeforeApply(t *testing.T) {
+	fa := newFakeAdmin()
+	fa.lifecycle = map[string][]byte{"my-bucket": []byte("<LifecycleConfiguration></LifecycleConfiguration>")}
+	policy := newTestLifecyclePolicy()
+	policy.Finalizers = []string{BucketLifecyclePolicyFinalizer}
+	// No bucket/seaweed and no recorded status: the policy never applied.
+	r, cli := testLifecycleReconciler(t, fa, policy)
+
+	deleteAndReconcile(t, r, cli, lifecyclePolicyKey)
+
+	if _, ok := fa.lifecycle["my-bucket"]; !ok {
+		t.Error("a policy that never applied must not clear an existing config")
+	}
+	if countCalls(fa.calls, "SetLifecycle:") != 0 {
+		t.Errorf("no lifecycle write expected, got %v", fa.calls)
+	}
+	assertPolicyGone(t, cli, lifecyclePolicyKey)
+}
+
+// TestLifecyclePolicyDeleteWithBucketGone pins that cleanup still happens when
+// the referenced Bucket CR has been removed but its cluster (and the underlying
+// bucket) remain.
+func TestLifecyclePolicyDeleteWithBucketGone(t *testing.T) {
+	fa := newFakeAdmin()
+	sw, bucket := newLifecycleTestObjects()
+	r, cli := testLifecycleReconciler(t, fa, sw, bucket, newTestLifecyclePolicy())
+
+	reconcileLifecycle(t, r, lifecyclePolicyKey)
+	if err := cli.Delete(context.Background(), bucket); err != nil {
+		t.Fatalf("delete bucket: %v", err)
+	}
+
+	deleteAndReconcile(t, r, cli, lifecyclePolicyKey)
+
+	if _, ok := fa.lifecycle["my-bucket"]; ok {
+		t.Error("expected cleanup via recorded cluster even with the Bucket CR gone")
+	}
+	assertPolicyGone(t, cli, lifecyclePolicyKey)
 }
 
 func TestLifecyclePolicyMapBucketToPolicies(t *testing.T) {
@@ -261,6 +293,25 @@ func TestLifecyclePolicyMapBucketToPolicies(t *testing.T) {
 	reqs := r.mapBucketToPolicies(context.Background(), bucket)
 	if len(reqs) != 1 || reqs[0].Name != "expire-logs" {
 		t.Fatalf("expected only the referencing policy, got %+v", reqs)
+	}
+}
+
+func deleteAndReconcile(t *testing.T, r *BucketLifecyclePolicyReconciler, cli client.Client, key types.NamespacedName) {
+	t.Helper()
+	p := &seaweedv1.BucketLifecyclePolicy{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace}}
+	if err := cli.Delete(context.Background(), p); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("reconcile during deletion: %v", err)
+	}
+}
+
+func assertPolicyGone(t *testing.T, cli client.Client, key types.NamespacedName) {
+	t.Helper()
+	var p seaweedv1.BucketLifecyclePolicy
+	if err := cli.Get(context.Background(), key, &p); !apierrors.IsNotFound(err) {
+		t.Errorf("expected policy to be gone after finalizer removal, got err=%v", err)
 	}
 }
 

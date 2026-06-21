@@ -134,6 +134,10 @@ spec:
                 type: integer
               bucketName:
                 type: string
+              clusterName:
+                type: string
+              clusterNamespace:
+                type: string
               conditions:
                 items:
                   properties:

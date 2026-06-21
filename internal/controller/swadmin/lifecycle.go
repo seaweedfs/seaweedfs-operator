@@ -65,5 +65,8 @@ func lookupBucketEntry(ctx context.Context, client filer_pb.SeaweedFilerClient, 
 	if err != nil {
 		return nil, "", fmt.Errorf("lookup bucket %s: %w", bucket, err)
 	}
+	if resp.Entry == nil {
+		return nil, "", fmt.Errorf("lookup bucket %s: entry not found", bucket)
+	}
 	return resp.Entry, dir, nil
 }

@@ -135,7 +135,11 @@ func (f *fakeBucketAdmin) GetBucketLifecycle(_ context.Context, name string) ([]
 	if f.lifecycleErr != nil {
 		return nil, f.lifecycleErr
 	}
-	return f.lifecycle[name], nil
+	v, ok := f.lifecycle[name]
+	if !ok {
+		return nil, nil
+	}
+	return append([]byte(nil), v...), nil
 }
 func (f *fakeBucketAdmin) SetBucketLifecycle(_ context.Context, name string, xml []byte) error {
 	f.record("SetLifecycle:" + name + ":" + string(xml))
@@ -148,7 +152,7 @@ func (f *fakeBucketAdmin) SetBucketLifecycle(_ context.Context, name string, xml
 	if len(xml) == 0 {
 		delete(f.lifecycle, name)
 	} else {
-		f.lifecycle[name] = xml
+		f.lifecycle[name] = append([]byte(nil), xml...)
 	}
 	return nil
 }

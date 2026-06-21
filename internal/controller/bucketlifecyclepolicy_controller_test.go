@@ -163,6 +163,32 @@ func TestLifecyclePolicyBucketNotProvisioned(t *testing.T) {
 	}
 }
 
+// TestLifecyclePolicyReadyRegressesOnDependencyLoss pins that a policy drops
+// Ready=False when its bucket disappears after a successful reconcile.
+func TestLifecyclePolicyReadyRegressesOnDependencyLoss(t *testing.T) {
+	fa := newFakeAdmin()
+	sw, bucket := newLifecycleTestObjects()
+	r, cli := testLifecycleReconciler(t, fa, sw, bucket, newTestLifecyclePolicy())
+
+	reconcileLifecycle(t, r, lifecyclePolicyKey)
+	if c := meta.FindStatusCondition(getLifecyclePolicy(t, cli, lifecyclePolicyKey).Status.Conditions, seaweedv1.BucketLifecyclePolicyConditionReady); c == nil || c.Status != metav1.ConditionTrue {
+		t.Fatalf("precondition: Ready should be True, got %+v", c)
+	}
+
+	if err := cli.Delete(context.Background(), bucket); err != nil {
+		t.Fatalf("delete bucket: %v", err)
+	}
+	reconcileLifecycleN(t, r, lifecyclePolicyKey, 1)
+
+	p := getLifecyclePolicy(t, cli, lifecyclePolicyKey)
+	if p.Status.Phase != seaweedv1.BucketPhasePending {
+		t.Errorf("phase = %q, want Pending", p.Status.Phase)
+	}
+	if c := meta.FindStatusCondition(p.Status.Conditions, seaweedv1.BucketLifecyclePolicyConditionReady); c == nil || c.Status != metav1.ConditionFalse {
+		t.Errorf("Ready condition = %+v, want False", c)
+	}
+}
+
 func TestLifecyclePolicyApply(t *testing.T) {
 	fa := newFakeAdmin()
 	sw, bucket := newLifecycleTestObjects()

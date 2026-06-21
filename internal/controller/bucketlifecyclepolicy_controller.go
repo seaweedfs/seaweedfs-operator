@@ -106,18 +106,16 @@ func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctr
 	bucketKey := types.NamespacedName{Namespace: policy.Namespace, Name: policy.Spec.BucketRef.Name}
 	if err := r.Get(ctx, bucketKey, &bucket); err != nil {
 		if apierrors.IsNotFound(err) {
-			r.setCondition(&policy, seaweedv1.BucketLifecyclePolicyConditionBucketResolved, metav1.ConditionFalse, "BucketNotFound",
-				fmt.Sprintf("Bucket %q not found in namespace %q", policy.Spec.BucketRef.Name, policy.Namespace))
-			return r.pending(&policy), nil
+			return r.pending(&policy, "BucketNotFound",
+				fmt.Sprintf("Bucket %q not found in namespace %q", policy.Spec.BucketRef.Name, policy.Namespace)), nil
 		}
 		return ctrl.Result{}, err
 	}
 
 	bucketName := bucket.Status.BucketName
 	if bucketName == "" {
-		r.setCondition(&policy, seaweedv1.BucketLifecyclePolicyConditionBucketResolved, metav1.ConditionFalse, "BucketNotReady",
-			fmt.Sprintf("Bucket %q is not provisioned yet", policy.Spec.BucketRef.Name))
-		return r.pending(&policy), nil
+		return r.pending(&policy, "BucketNotReady",
+			fmt.Sprintf("Bucket %q is not provisioned yet", policy.Spec.BucketRef.Name)), nil
 	}
 	r.setCondition(&policy, seaweedv1.BucketLifecyclePolicyConditionBucketResolved, metav1.ConditionTrue, "Resolved", "")
 
@@ -139,9 +137,8 @@ func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctr
 	var seaweed seaweedv1.Seaweed
 	if err := r.Get(ctx, types.NamespacedName{Namespace: seaweedNS, Name: bucket.Spec.ClusterRef.Name}, &seaweed); err != nil {
 		if apierrors.IsNotFound(err) {
-			r.setCondition(&policy, seaweedv1.BucketLifecyclePolicyConditionBucketResolved, metav1.ConditionFalse, "ClusterRefNotFound",
-				fmt.Sprintf("Seaweed %q not found in namespace %q", bucket.Spec.ClusterRef.Name, seaweedNS))
-			return r.pending(&policy), nil
+			return r.pending(&policy, "ClusterRefNotFound",
+				fmt.Sprintf("Seaweed %q not found in namespace %q", bucket.Spec.ClusterRef.Name, seaweedNS)), nil
 		}
 		return ctrl.Result{}, err
 	}
@@ -289,10 +286,13 @@ func (r *BucketLifecyclePolicyReconciler) conflict(policy *seaweedv1.BucketLifec
 		fmt.Sprintf("bucket %q lifecycle is managed by BucketLifecyclePolicy %q", policy.Spec.BucketRef.Name, owner))
 }
 
-// pending records a Pending phase and requeues on the transient cadence so the
-// policy is retried once its bucket (or cluster) becomes available.
-func (r *BucketLifecyclePolicyReconciler) pending(policy *seaweedv1.BucketLifecyclePolicy) ctrl.Result {
+// pending records a Pending phase with the dependency that is missing, clearing
+// readiness so a previously-Ready policy doesn't report stale readiness once it
+// can no longer reconcile. It requeues on the transient cadence.
+func (r *BucketLifecyclePolicyReconciler) pending(policy *seaweedv1.BucketLifecyclePolicy, reason, message string) ctrl.Result {
 	policy.Status.Phase = seaweedv1.BucketPhasePending
+	r.setCondition(policy, seaweedv1.BucketLifecyclePolicyConditionBucketResolved, metav1.ConditionFalse, reason, message)
+	r.setCondition(policy, seaweedv1.BucketLifecyclePolicyConditionReady, metav1.ConditionFalse, reason, message)
 	return ctrl.Result{RequeueAfter: requeueAfterTransient}
 }
 

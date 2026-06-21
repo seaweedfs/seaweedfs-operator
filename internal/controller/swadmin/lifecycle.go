@@ -19,6 +19,15 @@ const bucketLifecycleConfigurationXMLKey = "s3-bucket-lifecycle-configuration-xm
 // ErrBucketNotFound is returned when the bucket has no filer entry.
 var ErrBucketNotFound = errors.New("bucket not found")
 
+// isFilerNotFound reports whether err is the filer's "entry not found" signal.
+// The filer returns a plain sentinel rather than a gRPC codes.NotFound status,
+// and over the wire raw lookups carry only its text — so both the wrapped
+// sentinel and the substring are checked, mirroring the SeaweedFS filer_pb
+// helpers.
+func isFilerNotFound(err error) bool {
+	return errors.Is(err, filer_pb.ErrNotFound) || strings.Contains(err.Error(), filer_pb.ErrNotFound.Error())
+}
+
 // GetBucketLifecycle returns the lifecycle configuration XML stored on the
 // bucket's filer entry, or nil when none is set.
 func (sa *SeaweedAdmin) GetBucketLifecycle(ctx context.Context, bucket string) ([]byte, error) {
@@ -82,7 +91,7 @@ func (sa *SeaweedAdmin) ClearLegacyBucketTTLs(ctx context.Context, bucket string
 func clearLegacyBucketTTLs(ctx context.Context, client filer_pb.SeaweedFilerClient, bucketsDir, bucket string) error {
 	content, err := filer.ReadInsideFiler(ctx, client, filer.DirectoryEtcSeaweedFS, filer.FilerConfName)
 	if err != nil {
-		if errors.Is(err, filer_pb.ErrNotFound) || strings.Contains(err.Error(), filer_pb.ErrNotFound.Error()) {
+		if isFilerNotFound(err) {
 			return nil
 		}
 		return fmt.Errorf("read filer.conf: %w", err)
@@ -129,7 +138,7 @@ func lookupBucketEntry(ctx context.Context, client filer_pb.SeaweedFilerClient, 
 	if err != nil {
 		// Distinguish a genuinely missing bucket from transport errors so the
 		// caller can treat the former as "already gone".
-		if strings.Contains(err.Error(), filer_pb.ErrNotFound.Error()) {
+		if isFilerNotFound(err) {
 			return nil, "", ErrBucketNotFound
 		}
 		return nil, "", fmt.Errorf("lookup bucket %s: %w", bucket, err)

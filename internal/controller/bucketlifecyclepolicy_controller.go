@@ -104,6 +104,17 @@ func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctr
 	}
 	r.setCondition(&policy, seaweedv1.BucketLifecyclePolicyConditionBucketResolved, metav1.ConditionTrue, "Resolved", "")
 
+	// A bucket's lifecycle is a single document, so only one policy may own it.
+	// Pick a deterministic owner; everyone else marks a conflict and stands down
+	// instead of fighting last-writer-wins.
+	owner, err := r.bucketOwner(ctx, &policy)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if owner != policy.Name {
+		return r.conflict(ctx, &policy, owner)
+	}
+
 	seaweedNS := bucket.Spec.ClusterRef.Namespace
 	if seaweedNS == "" {
 		seaweedNS = bucket.Namespace
@@ -218,6 +229,47 @@ func (r *BucketLifecyclePolicyReconciler) adminFor(ctx context.Context, seaweed 
 	return r.AdminFactory(getMasterPeersString(seaweed), getFilerAddress(seaweed), adminKey, dialOption, log)
 }
 
+// bucketOwner returns the name of the policy that should manage the referenced
+// bucket's lifecycle among the same-namespace policies pointing at it: the
+// oldest, breaking ties by name. Policies being deleted are skipped so a
+// terminating owner hands off to the next in line.
+func (r *BucketLifecyclePolicyReconciler) bucketOwner(ctx context.Context, policy *seaweedv1.BucketLifecyclePolicy) (string, error) {
+	var policies seaweedv1.BucketLifecyclePolicyList
+	if err := r.List(ctx, &policies, client.InNamespace(policy.Namespace)); err != nil {
+		return "", err
+	}
+	owner := policy
+	for i := range policies.Items {
+		p := &policies.Items[i]
+		if p.Name == policy.Name || p.Spec.BucketRef.Name != policy.Spec.BucketRef.Name || !p.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if policyPrecedes(p, owner) {
+			owner = p
+		}
+	}
+	return owner.Name, nil
+}
+
+// policyPrecedes orders policies by creation time, breaking ties by name.
+func policyPrecedes(a, b *seaweedv1.BucketLifecyclePolicy) bool {
+	if !a.CreationTimestamp.Equal(&b.CreationTimestamp) {
+		return a.CreationTimestamp.Before(&b.CreationTimestamp)
+	}
+	return a.Name < b.Name
+}
+
+// conflict marks a policy that lost ownership of its bucket and relinquishes its
+// applied marker so it never cleans up another policy's configuration.
+func (r *BucketLifecyclePolicyReconciler) conflict(ctx context.Context, policy *seaweedv1.BucketLifecyclePolicy, owner string) (ctrl.Result, error) {
+	policy.Status.BucketName = ""
+	policy.Status.ClusterName = ""
+	policy.Status.ClusterNamespace = ""
+	policy.Status.AppliedRules = 0
+	return r.failPhase(ctx, policy, "Conflict",
+		fmt.Sprintf("bucket %q lifecycle is managed by BucketLifecyclePolicy %q", policy.Spec.BucketRef.Name, owner))
+}
+
 // pending records a Pending phase and requeues on the transient cadence so the
 // policy is retried once its bucket (or cluster) becomes available.
 func (r *BucketLifecyclePolicyReconciler) pending(ctx context.Context, policy *seaweedv1.BucketLifecyclePolicy) (ctrl.Result, error) {
@@ -280,6 +332,27 @@ func (r *BucketLifecyclePolicyReconciler) mapBucketToPolicies(ctx context.Contex
 	return reqs
 }
 
+// mapPolicyToPeers enqueues the other policies targeting the same bucket so a
+// conflict loser takes over promptly when the owner changes or is deleted.
+func (r *BucketLifecyclePolicyReconciler) mapPolicyToPeers(ctx context.Context, obj client.Object) []reconcile.Request {
+	changed, ok := obj.(*seaweedv1.BucketLifecyclePolicy)
+	if !ok {
+		return nil
+	}
+	var policies seaweedv1.BucketLifecyclePolicyList
+	if err := r.List(ctx, &policies, client.InNamespace(changed.Namespace)); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for i := range policies.Items {
+		p := &policies.Items[i]
+		if p.Name != changed.Name && p.Spec.BucketRef.Name == changed.Spec.BucketRef.Name {
+			reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(p)})
+		}
+	}
+	return reqs
+}
+
 // SetupWithManager wires the reconciler into the controller-runtime manager.
 func (r *BucketLifecyclePolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.AdminFactory == nil {
@@ -288,5 +361,6 @@ func (r *BucketLifecyclePolicyReconciler) SetupWithManager(mgr ctrl.Manager) err
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&seaweedv1.BucketLifecyclePolicy{}).
 		Watches(&seaweedv1.Bucket{}, handler.EnqueueRequestsFromMapFunc(r.mapBucketToPolicies)).
+		Watches(&seaweedv1.BucketLifecyclePolicy{}, handler.EnqueueRequestsFromMapFunc(r.mapPolicyToPeers)).
 		Complete(r)
 }

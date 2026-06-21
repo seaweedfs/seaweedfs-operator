@@ -281,6 +281,61 @@ func TestLifecyclePolicyDeleteWithBucketGone(t *testing.T) {
 	assertPolicyGone(t, cli, lifecyclePolicyKey)
 }
 
+// TestLifecyclePolicyConflict pins that two policies targeting one bucket don't
+// fight: the deterministic owner applies, the other marks a conflict and never
+// writes.
+func TestLifecyclePolicyConflict(t *testing.T) {
+	fa := newFakeAdmin()
+	sw, bucket := newLifecycleTestObjects()
+	owner := newTestLifecyclePolicy()
+	owner.Name = "aaa-owner"
+	loser := newTestLifecyclePolicy()
+	loser.Name = "zzz-loser"
+	r, cli := testLifecycleReconciler(t, fa, sw, bucket, owner, loser)
+
+	loserKey := types.NamespacedName{Namespace: "default", Name: "zzz-loser"}
+	res := reconcileLifecycleN(t, r, loserKey, 2)
+	if res.RequeueAfter == 0 {
+		t.Error("conflicting policy should requeue to retry takeover")
+	}
+	lp := getLifecyclePolicy(t, cli, loserKey)
+	if lp.Status.Phase != seaweedv1.BucketPhaseFailed {
+		t.Errorf("loser phase = %q, want Failed", lp.Status.Phase)
+	}
+	if c := meta.FindStatusCondition(lp.Status.Conditions, seaweedv1.BucketLifecyclePolicyConditionReady); c == nil || c.Reason != "Conflict" {
+		t.Errorf("loser Ready condition = %+v, want reason Conflict", c)
+	}
+	if lp.Status.BucketName != "" {
+		t.Error("loser must not record an applied marker")
+	}
+	if countCalls(fa.calls, "SetLifecycle:") != 0 {
+		t.Errorf("loser must not write lifecycle, got %v", fa.calls)
+	}
+
+	ownerKey := types.NamespacedName{Namespace: "default", Name: "aaa-owner"}
+	reconcileLifecycle(t, r, ownerKey)
+	if len(fa.lifecycle["my-bucket"]) == 0 {
+		t.Error("owner should apply the lifecycle config")
+	}
+}
+
+func TestLifecyclePolicyMapPolicyToPeers(t *testing.T) {
+	fa := newFakeAdmin()
+	a := newTestLifecyclePolicy()
+	a.Name = "a"
+	b := newTestLifecyclePolicy()
+	b.Name = "b"
+	c := newTestLifecyclePolicy()
+	c.Name = "c"
+	c.Spec.BucketRef.Name = "other-bucket"
+	r, _ := testLifecycleReconciler(t, fa, a, b, c)
+
+	reqs := r.mapPolicyToPeers(context.Background(), a)
+	if len(reqs) != 1 || reqs[0].Name != "b" {
+		t.Fatalf("expected only same-bucket peer b, got %+v", reqs)
+	}
+}
+
 func TestLifecyclePolicyMapBucketToPolicies(t *testing.T) {
 	fa := newFakeAdmin()
 	match := newTestLifecyclePolicy()

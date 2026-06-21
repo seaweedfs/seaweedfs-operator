@@ -288,6 +288,20 @@ func TestLifecyclePolicyDeleteWithBucketGone(t *testing.T) {
 	assertPolicyGone(t, cli, lifecyclePolicyKey)
 }
 
+// TestLifecyclePolicyDeleteBucketAlreadyGone pins that a cleanup hitting a
+// missing bucket releases the policy instead of getting stuck in Terminating.
+func TestLifecyclePolicyDeleteBucketAlreadyGone(t *testing.T) {
+	fa := newFakeAdmin()
+	sw, bucket := newLifecycleTestObjects()
+	r, cli := testLifecycleReconciler(t, fa, sw, bucket, newTestLifecyclePolicy())
+
+	reconcileLifecycle(t, r, lifecyclePolicyKey)
+	fa.lifecycleErr = ErrBucketNotFound
+
+	deleteAndReconcile(t, r, cli, lifecyclePolicyKey)
+	assertPolicyGone(t, cli, lifecyclePolicyKey)
+}
+
 // TestLifecyclePolicyConflict pins that two policies targeting one bucket don't
 // fight: the deterministic owner applies, the other marks a conflict and never
 // writes.

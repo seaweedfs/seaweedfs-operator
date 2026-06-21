@@ -249,11 +249,19 @@ func (a *swadminBucketAdmin) Configure(ctx context.Context, prefix string, args 
 }
 
 func (a *swadminBucketAdmin) GetBucketLifecycle(ctx context.Context, name string) ([]byte, error) {
-	return a.sa.GetBucketLifecycle(ctx, name)
+	out, err := a.sa.GetBucketLifecycle(ctx, name)
+	if errors.Is(err, swadmin.ErrBucketNotFound) {
+		return nil, ErrBucketNotFound
+	}
+	return out, err
 }
 
 func (a *swadminBucketAdmin) SetBucketLifecycle(ctx context.Context, name string, xml []byte) error {
-	return a.sa.SetBucketLifecycle(ctx, name, xml)
+	err := a.sa.SetBucketLifecycle(ctx, name, xml)
+	if errors.Is(err, swadmin.ErrBucketNotFound) {
+		return ErrBucketNotFound
+	}
+	return err
 }
 
 func (a *swadminBucketAdmin) ListCollectionStats(ctx context.Context) (map[string]BucketCollectionStats, error) {

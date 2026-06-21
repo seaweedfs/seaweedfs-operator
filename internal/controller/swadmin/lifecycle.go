@@ -2,7 +2,9 @@ package swadmin
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 )
@@ -11,6 +13,9 @@ import (
 // holds a bucket's S3 lifecycle configuration XML. It matches the key the
 // SeaweedFS S3 gateway reads and the lifecycle worker loads from.
 const bucketLifecycleConfigurationXMLKey = "s3-bucket-lifecycle-configuration-xml"
+
+// ErrBucketNotFound is returned when the bucket has no filer entry.
+var ErrBucketNotFound = errors.New("bucket not found")
 
 // GetBucketLifecycle returns the lifecycle configuration XML stored on the
 // bucket's filer entry, or nil when none is set.
@@ -63,10 +68,15 @@ func lookupBucketEntry(ctx context.Context, client filer_pb.SeaweedFilerClient, 
 	dir := cfg.DirBuckets
 	resp, err := client.LookupDirectoryEntry(ctx, &filer_pb.LookupDirectoryEntryRequest{Directory: dir, Name: bucket})
 	if err != nil {
+		// Distinguish a genuinely missing bucket from transport errors so the
+		// caller can treat the former as "already gone".
+		if strings.Contains(err.Error(), filer_pb.ErrNotFound.Error()) {
+			return nil, "", ErrBucketNotFound
+		}
 		return nil, "", fmt.Errorf("lookup bucket %s: %w", bucket, err)
 	}
 	if resp.Entry == nil {
-		return nil, "", fmt.Errorf("lookup bucket %s: entry not found", bucket)
+		return nil, "", ErrBucketNotFound
 	}
 	return resp.Entry, dir, nil
 }

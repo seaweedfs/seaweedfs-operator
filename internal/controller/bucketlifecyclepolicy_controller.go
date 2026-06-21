@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -218,6 +219,11 @@ func (r *BucketLifecyclePolicyReconciler) handleDeletion(ctx context.Context, po
 	defer closeBucketAdmin(admin, log)
 
 	if err := admin.SetBucketLifecycle(ctx, policy.Status.BucketName, nil); err != nil {
+		// The bucket is already gone, so its lifecycle config is too; release.
+		if errors.Is(err, ErrBucketNotFound) {
+			log.Info("bucket already gone; releasing without lifecycle cleanup", "bucket", policy.Status.BucketName)
+			return r.removeFinalizer(ctx, policy)
+		}
 		policy.Status.Phase = seaweedv1.BucketPhaseTerminating
 		r.setCondition(policy, seaweedv1.BucketLifecyclePolicyConditionReady, metav1.ConditionFalse, "CleanupFailed", err.Error())
 		if updateErr := r.Status().Update(ctx, policy); updateErr != nil {

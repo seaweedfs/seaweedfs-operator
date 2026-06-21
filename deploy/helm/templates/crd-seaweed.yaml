@@ -695,6 +695,192 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.19.0
     helm.sh/resource-policy: keep
+  name: bucketlifecyclepolicies.seaweed.seaweedfs.com
+spec:
+  group: seaweed.seaweedfs.com
+  names:
+    categories:
+      - seaweedfs
+    kind: BucketLifecyclePolicy
+    listKind: BucketLifecyclePolicyList
+    plural: bucketlifecyclepolicies
+    shortNames:
+      - swblp
+    singular: bucketlifecyclepolicy
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .spec.bucketRef.name
+          name: Bucket
+          type: string
+        - jsonPath: .status.phase
+          name: Phase
+          type: string
+        - jsonPath: .status.appliedRules
+          name: Rules
+          type: integer
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1
+      schema:
+        openAPIV3Schema:
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                bucketRef:
+                  properties:
+                    name:
+                      minLength: 1
+                      type: string
+                  required:
+                    - name
+                  type: object
+                  x-kubernetes-validations:
+                    - message: bucketRef is immutable
+                      rule: self == oldSelf
+                reclaimPolicy:
+                  default: Delete
+                  enum:
+                    - Retain
+                    - Delete
+                  type: string
+                rules:
+                  items:
+                    properties:
+                      abortIncompleteMultipartUpload:
+                        properties:
+                          daysAfterInitiation:
+                            format: int32
+                            minimum: 1
+                            type: integer
+                        required:
+                          - daysAfterInitiation
+                        type: object
+                      expiration:
+                        properties:
+                          days:
+                            format: int32
+                            minimum: 1
+                            type: integer
+                          expiredObjectDeleteMarker:
+                            type: boolean
+                        type: object
+                      id:
+                        maxLength: 255
+                        minLength: 1
+                        type: string
+                      noncurrentVersionExpiration:
+                        properties:
+                          newerNoncurrentVersions:
+                            format: int32
+                            minimum: 0
+                            type: integer
+                          noncurrentDays:
+                            format: int32
+                            minimum: 1
+                            type: integer
+                        required:
+                          - noncurrentDays
+                        type: object
+                      prefix:
+                        type: string
+                      status:
+                        default: Enabled
+                        enum:
+                          - Enabled
+                          - Disabled
+                        type: string
+                    required:
+                      - id
+                    type: object
+                    x-kubernetes-validations:
+                      - message: rule must set at least one of expiration, abortIncompleteMultipartUpload, or noncurrentVersionExpiration
+                        rule: has(self.expiration) || has(self.abortIncompleteMultipartUpload) || has(self.noncurrentVersionExpiration)
+                  minItems: 1
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - id
+                  x-kubernetes-list-type: map
+              required:
+                - bucketRef
+                - rules
+              type: object
+            status:
+              properties:
+                appliedRules:
+                  format: int32
+                  type: integer
+                bucketName:
+                  type: string
+                conditions:
+                  items:
+                    properties:
+                      lastTransitionTime:
+                        format: date-time
+                        type: string
+                      message:
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                        type: string
+                      type:
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
+                observedGeneration:
+                  format: int64
+                  type: integer
+                phase:
+                  enum:
+                    - Pending
+                    - Ready
+                    - Failed
+                    - Terminating
+                  type: string
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+    helm.sh/resource-policy: keep
   name: buckets.seaweed.seaweedfs.com
 spec:
   group: seaweed.seaweedfs.com

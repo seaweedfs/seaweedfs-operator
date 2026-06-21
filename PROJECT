@@ -10,6 +10,9 @@ resources:
   kind: Bucket
   version: v1
 - group: seaweed
+  kind: BucketLifecyclePolicy
+  version: v1
+- group: seaweed
   kind: S3Identity
   version: v1
 - group: seaweed

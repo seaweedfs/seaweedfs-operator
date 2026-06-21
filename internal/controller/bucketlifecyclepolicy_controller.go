@@ -30,6 +30,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
@@ -55,6 +57,7 @@ type BucketLifecyclePolicyReconciler struct {
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=bucketlifecyclepolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=bucketlifecyclepolicies/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=bucketlifecyclepolicies/finalizers,verbs=update
+// +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=buckets,verbs=get;list;watch
 
 // Reconcile implements the lifecycle policy reconciliation logic.
 func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -236,6 +239,27 @@ func (r *BucketLifecyclePolicyReconciler) setCondition(policy *seaweedv1.BucketL
 	})
 }
 
+// mapBucketToPolicies enqueues the policies that reference a Bucket so they
+// reconcile as soon as the bucket is provisioned, instead of waiting for the
+// periodic requeue.
+func (r *BucketLifecyclePolicyReconciler) mapBucketToPolicies(ctx context.Context, obj client.Object) []reconcile.Request {
+	bucket, ok := obj.(*seaweedv1.Bucket)
+	if !ok {
+		return nil
+	}
+	var policies seaweedv1.BucketLifecyclePolicyList
+	if err := r.List(ctx, &policies, client.InNamespace(bucket.Namespace)); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for i := range policies.Items {
+		if policies.Items[i].Spec.BucketRef.Name == bucket.Name {
+			reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&policies.Items[i])})
+		}
+	}
+	return reqs
+}
+
 // SetupWithManager wires the reconciler into the controller-runtime manager.
 func (r *BucketLifecyclePolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.AdminFactory == nil {
@@ -243,5 +267,6 @@ func (r *BucketLifecyclePolicyReconciler) SetupWithManager(mgr ctrl.Manager) err
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&seaweedv1.BucketLifecyclePolicy{}).
+		Watches(&seaweedv1.Bucket{}, handler.EnqueueRequestsFromMapFunc(r.mapBucketToPolicies)).
 		Complete(r)
 }

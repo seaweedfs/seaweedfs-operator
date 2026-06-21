@@ -249,6 +249,21 @@ func TestLifecyclePolicyDeleteRetain(t *testing.T) {
 	}
 }
 
+func TestLifecyclePolicyMapBucketToPolicies(t *testing.T) {
+	fa := newFakeAdmin()
+	match := newTestLifecyclePolicy()
+	other := newTestLifecyclePolicy()
+	other.Name = "other"
+	other.Spec.BucketRef.Name = "different-bucket"
+	r, _ := testLifecycleReconciler(t, fa, match, other)
+
+	bucket := &seaweedv1.Bucket{ObjectMeta: metav1.ObjectMeta{Name: "my-bucket", Namespace: "default"}}
+	reqs := r.mapBucketToPolicies(context.Background(), bucket)
+	if len(reqs) != 1 || reqs[0].Name != "expire-logs" {
+		t.Fatalf("expected only the referencing policy, got %+v", reqs)
+	}
+}
+
 func controllerHasFinalizer(p *seaweedv1.BucketLifecyclePolicy) bool {
 	for _, f := range p.Finalizers {
 		if f == BucketLifecyclePolicyFinalizer {

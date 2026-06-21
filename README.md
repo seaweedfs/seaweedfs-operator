@@ -587,6 +587,9 @@ spec:
   rest are marked with a `Conflict` condition and left inactive.
 - `reclaimPolicy`: `Delete` (default) removes the rules from the bucket
   when the CR is deleted; `Retain` leaves them in place.
+- Taking over a bucket that used the older per-path day-TTL lifecycle
+  (`filer.conf` TTL entries) clears those entries so expiration is driven
+  only by the rules declared here.
 
 See `config/samples/seaweed_v1_bucketlifecyclepolicy.yaml` for a full
 example.

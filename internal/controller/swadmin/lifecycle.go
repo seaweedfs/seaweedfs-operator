@@ -1,11 +1,13 @@
 package swadmin
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 )
 
@@ -42,12 +44,19 @@ func (sa *SeaweedAdmin) SetBucketLifecycle(ctx context.Context, bucket string, l
 		if err != nil {
 			return err
 		}
-		if len(lifecycleXML) == 0 {
+		// Drop any legacy day-TTL filer.conf entries for this bucket so they
+		// can't keep expiring objects outside the declared rules, matching the
+		// SeaweedFS S3 Put/DeleteBucketLifecycle handlers.
+		if err := clearLegacyBucketTTLs(ctx, client, dir, bucket); err != nil {
+			return err
+		}
+		switch {
+		case len(lifecycleXML) == 0:
 			if _, ok := entry.Extended[bucketLifecycleConfigurationXMLKey]; !ok {
 				return nil
 			}
 			delete(entry.Extended, bucketLifecycleConfigurationXMLKey)
-		} else {
+		default:
 			if entry.Extended == nil {
 				entry.Extended = make(map[string][]byte)
 			}
@@ -56,6 +65,48 @@ func (sa *SeaweedAdmin) SetBucketLifecycle(ctx context.Context, bucket string, l
 		_, err = client.UpdateEntry(ctx, &filer_pb.UpdateEntryRequest{Directory: dir, Entry: entry})
 		return err
 	})
+}
+
+// clearLegacyBucketTTLs removes day-TTL filer.conf location entries under the
+// bucket. Older SeaweedFS lifecycle handling stamped expiration as a per-path
+// TTL in filer.conf; a stale entry would expire objects independently of the
+// lifecycle XML this operator manages.
+func clearLegacyBucketTTLs(ctx context.Context, client filer_pb.SeaweedFilerClient, bucketsDir, bucket string) error {
+	content, err := filer.ReadInsideFiler(ctx, client, filer.DirectoryEtcSeaweedFS, filer.FilerConfName)
+	if err != nil {
+		if errors.Is(err, filer_pb.ErrNotFound) || strings.Contains(err.Error(), filer_pb.ErrNotFound.Error()) {
+			return nil
+		}
+		return fmt.Errorf("read filer.conf: %w", err)
+	}
+	fc := filer.NewFilerConf()
+	if err := fc.LoadFromBytes(content); err != nil {
+		return fmt.Errorf("parse filer.conf: %w", err)
+	}
+	prefixes := staleTTLPrefixes(fc.GetCollectionTtls(bucket), bucketsDir+"/"+bucket+"/")
+	if len(prefixes) == 0 {
+		return nil
+	}
+	for _, prefix := range prefixes {
+		fc.DeleteLocationConf(prefix)
+	}
+	var buf bytes.Buffer
+	if err := fc.ToText(&buf); err != nil {
+		return fmt.Errorf("serialize filer.conf: %w", err)
+	}
+	return filer.SaveInsideFiler(ctx, client, filer.DirectoryEtcSeaweedFS, filer.FilerConfName, buf.Bytes())
+}
+
+// staleTTLPrefixes returns the location prefixes under bucketPrefix whose TTL is
+// expressed in days — the legacy lifecycle form this controller supersedes.
+func staleTTLPrefixes(ttls map[string]string, bucketPrefix string) []string {
+	var out []string
+	for prefix, ttl := range ttls {
+		if strings.HasPrefix(prefix, bucketPrefix) && strings.HasSuffix(ttl, "d") {
+			out = append(out, prefix)
+		}
+	}
+	return out
 }
 
 // lookupBucketEntry resolves a bucket's filer entry under the configured

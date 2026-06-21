@@ -162,6 +162,11 @@ func (r *BucketLifecyclePolicyReconciler) reconcilePolicy(ctx context.Context, p
 	if err != nil {
 		return r.failPhase(policy, "BuildFailed", err.Error()), nil
 	}
+	// Run independently of the XML diff below so a bucket adopted with already
+	// matching rules still has its legacy day-TTL entries cleared.
+	if err := admin.ClearLegacyBucketTTLs(ctx, bucketName); err != nil {
+		return r.failPhase(policy, "TTLCleanupFailed", err.Error()), nil
+	}
 	current, err := admin.GetBucketLifecycle(ctx, bucketName)
 	if err != nil {
 		return r.failPhase(policy, "ReadFailed", err.Error()), nil
@@ -215,21 +220,30 @@ func (r *BucketLifecyclePolicyReconciler) handleDeletion(ctx context.Context, po
 	}
 	defer closeBucketAdmin(admin, log)
 
+	if err := admin.ClearLegacyBucketTTLs(ctx, policy.Status.BucketName); err != nil {
+		return r.cleanupFailed(ctx, policy, err, log)
+	}
 	if err := admin.SetBucketLifecycle(ctx, policy.Status.BucketName, nil); err != nil {
 		// The bucket is already gone, so its lifecycle config is too; release.
 		if errors.Is(err, ErrBucketNotFound) {
 			log.Info("bucket already gone; releasing without lifecycle cleanup", "bucket", policy.Status.BucketName)
 			return r.removeFinalizer(ctx, policy)
 		}
-		policy.Status.Phase = seaweedv1.BucketPhaseTerminating
-		r.setCondition(policy, seaweedv1.BucketLifecyclePolicyConditionReady, metav1.ConditionFalse, "CleanupFailed", err.Error())
-		if updateErr := r.Status().Update(ctx, policy); updateErr != nil {
-			log.Error(updateErr, "status update during deletion")
-		}
-		return ctrl.Result{}, err
+		return r.cleanupFailed(ctx, policy, err, log)
 	}
 
 	return r.removeFinalizer(ctx, policy)
+}
+
+// cleanupFailed records a deletion cleanup failure and returns the error so the
+// reconcile is retried with the finalizer still in place.
+func (r *BucketLifecyclePolicyReconciler) cleanupFailed(ctx context.Context, policy *seaweedv1.BucketLifecyclePolicy, err error, log logr.Logger) (ctrl.Result, error) {
+	policy.Status.Phase = seaweedv1.BucketPhaseTerminating
+	r.setCondition(policy, seaweedv1.BucketLifecyclePolicyConditionReady, metav1.ConditionFalse, "CleanupFailed", err.Error())
+	if updateErr := r.Status().Update(ctx, policy); updateErr != nil {
+		log.Error(updateErr, "status update during deletion")
+	}
+	return ctrl.Result{}, err
 }
 
 // adminFor builds a BucketAdmin for the given Seaweed cluster.

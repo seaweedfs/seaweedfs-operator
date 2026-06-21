@@ -64,6 +64,9 @@ type BucketAdmin interface {
 	// SetBucketLifecycle stores the bucket's lifecycle configuration XML.
 	// Empty xml clears the configuration.
 	SetBucketLifecycle(ctx context.Context, name string, xml []byte) error
+	// ClearLegacyBucketTTLs removes legacy per-path day-TTL filer.conf entries
+	// for the bucket. It is a no-op when none are present.
+	ClearLegacyBucketTTLs(ctx context.Context, name string) error
 	// ListCollectionStats fetches per-collection (= per-bucket) usage in
 	// a single round trip. The map is keyed by bucket/collection name;
 	// buckets that exist on the filer but have no objects yet may be
@@ -262,6 +265,10 @@ func (a *swadminBucketAdmin) SetBucketLifecycle(ctx context.Context, name string
 		return ErrBucketNotFound
 	}
 	return err
+}
+
+func (a *swadminBucketAdmin) ClearLegacyBucketTTLs(ctx context.Context, name string) error {
+	return a.sa.ClearLegacyBucketTTLs(ctx, name)
 }
 
 func (a *swadminBucketAdmin) ListCollectionStats(ctx context.Context) (map[string]BucketCollectionStats, error) {

@@ -62,6 +62,7 @@ type fakeBucketAdmin struct {
 
 	lifecycle    map[string][]byte
 	lifecycleErr error
+	ttlErr       error
 }
 
 type closingFakeBucketAdmin struct {
@@ -155,6 +156,10 @@ func (f *fakeBucketAdmin) SetBucketLifecycle(_ context.Context, name string, xml
 		f.lifecycle[name] = append([]byte(nil), xml...)
 	}
 	return nil
+}
+func (f *fakeBucketAdmin) ClearLegacyBucketTTLs(_ context.Context, name string) error {
+	f.record("ClearLegacyTTLs:" + name)
+	return f.ttlErr
 }
 func (f *fakeBucketAdmin) ListCollectionStats(_ context.Context) (map[string]BucketCollectionStats, error) {
 	f.record("ListCollectionStats")

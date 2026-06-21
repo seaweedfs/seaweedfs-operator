@@ -44,12 +44,6 @@ func (sa *SeaweedAdmin) SetBucketLifecycle(ctx context.Context, bucket string, l
 		if err != nil {
 			return err
 		}
-		// Drop any legacy day-TTL filer.conf entries for this bucket so they
-		// can't keep expiring objects outside the declared rules, matching the
-		// SeaweedFS S3 Put/DeleteBucketLifecycle handlers.
-		if err := clearLegacyBucketTTLs(ctx, client, dir, bucket); err != nil {
-			return err
-		}
 		switch {
 		case len(lifecycleXML) == 0:
 			if _, ok := entry.Extended[bucketLifecycleConfigurationXMLKey]; !ok {
@@ -64,6 +58,20 @@ func (sa *SeaweedAdmin) SetBucketLifecycle(ctx context.Context, bucket string, l
 		}
 		_, err = client.UpdateEntry(ctx, &filer_pb.UpdateEntryRequest{Directory: dir, Entry: entry})
 		return err
+	})
+}
+
+// ClearLegacyBucketTTLs drops day-TTL filer.conf location entries under the
+// bucket so older per-path expiration can't run outside the lifecycle rules
+// this operator manages. It is a no-op (no write) when none are present, so it
+// is safe to call on every reconcile regardless of lifecycle XML changes.
+func (sa *SeaweedAdmin) ClearLegacyBucketTTLs(ctx context.Context, bucket string) error {
+	return sa.commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
+		cfg, err := client.GetFilerConfiguration(ctx, &filer_pb.GetFilerConfigurationRequest{})
+		if err != nil {
+			return fmt.Errorf("get filer configuration: %w", err)
+		}
+		return clearLegacyBucketTTLs(ctx, client, cfg.DirBuckets, bucket)
 	})
 }
 

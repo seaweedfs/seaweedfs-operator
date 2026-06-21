@@ -239,6 +239,30 @@ func TestLifecyclePolicyIdempotent(t *testing.T) {
 	}
 }
 
+// TestLifecyclePolicyClearsTTLsWhenXMLMatches pins that legacy TTL cleanup runs
+// on takeover even when the bucket's lifecycle XML already matches the policy
+// (so SetBucketLifecycle is skipped).
+func TestLifecyclePolicyClearsTTLsWhenXMLMatches(t *testing.T) {
+	fa := newFakeAdmin()
+	sw, bucket := newLifecycleTestObjects()
+	policy := newTestLifecyclePolicy()
+	desired, err := buildLifecycleXML(policy.Spec.Rules)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	fa.lifecycle = map[string][]byte{"my-bucket": desired}
+	r, _ := testLifecycleReconciler(t, fa, sw, bucket, policy)
+
+	reconcileLifecycle(t, r, lifecyclePolicyKey)
+
+	if countCalls(fa.calls, "SetLifecycle:") != 0 {
+		t.Errorf("XML already matched; SetLifecycle should be skipped, got %v", fa.calls)
+	}
+	if countCalls(fa.calls, "ClearLegacyTTLs:") == 0 {
+		t.Error("legacy TTL cleanup must run even when the XML matches")
+	}
+}
+
 func TestLifecyclePolicyDeleteClearsConfig(t *testing.T) {
 	fa := newFakeAdmin()
 	sw, bucket := newLifecycleTestObjects()

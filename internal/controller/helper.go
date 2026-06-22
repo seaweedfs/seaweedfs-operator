@@ -387,3 +387,29 @@ func weedPreamble(m *seaweedv1.Seaweed, loggingArgs []string, subcommand string)
 	cmd = append(cmd, subcommand)
 	return cmd
 }
+
+// applyProbeOverride overrides, in place, each timing field of probe for which
+// the override supplies a non-nil value. A nil probe or nil override is a
+// no-op. The probe handler (path/port/scheme) is never touched, so callers
+// keep full control of what the probe checks while letting users retune its
+// cadence (see seaweedv1.ProbeOverride).
+func applyProbeOverride(probe *corev1.Probe, override *seaweedv1.ProbeOverride) {
+	if probe == nil || override == nil {
+		return
+	}
+	if override.InitialDelaySeconds != nil {
+		probe.InitialDelaySeconds = *override.InitialDelaySeconds
+	}
+	if override.TimeoutSeconds != nil {
+		probe.TimeoutSeconds = *override.TimeoutSeconds
+	}
+	if override.PeriodSeconds != nil {
+		probe.PeriodSeconds = *override.PeriodSeconds
+	}
+	if override.SuccessThreshold != nil {
+		probe.SuccessThreshold = *override.SuccessThreshold
+	}
+	if override.FailureThreshold != nil {
+		probe.FailureThreshold = *override.FailureThreshold
+	}
+}

@@ -690,6 +690,40 @@ type WorkerSpec struct {
 	MaxExecute *int32 `json:"maxExecute,omitempty"`
 }
 
+// ProbeOverride tunes the timing fields of an operator-managed health probe.
+// Each nil field falls back to the operator's default for that probe; the
+// probe handler (HTTP path, port, and scheme) is always set by the operator
+// and is not overridable. Mirrors the tunable scalar fields of corev1.Probe.
+type ProbeOverride struct {
+	// Number of seconds after the container has started before the probe is
+	// initiated.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	InitialDelaySeconds *int32 `json:"initialDelaySeconds,omitempty"`
+
+	// Number of seconds after which the probe times out.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	TimeoutSeconds *int32 `json:"timeoutSeconds,omitempty"`
+
+	// How often (in seconds) to perform the probe.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	PeriodSeconds *int32 `json:"periodSeconds,omitempty"`
+
+	// Minimum consecutive successes for the probe to be considered successful
+	// after having failed.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	SuccessThreshold *int32 `json:"successThreshold,omitempty"`
+
+	// Minimum consecutive failures for the probe to be considered failed after
+	// having succeeded.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	FailureThreshold *int32 `json:"failureThreshold,omitempty"`
+}
+
 // ComponentSpec is the base spec of each component, the fields should always accessed by the Basic<Component>Spec() method to respect the cluster-level properties
 type ComponentSpec struct {
 	// Version of the component. Override the cluster-level version if non-empty
@@ -769,6 +803,20 @@ type ComponentSpec struct {
 	// ExtraArgs are additional command line arguments passed to the component container
 	// +listType=atomic
 	ExtraArgs []string `json:"extraArgs,omitempty"`
+
+	// ReadinessProbe tunes the timing fields of this component's
+	// operator-managed readiness probe. Each field left unset keeps the
+	// operator's default; the probe handler (HTTP path, port, and scheme) is
+	// always managed by the operator and cannot be overridden here. Useful for
+	// speeding up startup on test clusters — e.g. lowering the volume server's
+	// 90s default periodSeconds.
+	// +optional
+	ReadinessProbe *ProbeOverride `json:"readinessProbe,omitempty"`
+
+	// LivenessProbe tunes the timing fields of this component's
+	// operator-managed liveness probe. See ReadinessProbe.
+	// +optional
+	LivenessProbe *ProbeOverride `json:"livenessProbe,omitempty"`
 
 	// LoggingArgs are command line flags placed before the weed subcommand
 	// (e.g. ["-logJson", "-v=2"]). When non-empty, this slice fully replaces

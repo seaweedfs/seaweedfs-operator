@@ -3907,6 +3907,24 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    livenessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     loggingArgs:
                       items:
                         type: string
@@ -3995,6 +4013,24 @@ spec:
                       type: object
                     priorityClassName:
                       type: string
+                    readinessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     requests:
                       additionalProperties:
                         anyOf:
@@ -6162,6 +6198,24 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    livenessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     loggingArgs:
                       items:
                         type: string
@@ -6339,6 +6393,24 @@ spec:
                       type: object
                     priorityClassName:
                       type: string
+                    readinessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     replicas:
                       minimum: 1
                       type: integer
@@ -7951,6 +8023,24 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    livenessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     loggingArgs:
                       items:
                         type: string
@@ -8041,6 +8131,24 @@ spec:
                       type: string
                     pulseSeconds:
                       type: integer
+                    readinessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     replicas:
                       minimum: 1
                       type: integer
@@ -9603,6 +9711,24 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    livenessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     loggingArgs:
                       items:
                         type: string
@@ -9693,6 +9819,24 @@ spec:
                       type: integer
                     priorityClassName:
                       type: string
+                    readinessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     replicas:
                       default: 1
                       minimum: 1
@@ -11237,6 +11381,24 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    livenessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     loggingArgs:
                       items:
                         type: string
@@ -11332,6 +11494,24 @@ spec:
                       type: integer
                     priorityClassName:
                       type: string
+                    readinessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     replicas:
                       default: 1
                       minimum: 1
@@ -12960,6 +13140,24 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    livenessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     loggingArgs:
                       items:
                         type: string
@@ -13054,6 +13252,24 @@ spec:
                       type: string
                     rack:
                       type: string
+                    readinessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     replicas:
                       minimum: 0
                       type: integer
@@ -14600,6 +14816,24 @@ spec:
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
                         type: object
+                      livenessProbe:
+                        properties:
+                          failureThreshold:
+                            minimum: 1
+                            type: integer
+                          initialDelaySeconds:
+                            minimum: 0
+                            type: integer
+                          periodSeconds:
+                            minimum: 1
+                            type: integer
+                          successThreshold:
+                            minimum: 1
+                            type: integer
+                          timeoutSeconds:
+                            minimum: 1
+                            type: integer
+                        type: object
                       loggingArgs:
                         items:
                           type: string
@@ -14694,6 +14928,24 @@ spec:
                         type: string
                       rack:
                         type: string
+                      readinessProbe:
+                        properties:
+                          failureThreshold:
+                            minimum: 1
+                            type: integer
+                          initialDelaySeconds:
+                            minimum: 0
+                            type: integer
+                          periodSeconds:
+                            minimum: 1
+                            type: integer
+                          successThreshold:
+                            minimum: 1
+                            type: integer
+                          timeoutSeconds:
+                            minimum: 1
+                            type: integer
+                        type: object
                       replicas:
                         minimum: 0
                         type: integer
@@ -16233,6 +16485,24 @@ spec:
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       type: object
+                    livenessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     loggingArgs:
                       items:
                         type: string
@@ -16414,6 +16684,24 @@ spec:
                       type: object
                     priorityClassName:
                       type: string
+                    readinessProbe:
+                      properties:
+                        failureThreshold:
+                          minimum: 1
+                          type: integer
+                        initialDelaySeconds:
+                          minimum: 0
+                          type: integer
+                        periodSeconds:
+                          minimum: 1
+                          type: integer
+                        successThreshold:
+                          minimum: 1
+                          type: integer
+                        timeoutSeconds:
+                          minimum: 1
+                          type: integer
+                      type: object
                     replicas:
                       default: 1
                       minimum: 1

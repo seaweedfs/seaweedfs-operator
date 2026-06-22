@@ -211,6 +211,8 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			FailureThreshold:    6,
 		},
 	}}
+	applyProbeOverride(filerPodSpec.Containers[0].ReadinessProbe, m.BaseFilerSpec().ReadinessProbe())
+	applyProbeOverride(filerPodSpec.Containers[0].LivenessProbe, m.BaseFilerSpec().LivenessProbe())
 	filerPodSpec.Containers = append(filerPodSpec.Containers, m.BaseFilerSpec().Sidecars()...)
 	filerPodSpec.InitContainers = append(filerPodSpec.InitContainers, m.BaseFilerSpec().InitContainers()...)
 

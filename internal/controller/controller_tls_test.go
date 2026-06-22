@@ -67,7 +67,7 @@ func TestSecurityConfigNeeded(t *testing.T) {
 
 func TestRenderSecurityTOML(t *testing.T) {
 	t.Run("without TLS only emits jwt sections", func(t *testing.T) {
-		got := renderSecurityTOML("write-key", "read-key", false)
+		got := renderSecurityTOML("write-key", false)
 		if !strings.Contains(got, "[jwt.filer_signing]") {
 			t.Errorf("expected [jwt.filer_signing] section, got %q", got)
 		}
@@ -80,7 +80,7 @@ func TestRenderSecurityTOML(t *testing.T) {
 	})
 
 	t.Run("with TLS emits jwt and grpc sections", func(t *testing.T) {
-		got := renderSecurityTOML("write-key", "read-key", true)
+		got := renderSecurityTOML("write-key", true)
 		if !strings.Contains(got, "[jwt.filer_signing]") {
 			t.Errorf("expected [jwt.filer_signing] section, got %q", got)
 		}
@@ -92,12 +92,18 @@ func TestRenderSecurityTOML(t *testing.T) {
 		}
 	})
 
-	t.Run("never emits volume jwt.signing", func(t *testing.T) {
-		// Shipping [jwt.signing] would force volume servers to enforce
-		// signed reads/writes; the operator does not wire that up
-		// end-to-end. Catch any future regression that re-introduces it.
+	t.Run("never emits read-signing or volume jwt.signing", func(t *testing.T) {
+		// Shipping [jwt.filer_signing.read] makes the filer reject every
+		// unsigned GET — including the readiness/liveness probe, which
+		// crashloops the pod. [jwt.signing] would do the same to volume
+		// servers. The operator signs neither read JWT for any client, so
+		// neither section may ship. Catch any regression that re-introduces
+		// them.
 		for _, withTLS := range []bool{false, true} {
-			got := renderSecurityTOML("write-key", "read-key", withTLS)
+			got := renderSecurityTOML("write-key", withTLS)
+			if strings.Contains(got, "[jwt.filer_signing.read]") {
+				t.Errorf("withTLS=%v: unexpected [jwt.filer_signing.read] section, got %q", withTLS, got)
+			}
 			if strings.Contains(got, "[jwt.signing]") {
 				t.Errorf("withTLS=%v: unexpected [jwt.signing] section, got %q", withTLS, got)
 			}
@@ -191,8 +197,13 @@ func TestEnsureSecuritySecret_MigratesLegacyConfigMap(t *testing.T) {
 		t.Fatalf("expected migrated Secret: %v", err)
 	}
 	got := string(secret.Data["security.toml"])
-	if !strings.Contains(got, `key = "legacy-write"`) || !strings.Contains(got, `key = "legacy-read"`) {
-		t.Errorf("expected legacy JWT keys preserved, got %q", got)
+	if !strings.Contains(got, `key = "legacy-write"`) {
+		t.Errorf("expected legacy write key preserved, got %q", got)
+	}
+	// The legacy read key is intentionally dropped: [jwt.filer_signing.read]
+	// crashloops the filer probe and nothing signs read JWTs.
+	if strings.Contains(got, `key = "legacy-read"`) || strings.Contains(got, "[jwt.filer_signing.read]") {
+		t.Errorf("expected legacy read key dropped, got %q", got)
 	}
 
 	cm := &corev1.ConfigMap{}

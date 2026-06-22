@@ -297,15 +297,12 @@ func (r *SeaweedReconciler) ensureServerCertificate(ctx context.Context, m *seaw
 // JWT signing keys on every reconcile, which would invalidate live tokens.
 func (r *SeaweedReconciler) ensureSecuritySecret(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	name := SecurityConfigSecretName(m)
-	jwtFilerWrite, jwtFilerRead, fromLegacyConfigMap, err := r.existingJWTSigningKeys(ctx, m, name)
+	jwtFilerWrite, fromLegacyConfigMap, err := r.existingJWTSigningKeys(ctx, m, name)
 	if err != nil {
 		return ReconcileResult(err)
 	}
 	if jwtFilerWrite == "" {
 		jwtFilerWrite = randKey()
-	}
-	if jwtFilerRead == "" {
-		jwtFilerRead = randKey()
 	}
 
 	secret := &corev1.Secret{
@@ -316,7 +313,7 @@ func (r *SeaweedReconciler) ensureSecuritySecret(ctx context.Context, m *seaweed
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			"security.toml": []byte(renderSecurityTOML(jwtFilerWrite, jwtFilerRead, tlsEffective(m))),
+			"security.toml": []byte(renderSecurityTOML(jwtFilerWrite, tlsEffective(m))),
 		},
 	}
 	if err := controllerutil.SetControllerReference(m, secret, r.Scheme); err != nil {
@@ -336,38 +333,34 @@ func (r *SeaweedReconciler) ensureSecuritySecret(ctx context.Context, m *seaweed
 	return ReconcileResult(nil)
 }
 
-// existingJWTSigningKeys returns the JWT signing keys already provisioned for
-// m, so a reconcile preserves them instead of rotating. It prefers the
-// security Secret and falls back to the legacy ConfigMap (operator versions
-// before security.toml moved to a Secret), keeping keys stable across the
-// upgrade. fromLegacyConfigMap is true only when the keys came from that
-// ConfigMap, signalling the caller to clean it up. Empty strings mean none
-// exist yet — the caller generates fresh ones.
-func (r *SeaweedReconciler) existingJWTSigningKeys(ctx context.Context, m *seaweedv1.Seaweed, name string) (write, read string, fromLegacyConfigMap bool, err error) {
+// existingJWTSigningKeys returns the jwt.filer_signing write key already
+// provisioned for m, so a reconcile preserves it instead of rotating. It
+// prefers the security Secret and falls back to the legacy ConfigMap (operator
+// versions before security.toml moved to a Secret), keeping the key stable
+// across the upgrade. fromLegacyConfigMap is true only when the key came from
+// that ConfigMap, signalling the caller to clean it up. An empty string means
+// none exists yet — the caller generates a fresh one.
+func (r *SeaweedReconciler) existingJWTSigningKeys(ctx context.Context, m *seaweedv1.Seaweed, name string) (write string, fromLegacyConfigMap bool, err error) {
 	key := client.ObjectKey{Name: name, Namespace: m.Namespace}
 
 	secret := &corev1.Secret{}
 	err = r.Get(ctx, key, secret)
 	if err == nil {
-		toml := string(secret.Data["security.toml"])
-		return extractTOMLKey(toml, "jwt.filer_signing", "key"),
-			extractTOMLKey(toml, "jwt.filer_signing.read", "key"), false, nil
+		return extractTOMLKey(string(secret.Data["security.toml"]), "jwt.filer_signing", "key"), false, nil
 	}
 	if !apierrors.IsNotFound(err) {
-		return "", "", false, err
+		return "", false, err
 	}
 
 	cm := &corev1.ConfigMap{}
 	err = r.Get(ctx, key, cm)
 	if err == nil {
-		toml := cm.Data["security.toml"]
-		return extractTOMLKey(toml, "jwt.filer_signing", "key"),
-			extractTOMLKey(toml, "jwt.filer_signing.read", "key"), true, nil
+		return extractTOMLKey(cm.Data["security.toml"], "jwt.filer_signing", "key"), true, nil
 	}
 	if apierrors.IsNotFound(err) {
-		return "", "", false, nil
+		return "", false, nil
 	}
-	return "", "", false, err
+	return "", false, err
 }
 
 // deleteLegacySecurityConfigMap removes the pre-Secret security.toml ConfigMap
@@ -383,24 +376,23 @@ func (r *SeaweedReconciler) deleteLegacySecurityConfigMap(ctx context.Context, n
 	return nil
 }
 
-// renderSecurityTOML emits the [jwt.filer_signing*] sections always (filer
-// needs them to register the IAM gRPC service, admin needs them to sign
-// Bearer tokens) and the [grpc.*] mTLS sections only when withTLS is true.
+// renderSecurityTOML emits the [jwt.filer_signing] section always (the filer
+// needs it to register the IAM gRPC service, admin needs it to sign Bearer
+// tokens) and the [grpc.*] mTLS sections only when withTLS is true.
 //
-// The volume-side [jwt.signing*] sections are intentionally omitted: shipping
-// them would make every volume server reject unsigned reads/writes, which
-// the operator does not currently wire up end-to-end.
-func renderSecurityTOML(jwtFilerWrite, jwtFilerRead string, withTLS bool) string {
+// [jwt.filer_signing.read] is intentionally omitted, for the same reason as
+// the volume-side [jwt.signing*] sections: emitting it makes the filer reject
+// every unsigned GET, but the operator never signs read JWTs for any client.
+// The readiness/liveness probe is a plain GET /, so a read-signing key would
+// answer it with 401 and crashloop the filer.
+func renderSecurityTOML(jwtFilerWrite string, withTLS bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, `# generated by seaweedfs-operator — do not edit
 # this file is read by master, volume server, filer, and admin
 
 [jwt.filer_signing]
 key = %q
-
-[jwt.filer_signing.read]
-key = %q
-`, jwtFilerWrite, jwtFilerRead)
+`, jwtFilerWrite)
 
 	if !withTLS {
 		return b.String()

@@ -33,6 +33,8 @@
 #   IMAGE_TAG          (default: v0.0.1)
 #   RECONCILE_WAIT     (default: 30 — seconds to wait between applying
 #                      sample CRs and inspecting operator logs)
+#   READY_TIMEOUT      (default: 10m — how long to wait for the Seaweed CR
+#                      to reach its Ready condition)
 
 set -euo pipefail
 
@@ -44,6 +46,7 @@ CHART_DIR="${CHART_DIR:-$REPO_ROOT/deploy/helm}"
 IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-ghcr.io/seaweedfs/seaweedfs-operator}"
 IMAGE_TAG="${IMAGE_TAG:-v0.0.1}"
 RECONCILE_WAIT="${RECONCILE_WAIT:-30}"
+READY_TIMEOUT="${READY_TIMEOUT:-10m}"
 
 log() { printf '[smoke] %s\n' "$*"; }
 fail() { printf '[smoke] FAIL: %s\n' "$*" >&2; exit 1; }
@@ -90,6 +93,32 @@ kubectl wait deployment.apps/"$DEPLOYMENT" \
 # would trip a missing servicemonitor RBAC rule.
 log "applying sample Seaweed CR"
 kubectl apply -f "$REPO_ROOT/config/samples/seaweed_v1_seaweed.yaml"
+
+# The chart defaults give a no-TLS cluster with a filer — the exact shape
+# that regressed once, when the operator mounted a security.toml requiring
+# JWT-signed reads and the filer's unauthenticated readiness/liveness probe
+# was 401'd into CrashLoopBackOff. Until now this smoke only scraped the
+# operator log for RBAC errors, so a filer that never came up went
+# unnoticed. The operator only flips the CR to Ready once every component's
+# pods are Ready, so waiting on that condition turns a component-never-Ready
+# regression red here, on the path users actually run (`helm install`).
+SEAWEED_CR="$REPO_ROOT/config/samples/seaweed_v1_seaweed.yaml"
+SEAWEED_NAME="$(kubectl get -f "$SEAWEED_CR" -o jsonpath='{.metadata.name}')"
+SEAWEED_NS="$(kubectl get -f "$SEAWEED_CR" -o jsonpath='{.metadata.namespace}')"
+SEAWEED_NS="${SEAWEED_NS:-default}"
+log "waiting up to ${READY_TIMEOUT} for Seaweed/${SEAWEED_NAME} to become Ready"
+if ! kubectl wait "seaweed/${SEAWEED_NAME}" --namespace "$SEAWEED_NS" \
+    --for=condition=Ready --timeout="$READY_TIMEOUT"; then
+  log "Seaweed CR did not reach Ready; dumping cluster state:"
+  kubectl get pods -n "$SEAWEED_NS" -o wide >&2 || true
+  kubectl describe "seaweed/${SEAWEED_NAME}" -n "$SEAWEED_NS" >&2 || true
+  # The operator log is the most useful artifact here — it carries the
+  # reconcile errors behind a component never reaching Ready. We exit
+  # before the RBAC-scrape section below, so dump it now.
+  log "dumping operator logs:"
+  kubectl logs -n "$NAMESPACE" deployment.apps/"$DEPLOYMENT" --tail=-1 >&2 || true
+  fail "Seaweed cluster did not become Ready after helm install with chart defaults"
+fi
 
 # Apply a basic Bucket CR. This drives the BucketReconciler all the
 # way through its full reconcile sequence (List, Get, finalizer

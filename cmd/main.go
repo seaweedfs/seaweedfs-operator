@@ -78,6 +78,11 @@ func main() {
 		"Cadence for refreshing status.usage on Bucket resources. "+
 			"Set to 0 to disable. Defaults to 5m. Each tick issues one collection.list "+
 			"call per Seaweed cluster that owns Buckets, then patches per-bucket status.")
+	var bucketResyncInterval time.Duration
+	flag.DurationVar(&bucketResyncInterval, "bucket-resync-interval", controller.DefaultBucketResyncInterval,
+		"Steady-state cadence for re-reconciling Ready Bucket and BucketLifecyclePolicy "+
+			"resources so filer state lost out-of-band (cluster rebuild, filer reset, manual "+
+			"delete) is reapplied without an operator restart. Set to 0 to disable. Defaults to 5m.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -157,16 +162,18 @@ func main() {
 		Scheme:               mgr.GetScheme(),
 		Recorder:             mgr.GetEventRecorderFor("bucket-controller"),
 		UsageRefreshInterval: bucketUsageInterval,
+		ResyncInterval:       bucketResyncInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Bucket")
 		os.Exit(1)
 	}
 
 	if err = (&controller.BucketLifecyclePolicyReconciler{
-		Client:   mgr.GetClient(),
-		Log:      ctrl.Log.WithName("controller").WithName("BucketLifecyclePolicy"),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("bucketlifecyclepolicy-controller"),
+		Client:         mgr.GetClient(),
+		Log:            ctrl.Log.WithName("controller").WithName("BucketLifecyclePolicy"),
+		Scheme:         mgr.GetScheme(),
+		Recorder:       mgr.GetEventRecorderFor("bucketlifecyclepolicy-controller"),
+		ResyncInterval: bucketResyncInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BucketLifecyclePolicy")
 		os.Exit(1)

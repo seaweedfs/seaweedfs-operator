@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
@@ -478,6 +479,68 @@ func TestReconcile_ExistingBucketRefusesAdoption(t *testing.T) {
 		if strings.HasPrefix(c, "Create:") {
 			t.Errorf("unexpected Create call: %s", c)
 		}
+	}
+}
+
+// TestReconcile_ReadyBucketRequeuesForDrift pins the periodic resync: a
+// Ready bucket must request a RequeueAfter equal to ResyncInterval so the
+// reconciler keeps re-verifying external state it cannot watch.
+func TestReconcile_ReadyBucketRequeuesForDrift(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Finalizers = []string{BucketFinalizer}
+
+	fa := newFakeAdmin()
+	r, _ := testReconciler(t, fa, newTestSeaweed(), bucket)
+	r.ResyncInterval = 2 * time.Minute
+
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+	res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if res.RequeueAfter != 2*time.Minute {
+		t.Fatalf("RequeueAfter=%v, want the 2m resync cadence", res.RequeueAfter)
+	}
+}
+
+// TestReconcile_RecreatesBucketLostOutOfBand is the regression guard for the
+// "bucket stays missing until the operator restarts" report: once a bucket is
+// Ready, a subsequent reconcile must recreate it if it vanished from the
+// cluster out-of-band (e.g. a SeaweedFS rebuild) rather than trusting status.
+func TestReconcile_RecreatesBucketLostOutOfBand(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Finalizers = []string{BucketFinalizer}
+
+	fa := newFakeAdmin()
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	r.ResyncInterval = 2 * time.Minute
+
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	// First pass provisions the bucket and marks it Ready.
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("initial reconcile: %v", err)
+	}
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.BucketPhaseReady {
+		t.Fatalf("phase=%q want Ready", got.Status.Phase)
+	}
+
+	// The bucket disappears from the cluster while the CR stays Ready.
+	fa.existsResp["photos"] = false
+	createsBefore := countCalls(fa.calls, "Create:photos")
+
+	// The periodic requeue brings us back into Reconcile; the existence
+	// check now misses, so the bucket is recreated — no restart needed.
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("drift reconcile: %v", err)
+	}
+	if got := countCalls(fa.calls, "Create:photos"); got != createsBefore+1 {
+		t.Fatalf("expected bucket recreated after out-of-band loss; Create:photos calls %d -> %d\ncalls:\n%s",
+			createsBefore, got, strings.Join(fa.calls, "\n"))
 	}
 }
 

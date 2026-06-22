@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
@@ -236,6 +237,56 @@ func TestLifecyclePolicyIdempotent(t *testing.T) {
 	// and re-trigger the controller).
 	if got := getLifecyclePolicy(t, cli, lifecyclePolicyKey).ResourceVersion; got != rv {
 		t.Errorf("steady-state reconcile wrote status: resourceVersion %s -> %s", rv, got)
+	}
+}
+
+// TestLifecyclePolicyReadyRequeuesForDrift pins the periodic resync: a Ready
+// policy must request a RequeueAfter equal to ResyncInterval so the reconciler
+// keeps re-verifying filer state it cannot watch.
+func TestLifecyclePolicyReadyRequeuesForDrift(t *testing.T) {
+	fa := newFakeAdmin()
+	sw, bucket := newLifecycleTestObjects()
+	r, _ := testLifecycleReconciler(t, fa, sw, bucket, newTestLifecyclePolicy())
+	r.ResyncInterval = 2 * time.Minute
+
+	// First pass adds the finalizer (Requeue:true); the second applies and
+	// settles on the resync cadence.
+	res := reconcileLifecycleN(t, r, lifecyclePolicyKey, 2)
+	if res.RequeueAfter != 2*time.Minute {
+		t.Fatalf("RequeueAfter=%v, want the 2m resync cadence", res.RequeueAfter)
+	}
+}
+
+// TestLifecyclePolicyReappliesConfigLostOutOfBand is the regression guard for
+// drift recovery: once a policy is Ready, a later reconcile must reapply the
+// lifecycle XML if it vanished from the filer out-of-band (e.g. a cluster
+// rebuild) rather than trusting status.
+func TestLifecyclePolicyReappliesConfigLostOutOfBand(t *testing.T) {
+	fa := newFakeAdmin()
+	sw, bucket := newLifecycleTestObjects()
+	r, cli := testLifecycleReconciler(t, fa, sw, bucket, newTestLifecyclePolicy())
+	r.ResyncInterval = 2 * time.Minute
+
+	// First two passes add the finalizer and apply the configuration.
+	reconcileLifecycleN(t, r, lifecyclePolicyKey, 2)
+	if p := getLifecyclePolicy(t, cli, lifecyclePolicyKey); p.Status.Phase != seaweedv1.BucketPhaseReady {
+		t.Fatalf("precondition: phase=%q want Ready", p.Status.Phase)
+	}
+	applied := countCalls(fa.calls, "SetLifecycle:")
+	if applied == 0 {
+		t.Fatal("precondition: expected an initial SetLifecycle")
+	}
+
+	// The lifecycle config disappears from the filer while the CR stays Ready.
+	delete(fa.lifecycle, "my-bucket")
+
+	// The periodic requeue brings us back; the read now misses the config, so
+	// it is reapplied — no operator restart.
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: lifecyclePolicyKey}); err != nil {
+		t.Fatalf("drift reconcile: %v", err)
+	}
+	if got := countCalls(fa.calls, "SetLifecycle:"); got != applied+1 {
+		t.Fatalf("expected lifecycle reapplied after out-of-band loss; SetLifecycle calls %d -> %d", applied, got)
 	}
 }
 

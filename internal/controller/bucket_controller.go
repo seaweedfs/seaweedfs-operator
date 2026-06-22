@@ -54,6 +54,18 @@ const (
 	// dependency (the filer, an IAM identity) is missing but expected to
 	// arrive shortly.
 	requeueAfterTransient = 30 * time.Second
+
+	// DefaultBucketResyncInterval is the steady-state cadence at which a
+	// Ready Bucket re-enters Reconcile. The reconciler holds no watch on
+	// the SeaweedFS filer, so a bucket that disappears out-of-band — a
+	// cluster rebuild, a filer-store reset, a manual delete — is invisible
+	// until something re-triggers Reconcile. Without a periodic requeue the
+	// only such trigger is a spec change or an operator restart, which is
+	// why a lost bucket used to stay missing until the operator was
+	// bounced. The requeue re-runs the existence check and recreates the
+	// bucket, so recovery is automatic. main.go wires this as the default
+	// for BucketReconciler.ResyncInterval.
+	DefaultBucketResyncInterval = 5 * time.Minute
 )
 
 // BucketReconciler reconciles Bucket resources by translating spec changes
@@ -74,6 +86,14 @@ type BucketReconciler struct {
 	// loop. Zero disables the loop entirely; the default in main.go is
 	// DefaultUsageRefreshInterval (5 minutes).
 	UsageRefreshInterval time.Duration
+
+	// ResyncInterval is the steady-state cadence at which a successfully
+	// reconciled (Ready) Bucket re-enters Reconcile, so a bucket lost
+	// out-of-band (cluster rebuild, filer reset, manual delete) is
+	// re-detected and recreated without restarting the operator. Zero
+	// disables the periodic requeue; watches and the transient-error
+	// backoff still apply. main.go defaults it to DefaultBucketResyncInterval.
+	ResyncInterval time.Duration
 }
 
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=buckets,verbs=get;list;watch;create;update;patch;delete
@@ -331,7 +351,11 @@ func (r *BucketReconciler) reconcileBucket(ctx context.Context, bucket *seaweedv
 	if err := r.Status().Update(ctx, bucket); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{}, nil
+	// Pull ourselves back periodically. There is no watch on the SeaweedFS
+	// filer, so this requeue is the only way drift — a bucket deleted
+	// out-of-band — gets re-detected and healed. r.ResyncInterval == 0
+	// leaves Result zero-valued (requeue disabled).
+	return ctrl.Result{RequeueAfter: r.ResyncInterval}, nil
 }
 
 // handleDeletion drives the reclaim-policy path. Retain just removes the

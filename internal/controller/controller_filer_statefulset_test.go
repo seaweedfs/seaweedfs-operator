@@ -47,18 +47,22 @@ func TestFilerProbeNotRejectedByReadJWT(t *testing.T) {
 
 	c := filerContainer(t, &sts.Spec.Template.Spec)
 
-	// The probe the kubelet runs against the filer: an unauthenticated GET /
-	// on the filer HTTP port. It carries no Authorization header.
-	probe := c.ReadinessProbe
-	if probe == nil || probe.HTTPGet == nil {
-		t.Fatalf("expected an HTTP readiness probe on the filer container")
+	// Both probes the kubelet runs against the filer are unauthenticated
+	// GET / on the filer HTTP port — they carry no Authorization header. The
+	// liveness probe is the one that restarts the container into
+	// CrashLoopBackOff; readiness keeps it out of rotation. Guard both so a
+	// future probe change can't silently reintroduce the 401 via either one.
+	assertUnauthGETProbe := func(name string, probe *corev1.Probe) {
+		if probe == nil || probe.HTTPGet == nil {
+			t.Fatalf("expected an HTTP %s probe on the filer container", name)
+		}
+		if probe.HTTPGet.Path != "/" || probe.HTTPGet.Port.IntValue() != seaweedv1.FilerHTTPPort {
+			t.Fatalf("expected %s probe GET / on port %d, got %s:%s",
+				name, seaweedv1.FilerHTTPPort, probe.HTTPGet.Path, probe.HTTPGet.Port.String())
+		}
 	}
-	unauthenticatedReadProbe := probe.HTTPGet.Path == "/" &&
-		probe.HTTPGet.Port.IntValue() == seaweedv1.FilerHTTPPort
-	if !unauthenticatedReadProbe {
-		t.Fatalf("expected probe GET / on port %d, got %s:%s",
-			seaweedv1.FilerHTTPPort, probe.HTTPGet.Path, probe.HTTPGet.Port.String())
-	}
+	assertUnauthGETProbe("readiness", c.ReadinessProbe)
+	assertUnauthGETProbe("liveness", c.LivenessProbe)
 
 	// The security.toml the operator mounts into this very pod, rendered for a
 	// no-TLS cluster exactly as ensureSecuritySecret writes it.
@@ -68,10 +72,12 @@ func TestFilerProbeNotRejectedByReadJWT(t *testing.T) {
 	securityTOML := renderSecurityTOML("write-key", tlsEffective(m))
 	readJWTRequired := strings.Contains(securityTOML, "[jwt.filer_signing.read]")
 
-	// The bug was both holding at once: every probe GET answered with 401.
-	if unauthenticatedReadProbe && readJWTRequired {
-		t.Fatalf("filer is probed with an unauthenticated GET / but the mounted "+
-			"security.toml enables [jwt.filer_signing.read], so the probe gets "+
+	// The bug was both holding at once: the probes are unauthenticated GET /
+	// (asserted above) while the mounted security.toml requires JWT-signed
+	// reads, so every probe GET is answered with 401.
+	if readJWTRequired {
+		t.Fatalf("filer readiness/liveness probes are unauthenticated GET / but the "+
+			"mounted security.toml enables [jwt.filer_signing.read], so the probes get "+
 			"401 \"wrong jwt\" and the pod CrashLoopBackOffs.\nsecurity.toml:\n%s", securityTOML)
 	}
 }

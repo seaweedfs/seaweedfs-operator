@@ -544,6 +544,50 @@ func TestReconcile_RecreatesBucketLostOutOfBand(t *testing.T) {
 	}
 }
 
+// TestReconcile_SteadyStateResyncDoesNotWriteStatus pins that a resync pass
+// finding no drift issues no Status().Update: the periodic requeue must not
+// churn the apiserver or re-trigger the controller through its own update
+// event once a bucket has settled at Ready.
+func TestReconcile_SteadyStateResyncDoesNotWriteStatus(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Finalizers = []string{BucketFinalizer}
+
+	fa := newFakeAdmin()
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	r.ResyncInterval = 2 * time.Minute
+
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	// First pass provisions the bucket and marks it Ready (a real status change).
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("initial reconcile: %v", err)
+	}
+	settled := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, settled); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if settled.Status.Phase != seaweedv1.BucketPhaseReady {
+		t.Fatalf("precondition: phase=%q want Ready", settled.Status.Phase)
+	}
+
+	// A second pass finds no drift; status is identical, so nothing is written
+	// — but the resync cadence is still requested.
+	res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+	if err != nil {
+		t.Fatalf("steady-state reconcile: %v", err)
+	}
+	if res.RequeueAfter != 2*time.Minute {
+		t.Fatalf("RequeueAfter=%v, want the resync cadence preserved on a no-op pass", res.RequeueAfter)
+	}
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.ResourceVersion != settled.ResourceVersion {
+		t.Errorf("steady-state reconcile wrote status: resourceVersion %s -> %s", settled.ResourceVersion, got.ResourceVersion)
+	}
+}
+
 func TestReconcile_RenameRefused(t *testing.T) {
 	bucket := newTestBucket("photos")
 	bucket.Spec.Name = "renamed"

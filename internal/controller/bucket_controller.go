@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -203,6 +204,10 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 func (r *BucketReconciler) reconcileBucket(ctx context.Context, bucket *seaweedv1.Bucket, bucketName string, admin BucketAdmin) (ctrl.Result, error) {
 	log := r.Log.WithValues("bucket", types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name})
 
+	// Snapshot status so the success path can skip a redundant write when a
+	// resync pass finds no drift. failPhase paths persist their own status.
+	baseStatus := bucket.Status.DeepCopy()
+
 	exists, err := admin.BucketExists(ctx, bucketName)
 	if err != nil {
 		return r.failPhase(ctx, bucket, seaweedv1.BucketPhaseFailed, "ExistsCheckFailed", err.Error())
@@ -348,8 +353,13 @@ func (r *BucketReconciler) reconcileBucket(ctx context.Context, bucket *seaweedv
 	r.clearCondition(bucket, seaweedv1.BucketConditionBucketAlreadyExists)
 	r.clearCondition(bucket, seaweedv1.BucketConditionDeleteBlockedByRetention)
 
-	if err := r.Status().Update(ctx, bucket); err != nil {
-		return ctrl.Result{}, err
+	// Persist status only when it actually changed, so a steady-state resync
+	// pass (no drift) issues no Status().Update — avoiding both the apiserver
+	// round trip per bucket and the update event that would re-trigger us.
+	if !reflect.DeepEqual(*baseStatus, bucket.Status) {
+		if err := r.Status().Update(ctx, bucket); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	// Pull ourselves back periodically. There is no watch on the SeaweedFS
 	// filer, so this requeue is the only way drift — a bucket deleted

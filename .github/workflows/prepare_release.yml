@@ -1,0 +1,187 @@
+name: Prepare release
+
+# Automates the manual release steps:
+#   1. (optional) go get -u github.com/seaweedfs/seaweedfs + go mod tidy
+#   2. bump the operator appVersion in deploy/helm/Chart.yaml
+#      (the chart `version` is left alone — helm_chart_release.yml bumps it
+#       automatically once the tag is pushed)
+#   3. build + vet to make sure the dependency bump still compiles
+#   4. commit the changes to master
+#   5. push the <appVersion> tag and create the GitHub release
+#
+# Pushing the tag fans out to the existing workflows (both trigger on push: tags):
+#   - image.yml              builds & pushes the Docker images
+#   - helm_chart_release.yml bumps the chart version & publishes the Helm chart
+#
+# IMPORTANT: events triggered by the default GITHUB_TOKEN do NOT start other
+# workflows. To have the tag automatically kick off image.yml and
+# helm_chart_release.yml, add a repo secret RELEASE_PAT (a fine-grained or
+# classic PAT with contents: write). Without it the tag/release is still
+# created, but you must re-run those two workflows manually (both support
+# workflow_dispatch).
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_version:
+        description: 'Operator app version, e.g. 1.0.27 (leave empty to auto-bump appVersion using "bump")'
+        required: false
+        type: string
+      bump:
+        description: 'Semver part to bump for appVersion when app_version is empty'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      update_seaweedfs:
+        description: 'Run "go get -u github.com/seaweedfs/seaweedfs" + go mod tidy'
+        required: false
+        default: true
+        type: boolean
+      dry_run:
+        description: 'Compute and show changes, but do not commit, tag, or release'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    env:
+      CHART: deploy/helm/Chart.yaml
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v6
+        with:
+          ref: master
+          fetch-depth: 0
+          # Use a PAT if available so the resulting tag triggers image.yml and
+          # helm_chart_release.yml (events from GITHUB_TOKEN do not start workflows).
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Configure Git
+        run: |
+          git config user.name "chrislusf"
+          git config user.email "chrislusf@users.noreply.github.com"
+
+      - name: Update SeaweedFS dependency
+        if: ${{ inputs.update_seaweedfs }}
+        run: |
+          OLD=$(go list -m -f '{{.Version}}' github.com/seaweedfs/seaweedfs)
+          go get -u github.com/seaweedfs/seaweedfs
+          go mod tidy
+          NEW=$(go list -m -f '{{.Version}}' github.com/seaweedfs/seaweedfs)
+          echo "SEAWEEDFS_OLD=$OLD" >> "$GITHUB_ENV"
+          echo "SEAWEEDFS_NEW=$NEW" >> "$GITHUB_ENV"
+          echo "SeaweedFS: $OLD -> $NEW"
+
+      - name: Compute new appVersion
+        id: versions
+        run: |
+          set -euo pipefail
+
+          bump_semver() {
+            local version="$1" level="$2" major minor patch
+            IFS='.' read -r major minor patch <<< "$version"
+            case "$level" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              patch) patch=$((patch + 1)) ;;
+              *) echo "unknown bump level: $level" >&2; exit 1 ;;
+            esac
+            echo "${major}.${minor}.${patch}"
+          }
+
+          CUR_APP=$(grep '^appVersion:' "$CHART" | awk '{print $2}' | tr -d '"')
+          echo "Current app version: $CUR_APP"
+
+          # appVersion: explicit input wins, otherwise bump the current value.
+          # The operator's appVersion has no leading "v"; strip it if supplied.
+          INPUT_APP="${{ inputs.app_version }}"
+          if [ -n "$INPUT_APP" ]; then
+            NEW_APP="${INPUT_APP#v}"
+          else
+            NEW_APP="$(bump_semver "$CUR_APP" "${{ inputs.bump }}")"
+          fi
+
+          if [ "$NEW_APP" = "$CUR_APP" ]; then
+            echo "::error::New app version $NEW_APP equals current; pick a different app_version or bump." >&2
+            exit 1
+          fi
+
+          echo "New app version: $NEW_APP"
+          {
+            echo "new_app=$NEW_APP"
+            echo "tag=$NEW_APP"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Update Chart.yaml appVersion
+        run: |
+          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.versions.outputs.new_app }}\"/" "$CHART"
+          echo "----- Chart.yaml -----"
+          cat "$CHART"
+
+      - name: Build and vet
+        run: |
+          go build ./...
+          go vet ./...
+
+      - name: Show diff
+        run: git --no-pager diff --stat
+
+      - name: Commit, tag, and release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.versions.outputs.tag }}"
+
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null || \
+             git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} already exists." >&2
+            exit 1
+          fi
+
+          git add -A
+          git commit -m "${TAG}"
+          git push origin master
+
+          # Push the tag with git so the `push: tags` triggers fire
+          # (image.yml + helm_chart_release.yml). Creating the tag via the
+          # release API alone would emit a `create` event, which neither
+          # workflow listens for.
+          git tag "$TAG"
+          git push origin "$TAG"
+
+          NOTES="seaweedfs-operator ${TAG}"
+          if [ -n "${SEAWEEDFS_NEW:-}" ] && [ "${SEAWEEDFS_OLD:-}" != "${SEAWEEDFS_NEW:-}" ]; then
+            OLD_COMMIT="${SEAWEEDFS_OLD##*-}"
+            NEW_COMMIT="${SEAWEEDFS_NEW##*-}"
+            NOTES="${NOTES}"$'\n\n'"SeaweedFS dependency: \`${SEAWEEDFS_OLD}\` → \`${SEAWEEDFS_NEW}\`"
+            NOTES="${NOTES}"$'\n'"https://github.com/seaweedfs/seaweedfs/compare/${OLD_COMMIT}...${NEW_COMMIT}"
+          fi
+
+          # Reuse the tag just pushed (--verify-tag) and publish the release.
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "$NOTES" \
+            --verify-tag
+
+      - name: Dry run summary
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "DRY RUN — no commit/tag/release created."
+          echo "Would tag:   ${{ steps.versions.outputs.tag }}"
+          echo "App version: ${{ steps.versions.outputs.new_app }}"

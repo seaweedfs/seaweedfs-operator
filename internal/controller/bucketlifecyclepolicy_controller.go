@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -56,6 +57,16 @@ type BucketLifecyclePolicyReconciler struct {
 	// AdminFactory creates a BucketAdmin for the target Seaweed cluster.
 	// Tests inject a fake; production wires NewSwadminBucketAdmin.
 	AdminFactory BucketAdminFactory
+
+	// ResyncInterval is the steady-state cadence at which a Ready policy
+	// re-enters Reconcile. Like the bucket itself, the applied lifecycle
+	// XML lives on the filer with no watch, so a config lost out-of-band
+	// (cluster rebuild, filer reset) is invisible until something
+	// re-triggers Reconcile. The periodic requeue re-applies it without an
+	// operator restart; the no-op status guard keeps a steady-state pass
+	// from churning. Zero disables the requeue. main.go defaults it to
+	// DefaultBucketResyncInterval.
+	ResyncInterval time.Duration
 }
 
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=bucketlifecyclepolicies,verbs=get;list;watch;create;update;patch;delete
@@ -185,7 +196,9 @@ func (r *BucketLifecyclePolicyReconciler) reconcilePolicy(ctx context.Context, p
 	policy.Status.AppliedRules = int32(len(policy.Spec.Rules))
 	policy.Status.Phase = seaweedv1.BucketPhaseReady
 	r.setCondition(policy, seaweedv1.BucketLifecyclePolicyConditionReady, metav1.ConditionTrue, "Reconciled", "")
-	return ctrl.Result{}, nil
+	// Pull ourselves back periodically to re-detect drift on the filer,
+	// which we don't watch. r.ResyncInterval == 0 disables the requeue.
+	return ctrl.Result{RequeueAfter: r.ResyncInterval}, nil
 }
 
 // handleDeletion clears the lifecycle configuration when reclaimPolicy is Delete

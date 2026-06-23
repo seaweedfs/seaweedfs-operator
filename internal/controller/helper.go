@@ -416,6 +416,9 @@ func applyLivenessProbeOverride(probe *corev1.Probe, override *seaweedv1.Livenes
 // applyProbeTimings overrides, in place, each of the four timing fields common
 // to readiness and liveness overrides for which a non-nil value is supplied.
 func applyProbeTimings(probe *corev1.Probe, initialDelay, timeout, period, failureThreshold *int32) {
+	if probe == nil {
+		return
+	}
 	if initialDelay != nil {
 		probe.InitialDelaySeconds = *initialDelay
 	}

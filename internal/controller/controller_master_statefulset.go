@@ -139,8 +139,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 			FailureThreshold:    6,
 		},
 	}}
-	applyProbeOverride(masterPodSpec.Containers[0].ReadinessProbe, m.BaseMasterSpec().ReadinessProbe())
-	applyLivenessProbeOverride(masterPodSpec.Containers[0].LivenessProbe, m.BaseMasterSpec().LivenessProbe())
+	applyProbeOverrides(&masterPodSpec.Containers[0], m.BaseMasterSpec().ReadinessProbe(), m.BaseMasterSpec().LivenessProbe())
 	masterPodSpec.Containers = append(masterPodSpec.Containers, m.BaseMasterSpec().Sidecars()...)
 	masterPodSpec.InitContainers = append(masterPodSpec.InitContainers, m.BaseMasterSpec().InitContainers()...)
 

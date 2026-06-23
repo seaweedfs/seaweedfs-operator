@@ -212,8 +212,7 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			FailureThreshold:    6,
 		},
 	}}
-	applyProbeOverride(adminPodSpec.Containers[0].ReadinessProbe, m.BaseAdminSpec().ReadinessProbe())
-	applyLivenessProbeOverride(adminPodSpec.Containers[0].LivenessProbe, m.BaseAdminSpec().LivenessProbe())
+	applyProbeOverrides(&adminPodSpec.Containers[0], m.BaseAdminSpec().ReadinessProbe(), m.BaseAdminSpec().LivenessProbe())
 	adminPodSpec.Containers = append(adminPodSpec.Containers, m.BaseAdminSpec().Sidecars()...)
 	adminPodSpec.InitContainers = append(adminPodSpec.InitContainers, m.BaseAdminSpec().InitContainers()...)
 

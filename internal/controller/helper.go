@@ -388,6 +388,18 @@ func weedPreamble(m *seaweedv1.Seaweed, loggingArgs []string, subcommand string)
 	return cmd
 }
 
+// applyProbeOverrides applies the readiness and liveness timing overrides to a
+// container's operator-managed probes in place. Pairing both in one call keeps
+// each call site from wiring one probe and forgetting the other; each
+// underlying apply is a no-op when its probe or override is nil.
+func applyProbeOverrides(c *corev1.Container, readiness *seaweedv1.ProbeOverride, liveness *seaweedv1.LivenessProbeOverride) {
+	if c == nil {
+		return
+	}
+	applyProbeOverride(c.ReadinessProbe, readiness)
+	applyLivenessProbeOverride(c.LivenessProbe, liveness)
+}
+
 // applyProbeOverride overrides, in place, each timing field of probe for which
 // the override supplies a non-nil value. A nil probe or nil override is a
 // no-op. The probe handler (path/port/scheme) is never touched, so callers

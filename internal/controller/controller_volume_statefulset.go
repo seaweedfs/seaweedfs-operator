@@ -316,8 +316,7 @@ func (r *SeaweedReconciler) buildFlatVolumePodSpec(m *seaweedv1.Seaweed, disks v
 		},
 		VolumeMounts: mergeVolumeMounts(volumeMounts, m.BaseVolumeSpec().VolumeMounts()),
 	}}
-	applyProbeOverride(volumePodSpec.Containers[0].ReadinessProbe, m.BaseVolumeSpec().ReadinessProbe())
-	applyLivenessProbeOverride(volumePodSpec.Containers[0].LivenessProbe, m.BaseVolumeSpec().LivenessProbe())
+	applyProbeOverrides(&volumePodSpec.Containers[0], m.BaseVolumeSpec().ReadinessProbe(), m.BaseVolumeSpec().LivenessProbe())
 	volumePodSpec.Containers = append(volumePodSpec.Containers, m.BaseVolumeSpec().Sidecars()...)
 	volumePodSpec.InitContainers = append(volumePodSpec.InitContainers, m.BaseVolumeSpec().InitContainers()...)
 	volumePodSpec.Volumes = append(volumePodSpec.Volumes, volumes...)
@@ -529,8 +528,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 		},
 		VolumeMounts: volumeMounts,
 	}}
-	applyProbeOverride(volumePodSpec.Containers[0].ReadinessProbe, topologySpec.ReadinessProbe)
-	applyLivenessProbeOverride(volumePodSpec.Containers[0].LivenessProbe, topologySpec.LivenessProbe)
+	applyProbeOverrides(&volumePodSpec.Containers[0], topologySpec.ReadinessProbe, topologySpec.LivenessProbe)
 	volumePodSpec.Containers = append(volumePodSpec.Containers, topologySpec.Sidecars...)
 	volumePodSpec.InitContainers = append(volumePodSpec.InitContainers, topologySpec.InitContainers...)
 	volumePodSpec.Volumes = volumes

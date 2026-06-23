@@ -89,3 +89,34 @@ func TestVolumeReadinessProbeOverride(t *testing.T) {
 		t.Fatalf("override must not change the operator's /healthz handler")
 	}
 }
+
+// A liveness override may retune timings but can never change SuccessThreshold,
+// which Kubernetes requires to be 1 for liveness probes (the field isn't even on
+// LivenessProbeOverride). Guards against producing a StatefulSet the API rejects.
+func TestVolumeLivenessProbeOverride(t *testing.T) {
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "seaweedfs", Namespace: "default"},
+		Spec: seaweedv1.SeaweedSpec{
+			Image:  "chrislusf/seaweedfs:4.33",
+			Master: &seaweedv1.MasterSpec{Replicas: 1},
+			Volume: &seaweedv1.VolumeSpec{
+				Replicas: 1,
+				VolumeServerConfig: seaweedv1.VolumeServerConfig{
+					ComponentSpec: seaweedv1.ComponentSpec{
+						LivenessProbe: &seaweedv1.LivenessProbeOverride{PeriodSeconds: int32p(5)},
+					},
+				},
+			},
+		},
+	}
+	r := &SeaweedReconciler{}
+	sts := r.createVolumeServerStatefulSet(m)
+	probe := sts.Spec.Template.Spec.Containers[0].LivenessProbe
+
+	if probe.PeriodSeconds != 5 {
+		t.Fatalf("volume liveness PeriodSeconds: want overridden 5, got %d", probe.PeriodSeconds)
+	}
+	if probe.SuccessThreshold != 1 {
+		t.Fatalf("volume liveness SuccessThreshold must stay 1, got %d", probe.SuccessThreshold)
+	}
+}

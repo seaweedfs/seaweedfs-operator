@@ -291,7 +291,7 @@ func (r *SeaweedReconciler) buildS3Deployment(m *seaweedv1.Seaweed) *appsv1.Depl
 		},
 	}}
 	applyProbeOverride(podSpec.Containers[0].ReadinessProbe, m.BaseS3Spec().ReadinessProbe())
-	applyProbeOverride(podSpec.Containers[0].LivenessProbe, m.BaseS3Spec().LivenessProbe())
+	applyLivenessProbeOverride(podSpec.Containers[0].LivenessProbe, m.BaseS3Spec().LivenessProbe())
 	podSpec.Containers = append(podSpec.Containers, m.BaseS3Spec().Sidecars()...)
 	podSpec.InitContainers = append(podSpec.InitContainers, m.BaseS3Spec().InitContainers()...)
 

@@ -397,19 +397,35 @@ func applyProbeOverride(probe *corev1.Probe, override *seaweedv1.ProbeOverride) 
 	if probe == nil || override == nil {
 		return
 	}
-	if override.InitialDelaySeconds != nil {
-		probe.InitialDelaySeconds = *override.InitialDelaySeconds
-	}
-	if override.TimeoutSeconds != nil {
-		probe.TimeoutSeconds = *override.TimeoutSeconds
-	}
-	if override.PeriodSeconds != nil {
-		probe.PeriodSeconds = *override.PeriodSeconds
-	}
+	applyProbeTimings(probe, override.InitialDelaySeconds, override.TimeoutSeconds, override.PeriodSeconds, override.FailureThreshold)
 	if override.SuccessThreshold != nil {
 		probe.SuccessThreshold = *override.SuccessThreshold
 	}
-	if override.FailureThreshold != nil {
-		probe.FailureThreshold = *override.FailureThreshold
+}
+
+// applyLivenessProbeOverride is applyProbeOverride for liveness probes: it never
+// touches SuccessThreshold, which Kubernetes requires to be 1 for liveness (and
+// startup) probes -- so seaweedv1.LivenessProbeOverride doesn't expose it.
+func applyLivenessProbeOverride(probe *corev1.Probe, override *seaweedv1.LivenessProbeOverride) {
+	if probe == nil || override == nil {
+		return
+	}
+	applyProbeTimings(probe, override.InitialDelaySeconds, override.TimeoutSeconds, override.PeriodSeconds, override.FailureThreshold)
+}
+
+// applyProbeTimings overrides, in place, each of the four timing fields common
+// to readiness and liveness overrides for which a non-nil value is supplied.
+func applyProbeTimings(probe *corev1.Probe, initialDelay, timeout, period, failureThreshold *int32) {
+	if initialDelay != nil {
+		probe.InitialDelaySeconds = *initialDelay
+	}
+	if timeout != nil {
+		probe.TimeoutSeconds = *timeout
+	}
+	if period != nil {
+		probe.PeriodSeconds = *period
+	}
+	if failureThreshold != nil {
+		probe.FailureThreshold = *failureThreshold
 	}
 }

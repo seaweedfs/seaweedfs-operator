@@ -30,7 +30,7 @@ type ComponentAccessor interface {
 	VolumeMounts() []corev1.VolumeMount
 	ExtraArgs() []string
 	ReadinessProbe() *ProbeOverride
-	LivenessProbe() *ProbeOverride
+	LivenessProbe() *LivenessProbeOverride
 	LoggingArgs() []string
 	Sidecars() []corev1.Container
 	InitContainers() []corev1.Container
@@ -230,7 +230,7 @@ func (a *componentAccessorImpl) ReadinessProbe() *ProbeOverride {
 	return a.ComponentSpec.ReadinessProbe
 }
 
-func (a *componentAccessorImpl) LivenessProbe() *ProbeOverride {
+func (a *componentAccessorImpl) LivenessProbe() *LivenessProbeOverride {
 	return a.ComponentSpec.LivenessProbe
 }
 

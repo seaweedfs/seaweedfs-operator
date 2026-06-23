@@ -712,9 +712,6 @@ spec:
                       periodSeconds:
                         minimum: 1
                         type: integer
-                      successThreshold:
-                        minimum: 1
-                        type: integer
                       timeoutSeconds:
                         minimum: 1
                         type: integer
@@ -3008,9 +3005,6 @@ spec:
                       periodSeconds:
                         minimum: 1
                         type: integer
-                      successThreshold:
-                        minimum: 1
-                        type: integer
                       timeoutSeconds:
                         minimum: 1
                         type: integer
@@ -4833,9 +4827,6 @@ spec:
                       periodSeconds:
                         minimum: 1
                         type: integer
-                      successThreshold:
-                        minimum: 1
-                        type: integer
                       timeoutSeconds:
                         minimum: 1
                         type: integer
@@ -6521,9 +6512,6 @@ spec:
                       periodSeconds:
                         minimum: 1
                         type: integer
-                      successThreshold:
-                        minimum: 1
-                        type: integer
                       timeoutSeconds:
                         minimum: 1
                         type: integer
@@ -8189,9 +8177,6 @@ spec:
                         minimum: 0
                         type: integer
                       periodSeconds:
-                        minimum: 1
-                        type: integer
-                      successThreshold:
                         minimum: 1
                         type: integer
                       timeoutSeconds:
@@ -9950,9 +9935,6 @@ spec:
                       periodSeconds:
                         minimum: 1
                         type: integer
-                      successThreshold:
-                        minimum: 1
-                        type: integer
                       timeoutSeconds:
                         minimum: 1
                         type: integer
@@ -11626,9 +11608,6 @@ spec:
                         periodSeconds:
                           minimum: 1
                           type: integer
-                        successThreshold:
-                          minimum: 1
-                          type: integer
                         timeoutSeconds:
                           minimum: 1
                           type: integer
@@ -13293,9 +13272,6 @@ spec:
                         minimum: 0
                         type: integer
                       periodSeconds:
-                        minimum: 1
-                        type: integer
-                      successThreshold:
                         minimum: 1
                         type: integer
                       timeoutSeconds:

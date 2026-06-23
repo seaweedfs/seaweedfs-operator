@@ -690,10 +690,11 @@ type WorkerSpec struct {
 	MaxExecute *int32 `json:"maxExecute,omitempty"`
 }
 
-// ProbeOverride tunes the timing fields of an operator-managed health probe.
+// ProbeOverride tunes the timing fields of an operator-managed readiness probe.
 // Each nil field falls back to the operator's default for that probe; the
 // probe handler (HTTP path, port, and scheme) is always set by the operator
 // and is not overridable. Mirrors the tunable scalar fields of corev1.Probe.
+// Liveness probes use LivenessProbeOverride instead (no SuccessThreshold).
 type ProbeOverride struct {
 	// Number of seconds after the container has started before the probe is
 	// initiated.
@@ -716,6 +717,33 @@ type ProbeOverride struct {
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	SuccessThreshold *int32 `json:"successThreshold,omitempty"`
+
+	// Minimum consecutive failures for the probe to be considered failed after
+	// having succeeded.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	FailureThreshold *int32 `json:"failureThreshold,omitempty"`
+}
+
+// LivenessProbeOverride is ProbeOverride without SuccessThreshold: Kubernetes
+// requires a liveness probe's successThreshold to be exactly 1, so it is not
+// exposed here (the operator always leaves it at 1).
+type LivenessProbeOverride struct {
+	// Number of seconds after the container has started before the probe is
+	// initiated.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	InitialDelaySeconds *int32 `json:"initialDelaySeconds,omitempty"`
+
+	// Number of seconds after which the probe times out.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	TimeoutSeconds *int32 `json:"timeoutSeconds,omitempty"`
+
+	// How often (in seconds) to perform the probe.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	PeriodSeconds *int32 `json:"periodSeconds,omitempty"`
 
 	// Minimum consecutive failures for the probe to be considered failed after
 	// having succeeded.
@@ -814,9 +842,10 @@ type ComponentSpec struct {
 	ReadinessProbe *ProbeOverride `json:"readinessProbe,omitempty"`
 
 	// LivenessProbe tunes the timing fields of this component's
-	// operator-managed liveness probe. See ReadinessProbe.
+	// operator-managed liveness probe. See ReadinessProbe. (No successThreshold:
+	// Kubernetes requires a liveness probe's successThreshold to be 1.)
 	// +optional
-	LivenessProbe *ProbeOverride `json:"livenessProbe,omitempty"`
+	LivenessProbe *LivenessProbeOverride `json:"livenessProbe,omitempty"`
 
 	// LoggingArgs are command line flags placed before the weed subcommand
 	// (e.g. ["-logJson", "-v=2"]). When non-empty, this slice fully replaces

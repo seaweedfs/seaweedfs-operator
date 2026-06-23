@@ -301,7 +301,7 @@ func (r *SeaweedReconciler) buildSFTPDeployment(m *seaweedv1.Seaweed) *appsv1.De
 		},
 	}}
 	applyProbeOverride(podSpec.Containers[0].ReadinessProbe, m.BaseSFTPSpec().ReadinessProbe())
-	applyProbeOverride(podSpec.Containers[0].LivenessProbe, m.BaseSFTPSpec().LivenessProbe())
+	applyLivenessProbeOverride(podSpec.Containers[0].LivenessProbe, m.BaseSFTPSpec().LivenessProbe())
 	podSpec.Containers = append(podSpec.Containers, m.BaseSFTPSpec().Sidecars()...)
 	podSpec.InitContainers = append(podSpec.InitContainers, m.BaseSFTPSpec().InitContainers()...)
 

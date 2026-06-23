@@ -57,7 +57,7 @@ jobs:
       CHART: deploy/helm/Chart.yaml
     steps:
       - name: Checkout master
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: master
           fetch-depth: 0

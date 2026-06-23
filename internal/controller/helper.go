@@ -387,3 +387,48 @@ func weedPreamble(m *seaweedv1.Seaweed, loggingArgs []string, subcommand string)
 	cmd = append(cmd, subcommand)
 	return cmd
 }
+
+// applyProbeOverride overrides, in place, each timing field of probe for which
+// the override supplies a non-nil value. A nil probe or nil override is a
+// no-op. The probe handler (path/port/scheme) is never touched, so callers
+// keep full control of what the probe checks while letting users retune its
+// cadence (see seaweedv1.ProbeOverride).
+func applyProbeOverride(probe *corev1.Probe, override *seaweedv1.ProbeOverride) {
+	if probe == nil || override == nil {
+		return
+	}
+	applyProbeTimings(probe, override.InitialDelaySeconds, override.TimeoutSeconds, override.PeriodSeconds, override.FailureThreshold)
+	if override.SuccessThreshold != nil {
+		probe.SuccessThreshold = *override.SuccessThreshold
+	}
+}
+
+// applyLivenessProbeOverride is applyProbeOverride for liveness probes: it never
+// touches SuccessThreshold, which Kubernetes requires to be 1 for liveness (and
+// startup) probes -- so seaweedv1.LivenessProbeOverride doesn't expose it.
+func applyLivenessProbeOverride(probe *corev1.Probe, override *seaweedv1.LivenessProbeOverride) {
+	if probe == nil || override == nil {
+		return
+	}
+	applyProbeTimings(probe, override.InitialDelaySeconds, override.TimeoutSeconds, override.PeriodSeconds, override.FailureThreshold)
+}
+
+// applyProbeTimings overrides, in place, each of the four timing fields common
+// to readiness and liveness overrides for which a non-nil value is supplied.
+func applyProbeTimings(probe *corev1.Probe, initialDelay, timeout, period, failureThreshold *int32) {
+	if probe == nil {
+		return
+	}
+	if initialDelay != nil {
+		probe.InitialDelaySeconds = *initialDelay
+	}
+	if timeout != nil {
+		probe.TimeoutSeconds = *timeout
+	}
+	if period != nil {
+		probe.PeriodSeconds = *period
+	}
+	if failureThreshold != nil {
+		probe.FailureThreshold = *failureThreshold
+	}
+}

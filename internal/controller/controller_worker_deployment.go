@@ -150,6 +150,8 @@ func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1
 			SuccessThreshold:    1,
 			FailureThreshold:    6,
 		}
+		applyProbeOverride(container.ReadinessProbe, m.BaseWorkerSpec().ReadinessProbe())
+		applyLivenessProbeOverride(container.LivenessProbe, m.BaseWorkerSpec().LivenessProbe())
 	}
 
 	workerPodSpec.EnableServiceLinks = &enableServiceLinks

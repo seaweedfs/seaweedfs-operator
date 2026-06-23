@@ -670,7 +670,11 @@ type WorkerSpec struct {
 	// +kubebuilder:default:=1
 	Replicas int32 `json:"replicas"`
 
-	// MetricsPort is the port that the prometheus metrics export listens on
+	// MetricsPort is the port that the prometheus metrics export listens on.
+	// The worker's readiness and liveness probes hit /ready and /health on this
+	// port, so the operator only creates them when metricsPort is set — and a
+	// readinessProbe/livenessProbe override therefore has no effect unless
+	// metricsPort is also configured.
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
 	// Persistence mounts a volume for worker working directory

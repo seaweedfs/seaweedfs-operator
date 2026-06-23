@@ -120,3 +120,69 @@ func TestVolumeLivenessProbeOverride(t *testing.T) {
 		t.Fatalf("volume liveness SuccessThreshold must stay 1, got %d", probe.SuccessThreshold)
 	}
 }
+
+// The S3 gateway defines a liveness probe, so spec.s3.livenessProbe must be
+// honored while the operator keeps its /status handler.
+func TestS3LivenessProbeOverride(t *testing.T) {
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "seaweedfs", Namespace: "default"},
+		Spec: seaweedv1.SeaweedSpec{
+			Image:  "chrislusf/seaweedfs:4.33",
+			Master: &seaweedv1.MasterSpec{Replicas: 1},
+			S3: &seaweedv1.S3GatewaySpec{
+				Replicas: 1,
+				ComponentSpec: seaweedv1.ComponentSpec{
+					LivenessProbe: &seaweedv1.LivenessProbeOverride{PeriodSeconds: int32p(5)},
+				},
+			},
+		},
+	}
+	r := &SeaweedReconciler{}
+	probe := r.buildS3Deployment(m).Spec.Template.Spec.Containers[0].LivenessProbe
+
+	if probe == nil {
+		t.Fatal("S3 deployment must define a liveness probe for the override to apply to")
+	}
+	if probe.PeriodSeconds != 5 {
+		t.Fatalf("s3 liveness PeriodSeconds: want overridden 5, got %d", probe.PeriodSeconds)
+	}
+	if probe.SuccessThreshold != 1 {
+		t.Fatalf("s3 liveness SuccessThreshold must stay 1, got %d", probe.SuccessThreshold)
+	}
+	if probe.HTTPGet == nil || probe.HTTPGet.Path != "/status" {
+		t.Fatalf("override must not change the operator's /status handler")
+	}
+}
+
+// The SFTP gateway defines a TCP liveness probe, so spec.sftp.livenessProbe
+// must be honored while the operator keeps its TCP-socket handler.
+func TestSFTPLivenessProbeOverride(t *testing.T) {
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "seaweedfs", Namespace: "default"},
+		Spec: seaweedv1.SeaweedSpec{
+			Image:  "chrislusf/seaweedfs:4.33",
+			Master: &seaweedv1.MasterSpec{Replicas: 1},
+			SFTP: &seaweedv1.SFTPSpec{
+				Replicas: 1,
+				ComponentSpec: seaweedv1.ComponentSpec{
+					LivenessProbe: &seaweedv1.LivenessProbeOverride{PeriodSeconds: int32p(5)},
+				},
+			},
+		},
+	}
+	r := &SeaweedReconciler{}
+	probe := r.buildSFTPDeployment(m).Spec.Template.Spec.Containers[0].LivenessProbe
+
+	if probe == nil {
+		t.Fatal("SFTP deployment must define a liveness probe for the override to apply to")
+	}
+	if probe.PeriodSeconds != 5 {
+		t.Fatalf("sftp liveness PeriodSeconds: want overridden 5, got %d", probe.PeriodSeconds)
+	}
+	if probe.SuccessThreshold != 1 {
+		t.Fatalf("sftp liveness SuccessThreshold must stay 1, got %d", probe.SuccessThreshold)
+	}
+	if probe.TCPSocket == nil {
+		t.Fatalf("override must not change the operator's TCP-socket handler")
+	}
+}

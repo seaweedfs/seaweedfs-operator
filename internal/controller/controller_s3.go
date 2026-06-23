@@ -289,9 +289,21 @@ func (r *SeaweedReconciler) buildS3Deployment(m *seaweedv1.Seaweed) *appsv1.Depl
 			SuccessThreshold:    1,
 			FailureThreshold:    100,
 		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/status",
+					Port: intstr.FromInt(int(s3EffectivePort(m))),
+				},
+			},
+			InitialDelaySeconds: 20,
+			TimeoutSeconds:      3,
+			PeriodSeconds:       30,
+			SuccessThreshold:    1,
+			FailureThreshold:    6,
+		},
 	}}
-	applyProbeOverride(podSpec.Containers[0].ReadinessProbe, m.BaseS3Spec().ReadinessProbe())
-	applyLivenessProbeOverride(podSpec.Containers[0].LivenessProbe, m.BaseS3Spec().LivenessProbe())
+	applyProbeOverrides(&podSpec.Containers[0], m.BaseS3Spec().ReadinessProbe(), m.BaseS3Spec().LivenessProbe())
 	podSpec.Containers = append(podSpec.Containers, m.BaseS3Spec().Sidecars()...)
 	podSpec.InitContainers = append(podSpec.InitContainers, m.BaseS3Spec().InitContainers()...)
 

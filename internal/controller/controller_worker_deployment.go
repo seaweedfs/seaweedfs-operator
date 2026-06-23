@@ -120,7 +120,10 @@ func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1
 		Ports: ports,
 	}
 
-	// Only add health probes if metricsPort is set (worker exposes /health and /ready on metricsPort)
+	// Only add health probes if metricsPort is set (worker exposes /health and
+	// /ready on metricsPort). The readinessProbe/livenessProbe overrides applied
+	// below therefore only take effect when metricsPort is set; without a probe
+	// there is nothing to tune.
 	if m.Spec.Worker.MetricsPort != nil {
 		container.ReadinessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
@@ -150,8 +153,7 @@ func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1
 			SuccessThreshold:    1,
 			FailureThreshold:    6,
 		}
-		applyProbeOverride(container.ReadinessProbe, m.BaseWorkerSpec().ReadinessProbe())
-		applyLivenessProbeOverride(container.LivenessProbe, m.BaseWorkerSpec().LivenessProbe())
+		applyProbeOverrides(&container, m.BaseWorkerSpec().ReadinessProbe(), m.BaseWorkerSpec().LivenessProbe())
 	}
 
 	workerPodSpec.EnableServiceLinks = &enableServiceLinks

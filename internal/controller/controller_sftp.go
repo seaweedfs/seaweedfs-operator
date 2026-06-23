@@ -299,9 +299,21 @@ func (r *SeaweedReconciler) buildSFTPDeployment(m *seaweedv1.Seaweed) *appsv1.De
 			SuccessThreshold:    1,
 			FailureThreshold:    6,
 		},
+		// TCP probe: SFTP is SSH-over-TCP, no HTTP endpoint to hit.
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				TCPSocket: &corev1.TCPSocketAction{
+					Port: intstr.FromInt(int(sftpEffectivePort(m))),
+				},
+			},
+			InitialDelaySeconds: 20,
+			TimeoutSeconds:      3,
+			PeriodSeconds:       30,
+			SuccessThreshold:    1,
+			FailureThreshold:    6,
+		},
 	}}
-	applyProbeOverride(podSpec.Containers[0].ReadinessProbe, m.BaseSFTPSpec().ReadinessProbe())
-	applyLivenessProbeOverride(podSpec.Containers[0].LivenessProbe, m.BaseSFTPSpec().LivenessProbe())
+	applyProbeOverrides(&podSpec.Containers[0], m.BaseSFTPSpec().ReadinessProbe(), m.BaseSFTPSpec().LivenessProbe())
 	podSpec.Containers = append(podSpec.Containers, m.BaseSFTPSpec().Sidecars()...)
 	podSpec.InitContainers = append(podSpec.InitContainers, m.BaseSFTPSpec().InitContainers()...)
 

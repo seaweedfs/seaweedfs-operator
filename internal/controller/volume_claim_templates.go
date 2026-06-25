@@ -43,6 +43,9 @@ import (
 // component statefulset builders:
 //
 //   - Name              required, exact match
+//   - Annotations       subset: operator-desired keys must match; extra keys
+//     on existing tolerated
+//   - Labels            subset, same rule as Annotations
 //   - AccessModes       Semantic.DeepEqual
 //   - Resources.Requests Semantic.DeepEqual (resource.Quantity comparison)
 //   - StorageClassName  pointer-aware: nil == nil, both set must match
@@ -70,6 +73,12 @@ func vctSemanticallyEqual(a, b []corev1.PersistentVolumeClaim) bool {
 
 func pvcSemanticallyEqual(a, b corev1.PersistentVolumeClaim) bool {
 	if a.Name != b.Name {
+		return false
+	}
+	if !desiredMetaSubsetOf(a.Annotations, b.Annotations) {
+		return false
+	}
+	if !desiredMetaSubsetOf(a.Labels, b.Labels) {
 		return false
 	}
 	if !apiequality.Semantic.DeepEqual(a.Spec.AccessModes, b.Spec.AccessModes) {
@@ -135,6 +144,12 @@ func pvcDifferences(a, b corev1.PersistentVolumeClaim, index int) []string {
 	if a.Name != b.Name {
 		diffs = append(diffs, fmt.Sprintf("%s.name: %q vs %q", prefix, a.Name, b.Name))
 	}
+	if !desiredMetaSubsetOf(a.Annotations, b.Annotations) {
+		diffs = append(diffs, fmt.Sprintf("%s.annotations differ", prefix))
+	}
+	if !desiredMetaSubsetOf(a.Labels, b.Labels) {
+		diffs = append(diffs, fmt.Sprintf("%s.labels differ", prefix))
+	}
 	if !apiequality.Semantic.DeepEqual(a.Spec.AccessModes, b.Spec.AccessModes) {
 		diffs = append(diffs, fmt.Sprintf("%s.accessModes: %v vs %v", prefix, a.Spec.AccessModes, b.Spec.AccessModes))
 	}
@@ -174,6 +189,20 @@ func resourceListString(rl corev1.ResourceList) string {
 		parts = append(parts, fmt.Sprintf("%s=%s", name, q.String()))
 	}
 	return "{" + strings.Join(parts, ",") + "}"
+}
+
+// desiredMetaSubsetOf reports whether every annotation/label key the operator
+// set on the desired PVC template is present and equal on the existing one.
+// Extra keys on existing are tolerated: the apiserver and admission/policy
+// webhooks may stamp metadata onto the round-tripped template, and a plain
+// DeepEqual would read those as drift and spam VolumeClaimTemplatesMismatch.
+func desiredMetaSubsetOf(existing, desired map[string]string) bool {
+	for k, v := range desired {
+		if ev, ok := existing[k]; !ok || ev != v {
+			return false
+		}
+	}
+	return true
 }
 
 func stringPtr(p *string) string {

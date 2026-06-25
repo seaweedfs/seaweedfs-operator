@@ -223,6 +223,85 @@ func TestResourceListString_DeterministicAcrossMapIteration(t *testing.T) {
 	}
 }
 
+func TestVCTSemanticallyEqual_DetectsAnnotationAndLabelDrift(t *testing.T) {
+	mk := func(annotations, labels map[string]string) []corev1.PersistentVolumeClaim {
+		return []corev1.PersistentVolumeClaim{{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "mount0",
+				Annotations: annotations,
+				Labels:      labels,
+			},
+		}}
+	}
+
+	// nil and empty maps must compare equal (unset field vs apiserver-stored {}).
+	if !vctSemanticallyEqual(mk(nil, nil), mk(map[string]string{}, map[string]string{})) {
+		t.Errorf("expected nil and empty annotation/label maps to compare equal")
+	}
+
+	none := mk(nil, nil)
+	withAnno := mk(map[string]string{"trident.netapp.io/snapshotPolicy": "none"}, nil)
+	if vctSemanticallyEqual(none, withAnno) {
+		t.Errorf("expected adding a PVC annotation to be detected as drift")
+	}
+
+	a := mk(map[string]string{"trident.netapp.io/snapshotReserve": "0"}, nil)
+	b := mk(map[string]string{"trident.netapp.io/snapshotReserve": "10"}, nil)
+	if vctSemanticallyEqual(a, b) {
+		t.Errorf("expected a changed PVC annotation value to be detected as drift")
+	}
+
+	if vctSemanticallyEqual(mk(nil, nil), mk(nil, map[string]string{"team": "storage"})) {
+		t.Errorf("expected adding a PVC label to be detected as drift")
+	}
+}
+
+// Extra keys stamped onto the existing template by a webhook/policy controller
+// must not read as drift; missing or changed operator-set keys still do.
+func TestVCTSemanticallyEqual_ToleratesInjectedPVCMetadata(t *testing.T) {
+	desired := []corev1.PersistentVolumeClaim{{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "mount0",
+			Annotations: map[string]string{"trident.netapp.io/snapshotPolicy": "none"},
+			Labels:      map[string]string{"team": "storage"},
+		},
+	}}
+	existing := []corev1.PersistentVolumeClaim{{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "mount0",
+			Annotations: map[string]string{
+				"trident.netapp.io/snapshotPolicy": "none",
+				"policy.example.com/injected-by":   "admission-webhook", // extra
+			},
+			Labels: map[string]string{
+				"team":                       "storage",
+				"cost-center.example.com/id": "1234", // extra
+			},
+		},
+	}}
+	if !vctSemanticallyEqual(existing, desired) {
+		t.Errorf("expected operator-desired metadata present in existing (plus injected extras) to compare equal; injected keys must not trip a phantom diff")
+	}
+}
+
+func TestVCTDifferences_NamesAnnotationAndLabelDrift(t *testing.T) {
+	a := []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "mount0"}}}
+	b := []corev1.PersistentVolumeClaim{{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "mount0",
+			Annotations: map[string]string{"trident.netapp.io/snapshotPolicy": "none"},
+			Labels:      map[string]string{"team": "storage"},
+		},
+	}}
+	joined := strings.Join(vctDifferences(a, b), " ")
+	if !strings.Contains(joined, "annotations") {
+		t.Errorf("expected annotations drift to be named, got %q", joined)
+	}
+	if !strings.Contains(joined, "labels") {
+		t.Errorf("expected labels drift to be named, got %q", joined)
+	}
+}
+
 func TestVCTSemanticallyEqual_DetectsExplicitlyDifferentVolumeMode(t *testing.T) {
 	filesystem := corev1.PersistentVolumeFilesystem
 	block := corev1.PersistentVolumeBlock

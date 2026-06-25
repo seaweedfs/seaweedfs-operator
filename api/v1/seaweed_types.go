@@ -339,6 +339,18 @@ type VolumeServerConfig struct {
 	// +optional
 	StorageSelector *metav1.LabelSelector `json:"storageSelector,omitempty"`
 
+	// StorageAnnotations is applied to each volume-server PVC template's
+	// metadata.annotations — for CSI provisioners that read them at provision
+	// time (e.g. NetApp Trident snapshot policy). Set at creation:
+	// volumeClaimTemplates are immutable, so later edits are not auto-applied.
+	// +optional
+	StorageAnnotations map[string]string `json:"storageAnnotations,omitempty"`
+
+	// StorageLabels is applied to each volume-server PVC template's
+	// metadata.labels. Same immutability caveat as StorageAnnotations.
+	// +optional
+	StorageLabels map[string]string `json:"storageLabels,omitempty"`
+
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
@@ -995,6 +1007,18 @@ type PersistenceSpec struct {
 	// the same contents as the DataSourceRef field.
 	// +optional
 	DataSource *corev1.TypedLocalObjectReference `json:"dataSource,omitempty"`
+
+	// Annotations is applied to the generated PVC template's metadata.annotations
+	// — for CSI provisioners that read them at provision time (e.g. NetApp
+	// Trident). Ignored when ExistingClaim is set. Immutable after creation, so
+	// later edits are not auto-applied.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// Labels is applied to the generated PVC template's metadata.labels. Same
+	// ExistingClaim and immutability caveats as Annotations.
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // +kubebuilder:object:root=true

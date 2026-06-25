@@ -212,6 +212,31 @@ func getStorageSelector(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopo
 	return nil
 }
 
+// getStorageAnnotations resolves PVC-template annotations, topology overriding
+// cluster-level. Guarded on len() not != nil so an empty topology map inherits
+// rather than erases the cluster value.
+func getStorageAnnotations(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) map[string]string {
+	if topologySpec != nil && len(topologySpec.StorageAnnotations) > 0 {
+		return topologySpec.StorageAnnotations
+	}
+	if m.Spec.Volume != nil {
+		return m.Spec.Volume.StorageAnnotations
+	}
+	return nil
+}
+
+// getStorageLabels resolves PVC-template labels; see getStorageAnnotations for
+// the len() guard rationale.
+func getStorageLabels(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) map[string]string {
+	if topologySpec != nil && len(topologySpec.StorageLabels) > 0 {
+		return topologySpec.StorageLabels
+	}
+	if m.Spec.Volume != nil {
+		return m.Spec.Volume.StorageLabels
+	}
+	return nil
+}
+
 // getResourceRequirements returns the resource requirements with fallback logic
 func getResourceRequirements(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) corev1.ResourceRequirements {
 	// Start with base resources from spec.volume, if available

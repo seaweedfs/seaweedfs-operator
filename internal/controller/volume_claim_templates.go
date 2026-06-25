@@ -43,8 +43,8 @@ import (
 // component statefulset builders:
 //
 //   - Name              required, exact match
-//   - Annotations       subset: every operator-desired key must be present
-//     and equal in existing; extra keys on existing are tolerated
+//   - Annotations       subset: operator-desired keys must match; extra keys
+//     on existing tolerated
 //   - Labels            subset, same rule as Annotations
 //   - AccessModes       Semantic.DeepEqual
 //   - Resources.Requests Semantic.DeepEqual (resource.Quantity comparison)
@@ -191,19 +191,11 @@ func resourceListString(rl corev1.ResourceList) string {
 	return "{" + strings.Join(parts, ",") + "}"
 }
 
-// desiredMetaSubsetOf reports whether every key the operator set on the
-// desired PVC template (annotations or labels) is present and equal on the
-// existing one. Extra keys on existing are tolerated.
-//
-// Unlike the operator-owned Spec fields, PVC-template ObjectMeta is a surface
-// other actors write to: the apiserver, mutating/admission webhooks, and
-// policy controllers may stamp ownership, cost, or compliance keys onto the
-// round-tripped existing template that the freshly-built desired one lacks.
-// A plain DeepEqual would read those injected keys as drift and spam a
-// VolumeClaimTemplatesMismatch warning every reconcile. The subset rule still
-// catches the cases that matter — an operator-desired key that is missing or
-// has a changed value — while ignoring keys the operator never set. nil and
-// empty desired maps trivially satisfy the rule (the loop body never runs).
+// desiredMetaSubsetOf reports whether every annotation/label key the operator
+// set on the desired PVC template is present and equal on the existing one.
+// Extra keys on existing are tolerated: the apiserver and admission/policy
+// webhooks may stamp metadata onto the round-tripped template, and a plain
+// DeepEqual would read those as drift and spam VolumeClaimTemplatesMismatch.
 func desiredMetaSubsetOf(existing, desired map[string]string) bool {
 	for k, v := range desired {
 		if ev, ok := existing[k]; !ok || ev != v {

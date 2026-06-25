@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -138,8 +139,8 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			persistentVolumeClaims = append(persistentVolumeClaims, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        claimName,
-					Annotations: m.Spec.Filer.Persistence.Annotations,
-					Labels:      m.Spec.Filer.Persistence.Labels,
+					Annotations: maps.Clone(m.Spec.Filer.Persistence.Annotations),
+					Labels:      maps.Clone(m.Spec.Filer.Persistence.Labels),
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
 					AccessModes:      accessModes,

@@ -340,12 +340,9 @@ type VolumeServerConfig struct {
 	StorageSelector *metav1.LabelSelector `json:"storageSelector,omitempty"`
 
 	// StorageAnnotations is applied to each volume-server PVC template's
-	// metadata.annotations — for CSI provisioners that read PVC annotations at
-	// provision time (e.g. NetApp Trident snapshot policy). Set this at cluster
-	// creation: volumeClaimTemplates are immutable, so editing it on a running
-	// cluster is not auto-applied (the operator emits a VolumeClaimTemplatesMismatch
-	// warning and the StatefulSet must be recreated for new PVCs to pick it up);
-	// already-provisioned PVCs keep the metadata they were created with.
+	// metadata.annotations — for CSI provisioners that read them at provision
+	// time (e.g. NetApp Trident snapshot policy). Set at creation:
+	// volumeClaimTemplates are immutable, so later edits are not auto-applied.
 	// +optional
 	StorageAnnotations map[string]string `json:"storageAnnotations,omitempty"`
 
@@ -1011,12 +1008,10 @@ type PersistenceSpec struct {
 	// +optional
 	DataSource *corev1.TypedLocalObjectReference `json:"dataSource,omitempty"`
 
-	// Annotations is applied to the generated PVC template's
-	// metadata.annotations — for CSI provisioners that read PVC annotations at
-	// provision time (e.g. NetApp Trident snapshot policy). Ignored when
-	// ExistingClaim is set, since the operator does not own that PVC. Set at
-	// creation: like the rest of this template it is immutable afterwards, so a
-	// later edit is not auto-applied and existing PVCs keep their metadata.
+	// Annotations is applied to the generated PVC template's metadata.annotations
+	// — for CSI provisioners that read them at provision time (e.g. NetApp
+	// Trident). Ignored when ExistingClaim is set. Immutable after creation, so
+	// later edits are not auto-applied.
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 

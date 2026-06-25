@@ -234,9 +234,7 @@ func TestVCTSemanticallyEqual_DetectsAnnotationAndLabelDrift(t *testing.T) {
 		}}
 	}
 
-	// nil and empty maps must compare equal — an unset StorageAnnotations
-	// field round-tripping as an empty map through the apiserver must not
-	// trip a false-positive diff every reconcile.
+	// nil and empty maps must compare equal (unset field vs apiserver-stored {}).
 	if !vctSemanticallyEqual(mk(nil, nil), mk(map[string]string{}, map[string]string{})) {
 		t.Errorf("expected nil and empty annotation/label maps to compare equal")
 	}
@@ -258,12 +256,8 @@ func TestVCTSemanticallyEqual_DetectsAnnotationAndLabelDrift(t *testing.T) {
 	}
 }
 
-// TestVCTSemanticallyEqual_ToleratesInjectedPVCMetadata pins the subset rule:
-// a mutating webhook / policy controller may stamp extra labels or annotations
-// onto the round-tripped existing volumeClaimTemplate that the operator never
-// set. Those extra keys must not read as drift, or the operator would emit a
-// perpetual VolumeClaimTemplatesMismatch warning on such clusters. Operator-set
-// keys that are missing or changed are still real drift (covered above).
+// Extra keys stamped onto the existing template by a webhook/policy controller
+// must not read as drift; missing or changed operator-set keys still do.
 func TestVCTSemanticallyEqual_ToleratesInjectedPVCMetadata(t *testing.T) {
 	desired := []corev1.PersistentVolumeClaim{{
 		ObjectMeta: metav1.ObjectMeta{

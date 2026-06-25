@@ -76,9 +76,8 @@ func TestVolumeStatefulSet_PropagatesStorageAnnotationsAndLabelsToEachPVCTemplat
 	}
 }
 
-// Each per-disk PVC must own its annotation/label maps — mutating one must not
-// bleed into the others or back into the CR spec. Mirrors the storageSelector
-// deep-copy guarantee.
+// Each per-disk PVC must own its maps — mutating one must not bleed into the
+// others or the CR spec. Mirrors the storageSelector deep-copy guarantee.
 func TestVolumeStatefulSet_StorageMetadataIsClonedPerPVC(t *testing.T) {
 	anno := map[string]string{"trident.netapp.io/snapshotPolicy": "none"}
 	m := makeStorageMetadataSeaweed(3, anno, nil)
@@ -98,9 +97,8 @@ func TestVolumeStatefulSet_StorageMetadataIsClonedPerPVC(t *testing.T) {
 	}
 }
 
-// The volume-server pod annotations (spec.volume.annotations) and the PVC
-// annotations (spec.volume.storageAnnotations) are independent surfaces — one
-// must not leak into the other.
+// Pod annotations (spec.volume.annotations) and PVC annotations
+// (storageAnnotations) are independent surfaces — neither must leak into the other.
 func TestVolumeStatefulSet_PVCAnnotationsAreSeparateFromPodAnnotations(t *testing.T) {
 	m := makeStorageMetadataSeaweed(1, tridentAnnotations, nil)
 	m.Spec.Volume.Annotations = map[string]string{"pod-only": "yes"}

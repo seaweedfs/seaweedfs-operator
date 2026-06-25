@@ -180,8 +180,7 @@ func pvcVolumeDisks(m *seaweedv1.Seaweed) volumeServerDisks {
 		d.pvcs = append(d.pvcs, corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: fmt.Sprintf("mount%d", i),
-				// Clone per PVC so the per-disk templates don't alias one
-				// shared map (and the CR spec), matching the Selector copy below.
+				// Clone so per-disk PVCs don't share one map (cf. Selector below).
 				Annotations: maps.Clone(m.Spec.Volume.StorageAnnotations),
 				Labels:      maps.Clone(m.Spec.Volume.StorageLabels),
 			},
@@ -468,8 +467,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 		persistentVolumeClaims = append(persistentVolumeClaims, corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: fmt.Sprintf("mount%d", i),
-				// Clone per PVC so the per-disk templates don't alias one
-				// shared map (and the CR spec), matching the Selector copy below.
+				// Clone so per-disk PVCs don't share one map (cf. Selector below).
 				Annotations: maps.Clone(getStorageAnnotations(m, topologySpec)),
 				Labels:      maps.Clone(getStorageLabels(m, topologySpec)),
 			},

@@ -6231,6 +6231,10 @@ spec:
                           items:
                             type: string
                           type: array
+                        annotations:
+                          additionalProperties:
+                            type: string
+                          type: object
                         dataSource:
                           properties:
                             apiGroup:
@@ -6249,6 +6253,10 @@ spec:
                           type: boolean
                         existingClaim:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         mountPath:
                           default: /data
                           type: string
@@ -13284,8 +13292,16 @@ spec:
                       x-kubernetes-preserve-unknown-fields: true
                     statefulSetUpdateStrategy:
                       type: string
+                    storageAnnotations:
+                      additionalProperties:
+                        type: string
+                      type: object
                     storageClassName:
                       type: string
+                    storageLabels:
+                      additionalProperties:
+                        type: string
+                      type: object
                     storageSelector:
                       properties:
                         matchExpressions:
@@ -14957,8 +14973,16 @@ spec:
                         x-kubernetes-preserve-unknown-fields: true
                       statefulSetUpdateStrategy:
                         type: string
+                      storageAnnotations:
+                        additionalProperties:
+                          type: string
+                        type: object
                       storageClassName:
                         type: string
+                      storageLabels:
+                        additionalProperties:
+                          type: string
+                        type: object
                       storageSelector:
                         properties:
                           matchExpressions:
@@ -16504,6 +16528,10 @@ spec:
                           items:
                             type: string
                           type: array
+                        annotations:
+                          additionalProperties:
+                            type: string
+                          type: object
                         dataSource:
                           properties:
                             apiGroup:
@@ -16522,6 +16550,10 @@ spec:
                           type: boolean
                         existingClaim:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         mountPath:
                           default: /data
                           type: string

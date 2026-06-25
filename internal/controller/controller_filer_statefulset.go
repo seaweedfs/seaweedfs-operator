@@ -137,7 +137,9 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 			}
 			persistentVolumeClaims = append(persistentVolumeClaims, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: claimName,
+					Name:        claimName,
+					Annotations: m.Spec.Filer.Persistence.Annotations,
+					Labels:      m.Spec.Filer.Persistence.Labels,
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
 					AccessModes:      accessModes,

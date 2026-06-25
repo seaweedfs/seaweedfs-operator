@@ -212,6 +212,34 @@ func getStorageSelector(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopo
 	return nil
 }
 
+// getStorageAnnotations returns the PVC-template annotations with topology
+// override falling back to the cluster-level spec.volume value. The guard is
+// len() rather than != nil: unlike the pointer-typed selector/storageClassName
+// helpers, these are bare maps where a non-nil empty map carries no intent, so
+// an empty topology map inherits the cluster value instead of erasing it.
+func getStorageAnnotations(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) map[string]string {
+	if topologySpec != nil && len(topologySpec.StorageAnnotations) > 0 {
+		return topologySpec.StorageAnnotations
+	}
+	if m.Spec.Volume != nil {
+		return m.Spec.Volume.StorageAnnotations
+	}
+	return nil
+}
+
+// getStorageLabels returns the PVC-template labels with topology override
+// falling back to the cluster-level spec.volume value. See getStorageAnnotations
+// for why the guard is len() rather than != nil.
+func getStorageLabels(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) map[string]string {
+	if topologySpec != nil && len(topologySpec.StorageLabels) > 0 {
+		return topologySpec.StorageLabels
+	}
+	if m.Spec.Volume != nil {
+		return m.Spec.Volume.StorageLabels
+	}
+	return nil
+}
+
 // getResourceRequirements returns the resource requirements with fallback logic
 func getResourceRequirements(m *seaweedv1.Seaweed, topologySpec *seaweedv1.VolumeTopologySpec) corev1.ResourceRequirements {
 	// Start with base resources from spec.volume, if available

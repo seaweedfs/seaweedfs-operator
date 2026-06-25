@@ -4,10 +4,12 @@
 # StorageClass -- for example to land volume data on cloud block storage, on
 # local NVMe, or on PersistentVolumes you provisioned yourself.
 #
-# Three storage knobs are shown:
-#   1. volume.storageClassName  -> dynamic provisioning from a named class
-#   2. volume.storageSelector   -> bind to pre-provisioned PVs by label (static)
-#   3. filer.persistence        -> a dedicated disk for filer metadata
+# Four storage knobs are shown:
+#   1. volume.storageClassName   -> dynamic provisioning from a named class
+#   2. volume.storageSelector    -> bind to pre-provisioned PVs by label (static)
+#   3. volume.storageAnnotations -> metadata on each volume PVC (read by some CSI
+#                                   provisioners at provision time, e.g. Trident)
+#   4. filer.persistence         -> a dedicated disk for filer metadata
 #
 # Reminder on layout: the volume StatefulSet creates volumeServerDiskCount PVCs
 # per Pod, named mount0, mount1, ... So with replicas: 3 and
@@ -52,6 +54,18 @@ spec:
       matchLabels:
         seaweedfs-disk: volume
 
+    # OPTION 3 -- metadata stamped onto every generated volume PVC. Some CSI
+    # provisioners read PVC annotations at provision time; e.g. NetApp Trident
+    # uses these to provision without snapshots. Set them at creation:
+    # volumeClaimTemplates are immutable, so editing them later is not applied
+    # automatically -- the operator warns and the StatefulSet must be recreated
+    # (kubectl delete statefulset --cascade=orphan) before new PVCs pick them up.
+    storageAnnotations:
+      trident.netapp.io/snapshotPolicy: "none"
+      trident.netapp.io/snapshotReserve: "0"
+    storageLabels:
+      team: storage
+
   filer:
     # Single filer so the metadata PVC (ReadWriteOnce) has exactly one writer.
     replicas: 1
@@ -69,6 +83,12 @@ spec:
       resources:
         requests:
           storage: 20Gi
+      # The filer metadata PVC also accepts annotations/labels, same use as
+      # volume.storageAnnotations above (ignored when existingClaim is set):
+      # annotations:
+      #   trident.netapp.io/snapshotPolicy: "none"
+      # labels:
+      #   team: storage
       # To reuse a PVC you already created instead of provisioning a new one,
       # drop the fields above and set:
       # existingClaim: my-filer-metadata-pvc

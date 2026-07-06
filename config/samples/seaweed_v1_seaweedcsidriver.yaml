@@ -15,7 +15,8 @@ spec:
   controller:
     replicas: 1
   node:
-    # Override on distros that relocate the kubelet root (k3s, MicroK8s).
+    # Override on distros that relocate the kubelet root (MicroK8s, k0s).
+    # Modern k3s keeps the default below.
     kubeletPath: /var/lib/kubelet
   storageClass:
     name: seaweedfs

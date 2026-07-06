@@ -191,11 +191,12 @@ func TestBuildNodeDaemonSet(t *testing.T) {
 	assert.Equal(t, "/csi/csi.sock", envValue(t, reg.Env, "ADDRESS").Value, "registrar wants a path, not a unix:// url")
 	assert.Equal(t, "/var/lib/kubelet/plugins/seaweedfs-csi-driver/csi.sock", envValue(t, reg.Env, "DRIVER_REG_SOCK_PATH").Value)
 
-	// host-path volume types
-	assert.Equal(t, corev1.HostPathDirectoryOrCreate, *volumeByName(t, pod.Volumes, "registration-dir").HostPath.Type)
-	assert.Equal(t, corev1.HostPathDirectoryOrCreate, *volumeByName(t, pod.Volumes, "plugin-dir").HostPath.Type)
+	// Every kubelet-root host path auto-creates so the node plugin needs no
+	// manual per-node setup on distros (k3s) that omit plugins/plugins_registry.
+	for _, name := range []string{"registration-dir", "plugin-dir", "plugins-dir", "pods-mount-dir"} {
+		assert.Equal(t, corev1.HostPathDirectoryOrCreate, *volumeByName(t, pod.Volumes, name).HostPath.Type, name)
+	}
 	assert.Equal(t, "/var/lib/kubelet/plugins/seaweedfs-csi-driver", volumeByName(t, pod.Volumes, "plugin-dir").HostPath.Path)
-	assert.Equal(t, corev1.HostPathDirectory, *volumeByName(t, pod.Volumes, "plugins-dir").HostPath.Type)
 }
 
 func TestBuildNodeDaemonSetCustomKubeletPath(t *testing.T) {
@@ -254,6 +255,8 @@ func TestBuildMountDaemonSet(t *testing.T) {
 		m := mountByName(t, mountC.VolumeMounts, name)
 		require.NotNil(t, m.MountPropagation, name)
 		assert.Equal(t, corev1.MountPropagationBidirectional, *m.MountPropagation, name)
+		// shared kubelet-root bind mounts auto-create, matching the node plugin
+		assert.Equal(t, corev1.HostPathDirectoryOrCreate, *volumeByName(t, pod.Volumes, name).HostPath.Type, name)
 	}
 }
 

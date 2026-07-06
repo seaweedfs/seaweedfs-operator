@@ -53,7 +53,6 @@ const (
 
 var (
 	mountPropagationBidirectional = corev1.MountPropagationBidirectional
-	hostPathDirectory             = corev1.HostPathDirectory
 	hostPathDirectoryOrCreate     = corev1.HostPathDirectoryOrCreate
 )
 
@@ -382,11 +381,14 @@ func buildNodeDaemonSet(driver *seaweedv1.SeaweedCSIDriver, ds *appsv1.DaemonSet
 	pod.Tolerations = tolerateAll(driver.Spec.Node.Tolerations)
 	pod.ImagePullSecrets = driver.Spec.ImagePullSecrets
 	pod.Containers = []corev1.Container{plugin, registrar, liveness}
+	// Every kubelet-root subdirectory is DirectoryOrCreate: some distributions
+	// (notably k3s) do not pre-create plugins/plugins_registry, so requiring
+	// them to exist would force manual per-node setup before the driver works.
 	pod.Volumes = []corev1.Volume{
 		hostPathVolume("registration-dir", kube+"/plugins_registry", &hostPathDirectoryOrCreate),
 		hostPathVolume("plugin-dir", pluginDir, &hostPathDirectoryOrCreate),
-		hostPathVolume("plugins-dir", kube+"/plugins", &hostPathDirectory),
-		hostPathVolume("pods-mount-dir", kube+"/pods", &hostPathDirectory),
+		hostPathVolume("plugins-dir", kube+"/plugins", &hostPathDirectoryOrCreate),
+		hostPathVolume("pods-mount-dir", kube+"/pods", &hostPathDirectoryOrCreate),
 		hostPathVolume("device-dir", "/dev", nil),
 		{Name: "cache", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 		hostPathVolume("mount-socket-dir", mountSocketDir(driver), &hostPathDirectoryOrCreate),
@@ -428,9 +430,11 @@ func buildMountDaemonSet(driver *seaweedv1.SeaweedCSIDriver, ds *appsv1.DaemonSe
 	pod.Tolerations = tolerateAll(driver.Spec.MountService.Tolerations)
 	pod.ImagePullSecrets = driver.Spec.ImagePullSecrets
 	pod.Containers = []corev1.Container{mount}
+	// Match the node plugin: auto-create the shared kubelet-root bind mounts so
+	// the mount service also runs on distros that do not pre-create them.
 	pod.Volumes = []corev1.Volume{
-		hostPathVolume("plugins-dir", kube+"/plugins", &hostPathDirectory),
-		hostPathVolume("pods-mount-dir", kube+"/pods", &hostPathDirectory),
+		hostPathVolume("plugins-dir", kube+"/plugins", &hostPathDirectoryOrCreate),
+		hostPathVolume("pods-mount-dir", kube+"/pods", &hostPathDirectoryOrCreate),
 		hostPathVolume("device-dir", "/dev", nil),
 		{Name: "cache", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 		hostPathVolume("mount-socket-dir", mountSocketDir(driver), &hostPathDirectoryOrCreate),

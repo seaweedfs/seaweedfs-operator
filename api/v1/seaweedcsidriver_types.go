@@ -223,9 +223,10 @@ type CSIControllerSpec struct {
 type CSINodeSpec struct {
 	// KubeletPath is the host kubelet root directory the node plugin mounts
 	// to expose volumes and register its socket. Override on distributions
-	// that relocate it (k3s: /var/lib/rancher/k3s/agent/kubelet, MicroK8s:
-	// /var/snap/microk8s/common/var/lib/kubelet, k0s:
-	// /var/lib/k0s/kubelet). Defaults to /var/lib/kubelet.
+	// that relocate it (MicroK8s: /var/snap/microk8s/common/var/lib/kubelet,
+	// k0s: /var/lib/k0s/kubelet). Modern k3s keeps the default (older releases
+	// nested it under the data dir but moved back because CSI plugins expect
+	// the standard path). Defaults to /var/lib/kubelet.
 	// +optional
 	// +kubebuilder:default:="/var/lib/kubelet"
 	KubeletPath string `json:"kubeletPath,omitempty"`

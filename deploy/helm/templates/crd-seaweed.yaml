@@ -961,6 +961,9 @@ spec:
                   x-kubernetes-list-map-keys:
                     - user
                   x-kubernetes-list-type: map
+                adoptExisting:
+                  default: false
+                  type: boolean
                 anonymousRead:
                   default: false
                   type: boolean

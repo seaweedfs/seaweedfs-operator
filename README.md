@@ -501,8 +501,14 @@ Supported per-bucket configuration:
 - `reclaimPolicy`: `Retain` (default) leaves data untouched on CR
   delete; `Delete` removes the bucket on CR delete (refused while
   Object Lock retention applies). `Delete` only removes a bucket this
-  CR actually created — a CR whose adoption was refused
+  CR actually created or adopted — a CR whose adoption was refused
   (`BucketAlreadyExists`) never deletes a bucket another resource owns.
+- `adoptExisting`: `false` (default) refuses a pre-existing bucket of
+  the same name (condition `BucketAlreadyExists`, phase `Failed`);
+  `true` adopts it and reconciles the spec onto it. This is the
+  recovery path when a CR deleted under `Retain` is reapplied — the
+  normal GitOps flow after an accidental deletion. Adoption confers
+  full ownership, including deletion under `reclaimPolicy: Delete`.
 - Cross-namespace `clusterRef` is **denied by default**: it resolves only
   when a [`ResourceReferenceGrant`](#cross-namespace-references-resourcereferencegrant)
   in the target `Seaweed`'s namespace permits it. The bucket stays
@@ -542,9 +548,9 @@ API. The two are complementary: COSI is the right choice when an
 application needs a bucket-claim lifecycle bound to a workload, while
 the `Bucket` CRD is the right choice for cluster- or platform-team-owned
 buckets with quotas, placement, and IAM grants. The controller never
-adopts or modifies a bucket created by the COSI driver — collisions are
-surfaced as `BucketAlreadyExists` in `status` rather than silently
-overwriting.
+adopts or modifies a bucket created by the COSI driver unless
+`adoptExisting: true` explicitly opts in — collisions are surfaced as
+`BucketAlreadyExists` in `status` rather than silently overwriting.
 
 #### Bucket lifecycle policies
 

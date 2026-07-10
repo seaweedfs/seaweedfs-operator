@@ -482,6 +482,154 @@ func TestReconcile_ExistingBucketRefusesAdoption(t *testing.T) {
 	}
 }
 
+// TestReconcile_RecreatedCRRefusesAdoptionByDefault reproduces the
+// delete-then-reapply dead-end: a Bucket CR is provisioned, deleted under
+// Retain (the bucket survives on the filer), and the same manifest is
+// reapplied. The fresh CR has an empty status, so the reconciler sees a
+// pre-existing bucket it did not create and refuses — Phase=Failed,
+// BucketAlreadyExists=True — even though the bucket was created by an
+// identical CR one lifecycle ago. The refusal stays the default; recovery
+// requires opting in via spec.adoptExisting.
+func TestReconcile_RecreatedCRRefusesAdoptionByDefault(t *testing.T) {
+	bucket := newTestBucket("project1")
+	fa := newFakeAdmin()
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	// First life: provision to Ready.
+	reconcileUntilStable(t, r, key, 5)
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.BucketPhaseReady {
+		t.Fatalf("precondition: phase=%q want Ready", got.Status.Phase)
+	}
+
+	// Delete the CR. Retain leaves the bucket on the filer; the reconcile
+	// pass under deletion drops the finalizer and the fake client reaps.
+	if err := cli.Delete(context.Background(), got); err != nil {
+		t.Fatalf("delete bucket CR: %v", err)
+	}
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("deletion reconcile: %v", err)
+	}
+	if err := cli.Get(context.Background(), key, &seaweedv1.Bucket{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected CR gone after deletion reconcile, got err=%v", err)
+	}
+	if !fa.existsResp["project1"] {
+		t.Fatal("precondition: bucket must survive CR deletion under Retain")
+	}
+
+	// Second life: reapply the same manifest. Status starts empty, so the
+	// existence check reads as a foreign bucket.
+	if err := cli.Create(context.Background(), newTestBucket("project1")); err != nil {
+		t.Fatalf("recreate bucket CR: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("reconcile after recreate: %v", err)
+		}
+	}
+
+	got = &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get recreated bucket: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.BucketPhaseFailed {
+		t.Fatalf("phase=%q want Failed", got.Status.Phase)
+	}
+	cond := meta.FindStatusCondition(got.Status.Conditions, seaweedv1.BucketConditionBucketAlreadyExists)
+	if cond == nil || cond.Status != metav1.ConditionTrue {
+		t.Fatalf("expected BucketAlreadyExists=True, got %+v", cond)
+	}
+}
+
+// TestReconcile_RecreatedCRAdoptExistingRecovers is the recovery path for
+// the same lifecycle: with spec.adoptExisting: true the reapplied CR takes
+// ownership of the surviving bucket instead of failing — no Create call,
+// spec reconciled onto the existing bucket, Ready with BucketName recorded.
+func TestReconcile_RecreatedCRAdoptExistingRecovers(t *testing.T) {
+	bucket := newTestBucket("project1")
+	fa := newFakeAdmin()
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	reconcileUntilStable(t, r, key, 5)
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if err := cli.Delete(context.Background(), got); err != nil {
+		t.Fatalf("delete bucket CR: %v", err)
+	}
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("deletion reconcile: %v", err)
+	}
+	if !fa.existsResp["project1"] {
+		t.Fatal("precondition: bucket must survive CR deletion under Retain")
+	}
+
+	recreated := newTestBucket("project1")
+	recreated.Spec.AdoptExisting = true
+	recreated.Spec.Owner = "media-team"
+	if err := cli.Create(context.Background(), recreated); err != nil {
+		t.Fatalf("recreate bucket CR: %v", err)
+	}
+	createsBefore := countCalls(fa.calls, "Create:project1")
+	reconcileUntilStable(t, r, key, 5)
+
+	got = &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get recreated bucket: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.BucketPhaseReady {
+		t.Fatalf("phase=%q want Ready; conditions=%+v", got.Status.Phase, got.Status.Conditions)
+	}
+	if got.Status.BucketName != "project1" {
+		t.Errorf("status.bucketName=%q want project1", got.Status.BucketName)
+	}
+	if meta.FindStatusCondition(got.Status.Conditions, seaweedv1.BucketConditionBucketAlreadyExists) != nil {
+		t.Errorf("BucketAlreadyExists condition must be absent after adoption")
+	}
+	// Adoption must not recreate the bucket, but must still reconcile spec.
+	if n := countCalls(fa.calls, "Create:project1"); n != createsBefore {
+		t.Errorf("adoption must not call Create; calls %d -> %d", createsBefore, n)
+	}
+	if n := countCalls(fa.calls, "Owner:project1:media-team"); n == 0 {
+		t.Errorf("expected spec reconciled onto adopted bucket; calls:\n%s", strings.Join(fa.calls, "\n"))
+	}
+}
+
+// TestReconcile_AdoptExistingCreateRaceAdopts covers the narrow window where
+// another agent creates the bucket between the exists check and create: with
+// adoptExisting the race resolves to adoption instead of Failed.
+func TestReconcile_AdoptExistingCreateRaceAdopts(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Spec.AdoptExisting = true
+	bucket.Finalizers = []string{BucketFinalizer}
+
+	fa := newFakeAdmin()
+	fa.createErr = ErrBucketAlreadyExists // exists check says no, create says yes
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.BucketPhaseReady {
+		t.Fatalf("phase=%q want Ready; conditions=%+v", got.Status.Phase, got.Status.Conditions)
+	}
+	if got.Status.BucketName != "photos" {
+		t.Errorf("status.bucketName=%q want photos", got.Status.BucketName)
+	}
+}
+
 // TestReconcile_ReadyBucketRequeuesForDrift pins the periodic resync: a
 // Ready bucket must request a RequeueAfter equal to ResyncInterval so the
 // reconciler keeps re-verifying external state it cannot watch.

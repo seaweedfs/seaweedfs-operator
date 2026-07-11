@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 	"testing"
@@ -627,6 +628,88 @@ func TestReconcile_AdoptExistingCreateRaceAdopts(t *testing.T) {
 	}
 	if got.Status.BucketName != "photos" {
 		t.Errorf("status.bucketName=%q want photos", got.Status.BucketName)
+	}
+}
+
+// TestReconcile_TransientFailureAfterCreateKeepsOwnership pins the ordering
+// of the ownership claim: CreateBucket succeeds, a later step fails, and the
+// persisted failure status must already record BucketName — otherwise the
+// next pass reads the bucket this CR just created as foreign and strands at
+// BucketAlreadyExists.
+func TestReconcile_TransientFailureAfterCreateKeepsOwnership(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Spec.Versioning = seaweedv1.VersioningEnabled
+	bucket.Finalizers = []string{BucketFinalizer}
+
+	fa := newFakeAdmin()
+	fa.versioningErr = errors.New("transient filer error")
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.BucketPhaseFailed {
+		t.Fatalf("precondition: phase=%q want Failed", got.Status.Phase)
+	}
+	if got.Status.BucketName != "photos" {
+		t.Fatalf("status.bucketName=%q want photos persisted with the failure", got.Status.BucketName)
+	}
+
+	// The hiccup clears; the retry must converge to Ready instead of
+	// refusing its own bucket.
+	fa.versioningErr = nil
+	reconcileUntilStable(t, r, key, 5)
+	got = &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.BucketPhaseReady {
+		t.Fatalf("phase=%q want Ready; conditions=%+v", got.Status.Phase, got.Status.Conditions)
+	}
+	if meta.FindStatusCondition(got.Status.Conditions, seaweedv1.BucketConditionBucketAlreadyExists) != nil {
+		t.Errorf("BucketAlreadyExists must not be set for a bucket this CR created")
+	}
+}
+
+// TestReconcile_TransientFailureAfterAdoptionKeepsOwnership is the same
+// guarantee on the adoption path: once adopted, a transient failure must not
+// leave the CR re-adopting (or re-announcing) the bucket on every retry.
+func TestReconcile_TransientFailureAfterAdoptionKeepsOwnership(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Spec.AdoptExisting = true
+	bucket.Spec.Versioning = seaweedv1.VersioningEnabled
+	bucket.Finalizers = []string{BucketFinalizer}
+
+	fa := newFakeAdmin()
+	fa.existsResp["photos"] = true
+	fa.versioningErr = errors.New("transient filer error")
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Status.BucketName != "photos" {
+		t.Fatalf("status.bucketName=%q want photos persisted with the failure", got.Status.BucketName)
+	}
+
+	fa.versioningErr = nil
+	reconcileUntilStable(t, r, key, 5)
+	got = &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.BucketPhaseReady {
+		t.Fatalf("phase=%q want Ready; conditions=%+v", got.Status.Phase, got.Status.Conditions)
 	}
 }
 

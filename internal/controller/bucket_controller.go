@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -213,28 +214,42 @@ func (r *BucketReconciler) reconcileBucket(ctx context.Context, bucket *seaweedv
 		return r.failPhase(ctx, bucket, seaweedv1.BucketPhaseFailed, "ExistsCheckFailed", err.Error())
 	}
 
-	// Detect adoption attempt: bucket exists on the filer but our status
-	// has never recorded its name. Refuse; users must remove the foreign
-	// bucket manually before this CR can own it.
+	// A bucket that exists on the filer while our status has never
+	// recorded a name is one this CR did not create — either a foreign
+	// bucket or one left behind by a previous CR deleted under Retain.
+	// Deny by default; spec.adoptExisting opts in to taking ownership.
 	if exists && bucket.Status.BucketName == "" {
-		r.setCondition(bucket, seaweedv1.BucketConditionBucketAlreadyExists, metav1.ConditionTrue, "AlreadyExists",
-			fmt.Sprintf("a bucket named %q already exists on cluster %q and was not created by this resource; adoption is not supported",
-				bucketName, bucket.Spec.ClusterRef.Name))
-		return r.failPhase(ctx, bucket, seaweedv1.BucketPhaseFailed, "BucketAlreadyExists",
-			fmt.Sprintf("bucket %q already exists; refusing to adopt", bucketName))
+		if !bucket.Spec.AdoptExisting {
+			r.setCondition(bucket, seaweedv1.BucketConditionBucketAlreadyExists, metav1.ConditionTrue, "AlreadyExists",
+				fmt.Sprintf("a bucket named %q already exists on cluster %q and was not created by this resource; set spec.adoptExisting: true to adopt it",
+					bucketName, bucket.Spec.ClusterRef.Name))
+			return r.failPhase(ctx, bucket, seaweedv1.BucketPhaseFailed, "BucketAlreadyExists",
+				fmt.Sprintf("bucket %q already exists; set spec.adoptExisting: true to adopt it", bucketName))
+		}
+		r.adoptBucket(log, bucket, bucketName)
 	}
 
 	if !exists {
-		if err := admin.CreateBucket(ctx, bucketName, bucket.Spec.Owner, bucket.Spec.ObjectLock); err != nil {
-			if errors.Is(err, ErrBucketAlreadyExists) {
-				// Lost a race; fall through and treat as adoption-refused.
+		switch err := admin.CreateBucket(ctx, bucketName, bucket.Spec.Owner, bucket.Spec.ObjectLock); {
+		case err == nil:
+			log.Info("created bucket", "name", bucketName, "owner", bucket.Spec.Owner, "withLock", bucket.Spec.ObjectLock)
+			// Claim ownership now, not at the end of the pass: if a later
+			// step fails, failPhase persists this claim, so the next pass
+			// doesn't mistake our own bucket for a foreign one.
+			bucket.Status.BucketName = bucketName
+		case errors.Is(err, ErrBucketAlreadyExists):
+			// Lost a race: another agent created the bucket between the
+			// exists check and create. Same ownership question as above,
+			// same answer.
+			if !bucket.Spec.AdoptExisting {
 				r.setCondition(bucket, seaweedv1.BucketConditionBucketAlreadyExists, metav1.ConditionTrue, "AlreadyExists",
-					fmt.Sprintf("bucket %q was created by another agent between exists check and create", bucketName))
+					fmt.Sprintf("bucket %q was created by another agent between exists check and create; set spec.adoptExisting: true to adopt it", bucketName))
 				return r.failPhase(ctx, bucket, seaweedv1.BucketPhaseFailed, "BucketAlreadyExists", err.Error())
 			}
+			r.adoptBucket(log, bucket, bucketName)
+		default:
 			return r.failPhase(ctx, bucket, seaweedv1.BucketPhaseFailed, "CreateFailed", err.Error())
 		}
-		log.Info("created bucket", "name", bucketName, "owner", bucket.Spec.Owner, "withLock", bucket.Spec.ObjectLock)
 	}
 
 	// Object Lock: enable when requested and not already on. Versioning is
@@ -445,6 +460,27 @@ func (r *BucketReconciler) setCondition(bucket *seaweedv1.Bucket, condType strin
 
 func (r *BucketReconciler) clearCondition(bucket *seaweedv1.Bucket, condType string) {
 	meta.RemoveStatusCondition(&bucket.Status.Conditions, condType)
+}
+
+// adoptBucket takes ownership of an existing bucket. Status.BucketName is
+// claimed immediately rather than at the end of the pass so that a failure
+// in a later step still persists ownership via failPhase — otherwise the
+// next pass would re-read our own bucket as foreign and, depending on
+// spec.adoptExisting, either strand at BucketAlreadyExists or emit a
+// duplicate BucketAdopted event.
+func (r *BucketReconciler) adoptBucket(log logr.Logger, bucket *seaweedv1.Bucket, bucketName string) {
+	log.Info("adopting existing bucket", "name", bucketName)
+	r.recordEvent(bucket, corev1.EventTypeNormal, "BucketAdopted",
+		fmt.Sprintf("adopted existing bucket %q on cluster %q", bucketName, bucket.Spec.ClusterRef.Name))
+	bucket.Status.BucketName = bucketName
+}
+
+// recordEvent emits an event when a Recorder is wired; tests leave it nil.
+func (r *BucketReconciler) recordEvent(bucket *seaweedv1.Bucket, eventType, reason, message string) {
+	if r.Recorder == nil {
+		return
+	}
+	r.Recorder.Event(bucket, eventType, reason, message)
 }
 
 func closeBucketAdmin(admin BucketAdmin, log logr.Logger) {

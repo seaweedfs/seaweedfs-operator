@@ -218,6 +218,19 @@ type BucketSpec struct {
 	// +kubebuilder:default:=Retain
 	ReclaimPolicy BucketReclaimPolicy `json:"reclaimPolicy,omitempty"`
 
+	// AdoptExisting lets this CR take ownership of a bucket that already
+	// exists on the cluster under the same name — typically one left
+	// behind by a previous Bucket CR deleted under reclaimPolicy: Retain.
+	// When false (the default) a pre-existing bucket is refused with a
+	// BucketAlreadyExists condition and the bucket is left untouched.
+	// Adoption confers full ownership: the spec is reconciled onto the
+	// existing bucket (owner, access, versioning, quota, placement) and
+	// reclaimPolicy: Delete will delete the bucket and its data when the
+	// CR is deleted.
+	// +optional
+	// +kubebuilder:default:=false
+	AdoptExisting bool `json:"adoptExisting,omitempty"`
+
 	// Versioning is the desired versioning state. Defaults to Off. Once
 	// Enabled or Suspended, a bucket cannot be returned to Off — use
 	// Suspended to halt new versions while keeping the version history.
@@ -328,7 +341,7 @@ const (
 	BucketConditionDeleteBlockedByRetention = "DeleteBlockedByRetention"
 	// BucketConditionBucketAlreadyExists is set when a bucket with the
 	// requested name already exists in the cluster and was not created by
-	// this operator. Adoption is deliberately not supported.
+	// this resource. Adoption is refused unless spec.adoptExisting opts in.
 	BucketConditionBucketAlreadyExists = "BucketAlreadyExists"
 	// BucketConditionOwnerMissing is set when the spec.owner identity
 	// does not exist in the IAM service. The controller retries.

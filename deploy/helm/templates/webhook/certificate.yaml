@@ -1,6 +1,7 @@
-{{- if and .Values.webhook.enabled .Values.webhook.certManager.enabled -}}
+{{- $certManager := default dict .Values.webhook.certManager -}}
+{{- if and .Values.webhook.enabled $certManager.enabled -}}
 ---
-{{- if not .Values.webhook.certManager.issuerRef }}
+{{- if not $certManager.issuerRef }}
 # Self-signed Issuer — signs the webhook serving certificate directly.
 # Created automatically when no issuerRef is provided.
 apiVersion: cert-manager.io/v1
@@ -31,8 +32,8 @@ spec:
     - {{ include "seaweedfs-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc.cluster.local
   secretName: {{ include "seaweedfs-operator.webhookCertificateSecretName" . }}
   issuerRef:
-    {{- if .Values.webhook.certManager.issuerRef }}
-    {{- toYaml .Values.webhook.certManager.issuerRef | nindent 4 }}
+    {{- if $certManager.issuerRef }}
+    {{- toYaml $certManager.issuerRef | nindent 4 }}
     {{- else }}
     name: {{ include "seaweedfs-operator.webhookIssuerName" . }}
     kind: Issuer

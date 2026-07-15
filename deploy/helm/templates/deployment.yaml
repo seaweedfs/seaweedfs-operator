@@ -77,13 +77,14 @@ spec:
         {{- end }}
       terminationGracePeriodSeconds: 10
       {{- if .Values.webhook.enabled }}
+      {{- $certManager := default dict .Values.webhook.certManager }}
       volumes:
       - name: cert
         secret:
           defaultMode: 420
           secretName: {{ include "seaweedfs-operator.webhookCertificateSecretName" . }}
           items:
-          {{- if .Values.webhook.certManager.enabled }}
+          {{- if $certManager.enabled }}
           - key: tls.crt
             path: tls.crt
           - key: tls.key

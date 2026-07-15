@@ -1,4 +1,4 @@
-{{- if .Values.webhook.enabled -}}
+{{- if and .Values.webhook.enabled (not .Values.webhook.certManager.enabled) -}}
 ---
 apiVersion: batch/v1
 kind: Job

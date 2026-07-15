@@ -177,3 +177,18 @@ Validating webhook configuration name
 {{- $suffix := "-validating-webhook-configuration" -}}
 {{- printf "%s%s" (include "seaweedfs-operator.fullname" . | trunc (int (sub 63 (len $suffix))) | trimSuffix "-") $suffix -}}
 {{- end -}}
+
+{{/*
+cert-manager resource names
+*/}}
+{{- define "seaweedfs-operator.webhookIssuerName" -}}
+{{- printf "%s-webhook-selfsigned-issuer" (include "seaweedfs-operator.fullname" .) -}}
+{{- end -}}
+
+{{- define "seaweedfs-operator.webhookCertificateName" -}}
+{{- printf "%s-webhook-cert" (include "seaweedfs-operator.fullname" .) -}}
+{{- end -}}
+
+{{- define "seaweedfs-operator.webhookCertificateSecretName" -}}
+{{- printf "%s-webhook-server-cert" (include "seaweedfs-operator.fullname" .) -}}
+{{- end -}}

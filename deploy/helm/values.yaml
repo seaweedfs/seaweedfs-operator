@@ -134,14 +134,15 @@ webhook:
     # the built-in certgen Jobs. Requires cert-manager to be installed in the
     # cluster. When enabled the certgen Jobs and their RBAC are not created.
     enabled: false
-    # -- Override the issuerRef used for the webhook serving Certificate.
-    # When empty (default) a self-signed CA Issuer is created automatically.
-    # Set this to point at an existing Issuer or ClusterIssuer in your cluster.
     # Example:
     #   issuerRef:
     #     name: my-issuer
     #     kind: ClusterIssuer
-    #     group: cert-manager.io
+    # -- Point the webhook serving Certificate at an existing Issuer or
+    # ClusterIssuer instead of the self-signed Issuer created by default.
+    # The issuer must populate ca.crt in the issued secret so cert-manager
+    # can inject the CA into the webhook configurations; CA, Vault, and
+    # self-signed issuers do, ACME issuers such as Let's Encrypt do not.
     issuerRef: {}
 
 ## seaweedfs-operator containers' resource requests and limits.

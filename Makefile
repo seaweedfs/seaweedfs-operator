@@ -57,7 +57,9 @@ test-e2e:
 # rendered YAML) by also catching helm-template syntax bugs, missing
 # CRD includes, broken ServiceAccount bindings, and conditional gates
 # the static test isn't aware of — failure modes invisible to the
-# kustomize-based test-e2e suite, which never deploys the chart.
+# kustomize-based test-e2e suite, which never deploys the chart. A
+# second lap upgrades to webhook.certManager.enabled=true to cover the
+# cert-manager certificate path.
 .PHONY: test-helm-install
 test-helm-install: kind-prepare kind-load
 	IMAGE_TAG=$(VERSION) test/helm/install_smoke.sh

@@ -4,7 +4,10 @@
 # deploy/helm/ with **default values** (i.e., what a real user gets from
 # `helm install seaweedfs/seaweedfs-operator`), applies a Seaweed CR
 # and a Bucket CR to exercise both controllers, then asserts the
-# operator emits no RBAC permission errors during reconcile.
+# operator emits no RBAC permission errors during reconcile. A second
+# lap upgrades the release with webhook.certManager.enabled=true to
+# exercise the cert-manager certificate path against the cert-manager
+# instance `make kind-prepare` installs.
 #
 # Why this exists: the existing test-e2e suite deploys via `make deploy`
 # (kustomize-based, uses config/rbac/role.yaml — the kubebuilder-generated
@@ -125,3 +128,42 @@ if [ -n "$RBAC_ERRORS" ]; then
 fi
 
 log "PASS — operator reconciled cleanly with chart-default RBAC"
+
+# Second lap: flip the webhook certificates over to cert-manager. The
+# upgrade swaps the certgen hook Jobs for an Issuer/Certificate pair,
+# cert-manager takes over the existing serving-cert Secret, and
+# cainjector replaces the caBundle on both webhook configurations.
+# The webhooks use failurePolicy=Fail, so a successful admission below
+# proves the full TLS chain converged on the cert-manager certificate.
+log "upgrading release to cert-manager-managed webhook certificates"
+helm upgrade "$RELEASE" "$CHART_DIR" \
+  --namespace "$NAMESPACE" \
+  --reuse-values \
+  --set webhook.certManager.enabled=true \
+  --wait --timeout 5m
+
+# The Certificate shares the Deployment's fullname prefix.
+CERTIFICATE="$DEPLOYMENT-webhook-cert"
+log "waiting for Certificate $CERTIFICATE to become Ready"
+kubectl -n "$NAMESPACE" wait certificates.cert-manager.io/"$CERTIFICATE" \
+  --for=condition=Ready --timeout 2m
+
+# `kubectl apply` skips the write (and therefore the webhooks) when the
+# manifest is unchanged, so mutate an annotation to force an UPDATE
+# through admission. Retry while cainjector and the rolled pods
+# converge on the new certificate.
+log "verifying webhook admission through the cert-manager certificate"
+ADMITTED=""
+for attempt in $(seq 1 24); do
+  if kubectl annotate -f "$REPO_ROOT/config/samples/seaweed_v1_seaweed.yaml" \
+       smoke-test/cert-manager="attempt-$attempt" --overwrite >/dev/null 2>&1; then
+    ADMITTED=1
+    break
+  fi
+  sleep 5
+done
+if [ -z "$ADMITTED" ]; then
+  fail "admission kept failing after switching webhook certificates to cert-manager"
+fi
+
+log "PASS — webhooks admitted CRs with the cert-manager certificate"

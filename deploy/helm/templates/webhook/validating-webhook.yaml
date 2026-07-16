@@ -1,4 +1,5 @@
 {{- if .Values.webhook.enabled }}
+{{- $certManager := default dict .Values.webhook.certManager }}
 
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
@@ -7,6 +8,10 @@ metadata:
   name: {{ include "seaweedfs-operator.validatingWebhookName" . }}
   labels:
     {{- include "seaweedfs-operator.labels" . | nindent 4 }}
+  {{- if $certManager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "seaweedfs-operator.webhookCertificateName" . }}
+  {{- end }}
 webhooks:
 - clientConfig:
     service:

@@ -1,0 +1,42 @@
+{{- $certManager := default dict .Values.webhook.certManager -}}
+{{- if and .Values.webhook.enabled $certManager.enabled -}}
+---
+{{- if not $certManager.issuerRef }}
+# Self-signed Issuer — signs the webhook serving certificate directly.
+# Created automatically when no issuerRef is provided.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "seaweedfs-operator.webhookIssuerName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "seaweedfs-operator.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+{{- end }}
+# Serving Certificate — mounted by the operator pod for TLS on the webhook endpoint.
+# cert-manager injects the CA bundle into the webhook configurations via the
+# cert-manager.io/inject-ca-from annotation on those resources.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "seaweedfs-operator.webhookCertificateName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "seaweedfs-operator.labels" . | nindent 4 }}
+spec:
+  dnsNames:
+    - {{ include "seaweedfs-operator.fullname" . }}-webhook
+    - {{ include "seaweedfs-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc
+    - {{ include "seaweedfs-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc.cluster.local
+  secretName: {{ include "seaweedfs-operator.webhookCertificateSecretName" . }}
+  issuerRef:
+    {{- if $certManager.issuerRef }}
+    {{- toYaml $certManager.issuerRef | nindent 4 }}
+    {{- else }}
+    name: {{ include "seaweedfs-operator.webhookIssuerName" . }}
+    kind: Issuer
+    group: cert-manager.io
+    {{- end }}
+{{- end -}}

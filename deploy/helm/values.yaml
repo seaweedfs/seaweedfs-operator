@@ -129,6 +129,21 @@ webhook:
     registry: registry.k8s.io
     repository: ingress-nginx/kube-webhook-certgen
     tag: v20231011-8b53cabe0
+  certManager:
+    # -- Use cert-manager to provision the webhook TLS certificate instead of
+    # the built-in certgen Jobs. Requires cert-manager to be installed in the
+    # cluster. When enabled the certgen Jobs and their RBAC are not created.
+    enabled: false
+    # Example:
+    #   issuerRef:
+    #     name: my-issuer
+    #     kind: ClusterIssuer
+    # -- Point the webhook serving Certificate at an existing Issuer or
+    # ClusterIssuer instead of the self-signed Issuer created by default.
+    # The issuer must populate ca.crt in the issued secret so cert-manager
+    # can inject the CA into the webhook configurations; CA, Vault, and
+    # self-signed issuers do, ACME issuers such as Let's Encrypt do not.
+    issuerRef: {}
 
 ## seaweedfs-operator containers' resource requests and limits.
 ## ref: http://kubernetes.io/docs/user-guide/compute-resources/

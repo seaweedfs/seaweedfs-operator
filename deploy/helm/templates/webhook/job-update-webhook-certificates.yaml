@@ -1,4 +1,5 @@
-{{- if .Values.webhook.enabled -}}
+{{- $certManager := default dict .Values.webhook.certManager -}}
+{{- if and .Values.webhook.enabled (not $certManager.enabled) -}}
 ---
 apiVersion: batch/v1
 kind: Job

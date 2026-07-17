@@ -44,7 +44,7 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForFiler(m.Name)
 	podLabels := mergePodLabels(labels, m.BaseFilerSpec().Labels())
-	annotations := m.Spec.Filer.Annotations
+	annotations := m.BaseFilerSpec().Annotations()
 	ports := []corev1.ContainerPort{
 		{
 			ContainerPort: seaweedv1.FilerHTTPPort,

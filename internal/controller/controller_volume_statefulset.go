@@ -330,7 +330,7 @@ func (r *SeaweedReconciler) buildFlatVolumePodSpec(m *seaweedv1.Seaweed, disks v
 func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForVolumeServer(m.Name)
 	podLabels := mergePodLabels(labels, m.BaseVolumeSpec().Labels())
-	annotations := m.Spec.Volume.Annotations
+	annotations := m.BaseVolumeSpec().Annotations()
 	replicas := int32(m.Spec.Volume.Replicas)
 	rollingUpdatePartition := int32(0)
 
@@ -374,7 +374,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 func (r *SeaweedReconciler) createVolumeServerDaemonSet(m *seaweedv1.Seaweed) *appsv1.DaemonSet {
 	labels := labelsForVolumeServer(m.Name)
 	podLabels := mergePodLabels(labels, m.BaseVolumeSpec().Labels())
-	annotations := m.Spec.Volume.Annotations
+	annotations := m.BaseVolumeSpec().Annotations()
 
 	disks := volumeServerDisksFor(m)
 	volumePodSpec := r.buildFlatVolumePodSpec(m, disks, "$(POD_IP)")
@@ -405,10 +405,10 @@ func (r *SeaweedReconciler) createVolumeServerDaemonSet(m *seaweedv1.Seaweed) *a
 func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.Seaweed, topologyName string, topologySpec *seaweedv1.VolumeTopologySpec) *appsv1.StatefulSet {
 	labels := labelsForVolumeServerTopology(m.Name, topologyName)
 	// 3-tier inheritance for topology pods: cluster + volume + topology, with
-	// the topology winning on collisions. BaseVolumeSpec().Labels() already
-	// returns cluster+volume merged.
+	// the topology winning on collisions. BaseVolumeSpec() accessors already
+	// return cluster+volume merged.
 	podLabels := mergePodLabels(labels, mergeLabels(m.BaseVolumeSpec().Labels(), topologySpec.Labels))
-	annotations := mergeAnnotations(m.Spec.Annotations, topologySpec.Annotations)
+	annotations := mergeAnnotations(m.BaseVolumeSpec().Annotations(), topologySpec.Annotations)
 	ports := []corev1.ContainerPort{
 		{
 			ContainerPort: seaweedv1.VolumeHTTPPort,

@@ -319,7 +319,7 @@ func (r *SeaweedReconciler) buildS3Deployment(m *seaweedv1.Seaweed) *appsv1.Depl
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels:      podLabels,
-					Annotations: m.Spec.S3.Annotations,
+					Annotations: m.BaseS3Spec().Annotations(),
 				},
 				Spec: podSpec,
 			},

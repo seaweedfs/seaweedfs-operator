@@ -48,7 +48,7 @@ func buildMasterStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string 
 func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForMaster(m.Name)
 	podLabels := mergePodLabels(labels, m.BaseMasterSpec().Labels())
-	annotations := m.Spec.Master.Annotations
+	annotations := m.BaseMasterSpec().Annotations()
 	ports := []corev1.ContainerPort{
 		{
 			ContainerPort: seaweedv1.MasterHTTPPort,

@@ -329,7 +329,7 @@ func (r *SeaweedReconciler) buildSFTPDeployment(m *seaweedv1.Seaweed) *appsv1.De
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels:      podLabels,
-					Annotations: m.Spec.SFTP.Annotations,
+					Annotations: m.BaseSFTPSpec().Annotations(),
 				},
 				Spec: podSpec,
 			},

@@ -100,7 +100,7 @@ func (r *SeaweedReconciler) ensureS3Gateway(ctx context.Context, m *seaweedv1.Se
 			sm := &monitorv1.ServiceMonitor{
 				ObjectMeta: metav1.ObjectMeta{Name: m.Name + "-s3", Namespace: m.Namespace},
 			}
-			if err := r.Delete(ctx, sm); err != nil && !apierrors.IsNotFound(err) {
+			if _, err := r.deleteIfExists(ctx, sm); err != nil {
 				return ReconcileResult(err)
 			}
 		}
@@ -118,7 +118,7 @@ func (r *SeaweedReconciler) ensureS3Gateway(ctx context.Context, m *seaweedv1.Se
 		ing := &networkingv1.Ingress{
 			ObjectMeta: metav1.ObjectMeta{Name: m.Name + "-s3-ingress", Namespace: m.Namespace},
 		}
-		if err := r.Delete(ctx, ing); err != nil && !apierrors.IsNotFound(err) {
+		if _, err := r.deleteIfExists(ctx, ing); err != nil {
 			return ReconcileResult(err)
 		}
 	}
@@ -127,30 +127,31 @@ func (r *SeaweedReconciler) ensureS3Gateway(ctx context.Context, m *seaweedv1.Se
 
 // deleteS3Gateway deletes the full set of resources the S3 gateway
 // reconciler would otherwise create: Deployment, Service, optional
-// Ingress, optional ServiceMonitor. All calls are IsNotFound-safe.
+// Ingress, optional ServiceMonitor. Deletes are existence-guarded, so
+// the steady-state "no gateway" pass stays read-only.
 func (r *SeaweedReconciler) deleteS3Gateway(ctx context.Context, m *seaweedv1.Seaweed) error {
 	name := m.Name + "-s3"
 	// Deployment
 	dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: m.Namespace}}
-	if err := r.Delete(ctx, dep); err != nil && !apierrors.IsNotFound(err) {
+	if _, err := r.deleteIfExists(ctx, dep); err != nil {
 		return err
 	}
 	// Service
 	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: m.Namespace}}
-	if err := r.Delete(ctx, svc); err != nil && !apierrors.IsNotFound(err) {
+	if _, err := r.deleteIfExists(ctx, svc); err != nil {
 		return err
 	}
 	// Ingress (only the per-component one; legacy HostSuffix Ingress
 	// is reconciled elsewhere and must be left alone).
 	ing := &networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: name + "-ingress", Namespace: m.Namespace}}
-	if err := r.Delete(ctx, ing); err != nil && !apierrors.IsNotFound(err) {
+	if _, err := r.deleteIfExists(ctx, ing); err != nil {
 		return err
 	}
 	// ServiceMonitor — gate on the CRD so we do not fail on clusters
 	// without Prometheus Operator installed.
 	if r.serviceMonitorCRDAvailable() {
 		sm := &monitorv1.ServiceMonitor{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: m.Namespace}}
-		if err := r.Delete(ctx, sm); err != nil && !apierrors.IsNotFound(err) {
+		if _, err := r.deleteIfExists(ctx, sm); err != nil {
 			return err
 		}
 	}

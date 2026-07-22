@@ -6,7 +6,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -58,7 +57,8 @@ func (r *SeaweedReconciler) ensureWorkerDeployment(ctx context.Context, seaweedC
 
 // cleanupLegacyWorkerStatefulSet removes the StatefulSet + headless peer
 // Service that earlier operator versions created for workers. Safe to call
-// on every reconcile: both deletes are IsNotFound-tolerant.
+// on every reconcile: deletes are issued only when the legacy objects
+// still exist, so the steady-state pass stays read-only.
 //
 // When a delete actually fires (i.e. the resource existed), we return
 // done=true with a short requeue so the API server can cascade the
@@ -69,27 +69,20 @@ func (r *SeaweedReconciler) ensureWorkerDeployment(ctx context.Context, seaweedC
 // registering with admin as duplicate workers until GC completes.
 func (r *SeaweedReconciler) cleanupLegacyWorkerStatefulSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	name := seaweedCR.Name + "-worker"
-	deleted := false
 
 	sts := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: seaweedCR.Namespace}}
-	if err := r.Delete(ctx, sts); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return ReconcileResult(err)
-		}
-	} else {
-		deleted = true
+	stsExisted, err := r.deleteIfExists(ctx, sts)
+	if err != nil {
+		return ReconcileResult(err)
 	}
 
 	peer := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name + "-peer", Namespace: seaweedCR.Namespace}}
-	if err := r.Delete(ctx, peer); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return ReconcileResult(err)
-		}
-	} else {
-		deleted = true
+	peerExisted, err := r.deleteIfExists(ctx, peer)
+	if err != nil {
+		return ReconcileResult(err)
 	}
 
-	if deleted {
+	if stsExisted || peerExisted {
 		return true, ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 	}
 	return ReconcileResult(nil)

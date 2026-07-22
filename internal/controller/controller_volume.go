@@ -9,7 +9,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
@@ -65,25 +64,13 @@ func (r *SeaweedReconciler) ensureVolumeServers(ctx context.Context, seaweedCR *
 	return
 }
 
-// deleteVolumeWorkloadIfExists removes a prior flat volume workload that shares
-// the <cr>-volume name, so switching spec.volume.kind doesn't leave both the
-// StatefulSet and DaemonSet running. obj must have Name and Namespace set. It
-// reports whether the workload still existed, so callers can requeue and wait
-// for deletion to finish before creating the new kind.
-func (r *SeaweedReconciler) deleteVolumeWorkloadIfExists(ctx context.Context, obj client.Object) (existed bool, err error) {
-	if err := r.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
-		return false, client.IgnoreNotFound(err)
-	}
-	return true, client.IgnoreNotFound(r.Delete(ctx, obj))
-}
-
 func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-volume-statefulset", seaweedCR.Name)
 
 	// Remove a DaemonSet left from a previous kind=DaemonSet config, and wait
 	// for it to clear before creating the StatefulSet so they don't overlap.
 	staleDaemonSet := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: seaweedCR.Name + "-volume", Namespace: seaweedCR.Namespace}}
-	if existed, err := r.deleteVolumeWorkloadIfExists(ctx, staleDaemonSet); err != nil {
+	if existed, err := r.deleteIfExists(ctx, staleDaemonSet); err != nil {
 		return ReconcileResult(err)
 	} else if existed {
 		log.Info("waiting for prior volume DaemonSet deletion before creating StatefulSet")
@@ -129,7 +116,7 @@ func (r *SeaweedReconciler) ensureVolumeServerDaemonSet(ctx context.Context, sea
 	// Remove a StatefulSet left from a previous kind=StatefulSet config, and
 	// wait for it to clear before creating the DaemonSet so they don't overlap.
 	staleStatefulSet := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: seaweedCR.Name + "-volume", Namespace: seaweedCR.Namespace}}
-	if existed, err := r.deleteVolumeWorkloadIfExists(ctx, staleStatefulSet); err != nil {
+	if existed, err := r.deleteIfExists(ctx, staleStatefulSet); err != nil {
 		return ReconcileResult(err)
 	} else if existed {
 		log.Info("waiting for prior volume StatefulSet deletion before creating DaemonSet")

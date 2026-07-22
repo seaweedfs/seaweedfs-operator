@@ -33,9 +33,12 @@ const (
 // MergeFn is to resolve conflicts
 type MergeFn func(existing, desired runtime.Object) error
 
-// CreateOrUpdate create an object to the Kubernetes cluster for controller, if the object to create is existed,
-// call mergeFn to merge the change in new object to the existing object, then update the existing object.
-// The object will also be adopted by the given controller.
+// CreateOrUpdate ensures an object exists in the desired state for the
+// controller. It reads first — a cache hit in production — and only issues a
+// Create when the object is missing, so a converged cluster does not emit an
+// AlreadyExists conflict per object per reconcile. When the object exists,
+// mergeFn merges the desired changes into it and an Update is issued only if
+// the merge changed anything.
 func (r *SeaweedReconciler) CreateOrUpdate(obj runtime.Object, mergeFn MergeFn) (runtime.Object, error) {
 
 	// controller-runtime/client will mutate the object pointer in-place,
@@ -43,36 +46,50 @@ func (r *SeaweedReconciler) CreateOrUpdate(obj runtime.Object, mergeFn MergeFn) 
 	// to avoid the in-place mutation here and hereafter.
 	desired := obj.DeepCopyObject().(client.Object)
 
-	// 1. try to create and see if there is any conflicts
-	err := r.Create(context.TODO(), desired)
-	if errors.IsAlreadyExists(err) {
-		// 2. object has already existed, merge our desired changes to it
-		existing, err := r.EmptyClone(obj)
-
-		if err != nil {
+	existing, err := r.EmptyClone(obj)
+	if err != nil {
+		return nil, err
+	}
+	getErr := r.Get(context.TODO(), client.ObjectKeyFromObject(desired), existing.(client.Object))
+	if errors.IsNotFound(getErr) {
+		createErr := r.Create(context.TODO(), desired)
+		if !errors.IsAlreadyExists(createErr) {
+			return desired, createErr
+		}
+		// Created concurrently, or the informer cache lagged a prior
+		// create — re-read and fall through to the merge path.
+		if err := r.Get(context.TODO(), client.ObjectKeyFromObject(desired), existing.(client.Object)); err != nil {
 			return nil, err
 		}
-		err = r.Get(context.TODO(), client.ObjectKeyFromObject(desired), existing.(client.Object))
-		if err != nil {
-			return nil, err
-		}
-
-		mutated := existing.DeepCopyObject().(client.Object)
-		// 4. invoke mergeFn to mutate a copy of the existing object
-		if err := mergeFn(mutated, desired); err != nil {
-			return nil, err
-		}
-
-		// 5. check if the copy is actually mutated
-		if !apiequality.Semantic.DeepEqual(existing, mutated) {
-			err := r.Update(context.TODO(), mutated)
-			return mutated, err
-		}
-
-		return mutated, nil
+	} else if getErr != nil {
+		return nil, getErr
 	}
 
-	return desired, err
+	mutated := existing.DeepCopyObject().(client.Object)
+	// invoke mergeFn to mutate a copy of the existing object
+	if err := mergeFn(mutated, desired); err != nil {
+		return nil, err
+	}
+
+	// only issue an Update if the merge actually changed something
+	if !apiequality.Semantic.DeepEqual(existing, mutated) {
+		err := r.Update(context.TODO(), mutated)
+		return mutated, err
+	}
+
+	return mutated, nil
+}
+
+// deleteIfExists issues a Delete only when the object exists, so reconciling
+// an absent optional component costs a read — a cache hit in production —
+// instead of emitting a NotFound error per pass. obj must have Name and
+// Namespace set. It reports whether the object still existed, so callers can
+// requeue and wait for deletion to finish.
+func (r *SeaweedReconciler) deleteIfExists(ctx context.Context, obj client.Object) (existed bool, err error) {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
+		return false, client.IgnoreNotFound(err)
+	}
+	return true, client.IgnoreNotFound(r.Delete(ctx, obj))
 }
 
 func (r *SeaweedReconciler) addSpecToAnnotation(d *appsv1.Deployment) error {

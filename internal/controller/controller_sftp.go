@@ -97,7 +97,7 @@ func (r *SeaweedReconciler) ensureSFTPGateway(ctx context.Context, m *seaweedv1.
 			sm := &monitorv1.ServiceMonitor{
 				ObjectMeta: metav1.ObjectMeta{Name: m.Name + "-sftp", Namespace: m.Namespace},
 			}
-			if err := r.Delete(ctx, sm); err != nil && !apierrors.IsNotFound(err) {
+			if _, err := r.deleteIfExists(ctx, sm); err != nil {
 				return ReconcileResult(err)
 			}
 		}
@@ -111,7 +111,7 @@ func (r *SeaweedReconciler) ensureSFTPGateway(ctx context.Context, m *seaweedv1.
 		ing := &networkingv1.Ingress{
 			ObjectMeta: metav1.ObjectMeta{Name: m.Name + "-sftp-ingress", Namespace: m.Namespace},
 		}
-		if err := r.Delete(ctx, ing); err != nil && !apierrors.IsNotFound(err) {
+		if _, err := r.deleteIfExists(ctx, ing); err != nil {
 			return ReconcileResult(err)
 		}
 	}
@@ -120,24 +120,25 @@ func (r *SeaweedReconciler) ensureSFTPGateway(ctx context.Context, m *seaweedv1.
 
 // deleteSFTPGateway deletes the full set of resources the SFTP gateway
 // reconciler creates: Deployment, Service, optional Ingress, optional
-// ServiceMonitor. All calls are IsNotFound-safe.
+// ServiceMonitor. Deletes are existence-guarded, so the steady-state
+// "no gateway" pass stays read-only.
 func (r *SeaweedReconciler) deleteSFTPGateway(ctx context.Context, m *seaweedv1.Seaweed) error {
 	name := m.Name + "-sftp"
 	dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: m.Namespace}}
-	if err := r.Delete(ctx, dep); err != nil && !apierrors.IsNotFound(err) {
+	if _, err := r.deleteIfExists(ctx, dep); err != nil {
 		return err
 	}
 	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: m.Namespace}}
-	if err := r.Delete(ctx, svc); err != nil && !apierrors.IsNotFound(err) {
+	if _, err := r.deleteIfExists(ctx, svc); err != nil {
 		return err
 	}
 	ing := &networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: name + "-ingress", Namespace: m.Namespace}}
-	if err := r.Delete(ctx, ing); err != nil && !apierrors.IsNotFound(err) {
+	if _, err := r.deleteIfExists(ctx, ing); err != nil {
 		return err
 	}
 	if r.serviceMonitorCRDAvailable() {
 		sm := &monitorv1.ServiceMonitor{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: m.Namespace}}
-		if err := r.Delete(ctx, sm); err != nil && !apierrors.IsNotFound(err) {
+		if _, err := r.deleteIfExists(ctx, sm); err != nil {
 			return err
 		}
 	}

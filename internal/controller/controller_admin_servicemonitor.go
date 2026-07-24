@@ -19,7 +19,11 @@ func (r *SeaweedReconciler) createAdminServiceMonitor(m *seaweedv1.Seaweed) *mon
 		Spec: monitorv1.ServiceMonitorSpec{
 			Endpoints: []monitorv1.Endpoint{
 				{
-					Path: adminRoutePath(m.BaseAdminSpec().ExtraArgs(), "/metrics"),
+					// `-metricsPort` starts its own listener on the default
+					// net/http mux, so metrics stay at `/metrics` regardless of
+					// any `-urlPrefix`, which only wraps the admin UI router on
+					// the admin HTTP port.
+					Path: "/metrics",
 					Port: "admin-metrics",
 				},
 			},

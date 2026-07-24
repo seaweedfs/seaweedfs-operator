@@ -55,11 +55,14 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 }
 
 // adminURLPrefix scans weed admin ExtraArgs for a -urlPrefix flag and returns
-// its value normalized to a leading slash with no trailing slash. The admin
-// server mounts every route — including `/health` and `/metrics` — behind
-// `http.StripPrefix(urlPrefix, r)` when this flag is set (see upstream
-// weed/command/admin.go), so any k8s probes or ServiceMonitor endpoints must
-// target the prefixed path or they will 404.
+// its value normalized to a leading slash with no trailing slash. When set, the
+// admin server mounts its router behind `http.StripPrefix(urlPrefix, r)` (see
+// upstream weed/command/admin.go), so k8s probes hitting the admin HTTP port
+// must target the prefixed path or they will 404.
+//
+// This applies only to the admin HTTP port. `-metricsPort` starts a separate
+// listener on the default net/http mux, which serves `/metrics` at the root and
+// is never prefixed.
 //
 // Parsing follows the same semantics as upstream's fla9 parser (a clone of
 // Go's `flag` package): a string flag always consumes the next arg as its
@@ -107,7 +110,6 @@ func adminURLPrefix(extraArgs []string) string {
 
 // adminRoutePath returns `route` prefixed with any `-urlPrefix` supplied via
 // the admin ExtraArgs. `route` must already start with a `/`.
-// See issue #204.
 func adminRoutePath(extraArgs []string, route string) string {
 	return adminURLPrefix(extraArgs) + route
 }

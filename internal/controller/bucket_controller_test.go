@@ -1053,6 +1053,116 @@ func TestReconcile_AccessRevokesRemovedUsers(t *testing.T) {
 	}
 }
 
+// anonymousRead was stored but never read by the reconciler, so buckets
+// created with it still refused unauthenticated GETs.
+func TestReconcile_AnonymousReadGrantsAnonymousIdentity(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Spec.AnonymousRead = true
+
+	fa := newFakeAdmin()
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	reconcileUntilStable(t, r, key, 5)
+
+	if !hasCall(fa.calls, "Access:photos:anonymous:Read") {
+		t.Errorf("anonymousRead did not grant the anonymous identity Read; calls=%v", fa.calls)
+	}
+
+	// Must be recorded as applied so disabling the flag later revokes.
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Annotations[AnnotationAppliedAccess] != "anonymous" {
+		t.Errorf("applied-access annotation = %q want %q",
+			got.Annotations[AnnotationAppliedAccess], "anonymous")
+	}
+}
+
+// Disabling the flag must strip the grant, not leave the bucket world-readable.
+func TestReconcile_AnonymousReadDisabledRevokesGrant(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Spec.AnonymousRead = false
+	bucket.Annotations = map[string]string{AnnotationAppliedAccess: "anonymous"}
+	bucket.Status.BucketName = "photos"
+	bucket.Finalizers = []string{BucketFinalizer}
+
+	fa := newFakeAdmin()
+	fa.existsResp["photos"] = true
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	reconcileUntilStable(t, r, key, 5)
+
+	if !hasCall(fa.calls, "Access:photos:anonymous:none") {
+		t.Errorf("disabling anonymousRead did not revoke the anonymous grant; calls=%v", fa.calls)
+	}
+
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Annotations[AnnotationAppliedAccess] != "" {
+		t.Errorf("applied-access annotation = %q want empty",
+			got.Annotations[AnnotationAppliedAccess])
+	}
+}
+
+// SetAccess strips every existing action for the bucket, so a flag-driven and
+// an explicit "anonymous" grant must merge into one call, not overwrite.
+func TestReconcile_AnonymousReadMergesWithExplicitAccessGrant(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Spec.AnonymousRead = true
+	bucket.Spec.Access = []seaweedv1.BucketAccessGrant{
+		{User: "anonymous", Actions: []seaweedv1.BucketAccessAction{seaweedv1.BucketAccessList}},
+		{User: "alice", Actions: []seaweedv1.BucketAccessAction{seaweedv1.BucketAccessWrite}},
+	}
+
+	fa := newFakeAdmin()
+	r, _ := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	reconcileUntilStable(t, r, key, 5)
+
+	if !hasCall(fa.calls, "Access:photos:anonymous:List,Read") {
+		t.Errorf("anonymous grant was not merged with spec.access; calls=%v", fa.calls)
+	}
+	if !hasCall(fa.calls, "Access:photos:alice:Write") {
+		t.Errorf("unrelated grant was disturbed; calls=%v", fa.calls)
+	}
+	for _, c := range fa.calls {
+		if c == "Access:photos:anonymous:Read" {
+			t.Errorf("anonymous received a second, conflicting grant; calls=%v", fa.calls)
+		}
+	}
+}
+
+func hasCall(calls []string, want string) bool {
+	for _, c := range calls {
+		if c == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestWithAnonymousRead(t *testing.T) {
+	cases := map[string]string{
+		"":              "Read",
+		"none":          "Read",
+		"Read":          "Read",
+		"List":          "List,Read",
+		"Write,List":    "List,Read,Write",
+		"Read, Tagging": "Read,Tagging",
+	}
+	for in, want := range cases {
+		if got := withAnonymousRead(in); got != want {
+			t.Errorf("withAnonymousRead(%q) = %q want %q", in, got, want)
+		}
+	}
+}
+
 func TestQuantityToMiB(t *testing.T) {
 	cases := map[string]struct {
 		q       string

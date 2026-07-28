@@ -610,6 +610,9 @@ type FilerSpec struct {
 
 	// Filer-specific settings
 
+	// MaxMB is the chunk size in MiB the filer splits larger files into.
+	// Omit to leave the filer at its own default (4).
+	// +kubebuilder:validation:Minimum=1
 	MaxMB *int32 `json:"maxMB,omitempty"`
 	// S3 configuration for the filer
 	S3 *S3Config `json:"s3,omitempty"`

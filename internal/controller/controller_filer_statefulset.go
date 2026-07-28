@@ -33,6 +33,9 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	if m.Spec.Filer.MetricsPort != nil {
 		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Filer.MetricsPort))
 	}
+	if m.Spec.Filer.MaxMB != nil {
+		commands = append(commands, fmt.Sprintf("-maxMB=%d", *m.Spec.Filer.MaxMB))
+	}
 	if m.Spec.Filer.Iceberg != nil && m.Spec.Filer.Iceberg.Enabled {
 		commands = append(commands, fmt.Sprintf("-icebergPort=%d", m.Spec.Filer.Iceberg.IcebergEffectivePort()))
 	}

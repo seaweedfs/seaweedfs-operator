@@ -175,7 +175,11 @@ type SeaweedSpec struct {
 	// SchedulerName of pods
 	SchedulerName string `json:"schedulerName,omitempty"`
 
-	// Persistent volume reclaim policy
+	// Deprecated: this field has never had any effect and remains a no-op.
+	// Set reclaimPolicy on the StorageClass backing the cluster's volumes
+	// instead — that is where Kubernetes decides what happens to a released
+	// PersistentVolume, and it applies at provisioning time. The operator
+	// does not patch PersistentVolume objects.
 	PVReclaimPolicy *corev1.PersistentVolumeReclaimPolicy `json:"pvReclaimPolicy,omitempty"`
 
 	// ImagePullPolicy of pods
@@ -184,7 +188,14 @@ type SeaweedSpec struct {
 	// ImagePullSecrets is an optional list of references to secrets in the same namespace to use for pulling any of the images.
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 
-	// Whether enable PVC reclaim for orphan PVC left by statefulset scale-in
+	// EnablePVReclaim deletes the PVCs left behind when a component's
+	// StatefulSet is scaled in, instead of keeping them for a future
+	// scale-out to re-attach. Implemented with the StatefulSet's own
+	// persistentVolumeClaimRetentionPolicy.whenScaled, so Kubernetes does
+	// the deletion at the right point in the scale-down.
+	//
+	// Whether the underlying volume and its data are then destroyed is up to
+	// the StorageClass's reclaimPolicy, not this field. Defaults to false.
 	EnablePVReclaim *bool `json:"enablePVReclaim,omitempty"`
 
 	// Whether Hostnetwork is enabled for pods

@@ -363,7 +363,8 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 				},
 				Spec: volumePodSpec,
 			},
-			VolumeClaimTemplates: disks.pvcs,
+			VolumeClaimTemplates:                 disks.pvcs,
+			PersistentVolumeClaimRetentionPolicy: pvcRetentionPolicy(m),
 		},
 	}
 	return dep
@@ -565,7 +566,8 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 				},
 				Spec: volumePodSpec,
 			},
-			VolumeClaimTemplates: persistentVolumeClaims,
+			VolumeClaimTemplates:                 persistentVolumeClaims,
+			PersistentVolumeClaimRetentionPolicy: pvcRetentionPolicy(m),
 		},
 	}
 	return dep

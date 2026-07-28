@@ -173,7 +173,7 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 	adminPodSpec.EnableServiceLinks = &enableServiceLinks
 	adminPodSpec.Containers = []corev1.Container{{
 		Name:            "admin",
-		Image:           m.Spec.Image,
+		Image:           m.BaseAdminSpec().Image(),
 		ImagePullPolicy: m.BaseAdminSpec().ImagePullPolicy(),
 		SecurityContext: m.BaseAdminSpec().ContainerSecurityContext(),
 		Env:             env,

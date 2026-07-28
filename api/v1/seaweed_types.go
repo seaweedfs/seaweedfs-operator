@@ -127,7 +127,9 @@ type SeaweedSpec struct {
 	// Image
 	Image string `json:"image,omitempty"`
 
-	// Version
+	// Version replaces the tag on spec.image for every component, so the
+	// image only has to name a repository. A digest-pinned image is left
+	// alone. Individual components can override this via their own version.
 	Version string `json:"version,omitempty"`
 
 	// Master
@@ -770,7 +772,8 @@ type LivenessProbeOverride struct {
 
 // ComponentSpec is the base spec of each component, the fields should always accessed by the Basic<Component>Spec() method to respect the cluster-level properties
 type ComponentSpec struct {
-	// Version of the component. Override the cluster-level version if non-empty
+	// Version of the component, replacing the tag on spec.image for this
+	// component only. Overrides the cluster-level version if non-empty.
 	Version *string `json:"version,omitempty"`
 
 	// ImagePullPolicy of the component. Override the cluster-level imagePullPolicy if present

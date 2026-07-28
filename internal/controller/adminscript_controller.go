@@ -117,7 +117,7 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 func (r *AdminScriptReconciler) buildCronJob(script *seaweedv1.AdminScript, cluster *seaweedv1.Seaweed) *batchv1.CronJob {
 	labels := labelsForAdminScript(script.Name)
 
-	image := cluster.Spec.Image
+	image := cluster.ClusterImage()
 	if script.Spec.Image != nil && *script.Spec.Image != "" {
 		image = *script.Spec.Image
 	}

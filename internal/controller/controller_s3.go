@@ -265,7 +265,7 @@ func (r *SeaweedReconciler) buildS3Deployment(m *seaweedv1.Seaweed) *appsv1.Depl
 
 	podSpec.Containers = []corev1.Container{{
 		Name:            "s3",
-		Image:           m.Spec.Image,
+		Image:           m.BaseS3Spec().Image(),
 		ImagePullPolicy: m.BaseS3Spec().ImagePullPolicy(),
 		SecurityContext: m.BaseS3Spec().ContainerSecurityContext(),
 		Env:             append(m.BaseS3Spec().Env(), kubernetesEnvVars...),

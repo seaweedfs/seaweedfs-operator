@@ -246,7 +246,8 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 				},
 				Spec: filerPodSpec,
 			},
-			VolumeClaimTemplates: persistentVolumeClaims,
+			VolumeClaimTemplates:                 persistentVolumeClaims,
+			PersistentVolumeClaimRetentionPolicy: pvcRetentionPolicy(m),
 		},
 	}
 	return dep

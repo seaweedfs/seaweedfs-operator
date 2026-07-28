@@ -23,6 +23,35 @@ func filerContainer(t *testing.T, sts *corev1.PodSpec) *corev1.Container {
 	return nil
 }
 
+// spec.filer.maxMB was served by the CRD but never reached the filer, so the
+// chunk size stayed at weed's built-in default no matter what was set.
+func TestBuildFilerStartupScript_MaxMB(t *testing.T) {
+	newFiler := func(maxMB *int32) *seaweedv1.Seaweed {
+		return &seaweedv1.Seaweed{
+			ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+			Spec: seaweedv1.SeaweedSpec{
+				Master: &seaweedv1.MasterSpec{Replicas: 1},
+				Filer:  &seaweedv1.FilerSpec{Replicas: 1, MaxMB: maxMB},
+			},
+		}
+	}
+
+	t.Run("set value is passed through", func(t *testing.T) {
+		maxMB := int32(32)
+		if got := buildFilerStartupScript(newFiler(&maxMB)); !strings.Contains(got, "-maxMB=32") {
+			t.Errorf("expected -maxMB=32 in startup script, got %q", got)
+		}
+	})
+
+	// Unset must stay absent rather than emit -maxMB=0, which would tell the
+	// filer never to chunk instead of leaving it at its own default.
+	t.Run("unset omits the flag", func(t *testing.T) {
+		if got := buildFilerStartupScript(newFiler(nil)); strings.Contains(got, "-maxMB") {
+			t.Errorf("expected no -maxMB flag when unset, got %q", got)
+		}
+	})
+}
+
 // On a fresh, no-TLS install the operator used to mount a security.toml that
 // enabled [jwt.filer_signing.read], which made the filer demand a signed JWT
 // on every GET. The readiness/liveness probe is an unauthenticated GET / on

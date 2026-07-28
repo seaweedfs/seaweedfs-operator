@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -1065,8 +1066,11 @@ func TestReconcile_AnonymousReadGrantsAnonymousIdentity(t *testing.T) {
 
 	reconcileUntilStable(t, r, key, 5)
 
-	if !hasCall(fa.calls, "Access:photos:anonymous:Read") {
-		t.Errorf("anonymousRead did not grant the anonymous identity Read; calls=%v", fa.calls)
+	// Exactly one grant, carrying Read and nothing else — a second call or a
+	// stray List would both widen anonymous access past what is documented.
+	want := []string{"Access:photos:anonymous:Read"}
+	if got := callsFor(fa.calls, "Access:photos:anonymous:"); !reflect.DeepEqual(got, want) {
+		t.Errorf("anonymous access calls = %v want %v; calls=%v", got, want, fa.calls)
 	}
 
 	// Must be recorded as applied so disabling the flag later revokes.
@@ -1125,16 +1129,13 @@ func TestReconcile_AnonymousReadMergesWithExplicitAccessGrant(t *testing.T) {
 
 	reconcileUntilStable(t, r, key, 5)
 
-	if !hasCall(fa.calls, "Access:photos:anonymous:List,Read") {
-		t.Errorf("anonymous grant was not merged with spec.access; calls=%v", fa.calls)
+	// One merged call, not two that would each strip the other's actions.
+	want := []string{"Access:photos:anonymous:List,Read"}
+	if got := callsFor(fa.calls, "Access:photos:anonymous:"); !reflect.DeepEqual(got, want) {
+		t.Errorf("anonymous access calls = %v want %v; calls=%v", got, want, fa.calls)
 	}
-	if !hasCall(fa.calls, "Access:photos:alice:Write") {
+	if got := callsFor(fa.calls, "Access:photos:alice:"); !hasCall(got, "Access:photos:alice:Write") {
 		t.Errorf("unrelated grant was disturbed; calls=%v", fa.calls)
-	}
-	for _, c := range fa.calls {
-		if c == "Access:photos:anonymous:Read" {
-			t.Errorf("anonymous received a second, conflicting grant; calls=%v", fa.calls)
-		}
 	}
 }
 
@@ -1145,6 +1146,19 @@ func hasCall(calls []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// callsFor returns every recorded call carrying prefix, so a test can assert
+// the complete set of calls made against one identity rather than just the
+// presence of one.
+func callsFor(calls []string, prefix string) []string {
+	var out []string
+	for _, c := range calls {
+		if strings.HasPrefix(c, prefix) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func TestWithAnonymousRead(t *testing.T) {

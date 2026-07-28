@@ -52,6 +52,11 @@ const (
 	// Stored as a comma-joined sorted list of identity names.
 	AnnotationAppliedAccess = "bucket.seaweed.seaweedfs.com/applied-access"
 
+	// AnonymousIdentity is the reserved IAM identity unauthenticated S3
+	// requests resolve to; its bucket grants are what the S3 gateway
+	// consults to authorize anonymous access.
+	AnonymousIdentity = "anonymous"
+
 	// requeueAfterTransient is the backoff used when an external
 	// dependency (the filer, an IAM identity) is missing but expected to
 	// arrive shortly.
@@ -314,10 +319,17 @@ func (r *BucketReconciler) reconcileBucket(ctx context.Context, bucket *seaweedv
 	// list (recorded as an annotation). Users no longer in spec have
 	// their bucket grants stripped; users in spec get their actions
 	// (re)set to the requested set.
+	// anonymousRead goes through the same map so it revokes by the same
+	// path, and merges with an explicit "anonymous" grant instead of the
+	// two overwriting each other — SetAccess replaces all of an identity's
+	// actions on the bucket.
 	prevUsers := readAppliedAccessAnnotation(bucket)
 	desired := map[string]string{}
 	for _, g := range bucket.Spec.Access {
 		desired[g.User] = joinActions(g.Actions)
+	}
+	if bucket.Spec.AnonymousRead {
+		desired[AnonymousIdentity] = withAnonymousRead(desired[AnonymousIdentity])
 	}
 	for user, actions := range desired {
 		if err := admin.SetAccess(ctx, bucketName, user, actions); err != nil {
@@ -553,6 +565,24 @@ func joinActions(actions []seaweedv1.BucketAccessAction) string {
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, ",")
+}
+
+// withAnonymousRead unions Read into a comma-joined action list, sorted like
+// joinActions so the grant is stable across passes. "none" (joinActions'
+// empty form) counts as no actions, not as an action name.
+func withAnonymousRead(actions string) string {
+	set := map[string]bool{string(seaweedv1.BucketAccessRead): true}
+	for _, a := range strings.Split(actions, ",") {
+		if a = strings.TrimSpace(a); a != "" && !strings.EqualFold(a, "none") {
+			set[a] = true
+		}
+	}
+	out := make([]string, 0, len(set))
+	for a := range set {
+		out = append(out, a)
+	}
+	sort.Strings(out)
+	return strings.Join(out, ",")
 }
 
 // placementArgs flattens the BucketPlacement struct into the argv form

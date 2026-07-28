@@ -276,8 +276,14 @@ type BucketSpec struct {
 	// +optional
 	Placement *BucketPlacement `json:"placement,omitempty"`
 
-	// AnonymousRead exposes the bucket for unauthenticated read via a
-	// public-read bucket policy. Defaults to false.
+	// AnonymousRead grants the reserved "anonymous" identity — the one
+	// unauthenticated S3 requests resolve to — Read on this bucket,
+	// allowing objects to be downloaded by URL without credentials.
+	// Setting it back to false revokes the grant. Defaults to false.
+	//
+	// List is not granted, so anonymous callers cannot enumerate the
+	// bucket. For that, add an access entry for user "anonymous" with the
+	// List action; its actions merge with the Read granted here.
 	// +optional
 	// +kubebuilder:default:=false
 	AnonymousRead bool `json:"anonymousRead,omitempty"`

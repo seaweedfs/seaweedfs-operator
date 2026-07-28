@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -1050,6 +1051,129 @@ func TestReconcile_AccessRevokesRemovedUsers(t *testing.T) {
 	if got.Annotations[AnnotationAppliedAccess] != "alice" {
 		t.Errorf("applied-access annotation = %q want %q",
 			got.Annotations[AnnotationAppliedAccess], "alice")
+	}
+}
+
+// anonymousRead was stored but never read by the reconciler, so buckets
+// created with it still refused unauthenticated GETs.
+func TestReconcile_AnonymousReadGrantsAnonymousIdentity(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Spec.AnonymousRead = true
+
+	fa := newFakeAdmin()
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	reconcileUntilStable(t, r, key, 5)
+
+	// Exactly one grant, carrying Read and nothing else — a second call or a
+	// stray List would both widen anonymous access past what is documented.
+	want := []string{"Access:photos:anonymous:Read"}
+	if got := callsFor(fa.calls, "Access:photos:anonymous:"); !reflect.DeepEqual(got, want) {
+		t.Errorf("anonymous access calls = %v want %v; calls=%v", got, want, fa.calls)
+	}
+
+	// Must be recorded as applied so disabling the flag later revokes.
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Annotations[AnnotationAppliedAccess] != "anonymous" {
+		t.Errorf("applied-access annotation = %q want %q",
+			got.Annotations[AnnotationAppliedAccess], "anonymous")
+	}
+}
+
+// Disabling the flag must strip the grant, not leave the bucket world-readable.
+func TestReconcile_AnonymousReadDisabledRevokesGrant(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Spec.AnonymousRead = false
+	bucket.Annotations = map[string]string{AnnotationAppliedAccess: "anonymous"}
+	bucket.Status.BucketName = "photos"
+	bucket.Finalizers = []string{BucketFinalizer}
+
+	fa := newFakeAdmin()
+	fa.existsResp["photos"] = true
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	reconcileUntilStable(t, r, key, 5)
+
+	if !hasCall(fa.calls, "Access:photos:anonymous:none") {
+		t.Errorf("disabling anonymousRead did not revoke the anonymous grant; calls=%v", fa.calls)
+	}
+
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Annotations[AnnotationAppliedAccess] != "" {
+		t.Errorf("applied-access annotation = %q want empty",
+			got.Annotations[AnnotationAppliedAccess])
+	}
+}
+
+// SetAccess strips every existing action for the bucket, so a flag-driven and
+// an explicit "anonymous" grant must merge into one call, not overwrite.
+func TestReconcile_AnonymousReadMergesWithExplicitAccessGrant(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Spec.AnonymousRead = true
+	bucket.Spec.Access = []seaweedv1.BucketAccessGrant{
+		{User: "anonymous", Actions: []seaweedv1.BucketAccessAction{seaweedv1.BucketAccessList}},
+		{User: "alice", Actions: []seaweedv1.BucketAccessAction{seaweedv1.BucketAccessWrite}},
+	}
+
+	fa := newFakeAdmin()
+	r, _ := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	reconcileUntilStable(t, r, key, 5)
+
+	// One merged call, not two that would each strip the other's actions.
+	want := []string{"Access:photos:anonymous:List,Read"}
+	if got := callsFor(fa.calls, "Access:photos:anonymous:"); !reflect.DeepEqual(got, want) {
+		t.Errorf("anonymous access calls = %v want %v; calls=%v", got, want, fa.calls)
+	}
+	if got := callsFor(fa.calls, "Access:photos:alice:"); !hasCall(got, "Access:photos:alice:Write") {
+		t.Errorf("unrelated grant was disturbed; calls=%v", fa.calls)
+	}
+}
+
+func hasCall(calls []string, want string) bool {
+	for _, c := range calls {
+		if c == want {
+			return true
+		}
+	}
+	return false
+}
+
+// callsFor returns every recorded call carrying prefix, so a test can assert
+// the complete set of calls made against one identity rather than just the
+// presence of one.
+func callsFor(calls []string, prefix string) []string {
+	var out []string
+	for _, c := range calls {
+		if strings.HasPrefix(c, prefix) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func TestWithAnonymousRead(t *testing.T) {
+	cases := map[string]string{
+		"":              "Read",
+		"none":          "Read",
+		"Read":          "Read",
+		"List":          "List,Read",
+		"Write,List":    "List,Read,Write",
+		"Read, Tagging": "Read,Tagging",
+	}
+	for in, want := range cases {
+		if got := withAnonymousRead(in); got != want {
+			t.Errorf("withAnonymousRead(%q) = %q want %q", in, got, want)
+		}
 	}
 }
 

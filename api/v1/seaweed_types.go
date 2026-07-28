@@ -121,7 +121,11 @@ type SeaweedSpec struct {
 	// +optional
 	TLS *TLSSpec `json:"tls,omitempty"`
 
-	// MetricsAddress is Prometheus gateway address
+	// MetricsAddress is the Prometheus Pushgateway to push metrics to, as
+	// <host>:<port>. Set on the master, which passes it to the rest of the
+	// cluster in its heartbeat response, so one value covers every component.
+	// This is push-based and independent of the per-component metricsPort,
+	// which exposes a scrape endpoint instead.
 	MetricsAddress string `json:"metricsAddress,omitempty"`
 
 	// Image

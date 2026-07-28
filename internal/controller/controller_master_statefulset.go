@@ -39,6 +39,13 @@ func buildMasterStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string 
 		command = append(command, fmt.Sprintf("-metricsPort=%d", *m.Spec.Master.MetricsPort))
 	}
 
+	// Only the master takes -metrics.address; it hands the value to volume
+	// servers, filers and gateways in its heartbeat response, so setting it
+	// here turns on push metrics for the whole cluster.
+	if m.Spec.MetricsAddress != "" {
+		command = append(command, fmt.Sprintf("-metrics.address=%s", m.Spec.MetricsAddress))
+	}
+
 	command = append(command, fmt.Sprintf("-ip=$(POD_NAME).%s-master-peer.%s", m.Name, m.Namespace))
 	command = append(command, fmt.Sprintf("-peers=%s", getMasterPeersString(m)))
 	command = append(command, extraArgs...)

@@ -106,7 +106,7 @@ func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1
 
 	container := corev1.Container{
 		Name:            "worker",
-		Image:           m.Spec.Image,
+		Image:           m.BaseWorkerSpec().Image(),
 		ImagePullPolicy: m.BaseWorkerSpec().ImagePullPolicy(),
 		SecurityContext: m.BaseWorkerSpec().ContainerSecurityContext(),
 		Env:             append(m.BaseWorkerSpec().Env(), kubernetesEnvVars...),

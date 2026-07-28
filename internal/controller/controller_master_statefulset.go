@@ -105,7 +105,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 	masterPodSpec.EnableServiceLinks = &enableServiceLinks
 	masterPodSpec.Containers = []corev1.Container{{
 		Name:            "master",
-		Image:           m.Spec.Image,
+		Image:           m.BaseMasterSpec().Image(),
 		ImagePullPolicy: m.BaseMasterSpec().ImagePullPolicy(),
 		SecurityContext: m.BaseMasterSpec().ContainerSecurityContext(),
 		Env:             append(m.BaseMasterSpec().Env(), kubernetesEnvVars...),

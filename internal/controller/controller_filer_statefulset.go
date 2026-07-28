@@ -176,7 +176,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 	filerPodSpec.EnableServiceLinks = &enableServiceLinks
 	filerPodSpec.Containers = []corev1.Container{{
 		Name:            "filer",
-		Image:           m.Spec.Image,
+		Image:           m.BaseFilerSpec().Image(),
 		ImagePullPolicy: m.BaseFilerSpec().ImagePullPolicy(),
 		SecurityContext: m.BaseFilerSpec().ContainerSecurityContext(),
 		Env:             append(m.BaseFilerSpec().Env(), kubernetesEnvVars...),

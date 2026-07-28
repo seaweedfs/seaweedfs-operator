@@ -10,6 +10,7 @@ import (
 // +kubebuilder:object:root=false
 // +kubebuilder:object:generate=false
 type ComponentAccessor interface {
+	Image() string
 	ImagePullPolicy() corev1.PullPolicy
 	ImagePullSecrets() []corev1.LocalObjectReference
 	HostNetwork() bool
@@ -39,6 +40,8 @@ type ComponentAccessor interface {
 }
 
 type componentAccessorImpl struct {
+	image                     string
+	version                   string
 	imagePullPolicy           corev1.PullPolicy
 	imagePullSecrets          []corev1.LocalObjectReference
 	hostNetwork               *bool
@@ -68,6 +71,17 @@ func (a *componentAccessorImpl) StatefulSetUpdateStrategy() appsv1.StatefulSetUp
 	}
 
 	return appsv1.RollingUpdateStatefulSetStrategyType
+}
+
+// Image is the component's container image: the cluster-level spec.image with
+// its tag replaced by the component's version, falling back to the
+// cluster-level version. With neither version set the image is used as-is.
+func (a *componentAccessorImpl) Image() string {
+	version := a.version
+	if v := a.ComponentSpec.Version; v != nil && *v != "" {
+		version = *v
+	}
+	return applyVersion(a.image, version)
 }
 
 func (a *componentAccessorImpl) ImagePullPolicy() corev1.PullPolicy {
@@ -260,6 +274,8 @@ func (a *componentAccessorImpl) ContainerSecurityContext() *corev1.SecurityConte
 
 func buildSeaweedComponentAccessor(spec *SeaweedSpec, componentSpec *ComponentSpec) ComponentAccessor {
 	return &componentAccessorImpl{
+		image:                     spec.Image,
+		version:                   spec.Version,
 		imagePullPolicy:           spec.ImagePullPolicy,
 		imagePullSecrets:          spec.ImagePullSecrets,
 		hostNetwork:               spec.HostNetwork,
@@ -274,6 +290,14 @@ func buildSeaweedComponentAccessor(spec *SeaweedSpec, componentSpec *ComponentSp
 
 		ComponentSpec: componentSpec,
 	}
+}
+
+// ClusterImage is the cluster-wide weed image — spec.image with spec.version
+// applied as its tag. Use it for pods that belong to no single component
+// (backup/restore jobs, admin-script CronJobs); components themselves go
+// through their accessor's Image(), which also honors a per-component version.
+func (s *Seaweed) ClusterImage() string {
+	return applyVersion(s.Spec.Image, s.Spec.Version)
 }
 
 // BaseMasterSpec provides merged spec of masters

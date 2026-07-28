@@ -52,7 +52,7 @@ func backupImage(m *seaweedv1.Seaweed) string {
 	if m.Spec.Backup != nil && m.Spec.Backup.Image != nil && *m.Spec.Backup.Image != "" {
 		return *m.Spec.Backup.Image
 	}
-	return m.Spec.Image
+	return m.ClusterImage()
 }
 
 // filesystemMountPath returns the in-pod mount path for a filesystem storage,

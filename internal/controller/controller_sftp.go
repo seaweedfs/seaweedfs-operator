@@ -275,7 +275,7 @@ func (r *SeaweedReconciler) buildSFTPDeployment(m *seaweedv1.Seaweed) *appsv1.De
 
 	podSpec.Containers = []corev1.Container{{
 		Name:            "sftp",
-		Image:           m.Spec.Image,
+		Image:           m.BaseSFTPSpec().Image(),
 		ImagePullPolicy: m.BaseSFTPSpec().ImagePullPolicy(),
 		SecurityContext: m.BaseSFTPSpec().ContainerSecurityContext(),
 		Env:             append(m.BaseSFTPSpec().Env(), kubernetesEnvVars...),

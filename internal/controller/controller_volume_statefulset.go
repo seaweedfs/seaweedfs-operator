@@ -279,7 +279,7 @@ func (r *SeaweedReconciler) buildFlatVolumePodSpec(m *seaweedv1.Seaweed, disks v
 	volumePodSpec.EnableServiceLinks = &enableServiceLinks
 	volumePodSpec.Containers = []corev1.Container{{
 		Name:            "volume",
-		Image:           m.Spec.Image,
+		Image:           m.BaseVolumeSpec().Image(),
 		ImagePullPolicy: m.BaseVolumeSpec().ImagePullPolicy(),
 		SecurityContext: m.BaseVolumeSpec().ContainerSecurityContext(),
 		Env:             append(m.BaseVolumeSpec().Env(), kubernetesEnvVars...),
@@ -494,7 +494,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 	}
 	volumePodSpec.Containers = []corev1.Container{{
 		Name:            "volume",
-		Image:           m.Spec.Image,
+		Image:           m.BaseVolumeSpec().Image(),
 		ImagePullPolicy: getImagePullPolicy(m, topologySpec),
 		SecurityContext: getContainerSecurityContext(m, topologySpec),
 		Env:             append(getEnvVars(m, topologySpec), kubernetesEnvVars...),

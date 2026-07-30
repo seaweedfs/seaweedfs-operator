@@ -164,6 +164,7 @@ rules:
   - seaweedbackups/finalizers
   - seaweedcsidrivers/finalizers
   - seaweedrestores/finalizers
+  - seaweeds/finalizers
   verbs:
   - update
 - apiGroups:

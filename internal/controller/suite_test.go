@@ -73,6 +73,16 @@ func startEnvtest() error {
 		CRDDirectoryPaths:     []string{filepath.Join(projectRoot(), "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 	}
+	// OpenShift and other strict-RBAC distributions enable
+	// OwnerReferencesPermissionEnforcement, which rejects writes that set
+	// blockOwnerDeletion unless the writer can update the owner's finalizers
+	// subresource. Upstream leaves the plugin off, so without this flag the
+	// RBAC gaps it catches stay invisible until a user installs on OpenShift.
+	// Costs nothing for the admin-credentialed tests: system:masters passes
+	// every authorization check the plugin makes.
+	envtestEnv.ControlPlane.GetAPIServer().Configure().
+		Append("enable-admission-plugins", "OwnerReferencesPermissionEnforcement")
+
 	cfg, err := envtestEnv.Start()
 	if err != nil {
 		envtestEnv = nil

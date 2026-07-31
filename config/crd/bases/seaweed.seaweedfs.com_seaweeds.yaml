@@ -2742,6 +2742,19 @@ spec:
                     x-kubernetes-list-type: map
                   config:
                     type: string
+                  configSecret:
+                    properties:
+                      key:
+                        type: string
+                      name:
+                        default: ""
+                        type: string
+                      optional:
+                        type: boolean
+                    required:
+                    - key
+                    type: object
+                    x-kubernetes-map-type: atomic
                   containerSecurityContext:
                     properties:
                       allowPrivilegeEscalation:
@@ -4123,6 +4136,9 @@ spec:
                 required:
                 - replicas
                 type: object
+                x-kubernetes-validations:
+                - message: config and configSecret are mutually exclusive
+                  rule: '!(has(self.config) && has(self.configSecret))'
               hostNetwork:
                 type: boolean
               hostSuffix:
@@ -4609,6 +4625,19 @@ spec:
                     type: boolean
                   config:
                     type: string
+                  configSecret:
+                    properties:
+                      key:
+                        type: string
+                      name:
+                        default: ""
+                        type: string
+                      optional:
+                        type: boolean
+                    required:
+                    - key
+                    type: object
+                    x-kubernetes-map-type: atomic
                   containerSecurityContext:
                     properties:
                       allowPrivilegeEscalation:
@@ -5816,6 +5845,9 @@ spec:
                 required:
                 - replicas
                 type: object
+                x-kubernetes-validations:
+                - message: config and configSecret are mutually exclusive
+                  rule: '!(has(self.config) && has(self.configSecret))'
               metricsAddress:
                 type: string
               nodeSelector:

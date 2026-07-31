@@ -14,7 +14,22 @@ import (
 // the viper-based loader considers any on-disk file a success and would
 // suppress the master's own defaults.
 func hasMasterConfig(m *seaweedv1.Seaweed) bool {
+	if masterConfigSecret(m) != nil {
+		return false
+	}
 	return m.Spec.Master != nil && m.Spec.Master.Config != nil && strings.TrimSpace(*m.Spec.Master.Config) != ""
+}
+
+// masterConfigSecret mirrors filerConfigSecret for the master component.
+func masterConfigSecret(m *seaweedv1.Seaweed) *corev1.SecretKeySelector {
+	if m.Spec.Master == nil || m.Spec.Master.ConfigSecret == nil {
+		return nil
+	}
+	sel := m.Spec.Master.ConfigSecret
+	if sel.Name == "" || sel.Key == "" {
+		return nil
+	}
+	return sel
 }
 
 // createMasterConfigMap returns a ConfigMap carrying the user-supplied

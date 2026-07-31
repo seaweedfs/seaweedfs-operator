@@ -313,6 +313,7 @@ type ComponentStatus struct {
 }
 
 // MasterSpec is the spec for masters
+// +kubebuilder:validation:XValidation:rule="!(has(self.config) && has(self.configSecret))",message="config and configSecret are mutually exclusive"
 type MasterSpec struct {
 	ComponentSpec               `json:",inline"`
 	corev1.ResourceRequirements `json:",inline"`
@@ -324,6 +325,14 @@ type MasterSpec struct {
 
 	// Config in raw toml string
 	Config *string `json:"config,omitempty"`
+
+	// ConfigSecret references a Secret key holding the master.toml contents,
+	// for config that carries credentials (e.g. remote storage backends) and
+	// should not sit in plaintext in the CR. The key is projected as
+	// master.toml into the same path the inline Config would be mounted at.
+	// Mutually exclusive with Config.
+	// +optional
+	ConfigSecret *corev1.SecretKeySelector `json:"configSecret,omitempty"`
 
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
@@ -603,6 +612,7 @@ type IcebergConfig struct {
 }
 
 // FilerSpec is the spec for filers
+// +kubebuilder:validation:XValidation:rule="!(has(self.config) && has(self.configSecret))",message="config and configSecret are mutually exclusive"
 type FilerSpec struct {
 	ComponentSpec               `json:",inline"`
 	corev1.ResourceRequirements `json:",inline"`
@@ -614,6 +624,14 @@ type FilerSpec struct {
 
 	// Config in raw toml string
 	Config *string `json:"config,omitempty"`
+
+	// ConfigSecret references a Secret key holding the filer.toml contents,
+	// for config that carries credentials (e.g. the metadata store password)
+	// and should not sit in plaintext in the CR. The key is projected as
+	// filer.toml into the same path the inline Config would be mounted at.
+	// Mutually exclusive with Config.
+	// +optional
+	ConfigSecret *corev1.SecretKeySelector `json:"configSecret,omitempty"`
 
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`

@@ -23,6 +23,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
@@ -98,5 +101,84 @@ func TestSeaweedCRD_ConfigAndConfigSecretAreMutuallyExclusive(t *testing.T) {
 				t.Fatalf("case %d: expected the CR to be accepted, got %v", i, err)
 			}
 		})
+	}
+}
+
+// replaceOnGetClient swaps the target ConfigMap for an unowned one with a
+// fresh UID immediately after it is read, standing in for another actor
+// deleting and recreating it in the window between the reconciler's read and
+// its delete. Only the fake client's ResourceVersion precondition is
+// simulated in-memory, so the UID precondition needs a real apiserver.
+type replaceOnGetClient struct {
+	client.Client
+	target   string
+	replaced bool
+}
+
+func (c *replaceOnGetClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if err := c.Client.Get(ctx, key, obj, opts...); err != nil {
+		return err
+	}
+	cm, ok := obj.(*corev1.ConfigMap)
+	if !ok || c.replaced || key.Name != c.target {
+		return nil
+	}
+	c.replaced = true
+	if err := c.Client.Delete(ctx, cm.DeepCopy()); err != nil {
+		return err
+	}
+	return c.Client.Create(ctx, &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
+		Data:       map[string]string{"unrelated": "data"},
+	})
+}
+
+// Pruning reads the ConfigMap, checks that this CR controls it, then deletes
+// it. Without a precondition tying those together, an object recreated under
+// the same name in between would be deleted on the strength of the previous
+// object's owner reference.
+func TestPruneOwnedConfigMap_LeavesAReplacementAlone(t *testing.T) {
+	_, cli := mustEnvtest(t)
+	ctx := context.Background()
+
+	ns := newTestNamespace(t, ctx, cli, "prune-race")
+	t.Cleanup(func() {
+		_ = cli.Delete(context.Background(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})
+	})
+
+	cr := minimalVolumeSeaweedCR(ns)
+	if err := cli.Create(ctx, cr); err != nil {
+		t.Fatalf("create Seaweed: %v", err)
+	}
+
+	owned := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: cr.Name + "-filer", Namespace: ns},
+		Data:       map[string]string{"filer.toml": "[postgres]\npassword = \"hunter2\"\n"},
+	}
+	if err := controllerutil.SetControllerReference(cr, owned, cli.Scheme()); err != nil {
+		t.Fatalf("set owner ref: %v", err)
+	}
+	if err := cli.Create(ctx, owned); err != nil {
+		t.Fatalf("create ConfigMap: %v", err)
+	}
+
+	racing := &replaceOnGetClient{Client: cli, target: owned.Name}
+	r := &SeaweedReconciler{Client: racing, Log: logf.FromContext(ctx), Scheme: cli.Scheme()}
+
+	// The conflict is the expected outcome, reported as success: the object
+	// under that name is no longer ours to remove.
+	if err := r.pruneOwnedConfigMap(ctx, cr, owned.Name); err != nil {
+		t.Fatalf("expected the replacement to be left alone without an error, got %v", err)
+	}
+	if !racing.replaced {
+		t.Fatal("test did not exercise the race: the ConfigMap was never replaced")
+	}
+
+	got := &corev1.ConfigMap{}
+	if err := cli.Get(ctx, client.ObjectKey{Namespace: ns, Name: owned.Name}, got); err != nil {
+		t.Fatalf("expected the replacement ConfigMap to survive, got %v", err)
+	}
+	if got.Data["unrelated"] != "data" {
+		t.Errorf("expected the replacement to be untouched, got %v", got.Data)
 	}
 }

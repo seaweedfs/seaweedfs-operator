@@ -102,6 +102,14 @@ func (r *SeaweedReconciler) deleteIfExists(ctx context.Context, obj client.Objec
 // happens to occupy the generated name is left alone — unlike the workloads
 // deleteIfExists handles, this name is one the operator may never have
 // claimed on this cluster.
+//
+// The UID precondition carries that ownership check through to the delete: if
+// the object is replaced between the read and the write, the delete lands on a
+// UID that no longer exists and fails instead of removing whatever now holds
+// the name. A conflict is that outcome, not an error — the next reconcile
+// reads the replacement and finds it is not ours. The precondition is
+// deliberately not on resourceVersion, which would also fail on an unrelated
+// edit and leave the plaintext ConfigMap in place.
 func (r *SeaweedReconciler) pruneOwnedConfigMap(ctx context.Context, m metav1.Object, name string) error {
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, client.ObjectKey{Namespace: m.GetNamespace(), Name: name}, cm); err != nil {
@@ -110,7 +118,11 @@ func (r *SeaweedReconciler) pruneOwnedConfigMap(ctx context.Context, m metav1.Ob
 	if !metav1.IsControlledBy(cm, m) {
 		return nil
 	}
-	return client.IgnoreNotFound(r.Delete(ctx, cm))
+	err := r.Delete(ctx, cm, client.Preconditions{UID: &cm.UID})
+	if errors.IsConflict(err) {
+		return nil
+	}
+	return client.IgnoreNotFound(err)
 }
 
 func (r *SeaweedReconciler) addSpecToAnnotation(d *appsv1.Deployment) error {

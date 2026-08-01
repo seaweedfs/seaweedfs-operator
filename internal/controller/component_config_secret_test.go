@@ -267,7 +267,10 @@ func TestConfigSecret_PrunesConfigMapLeftByInlineConfig(t *testing.T) {
 		t.Fatalf("ensureFilerConfigMap: %v", err)
 	}
 
-	for _, name := range []string{"sw-master", "sw-filer"} {
+	// Names come from the objects actually created, so a rename in the
+	// generator fails this loudly instead of leaving it checking the absence
+	// of a ConfigMap nothing ever created.
+	for _, name := range []string{masterCM.Name, filerCM.Name} {
 		err := cli.Get(ctx, client.ObjectKey{Namespace: "ns", Name: name}, &corev1.ConfigMap{})
 		if !apierrors.IsNotFound(err) {
 			t.Errorf("expected ConfigMap %q to be pruned, got err %v", name, err)
@@ -290,8 +293,14 @@ func TestConfigSecret_PruneLeavesUnownedConfigMapAlone(t *testing.T) {
 		t.Fatalf("seaweedv1: %v", err)
 	}
 
+	// Take the name from the generator so the foreign object keeps colliding
+	// with the one the reconciler manages even if that name changes.
+	inline := "[leveldb2]\nenabled = true\n"
+	generated := newConfigSecretCluster(nil, &seaweedv1.FilerSpec{Replicas: 1, Config: &inline})
+	filerName := (&SeaweedReconciler{}).createFilerConfigMap(generated).Name
+
 	foreign := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: "sw-filer", Namespace: "ns"},
+		ObjectMeta: metav1.ObjectMeta{Name: filerName, Namespace: "ns"},
 		Data:       map[string]string{"unrelated": "data"},
 	}
 	cli := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(m, foreign).Build()
@@ -302,7 +311,7 @@ func TestConfigSecret_PruneLeavesUnownedConfigMapAlone(t *testing.T) {
 	}
 
 	got := &corev1.ConfigMap{}
-	if err := cli.Get(context.Background(), client.ObjectKey{Namespace: "ns", Name: "sw-filer"}, got); err != nil {
+	if err := cli.Get(context.Background(), client.ObjectKey{Namespace: "ns", Name: filerName}, got); err != nil {
 		t.Fatalf("expected the unowned ConfigMap to survive, got %v", err)
 	}
 	if got.Data["unrelated"] != "data" {

@@ -84,12 +84,16 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 
 	filerPodSpec := m.BaseFilerSpec().BuildPodSpec()
 	var volumeMounts []corev1.VolumeMount
-	// Only mount the filer ConfigMap when the user supplied non-blank
-	// filer.toml content. Mounting an empty /etc/seaweedfs/filer.toml
-	// makes the filer skip its default leveldb2 store and crashloop
-	// for lack of a backing store. hasFilerConfig keeps this in lock
-	// step with createFilerConfigMap.
-	if hasFilerConfig(m) {
+	// filer.toml comes from a Secret when ConfigSecret is set, otherwise from
+	// the ConfigMap — and only when the user supplied non-blank content.
+	// Mounting an empty /etc/seaweedfs/filer.toml makes the filer skip its
+	// default leveldb2 store and crashloop for lack of a backing store.
+	// hasFilerConfig keeps this in lock step with createFilerConfigMap.
+	if sel := filerConfigSecret(m); sel != nil {
+		vol, mount := configSecretVolumeAndMount("filer-config", "filer.toml", sel)
+		filerPodSpec.Volumes = append(filerPodSpec.Volumes, vol)
+		volumeMounts = append(volumeMounts, mount)
+	} else if hasFilerConfig(m) {
 		filerPodSpec.Volumes = append(filerPodSpec.Volumes, corev1.Volume{
 			Name: "filer-config",
 			VolumeSource: corev1.VolumeSource{
@@ -103,7 +107,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "filer-config",
 			ReadOnly:  true,
-			MountPath: "/etc/seaweedfs",
+			MountPath: componentConfigDir,
 		})
 	}
 	if tlsVols, tlsMounts := tlsVolumesAndMounts(m); len(tlsVols) > 0 {

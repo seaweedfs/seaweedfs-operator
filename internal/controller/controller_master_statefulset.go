@@ -78,10 +78,15 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 
 	masterPodSpec := m.BaseMasterSpec().BuildPodSpec()
 	var masterConfigMounts []corev1.VolumeMount
-	// Only mount the master ConfigMap when the user supplied non-blank
-	// master.toml content. Mirrors the filer fix — see hasMasterConfig
-	// for why whitespace-only counts as "no override".
-	if hasMasterConfig(m) {
+	// master.toml comes from a Secret when ConfigSecret is set, otherwise from
+	// the ConfigMap — and only when the user supplied non-blank content.
+	// Mirrors the filer path; see hasMasterConfig for why whitespace-only
+	// counts as "no override".
+	if sel := masterConfigSecret(m); sel != nil {
+		vol, mount := configSecretVolumeAndMount("master-config", "master.toml", sel)
+		masterPodSpec.Volumes = append(masterPodSpec.Volumes, vol)
+		masterConfigMounts = append(masterConfigMounts, mount)
+	} else if hasMasterConfig(m) {
 		masterPodSpec.Volumes = append(masterPodSpec.Volumes, corev1.Volume{
 			Name: "master-config",
 			VolumeSource: corev1.VolumeSource{
@@ -95,7 +100,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 		masterConfigMounts = append(masterConfigMounts, corev1.VolumeMount{
 			Name:      "master-config",
 			ReadOnly:  true,
-			MountPath: "/etc/seaweedfs",
+			MountPath: componentConfigDir,
 		})
 	}
 	if tlsVols, tlsMounts := tlsVolumesAndMounts(m); len(tlsVols) > 0 {

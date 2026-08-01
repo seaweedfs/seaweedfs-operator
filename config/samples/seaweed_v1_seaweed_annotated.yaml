@@ -83,3 +83,10 @@ spec:
       [leveldb2]
       enabled = true
       dir = "/data/filerldb2"
+    # When the config holds credentials (a postgres password, remote storage
+    # keys), keep it in a Secret instead: the referenced key is mounted as
+    # filer.toml and never stored in the CR. `master` takes the same field.
+    # Mutually exclusive with `config` above.
+    # configSecret:
+    #   name: seaweedfs-filer-config
+    #   key: filer.toml

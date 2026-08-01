@@ -335,6 +335,36 @@ func tlsEffective(m *seaweedv1.Seaweed) bool {
 	return tlsEnabled(m) && certManagerAvailableCached()
 }
 
+// componentConfigDir is where weed's viper loader looks for a component's own
+// toml (master.toml, filer.toml).
+const componentConfigDir = "/etc/seaweedfs"
+
+// configSecretVolumeAndMount projects a single Secret key as fileName under
+// componentConfigDir, so a component's toml can live in a Secret instead of
+// inline in the CR. Only the referenced key is projected: the rest of the
+// Secret must not land next to master.toml/filer.toml, and the key inside the
+// Secret is free to be named anything.
+//
+// The selector's Optional flag is passed through — with it set, a missing
+// Secret leaves the directory empty instead of blocking pod startup, which is
+// the same "no config, use the built-in defaults" state as an unset field.
+func configSecretVolumeAndMount(volumeName, fileName string, sel *corev1.SecretKeySelector) (corev1.Volume, corev1.VolumeMount) {
+	return corev1.Volume{
+			Name: volumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: sel.Name,
+					Items:      []corev1.KeyToPath{{Key: sel.Key, Path: fileName}},
+					Optional:   sel.Optional,
+				},
+			},
+		}, corev1.VolumeMount{
+			Name:      volumeName,
+			ReadOnly:  true,
+			MountPath: componentConfigDir,
+		}
+}
+
 // tlsVolumesAndMounts returns the set of pod volumes and container mounts
 // that wire the shared TLS Secret and security.toml Secret into a component
 // pod. Returns empty slices when neither TLS nor the security config is

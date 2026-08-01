@@ -209,6 +209,16 @@ Fields that commonly cause confusion:
 - **`master.volumeSizeLimitMB`** — the max size of a *single logical volume file* before the master allocates a new one (1024 = 1 GiB per file). This is **not** the cluster capacity and **not** the PVC size — total capacity is driven by the volume servers' disks.
 - **`hostSuffix`** — optional. Creates a single all-in-one Ingress exposing the cluster under `filer.<hostSuffix>`, `s3.<hostSuffix>`, and `<name>-volume-<n>.<hostSuffix>` (requires an Ingress controller). Omit it for in-cluster-only access, or use the per-component `ingress:` blocks for finer control.
 - **`master.config` / `filer.config`** — raw TOML dropped verbatim into that component's config file (`master.toml` / `filer.toml`). Yes, you can paste an existing SeaweedFS filer config here — for example to point the filer's metadata store at Postgres/MySQL/Redis instead of local leveldb2.
+- **`master.configSecret` / `filer.configSecret`** — the same TOML, but read from an existing Secret instead of the CR, so credentials in it (a metadata-store password, remote storage keys) stay out of `kubectl get seaweed -o yaml`, etcd and Git. The referenced key is mounted as `master.toml` / `filer.toml`, which lets External Secrets Operator, Sealed Secrets or SOPS own and rotate it. Set one of `config` or `configSecret` per component, not both — the API rejects it.
+
+  ```yaml
+  filer:
+    configSecret:
+      name: seaweedfs-filer-config   # Secret in the same namespace
+      key: filer.toml                # key inside it; any name works
+  ```
+
+  Rotating the Secret updates the mounted file in place, but SeaweedFS reads its TOML only at startup — restart the component's Pods (`kubectl rollout restart statefulset/<name>-filer`) for a change to take effect. Switching a component from `config` to `configSecret` also deletes the ConfigMap the operator generated for the inline config, so the plaintext copy does not linger in the namespace.
 
 To run with a cloud bucket as remote storage (Cloud Drive) backed by a local cache, see `config/samples/seaweed_v1_seaweed_remote_storage.yaml`.
 

@@ -1219,6 +1219,11 @@ func (in *FilerSpec) DeepCopyInto(out *FilerSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.ConfigSecret != nil {
+		in, out := &in.ConfigSecret, &out.ConfigSecret
+		*out = new(corev1.SecretKeySelector)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.MetricsPort != nil {
 		in, out := &in.MetricsPort, &out.MetricsPort
 		*out = new(int32)
@@ -1424,6 +1429,11 @@ func (in *MasterSpec) DeepCopyInto(out *MasterSpec) {
 		in, out := &in.Config, &out.Config
 		*out = new(string)
 		**out = **in
+	}
+	if in.ConfigSecret != nil {
+		in, out := &in.ConfigSecret, &out.ConfigSecret
+		*out = new(corev1.SecretKeySelector)
+		(*in).DeepCopyInto(*out)
 	}
 	if in.MetricsPort != nil {
 		in, out := &in.MetricsPort, &out.MetricsPort

@@ -25,7 +25,7 @@ func (r *SeaweedReconciler) ensureFilerServers(ctx context.Context, seaweedCR *s
 		return
 	}
 
-	if done, result, err = r.ensureFilerConfigMap(seaweedCR); done {
+	if done, result, err = r.ensureFilerConfigMap(ctx, seaweedCR); done {
 		return
 	}
 
@@ -98,14 +98,16 @@ func (r *SeaweedReconciler) ensureFilerService(seaweedCR *seaweedv1.Seaweed) (bo
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureFilerConfigMap(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+func (r *SeaweedReconciler) ensureFilerConfigMap(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-filer-configmap", seaweedCR.Name)
 
 	filerConfigMap := r.createFilerConfigMap(seaweedCR)
 	if filerConfigMap == nil {
 		// No user-provided filer.toml — skip creation so the filer falls back
 		// to its built-in default store. See createFilerConfigMap for details.
-		return ReconcileResult(nil)
+		// Drop any ConfigMap a previous inline config left behind, so moving
+		// the config into a Secret really does remove the plaintext copy.
+		return ReconcileResult(r.pruneOwnedConfigMap(ctx, seaweedCR, seaweedCR.Name+"-filer"))
 	}
 	if err := controllerutil.SetControllerReference(seaweedCR, filerConfigMap, r.Scheme); err != nil {
 		return ReconcileResult(err)

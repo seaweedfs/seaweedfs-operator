@@ -139,7 +139,7 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return result, err
 	}
 
-	if done, result, err = r.ensureMaster(seaweedCR); done {
+	if done, result, err = r.ensureMaster(ctx, seaweedCR); done {
 		return result, err
 	}
 

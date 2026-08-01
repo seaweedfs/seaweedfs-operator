@@ -1,10 +1,18 @@
 package controller
 
 import (
+	"context"
 	"testing"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
@@ -203,5 +211,101 @@ func TestConfigSecret_UnsetMountsNothing(t *testing.T) {
 				t.Errorf("expected no config volume when neither config nor configSecret is set, got %q", vol.Name)
 			}
 		}
+	}
+}
+
+// Moving a config into a Secret is pointless if the ConfigMap holding the old
+// plaintext copy survives: it stays readable to anyone with `get configmap` in
+// the namespace, and owner-reference GC would only collect it when the whole
+// Seaweed CR is deleted.
+func TestConfigSecret_PrunesConfigMapLeftByInlineConfig(t *testing.T) {
+	inline := "[postgres]\npassword = \"hunter2\"\n"
+	before := newConfigSecretCluster(
+		&seaweedv1.MasterSpec{Replicas: 1, Config: &inline},
+		&seaweedv1.FilerSpec{Replicas: 1, Config: &inline},
+	)
+	before.UID = "test-uid"
+
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("clientgoscheme: %v", err)
+	}
+	if err := seaweedv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("seaweedv1: %v", err)
+	}
+
+	// Stand up the ConfigMaps the inline config would have produced, owned by
+	// the CR exactly as the reconciler creates them.
+	masterCM := (&SeaweedReconciler{}).createMasterConfigMap(before)
+	filerCM := (&SeaweedReconciler{}).createFilerConfigMap(before)
+	for _, cm := range []*corev1.ConfigMap{masterCM, filerCM} {
+		if err := controllerutil.SetControllerReference(before, cm, scheme); err != nil {
+			t.Fatalf("set owner ref: %v", err)
+		}
+	}
+	cli := fake.NewClientBuilder().WithScheme(scheme).
+		WithRuntimeObjects(before, masterCM, filerCM).Build()
+	r := &SeaweedReconciler{Client: cli, Scheme: scheme, Log: logr.Discard()}
+
+	// The user swaps both components over to a Secret and drops the inline
+	// config, which is the only shape the CRD accepts.
+	after := newConfigSecretCluster(
+		&seaweedv1.MasterSpec{Replicas: 1, ConfigSecret: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "cfg"}, Key: "master.toml",
+		}},
+		&seaweedv1.FilerSpec{Replicas: 1, ConfigSecret: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "cfg"}, Key: "filer.toml",
+		}},
+	)
+	after.UID = before.UID
+
+	ctx := context.Background()
+	if _, _, err := r.ensureMasterConfigMap(ctx, after); err != nil {
+		t.Fatalf("ensureMasterConfigMap: %v", err)
+	}
+	if _, _, err := r.ensureFilerConfigMap(ctx, after); err != nil {
+		t.Fatalf("ensureFilerConfigMap: %v", err)
+	}
+
+	for _, name := range []string{"sw-master", "sw-filer"} {
+		err := cli.Get(ctx, client.ObjectKey{Namespace: "ns", Name: name}, &corev1.ConfigMap{})
+		if !apierrors.IsNotFound(err) {
+			t.Errorf("expected ConfigMap %q to be pruned, got err %v", name, err)
+		}
+	}
+}
+
+// The generated name is not reserved on a cluster the operator has never
+// written it on, so an object it does not control must survive — pruning is
+// garbage collection of our own leftovers, not a claim on the name.
+func TestConfigSecret_PruneLeavesUnownedConfigMapAlone(t *testing.T) {
+	m := newConfigSecretCluster(&seaweedv1.MasterSpec{Replicas: 1}, &seaweedv1.FilerSpec{Replicas: 1})
+	m.UID = "test-uid"
+
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("clientgoscheme: %v", err)
+	}
+	if err := seaweedv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("seaweedv1: %v", err)
+	}
+
+	foreign := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "sw-filer", Namespace: "ns"},
+		Data:       map[string]string{"unrelated": "data"},
+	}
+	cli := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(m, foreign).Build()
+	r := &SeaweedReconciler{Client: cli, Scheme: scheme, Log: logr.Discard()}
+
+	if _, _, err := r.ensureFilerConfigMap(context.Background(), m); err != nil {
+		t.Fatalf("ensureFilerConfigMap: %v", err)
+	}
+
+	got := &corev1.ConfigMap{}
+	if err := cli.Get(context.Background(), client.ObjectKey{Namespace: "ns", Name: "sw-filer"}, got); err != nil {
+		t.Fatalf("expected the unowned ConfigMap to survive, got %v", err)
+	}
+	if got.Data["unrelated"] != "data" {
+		t.Errorf("expected the unowned ConfigMap to be untouched, got %v", got.Data)
 	}
 }

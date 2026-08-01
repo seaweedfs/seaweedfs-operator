@@ -15,8 +15,7 @@ import (
 	"github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
 )
 
-func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
-	_ = context.Background()
+func (r *SeaweedReconciler) ensureMaster(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
 	if done, result, err = r.ensureMasterPeerService(seaweedCR); done {
@@ -27,7 +26,7 @@ func (r *SeaweedReconciler) ensureMaster(seaweedCR *seaweedv1.Seaweed) (done boo
 		return
 	}
 
-	if done, result, err = r.ensureMasterConfigMap(seaweedCR); done {
+	if done, result, err = r.ensureMasterConfigMap(ctx, seaweedCR); done {
 		return
 	}
 
@@ -108,12 +107,14 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureMasterConfigMap(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+func (r *SeaweedReconciler) ensureMasterConfigMap(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-master-configmap", seaweedCR.Name)
 
 	masterConfigMap := r.createMasterConfigMap(seaweedCR)
 	if masterConfigMap == nil {
-		return ReconcileResult(nil)
+		// Drop any ConfigMap a previous inline config left behind — see the
+		// filer equivalent.
+		return ReconcileResult(r.pruneOwnedConfigMap(ctx, seaweedCR, seaweedCR.Name+"-master"))
 	}
 	if err := controllerutil.SetControllerReference(seaweedCR, masterConfigMap, r.Scheme); err != nil {
 		return ReconcileResult(err)

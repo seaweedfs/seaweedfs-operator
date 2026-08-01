@@ -218,7 +218,7 @@ Fields that commonly cause confusion:
       key: filer.toml                # key inside it; any name works
   ```
 
-  Rotating the Secret updates the mounted file in place, but SeaweedFS reads its TOML only at startup — restart the component's Pods (`kubectl rollout restart statefulset/<name>-filer`) for a change to take effect.
+  Rotating the Secret updates the mounted file in place, but SeaweedFS reads its TOML only at startup — restart the component's Pods (`kubectl rollout restart statefulset/<name>-filer`) for a change to take effect. Switching a component from `config` to `configSecret` also deletes the ConfigMap the operator generated for the inline config, so the plaintext copy does not linger in the namespace.
 
 To run with a cloud bucket as remote storage (Cloud Drive) backed by a local cache, see `config/samples/seaweed_v1_seaweed_remote_storage.yaml`.
 

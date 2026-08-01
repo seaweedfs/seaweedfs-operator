@@ -92,6 +92,27 @@ func (r *SeaweedReconciler) deleteIfExists(ctx context.Context, obj client.Objec
 	return true, client.IgnoreNotFound(r.Delete(ctx, obj))
 }
 
+// pruneOwnedConfigMap deletes a generated ConfigMap that the current spec no
+// longer calls for. It exists for the move from an inline config to a
+// configSecret: the ConfigMap left behind is precisely the plaintext copy of
+// the credentials that move is meant to get rid of, and it would otherwise
+// survive in etcd until the Seaweed CR itself is deleted.
+//
+// Only a ConfigMap this CR controls is removed, so an unrelated object that
+// happens to occupy the generated name is left alone — unlike the workloads
+// deleteIfExists handles, this name is one the operator may never have
+// claimed on this cluster.
+func (r *SeaweedReconciler) pruneOwnedConfigMap(ctx context.Context, m metav1.Object, name string) error {
+	cm := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: m.GetNamespace(), Name: name}, cm); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	if !metav1.IsControlledBy(cm, m) {
+		return nil
+	}
+	return client.IgnoreNotFound(r.Delete(ctx, cm))
+}
+
 func (r *SeaweedReconciler) addSpecToAnnotation(d *appsv1.Deployment) error {
 	b, err := json.Marshal(d.Spec.Template.Spec)
 	if err != nil {

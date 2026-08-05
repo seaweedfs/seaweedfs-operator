@@ -85,6 +85,7 @@ service:
 grafanaDashboard:
   # -- Enable or disable Grafana Dashboard configmap
   enabled: true
+  # -- Additional labels to add to the Grafana Dashboard ConfigMap (e.g. for sidecar discovery)
   labels:
     grafana_dashboard: "1"
 

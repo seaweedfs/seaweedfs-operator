@@ -85,6 +85,8 @@ service:
 grafanaDashboard:
   # -- Enable or disable Grafana Dashboard configmap
   enabled: true
+  labels:
+    grafana_dashboard: "1"
 
 serviceMonitor:
   # -- Enable or disable ServiceMonitor for prometheus metrics

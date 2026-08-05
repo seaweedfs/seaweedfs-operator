@@ -7,7 +7,9 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     app: {{ include "seaweedfs-operator.fullname" . }}
-    grafana_dashboard: {{ include "seaweedfs-operator.fullname" . }}
+    {{- with .Values.grafanaDashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 data:
   seaweedfs.json: |
     {{- $.Files.Get "dashboard/seaweedfs-grafana-dashboard.json" | nindent 4 }}

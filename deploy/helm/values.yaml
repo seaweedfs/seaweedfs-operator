@@ -85,8 +85,11 @@ service:
 grafanaDashboard:
   # -- Enable or disable Grafana Dashboard configmap
   enabled: true
-  # -- Additional labels to add to the Grafana Dashboard ConfigMap (e.g. for sidecar discovery)
-  labels:
+  # -- Labels added to the Grafana Dashboard ConfigMap so the Grafana sidecar discovers it.
+  # kube-prometheus-stack only matches `grafana_dashboard: "1"`; the standalone grafana chart
+  # matches any value. Set a key to `null` to drop it — an empty map merges with the default
+  # rather than replacing it.
+  additionalLabels:
     grafana_dashboard: "1"
 
 serviceMonitor:

@@ -1,6 +1,6 @@
 # seaweedfs-operator
 
-![Version: 0.1.35](https://img.shields.io/badge/Version-0.1.35-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.32](https://img.shields.io/badge/AppVersion-1.0.32-informational?style=flat-square)
+![Version: 0.1.36](https://img.shields.io/badge/Version-0.1.36-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.33](https://img.shields.io/badge/AppVersion-1.0.33-informational?style=flat-square)
 
 A Helm chart for the seaweedfs-operator
 
@@ -21,6 +21,7 @@ A Helm chart for the seaweedfs-operator
 | crds.create | bool | `true` | Install the Seaweed CRD as part of the release. Set to false when the CRD is managed out-of-band (e.g., cluster-scoped GitOps or a shared CRD across namespaces) so `helm install/upgrade` won't try to create or adopt it. |
 | fullnameOverride | string | `""` | String to fully override common.names.fullname template |
 | global | object | `{"imageRegistry":""}` | Global Docker image parameters. global.imageRegistry, when set, overrides the registry of every image in the chart; leave empty to use each image's own. |
+| grafanaDashboard.additionalLabels | object | `{"grafana_dashboard":"1"}` | Labels added to the Grafana Dashboard ConfigMap so the Grafana sidecar discovers it. kube-prometheus-stack only matches `grafana_dashboard: "1"`; the standalone grafana chart matches any value. Set a key to `null` to drop it — an empty map merges with the default rather than replacing it. |
 | grafanaDashboard.enabled | bool | `true` | Enable or disable Grafana Dashboard configmap |
 | image.pullPolicy | string | `"IfNotPresent"` | Specify a imagePullPolicy # Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent' # ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images |
 | image.registry | string | `"chrislusf"` |  |
@@ -64,3 +65,4 @@ A Helm chart for the seaweedfs-operator
 | webhook.initContainer.image | string | `"curlimages/curl:8.8.0"` | Image for webhook readiness check init container |
 | webhook.podSecurityContext | object | `{"fsGroup":65532,"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod security context for webhook jobs ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ |
 | webhook.securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true,"runAsNonRoot":true}` | Container security context for webhook jobs |
+

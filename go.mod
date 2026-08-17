@@ -25,12 +25,9 @@ require (
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/apache/arrow-go/v18 v18.7.0 // indirect
 	github.com/apache/iceberg-go v0.6.0 // indirect
-	github.com/aws/aws-sdk-go-v2 v1.43.4 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.32.35 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.34 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.3.10 // indirect
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.106.5 // indirect
-	github.com/aws/smithy-go v1.27.6 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
@@ -76,7 +73,7 @@ require (
 	github.com/parquet-go/bitpack v1.0.0 // indirect
 	github.com/parquet-go/jsonlite v1.0.0 // indirect
 	github.com/parquet-go/parquet-go v0.30.1 // indirect
-	github.com/pierrec/lz4/v4 v4.1.27 // indirect
+	github.com/pierrec/lz4/v4 v4.1.28 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
@@ -157,7 +154,7 @@ require (
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/seaweedfs/goexif v1.0.3 // indirect
-	github.com/seaweedfs/seaweedfs v0.0.0-20260806065542-c01fe1493dc5
+	github.com/seaweedfs/seaweedfs v0.0.0-20260817070407-5c43c03b76c0
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect

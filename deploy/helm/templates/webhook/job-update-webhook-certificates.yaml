@@ -1,5 +1,5 @@
 {{- $certManager := default dict .Values.webhook.certManager -}}
-{{- if and .Values.webhook.enabled (not $certManager.enabled) -}}
+{{- if and .Values.rbac.create .Values.webhook.enabled (not $certManager.enabled) -}}
 ---
 apiVersion: batch/v1
 kind: Job

@@ -1,3 +1,4 @@
+{{- if .Values.rbac.create }}
 # permissions for end users to edit seaweeds.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -22,3 +23,4 @@ rules:
   - seaweeds/status
   verbs:
   - get
+{{- end }}

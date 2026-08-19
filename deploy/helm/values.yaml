@@ -24,6 +24,10 @@ crds:
 
 ## Configure Kubernetes Rbac parameters
 rbac:
+  # -- Create the Roles, ClusterRoles and bindings the chart would otherwise
+  # install. Set to false when RBAC is provisioned out-of-band (e.g., a
+  # restricted cluster where a platform team owns it); the operator still
+  # needs the same permissions bound to its service account.
   create: true
   serviceAccount:
     # -- Specifies whether a service account should be created

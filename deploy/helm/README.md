@@ -34,7 +34,7 @@ A Helm chart for the seaweedfs-operator
 | podSecurityContext.runAsUser | int | `65532` |  |
 | port.name | string | `"http"` | name of the container port to use for the Kubernete service and ingress |
 | port.number | int | `8080` | container port number to use for the Kubernete service and ingress |
-| rbac.create | bool | `true` | Create the Roles, ClusterRoles and bindings the chart would otherwise install. Set to false when RBAC is provisioned out-of-band (e.g., a restricted cluster where a platform team owns it); the operator still needs the same permissions bound to its service account. |
+| rbac.create | bool | `true` | Create the Roles, ClusterRoles and bindings the chart would otherwise install. Set to false when RBAC is provisioned out-of-band (e.g., a restricted cluster where a platform team owns it). Two service accounts then need the equivalent permissions bound before install: the operator's, and the pre-install webhook certificate hook's, which blocks the release if it cannot reach its secret and the webhook configurations. Setting webhook.certManager.enabled removes that hook. |
 | rbac.serviceAccount.annotations | object | `{}` | Annotations to add to the service account |
 | rbac.serviceAccount.automount | bool | `true` | Automount service account token for the server service account |
 | rbac.serviceAccount.create | bool | `true` | Specifies whether a service account should be created |

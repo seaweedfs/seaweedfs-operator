@@ -53,7 +53,16 @@ func TestHelmRBACCreate(t *testing.T) {
 	t.Run("disabled renders no RBAC", func(t *testing.T) {
 		// Default webhook config, i.e. the certgen hook job path, which
 		// carries RBAC of its own outside templates/rbac.
-		assertNoRBAC(t, renderDocs(t, chartDir, "--set", "rbac.create=false"))
+		docs := renderDocs(t, chartDir, "--set", "rbac.create=false")
+		assertNoRBAC(t, docs)
+
+		// The hook Job names this ServiceAccount, so it stays ungated on
+		// purpose: the Job cannot start without it, and an out-of-band
+		// RoleBinding needs a subject that already exists.
+		const hookSA = "ServiceAccount/rbac-test-seaweedfs-operator-update-webhook-certificates"
+		if !renderedKeys(docs)[hookSA] {
+			t.Errorf("rbac.create=false must still render %s; the pre-install hook Job references it and external bindings need it as a subject", hookSA)
+		}
 	})
 
 	t.Run("disabled renders no RBAC with cert-manager", func(t *testing.T) {
@@ -79,10 +88,7 @@ func TestHelmRBACCreate(t *testing.T) {
 			{"ClusterRole", "rbac-test-seaweedfs-operator-update-webhook-certificates"},
 			{"ClusterRoleBinding", "rbac-test-seaweedfs-operator-update-webhook-certificates"},
 		}
-		rendered := map[string]bool{}
-		for _, doc := range docs {
-			rendered[docKey(doc)] = true
-		}
+		rendered := renderedKeys(docs)
 		for _, w := range want {
 			if key := w.kind + "/" + w.name; !rendered[key] {
 				t.Errorf("default values no longer render %s; rbac.create defaults to true and must stay backward compatible", key)
@@ -110,6 +116,15 @@ func assertNoRBAC(t *testing.T, docs []map[string]any) {
 			t.Errorf("rbac.create=false still renders %s; it must be gated on .Values.rbac.create", docKey(doc))
 		}
 	}
+}
+
+// renderedKeys indexes rendered documents by docKey for presence checks.
+func renderedKeys(docs []map[string]any) map[string]bool {
+	keys := map[string]bool{}
+	for _, doc := range docs {
+		keys[docKey(doc)] = true
+	}
+	return keys
 }
 
 // docKey identifies a rendered document for test failure messages.

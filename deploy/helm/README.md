@@ -34,6 +34,7 @@ A Helm chart for the seaweedfs-operator
 | podSecurityContext.runAsUser | int | `65532` |  |
 | port.name | string | `"http"` | name of the container port to use for the Kubernete service and ingress |
 | port.number | int | `8080` | container port number to use for the Kubernete service and ingress |
+| rbac.create | bool | `true` | Enable or disable RBAC creation |
 | rbac.serviceAccount.annotations | object | `{}` | Annotations to add to the service account |
 | rbac.serviceAccount.automount | bool | `true` | Automount service account token for the server service account |
 | rbac.serviceAccount.create | bool | `true` | Specifies whether a service account should be created |

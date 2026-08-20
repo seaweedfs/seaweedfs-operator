@@ -115,9 +115,7 @@ func (r *SeaweedReconciler) pruneOwnedConfigMap(ctx context.Context, m metav1.Ob
 }
 
 // pruneOwnedSecret is pruneOwnedConfigMap for a generated Secret — the
-// security.toml Secret once no [jwt.*] section and no TLS is left to put in
-// it. Same reasoning: what stays behind is credential material, and a Secret
-// still spelling out jwt.filer_signing reads as if the cluster enforced it.
+// security.toml one, once nothing is left to put in it.
 func (r *SeaweedReconciler) pruneOwnedSecret(ctx context.Context, m metav1.Object, name string) error {
 	return r.pruneOwned(ctx, m, &corev1.Secret{}, name)
 }

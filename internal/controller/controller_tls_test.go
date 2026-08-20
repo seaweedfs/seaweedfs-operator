@@ -28,9 +28,8 @@ func TestSecurityConfigNeeded(t *testing.T) {
 			want: false,
 		},
 		{
-			// A filer in spec used to force security.toml into existence, which
-			// meant [jwt.filer_signing] was on for every cluster with no way to
-			// turn it off.
+			// A filer used to force the file into existence, which is what
+			// made [jwt.filer_signing] unconditional.
 			name: "filer alone does not trigger config",
 			spec: seaweedv1.SeaweedSpec{
 				Master: &seaweedv1.MasterSpec{Replicas: 1},
@@ -152,8 +151,7 @@ func TestRenderSecurityTOML(t *testing.T) {
 	}
 
 	t.Run("sub-section headers do not swallow their parent", func(t *testing.T) {
-		// [jwt.signing] and [jwt.signing.read] share a prefix; both must be
-		// emitted with their own key when both are on.
+		// The two share a prefix; each needs its own key.
 		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{VolumeWrite: true, VolumeRead: true}, allKeys, false)
 		if !strings.Contains(got, "[jwt.signing]\nkey = \"vw-key\"") || !strings.Contains(got, "[jwt.signing.read]\nkey = \"vr-key\"") {
 			t.Errorf("expected both volume sections with their own keys, got %q", got)
@@ -192,8 +190,7 @@ func TestRenderSecurityTOML(t *testing.T) {
 	})
 
 	t.Run("TLS alone emits no jwt section", func(t *testing.T) {
-		// mTLS between components says nothing about whether the cluster wants
-		// JWTs; enabling one must not silently enable the other.
+		// Enabling mTLS must not silently enable JWTs.
 		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{}, allKeys, true)
 		if strings.Contains(got, "[jwt") {
 			t.Errorf("expected no [jwt.*] sections for a TLS-only cluster, got %q", got)
@@ -204,8 +201,8 @@ func TestRenderSecurityTOML(t *testing.T) {
 	})
 }
 
-// The rendered file has to survive a round trip through the parser that
-// preserves keys across reconciles, including for same-prefix sections.
+// Keys survive a reconcile only if the parser reads back what the renderer
+// wrote, same-prefix sections included.
 func TestParseJWTSigningKeysRoundTrip(t *testing.T) {
 	want := jwtSigningKeys{
 		volumeWrite: "vw-key",
@@ -219,9 +216,8 @@ func TestParseJWTSigningKeysRoundTrip(t *testing.T) {
 	}
 }
 
-// Once nothing needs security.toml any more, the Secret has to go: it holds
-// HMAC keys, and a lingering copy still listing [jwt.filer_signing] reads as
-// if the cluster enforced it.
+// A lingering Secret still listing [jwt.filer_signing] reads as if the
+// cluster enforced it.
 func TestEnsureSecurityConfig_PrunesSecretWhenNoLongerNeeded(t *testing.T) {
 	m := newSecurityTestSeaweed()
 	r := securityTestReconciler(t, m)
@@ -244,8 +240,8 @@ func TestEnsureSecurityConfig_PrunesSecretWhenNoLongerNeeded(t *testing.T) {
 	}
 }
 
-// A Secret occupying the generated name that this CR does not control is
-// somebody else's; the operator must not delete it.
+// A Secret on the generated name that this CR does not control is somebody
+// else's.
 func TestEnsureSecurityConfig_LeavesUnownedSecretAlone(t *testing.T) {
 	m := newSecurityTestSeaweed()
 	m.Spec.SecurityConfig = nil
@@ -263,10 +259,8 @@ func TestEnsureSecurityConfig_LeavesUnownedSecretAlone(t *testing.T) {
 	}
 }
 
-// Toggling a JWT section has to reach the running pods. weed reads
-// security.toml at startup, and nothing else in the pod template changes when
-// a section is added to a cluster that already mounts the file, so the
-// annotation is what makes the StatefulSet roll.
+// Nothing else in the pod template changes when a section is added to a
+// cluster that already mounts the file, so the annotation is what rolls it.
 func TestJWTSigningRevisionAnnotation(t *testing.T) {
 	seaweed := func(cfg *seaweedv1.JWTSigningSpec, tls bool) *seaweedv1.Seaweed {
 		m := &seaweedv1.Seaweed{
@@ -308,9 +302,8 @@ func TestJWTSigningRevisionAnnotation(t *testing.T) {
 	})
 
 	t.Run("a TLS-only cluster is still marked", func(t *testing.T) {
-		// Without this, a TLS cluster upgrading from an operator that always
-		// wrote [jwt.filer_signing] would keep the old key in memory: the
-		// Secret changes but no pod field does, so nothing restarts.
+		// Otherwise a TLS cluster upgrading from an operator that always wrote
+		// [jwt.filer_signing] keeps the old key in memory: nothing restarts.
 		got := withJWTSigningAnnotation(seaweed(nil, true), nil)
 		if got[jwtSigningAnnotation] != "none" {
 			t.Errorf("annotation = %q, want %q", got[jwtSigningAnnotation], "none")
@@ -377,8 +370,8 @@ func TestEnsureSecuritySecret_CreatesSecret(t *testing.T) {
 	}
 }
 
-// Every enabled section gets its own key: reusing one key across sections
-// would let a token minted for one guard pass another.
+// Sharing a key across sections would let a token minted for one guard pass
+// another.
 func TestEnsureSecuritySecret_DistinctKeyPerSection(t *testing.T) {
 	m := newSecurityTestSeaweed()
 	m.Spec.SecurityConfig.JWTSigning = &seaweedv1.JWTSigningSpec{
@@ -459,8 +452,7 @@ func TestEnsureSecuritySecret_MigratesLegacyConfigMap(t *testing.T) {
 	if !strings.Contains(got, `key = "legacy-write"`) {
 		t.Errorf("expected legacy write key preserved, got %q", got)
 	}
-	// The legacy read key is dropped along with its section: this CR only asks
-	// for filerWrite, and the operator never renders a section nobody enabled.
+	// This CR only asks for filerWrite, so the read section goes with its key.
 	if strings.Contains(got, `key = "legacy-read"`) || strings.Contains(got, "[jwt.filer_signing.read]") {
 		t.Errorf("expected legacy read key dropped, got %q", got)
 	}

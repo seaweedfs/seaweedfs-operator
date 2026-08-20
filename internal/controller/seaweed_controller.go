@@ -133,8 +133,7 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return result, err
 	}
 
-	// security.toml also carries the JWT signing keys, which are independent
-	// of TLS: a cluster can require signed writes without cert-manager.
+	// security.toml also carries the JWT keys, which need no cert-manager.
 	if done, result, err = r.ensureSecurityConfig(ctx, seaweedCR); done {
 		return result, err
 	}

@@ -68,9 +68,8 @@ func TestBuildAdminStartupScript(t *testing.T) {
 	})
 
 	t.Run("jwt signing adds the security config dir", func(t *testing.T) {
-		// The admin server signs its IAM Bearer tokens with
-		// jwt.filer_signing.key, so it has to be pointed at security.toml —
-		// but only once the cluster asks for that key.
+		// The admin signs IAM Bearer tokens with jwt.filer_signing.key, so it
+		// needs -config_dir once the cluster asks for that key.
 		m := &seaweedv1.Seaweed{
 			ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
 			Spec: seaweedv1.SeaweedSpec{

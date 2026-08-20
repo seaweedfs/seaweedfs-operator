@@ -113,66 +113,47 @@ type TLSIssuerRef struct {
 }
 
 // SecurityConfigSpec mirrors the Helm chart's
-// `global.seaweedfs.securityConfig` block: the parts of security.toml that
-// are not TLS material. Today that is the JWT signing keys.
+// `global.seaweedfs.securityConfig`: the parts of security.toml that are not
+// TLS material.
 type SecurityConfigSpec struct {
-	// JWTSigning selects which JWT sections security.toml carries. Every
-	// section is off unless it is turned on here.
 	// +optional
 	JWTSigning *JWTSigningSpec `json:"jwtSigning,omitempty"`
 }
 
-// JWTSigningSpec turns individual `[jwt.*]` sections of security.toml on.
-// Each flag maps to one section, and the operator generates (and thereafter
-// preserves) a random HMAC key for every section that is on. Every flag
-// defaults to false: the rendered file is a credential shared by the whole
-// cluster, and none of these are safe to switch on without a restart of the
-// components that read them.
-//
-// Turning a section off and on again mints a fresh key, since the operator
-// only keeps keys for sections it renders.
+// JWTSigningSpec turns individual `[jwt.*]` sections of security.toml on. A
+// section that is off is not rendered, and seaweedfs does not enforce what it
+// cannot read. Keys are generated per section and preserved; turning one off
+// and on again mints a fresh key.
 type JWTSigningSpec struct {
-	// VolumeWrite renders `[jwt.signing]`: the master signs an upload token
-	// for each assigned file id and the volume server rejects writes that
-	// arrive without one. The chart enables this by default; here it is
-	// opt-in, because switching it on mid-flight rejects writes until every
-	// master and volume server has reloaded security.toml.
+	// VolumeWrite renders `[jwt.signing]`: the volume server rejects writes
+	// without the token the master signs per assigned file id.
 	// +optional
 	VolumeWrite bool `json:"volumeWrite,omitempty"`
 
-	// VolumeRead renders `[jwt.signing.read]`: the volume server also
-	// requires a signed token on reads. Clients that read chunks directly
-	// from a volume server (`weed mount`, the CSI driver) need the same key
-	// to keep working.
+	// VolumeRead renders `[jwt.signing.read]`: signed reads on the volume
+	// server, which weed mount and the CSI driver then need the key for.
 	// +optional
 	VolumeRead bool `json:"volumeRead,omitempty"`
 
-	// FilerWrite renders `[jwt.filer_signing]`: the filer rejects HTTP
-	// writes that are not signed with this key, and its IAM gRPC service
-	// requires an admin Bearer token signed with it. The operator signs its
-	// own IAM calls automatically. Note that the filer UI's own upload form
-	// does not sign its requests, so it stops working while this is on.
+	// FilerWrite renders `[jwt.filer_signing]`: the filer rejects unsigned
+	// HTTP writes and unsigned IAM gRPC calls. The filer UI's upload form does
+	// not sign, so it stops working.
 	// +optional
 	FilerWrite bool `json:"filerWrite,omitempty"`
 
-	// FilerRead renders `[jwt.filer_signing.read]`: the filer rejects
-	// unsigned HTTP reads as well. The S3 gateway signs its reads, but plain
-	// HTTP GETs against the filer (including the filer UI) do not. The
-	// operator moves the filer probes to /healthz, which is outside the read
-	// guard on every build, so enabling this cannot crashloop the filer.
+	// FilerRead renders `[jwt.filer_signing.read]`: unsigned HTTP reads are
+	// rejected too, though the S3 gateway signs its own.
 	// +optional
 	FilerRead bool `json:"filerRead,omitempty"`
 
-	// ExpiresAfterSeconds overrides the token lifetime of individual
-	// sections. Zero (the default) keeps seaweedfs' own defaults: 10s for
-	// write tokens, 60s for read tokens.
+	// ExpiresAfterSeconds overrides per-section token lifetimes. Zero keeps
+	// seaweedfs' own: 10s for writes, 60s for reads.
 	// +optional
 	ExpiresAfterSeconds *JWTExpiresAfterSecondsSpec `json:"expiresAfterSeconds,omitempty"`
 }
 
 // JWTExpiresAfterSecondsSpec carries per-section `expires_after_seconds`
-// overrides, matching the chart's nested block of the same name. A zero value
-// leaves the section without an override.
+// overrides. Zero leaves a section without one.
 type JWTExpiresAfterSecondsSpec struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=0
@@ -200,9 +181,7 @@ type SeaweedSpec struct {
 	// +optional
 	TLS *TLSSpec `json:"tls,omitempty"`
 
-	// SecurityConfig configures the non-TLS half of security.toml — the JWT
-	// signing keys shared by master, volume server, filer and admin. See
-	// SecurityConfigSpec.
+	// SecurityConfig configures the JWT signing keys in security.toml.
 	// +optional
 	SecurityConfig *SecurityConfigSpec `json:"securityConfig,omitempty"`
 

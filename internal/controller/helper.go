@@ -412,17 +412,14 @@ func tlsVolumesAndMounts(m *seaweedv1.Seaweed) ([]corev1.Volume, []corev1.Volume
 }
 
 // jwtSigningAnnotation records which [jwt.*] sections a pod was rendered for.
-// weed reads security.toml once at startup (and on SIGHUP), so flipping a
-// section on an existing cluster is invisible until the pods restart — and a
-// cluster where one component enforces a key its peers do not have rejects
-// traffic. Folding the section set into the pod template makes the restart
-// part of the same reconcile that changes the Secret.
+// weed reads security.toml only at startup, so without a pod-template change
+// a flipped section sits unread while the component whose peers already
+// enforce it rejects their traffic.
 const jwtSigningAnnotation = "seaweed.seaweedfs.com/jwt-signing"
 
-// withJWTSigningAnnotation returns annotations plus the jwt-signing marker for
-// components that mount security.toml. The value is a pure function of the
-// spec — never of the generated keys — so it stays stable across reconciles
-// and only changes when the user changes a flag.
+// withJWTSigningAnnotation marks the pods that mount security.toml. The value
+// is a pure function of the spec — never of the generated keys — so it only
+// changes when the user flips a flag.
 func withJWTSigningAnnotation(m *seaweedv1.Seaweed, annotations map[string]string) map[string]string {
 	if !securityConfigNeeded(m) {
 		return annotations
@@ -435,8 +432,7 @@ func withJWTSigningAnnotation(m *seaweedv1.Seaweed, annotations map[string]strin
 	return merged
 }
 
-// jwtSigningRevision renders the enabled sections (with their expiry
-// overrides) as a short, human-readable token: "none", "volumeWrite", or
+// jwtSigningRevision names the enabled sections: "none", "volumeWrite", or
 // "volumeWrite=30,filerWrite".
 func jwtSigningRevision(m *seaweedv1.Seaweed) string {
 	cfg := jwtSigningConfig(m)

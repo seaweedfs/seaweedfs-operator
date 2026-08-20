@@ -165,12 +165,9 @@ func resolveSeaweedFiler(ctx context.Context, c client.Client, ref seaweedv1.Sea
 }
 
 // loadFilerAdminSigningKey reads jwt.filer_signing.key from the
-// seaweedfs-security-config Secret the operator renders for sw. Returns
-// nil with no error when the Secret does not exist or its security.toml
-// has no key — which is the normal state for a cluster that has not turned
-// on jwtSigning.filerWrite, and means the filer's IAM service accepts
-// unauthenticated calls. A non-NotFound API error is propagated so the
-// reconciler can requeue.
+// seaweedfs-security-config Secret the operator renders for sw. A missing
+// Secret or key returns nil: that is the normal state for a cluster without
+// jwtSigning.filerWrite, whose filer accepts unauthenticated IAM calls.
 func loadFilerAdminSigningKey(ctx context.Context, c client.Client, sw *seaweedv1.Seaweed) ([]byte, error) {
 	var secret corev1.Secret
 	err := c.Get(ctx, types.NamespacedName{Namespace: sw.Namespace, Name: SecurityConfigSecretName(sw)}, &secret)

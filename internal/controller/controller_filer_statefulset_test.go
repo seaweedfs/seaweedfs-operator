@@ -52,8 +52,8 @@ func TestBuildFilerStartupScript_MaxMB(t *testing.T) {
 	})
 }
 
-// The pod template has to carry the jwt-signing marker, or turning a section
-// on changes only the Secret and the running filer never re-reads it.
+// Without the marker on the pod template, turning a section on changes only
+// the Secret and the running filer never re-reads it.
 func TestFilerStatefulSetCarriesJWTSigningAnnotation(t *testing.T) {
 	m := &seaweedv1.Seaweed{
 		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
@@ -77,12 +77,9 @@ func TestFilerStatefulSetCarriesJWTSigningAnnotation(t *testing.T) {
 }
 
 // The filer must never be probed with a request the security.toml mounted
-// into the same pod can reject. Current seaweedfs exempts GET / from the read
-// guard, but seaweedfs builds before that exemption answer it with 401
-// ("wrong jwt") once [jwt.filer_signing.read] is set, and the pod lands in
-// CrashLoopBackOff — which is how the operator behaved on every fresh install
-// back when it rendered that section unconditionally. /healthz is outside the
-// guard in both.
+// into the same pod can reject. Builds before seaweedfs exempted GET / from
+// the read guard answer it 401 once [jwt.filer_signing.read] is set, which
+// CrashLoopBackOffs the pod; /healthz is outside the guard on every build.
 func TestFilerProbeNotRejectedByReadJWT(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -113,8 +110,7 @@ func TestFilerProbeNotRejectedByReadJWT(t *testing.T) {
 
 			c := filerContainer(t, &sts.Spec.Template.Spec)
 
-			// The probe the kubelet runs against the filer. It carries no
-			// Authorization header.
+			// The kubelet's probe carries no Authorization header.
 			for _, probe := range []struct {
 				kind string
 				p    *corev1.Probe
@@ -128,15 +124,14 @@ func TestFilerProbeNotRejectedByReadJWT(t *testing.T) {
 				}
 			}
 
-			// The security.toml the operator mounts into this very pod,
-			// rendered exactly as ensureSecuritySecret writes it.
+			// The security.toml mounted into this very pod.
 			securityTOML := renderSecurityTOML(jwtSigningConfig(m), jwtSigningKeys{filerWrite: "w", filerRead: "r"}, tlsEffective(m))
 			readJWTRequired := strings.Contains(securityTOML, "[jwt.filer_signing.read]")
 			if readJWTRequired != tc.wantGuard {
 				t.Fatalf("[jwt.filer_signing.read] rendered = %v, want %v:\n%s", readJWTRequired, tc.wantGuard, securityTOML)
 			}
 
-			// The bug was both holding at once: every probe GET answered 401.
+			// The bug was both holding at once.
 			if readJWTRequired && c.ReadinessProbe.HTTPGet.Path == "/" {
 				t.Fatalf("filer is probed with an unauthenticated GET / but the mounted "+
 					"security.toml enables [jwt.filer_signing.read], so the probe gets "+

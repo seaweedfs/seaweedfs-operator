@@ -13,14 +13,10 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-// filerProbePath picks the URL the kubelet probes. GET / is the filer's read
-// path: current seaweedfs exempts exactly that path from the read guard so
-// probes keep working, but builds before that exemption 401 every unsigned
-// GET once [jwt.filer_signing.read] is in security.toml — enough to crashloop
-// the filer on an older spec.image. /healthz is served off the same port,
-// outside the guard either way, and actually touches the filer store. Only
-// used when the read key is on, so clusters that never enable it keep the
-// probe they have always had.
+// filerProbePath picks the URL the kubelet probes. Current seaweedfs exempts
+// GET / from the read guard, but builds before that exemption 401 it once
+// [jwt.filer_signing.read] is set — enough to crashloop the filer on an older
+// spec.image. /healthz is outside the guard on both.
 func filerProbePath(m *seaweedv1.Seaweed) string {
 	if jwtSigningConfig(m).FilerRead {
 		return "/healthz"

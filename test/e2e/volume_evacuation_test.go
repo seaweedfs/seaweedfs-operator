@@ -237,20 +237,25 @@ var _ = Describe("Volume server evacuation on scale-down", Ordered, Label("integ
 		// doomed one empty, so pin a grow to each node by its master node id.
 		// The counts stay well under the per-server max so the survivor has
 		// slots to spare for the evacuated volumes.
+		const volumesPerServer = 3
 		for _, node := range []string{doomedNode, survivorNode} {
 			Eventually(func(g Gomega) {
-				_, err := masterGet(fmt.Sprintf("/vol/grow?count=3&replication=000&dataNode=%s", node))
+				ds, err := fetchTopology()
 				g.Expect(err).NotTo(HaveOccurred())
+				// Grow only the shortfall: the master registers new volumes
+				// before it answers, so retrying a lost response tops up what
+				// is missing instead of growing a second batch.
+				if missing := volumesPerServer - ds.volumesByNode()[node]; missing > 0 {
+					_, err = masterGet(fmt.Sprintf("/vol/grow?count=%d&replication=000&dataNode=%s", missing, node))
+					g.Expect(err).NotTo(HaveOccurred())
+					ds, err = fetchTopology()
+					g.Expect(err).NotTo(HaveOccurred())
+				}
+				byNode := ds.volumesByNode()
+				g.Expect(byNode[node]).To(BeNumerically(">=", volumesPerServer),
+					"volume server %s did not receive its volumes: %v", node, byNode)
 			}, time.Minute, time.Second*5).Should(Succeed())
 		}
-
-		Eventually(func(g Gomega) {
-			ds, err := fetchTopology()
-			g.Expect(err).NotTo(HaveOccurred())
-			byNode := ds.volumesByNode()
-			g.Expect(byNode).To(HaveLen(2), "expected two registered volume servers, got %v", byNode)
-			g.Expect(byNode[doomedNode]).To(BeNumerically(">", 0), "doomed server holds no volumes to evacuate: %v", byNode)
-		}, time.Minute*2, time.Second*5).Should(Succeed())
 
 		ds, err := fetchTopology()
 		Expect(err).NotTo(HaveOccurred())

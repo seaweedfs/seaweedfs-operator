@@ -1,0 +1,54 @@
+# JWT signing between SeaweedFS components, rendered into security.toml.
+#
+# Every section is off by default, and an absent section is an unenforced
+# guard. Keys are generated once and preserved; toggling a flag re-rolls the
+# pods that mount the file, and turning a section off and back on mints a new
+# key.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed-jwt
+  namespace: default
+spec:
+  image: chrislusf/seaweedfs:latest
+  volumeServerDiskCount: 1
+  master:
+    replicas: 3
+    volumeSizeLimitMB: 1024
+  volume:
+    replicas: 2
+    requests:
+      storage: 2Gi
+  filer:
+    replicas: 2
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"
+  s3:
+    replicas: 1
+  securityConfig:
+    jwtSigning:
+      # [jwt.signing] — the master signs upload tokens, the volume server
+      # rejects unsigned writes. The official Helm chart turns this on.
+      volumeWrite: true
+
+      # [jwt.signing.read] — signed reads on the volume server. weed mount and
+      # the CSI driver need the same key.
+      volumeRead: false
+
+      # [jwt.filer_signing] — the filer rejects unsigned HTTP writes and
+      # unsigned IAM gRPC calls. The filer UI's upload form does not sign, so
+      # it stops working while this is on.
+      filerWrite: false
+
+      # [jwt.filer_signing.read] — the filer rejects unsigned HTTP reads. The
+      # S3 gateway signs its own; plain GETs do not.
+      filerRead: false
+
+      # Zero keeps seaweedfs' lifetimes: 10s for writes, 60s for reads.
+      expiresAfterSeconds:
+        volumeWrite: 0
+        volumeRead: 0
+        filerWrite: 0
+        filerRead: 0

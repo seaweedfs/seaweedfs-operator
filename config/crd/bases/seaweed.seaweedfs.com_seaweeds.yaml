@@ -7536,6 +7536,35 @@ spec:
                 type: object
               schedulerName:
                 type: string
+              securityConfig:
+                properties:
+                  jwtSigning:
+                    properties:
+                      expiresAfterSeconds:
+                        properties:
+                          filerRead:
+                            minimum: 0
+                            type: integer
+                          filerWrite:
+                            minimum: 0
+                            type: integer
+                          volumeRead:
+                            minimum: 0
+                            type: integer
+                          volumeWrite:
+                            minimum: 0
+                            type: integer
+                        type: object
+                      filerRead:
+                        type: boolean
+                      filerWrite:
+                        type: boolean
+                      volumeRead:
+                        type: boolean
+                      volumeWrite:
+                        type: boolean
+                    type: object
+                type: object
               sftp:
                 properties:
                   affinity:

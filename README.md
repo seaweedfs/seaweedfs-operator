@@ -470,6 +470,67 @@ spec:
 
 See `config/samples/seaweed_v1_seaweed_with_tls.yaml` for a full example.
 
+### JWT Signing (security.toml)
+
+`spec.securityConfig.jwtSigning` controls the `[jwt.*]` sections of the
+`security.toml` the operator renders, mirroring the official chart's
+`global.seaweedfs.securityConfig.jwtSigning`. Each flag turns one section on;
+the operator generates an HMAC key for it, keeps that key stable across
+reconciles, and stores the file in a Secret (`<name>-security-config`) mounted
+at `/etc/sw-security` on every component.
+
+```yaml
+spec:
+  securityConfig:
+    jwtSigning:
+      volumeWrite: true     # [jwt.signing]
+      volumeRead: false     # [jwt.signing.read]
+      filerWrite: false     # [jwt.filer_signing]
+      filerRead: false      # [jwt.filer_signing.read]
+      expiresAfterSeconds:  # 0 keeps weed's defaults: 10s writes, 60s reads
+        volumeWrite: 0
+        volumeRead: 0
+        filerWrite: 0
+        filerRead: 0
+```
+
+| flag | section | what it enforces |
+|---|---|---|
+| `volumeWrite` | `[jwt.signing]` | the master signs an upload token per assigned file id; the volume server rejects unsigned writes |
+| `volumeRead` | `[jwt.signing.read]` | the volume server rejects unsigned reads; clients that read chunks directly (`weed mount`, the CSI driver) need the same key |
+| `filerWrite` | `[jwt.filer_signing]` | the filer rejects unsigned HTTP writes, and its IAM gRPC service requires an admin Bearer token |
+| `filerRead` | `[jwt.filer_signing.read]` | the filer rejects unsigned HTTP reads; the S3 gateway signs its own, plain HTTP GETs do not |
+
+Every flag defaults to **false**, and a section that is not rendered is not
+enforced — seaweedfs treats a missing key as "do not check". If no flag is set
+and `spec.tls` is off, no `security.toml` is created at all.
+
+Notes worth knowing before turning these on:
+
+- **The filer UI's upload form does not sign its requests**, so it stops
+  working while `filerWrite` is on. Object PUT/GET through the S3 gateway is
+  unaffected — the S3 gateway signs both.
+- With `filerRead` on, plain HTTP GETs against the filer (including the filer
+  UI) need a signed token. The operator moves the filer's readiness/liveness
+  probes to `/healthz`, which is outside the read guard: current seaweedfs
+  exempts `GET /` from it too, but older builds do not and would crashloop the
+  filer.
+- With `filerWrite` on, the operator signs its own IAM gRPC calls (`S3Identity`,
+  `S3Credentials`, `Bucket`, …) with the same key, so those keep working
+  without any extra configuration.
+- Toggling a flag changes a `seaweed.seaweedfs.com/jwt-signing` pod annotation,
+  which rolls the components that mount `security.toml`. `weed` only reads the
+  file at startup, so this restart is what makes the change take effect.
+- Turning a section off and back on mints a **new** key: the operator only
+  keeps keys for sections it renders.
+
+> Upgrading from an operator version before this field existed: the old
+> behavior was to render `[jwt.filer_signing]` unconditionally whenever a filer
+> or admin was in spec, with no way to switch it off. That is now opt-in — set
+> `filerWrite: true` to keep it.
+
+See `config/samples/seaweed_v1_seaweed_jwt_signing.yaml` for a full example.
+
 ### Declarative Buckets
 
 The `Bucket` CRD (`seaweed.seaweedfs.com/v1`) provisions S3 buckets
@@ -721,9 +782,10 @@ As with `Bucket`, a cross-namespace `seaweedRef` (and the `S3Credentials`
 `secretRef`) is **denied by default** and requires a
 [`ResourceReferenceGrant`](#cross-namespace-references-resourcereferencegrant)
 in the target namespace. When the filer enforces `jwt.filer_signing.key`
-(rendered into the cluster's `security.toml` whenever a filer or admin is in
-spec), the operator reads that key and signs its own IAM gRPC calls with it,
-so authenticated filers are handled automatically.
+(rendered into the cluster's `security.toml` by
+[`securityConfig.jwtSigning.filerWrite`](#jwt-signing-securitytoml)), the
+operator reads that key and signs its own IAM gRPC calls with it, so
+authenticated filers are handled automatically.
 
 See the `config/samples/seaweed_v1_s3*.yaml` files for end-to-end examples.
 

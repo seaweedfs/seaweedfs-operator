@@ -13,6 +13,17 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
+// filerProbePath picks the URL the kubelet probes. Current seaweedfs exempts
+// GET / from the read guard, but builds before that exemption 401 it once
+// [jwt.filer_signing.read] is set — enough to crashloop the filer on an older
+// spec.image. /healthz is outside the guard on both.
+func filerProbePath(m *seaweedv1.Seaweed) string {
+	if jwtSigningConfig(m).FilerRead {
+		return "/healthz"
+	}
+	return "/"
+}
+
 func buildFilerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	commands := weedPreamble(m, m.BaseFilerSpec().LoggingArgs(), "filer")
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.FilerHTTPPort))
@@ -50,7 +61,7 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForFiler(m.Name)
 	podLabels := mergePodLabels(labels, m.BaseFilerSpec().Labels())
-	annotations := m.BaseFilerSpec().Annotations()
+	annotations := withJWTSigningAnnotation(m, m.BaseFilerSpec().Annotations())
 	ports := []corev1.ContainerPort{
 		{
 			ContainerPort: seaweedv1.FilerHTTPPort,
@@ -198,7 +209,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/",
+					Path:   filerProbePath(m),
 					Port:   intstr.FromInt(seaweedv1.FilerHTTPPort),
 					Scheme: corev1.URISchemeHTTP,
 				},
@@ -212,7 +223,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/",
+					Path:   filerProbePath(m),
 					Port:   intstr.FromInt(seaweedv1.FilerHTTPPort),
 					Scheme: corev1.URISchemeHTTP,
 				},

@@ -111,14 +111,24 @@ func (r *SeaweedReconciler) deleteIfExists(ctx context.Context, obj client.Objec
 // deliberately not on resourceVersion, which would also fail on an unrelated
 // edit and leave the plaintext ConfigMap in place.
 func (r *SeaweedReconciler) pruneOwnedConfigMap(ctx context.Context, m metav1.Object, name string) error {
-	cm := &corev1.ConfigMap{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: m.GetNamespace(), Name: name}, cm); err != nil {
+	return r.pruneOwned(ctx, m, &corev1.ConfigMap{}, name)
+}
+
+// pruneOwnedSecret is pruneOwnedConfigMap for a generated Secret — the
+// security.toml one, once nothing is left to put in it.
+func (r *SeaweedReconciler) pruneOwnedSecret(ctx context.Context, m metav1.Object, name string) error {
+	return r.pruneOwned(ctx, m, &corev1.Secret{}, name)
+}
+
+func (r *SeaweedReconciler) pruneOwned(ctx context.Context, m metav1.Object, obj client.Object, name string) error {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: m.GetNamespace(), Name: name}, obj); err != nil {
 		return client.IgnoreNotFound(err)
 	}
-	if !metav1.IsControlledBy(cm, m) {
+	if !metav1.IsControlledBy(obj, m) {
 		return nil
 	}
-	err := r.Delete(ctx, cm, client.Preconditions{UID: &cm.UID})
+	uid := obj.GetUID()
+	err := r.Delete(ctx, obj, client.Preconditions{UID: &uid})
 	if errors.IsConflict(err) {
 		return nil
 	}

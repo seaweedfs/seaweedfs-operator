@@ -23,25 +23,27 @@ func TestSecurityConfigNeeded(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "no filer no admin no tls",
+			name: "no jwt no tls",
 			spec: seaweedv1.SeaweedSpec{Master: &seaweedv1.MasterSpec{Replicas: 1}},
 			want: false,
 		},
 		{
-			name: "filer only triggers config",
+			// A filer used to force the file into existence, which is what
+			// made [jwt.filer_signing] unconditional.
+			name: "filer alone does not trigger config",
 			spec: seaweedv1.SeaweedSpec{
 				Master: &seaweedv1.MasterSpec{Replicas: 1},
 				Filer:  &seaweedv1.FilerSpec{},
 			},
-			want: true,
+			want: false,
 		},
 		{
-			name: "admin only triggers config",
+			name: "admin alone does not trigger config",
 			spec: seaweedv1.SeaweedSpec{
 				Master: &seaweedv1.MasterSpec{Replicas: 1},
 				Admin:  &seaweedv1.AdminSpec{},
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "tls always triggers config",
@@ -50,6 +52,38 @@ func TestSecurityConfigNeeded(t *testing.T) {
 				TLS:    &seaweedv1.TLSSpec{Enabled: true},
 			},
 			want: true,
+		},
+		{
+			name: "filer write signing triggers config",
+			spec: seaweedv1.SeaweedSpec{
+				Master: &seaweedv1.MasterSpec{Replicas: 1},
+				Filer:  &seaweedv1.FilerSpec{},
+				SecurityConfig: &seaweedv1.SecurityConfigSpec{
+					JWTSigning: &seaweedv1.JWTSigningSpec{FilerWrite: true},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "volume write signing triggers config without a filer",
+			spec: seaweedv1.SeaweedSpec{
+				Master: &seaweedv1.MasterSpec{Replicas: 1},
+				SecurityConfig: &seaweedv1.SecurityConfigSpec{
+					JWTSigning: &seaweedv1.JWTSigningSpec{VolumeWrite: true},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "all flags off does not trigger config",
+			spec: seaweedv1.SeaweedSpec{
+				Master: &seaweedv1.MasterSpec{Replicas: 1},
+				Filer:  &seaweedv1.FilerSpec{},
+				SecurityConfig: &seaweedv1.SecurityConfigSpec{
+					JWTSigning: &seaweedv1.JWTSigningSpec{},
+				},
+			},
+			want: false,
 		},
 	}
 	for _, tc := range cases {
@@ -66,21 +100,84 @@ func TestSecurityConfigNeeded(t *testing.T) {
 }
 
 func TestRenderSecurityTOML(t *testing.T) {
-	t.Run("without TLS only emits jwt sections", func(t *testing.T) {
-		got := renderSecurityTOML("write-key", false)
-		if !strings.Contains(got, "[jwt.filer_signing]") {
-			t.Errorf("expected [jwt.filer_signing] section, got %q", got)
+	allKeys := jwtSigningKeys{
+		volumeWrite: "vw-key",
+		volumeRead:  "vr-key",
+		filerWrite:  "fw-key",
+		filerRead:   "fr-key",
+	}
+
+	t.Run("nothing enabled emits no jwt section", func(t *testing.T) {
+		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{}, allKeys, false)
+		if strings.Contains(got, "[jwt") {
+			t.Errorf("expected no [jwt.*] sections, got %q", got)
 		}
-		if !strings.Contains(got, `key = "write-key"`) {
-			t.Errorf("expected write-key value, got %q", got)
-		}
-		if strings.Contains(got, "[grpc") {
-			t.Errorf("expected no [grpc.*] sections without TLS, got %q", got)
+		for _, key := range []string{"vw-key", "vr-key", "fw-key", "fr-key"} {
+			if strings.Contains(got, key) {
+				t.Errorf("expected no key material for disabled sections, got %q", got)
+			}
 		}
 	})
 
-	t.Run("with TLS emits jwt and grpc sections", func(t *testing.T) {
-		got := renderSecurityTOML("write-key", true)
+	sections := []struct {
+		name    string
+		cfg     seaweedv1.JWTSigningSpec
+		section string
+		key     string
+	}{
+		{"volumeWrite", seaweedv1.JWTSigningSpec{VolumeWrite: true}, "[jwt.signing]", "vw-key"},
+		{"volumeRead", seaweedv1.JWTSigningSpec{VolumeRead: true}, "[jwt.signing.read]", "vr-key"},
+		{"filerWrite", seaweedv1.JWTSigningSpec{FilerWrite: true}, "[jwt.filer_signing]", "fw-key"},
+		{"filerRead", seaweedv1.JWTSigningSpec{FilerRead: true}, "[jwt.filer_signing.read]", "fr-key"},
+	}
+	for _, tc := range sections {
+		t.Run(tc.name+" renders only its own section", func(t *testing.T) {
+			got := renderSecurityTOML(tc.cfg, allKeys, false)
+			if !strings.Contains(got, tc.section+"\nkey = \""+tc.key+"\"") {
+				t.Errorf("expected %s with key %q, got %q", tc.section, tc.key, got)
+			}
+			for _, other := range sections {
+				if other.name == tc.name {
+					continue
+				}
+				if strings.Contains(got, other.key) {
+					t.Errorf("expected %s alone, but %s key leaked in: %q", tc.section, other.section, got)
+				}
+			}
+			if strings.Contains(got, "expires_after_seconds") {
+				t.Errorf("expected no expiry override without one configured, got %q", got)
+			}
+		})
+	}
+
+	t.Run("sub-section headers do not swallow their parent", func(t *testing.T) {
+		// The two share a prefix; each needs its own key.
+		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{VolumeWrite: true, VolumeRead: true}, allKeys, false)
+		if !strings.Contains(got, "[jwt.signing]\nkey = \"vw-key\"") || !strings.Contains(got, "[jwt.signing.read]\nkey = \"vr-key\"") {
+			t.Errorf("expected both volume sections with their own keys, got %q", got)
+		}
+	})
+
+	t.Run("only positive expiry overrides are written", func(t *testing.T) {
+		cfg := seaweedv1.JWTSigningSpec{
+			VolumeWrite: true,
+			FilerWrite:  true,
+			ExpiresAfterSeconds: &seaweedv1.JWTExpiresAfterSecondsSpec{
+				VolumeWrite: 30,
+				FilerWrite:  0,
+			},
+		}
+		got := renderSecurityTOML(cfg, allKeys, false)
+		if !strings.Contains(got, "[jwt.signing]\nkey = \"vw-key\"\nexpires_after_seconds = 30\n") {
+			t.Errorf("expected volume write expiry override, got %q", got)
+		}
+		if strings.Count(got, "expires_after_seconds") != 1 {
+			t.Errorf("expected exactly one expiry override (zero keeps weed defaults), got %q", got)
+		}
+	})
+
+	t.Run("with TLS emits grpc sections", func(t *testing.T) {
+		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{FilerWrite: true}, allKeys, true)
 		if !strings.Contains(got, "[jwt.filer_signing]") {
 			t.Errorf("expected [jwt.filer_signing] section, got %q", got)
 		}
@@ -92,21 +189,139 @@ func TestRenderSecurityTOML(t *testing.T) {
 		}
 	})
 
-	t.Run("never emits read-signing or volume jwt.signing", func(t *testing.T) {
-		// Shipping [jwt.filer_signing.read] makes the filer reject every
-		// unsigned GET — including the readiness/liveness probe, which
-		// crashloops the pod. [jwt.signing] would do the same to volume
-		// servers. The operator signs neither read JWT for any client, so
-		// neither section may ship. Catch any regression that re-introduces
-		// them.
-		for _, withTLS := range []bool{false, true} {
-			got := renderSecurityTOML("write-key", withTLS)
-			if strings.Contains(got, "[jwt.filer_signing.read]") {
-				t.Errorf("withTLS=%v: unexpected [jwt.filer_signing.read] section, got %q", withTLS, got)
-			}
-			if strings.Contains(got, "[jwt.signing]") {
-				t.Errorf("withTLS=%v: unexpected [jwt.signing] section, got %q", withTLS, got)
-			}
+	t.Run("TLS alone emits no jwt section", func(t *testing.T) {
+		// Enabling mTLS must not silently enable JWTs.
+		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{}, allKeys, true)
+		if strings.Contains(got, "[jwt") {
+			t.Errorf("expected no [jwt.*] sections for a TLS-only cluster, got %q", got)
+		}
+		if !strings.Contains(got, "[grpc]") {
+			t.Errorf("expected [grpc] section, got %q", got)
+		}
+	})
+}
+
+// Keys survive a reconcile only if the parser reads back what the renderer
+// wrote, same-prefix sections included.
+func TestParseJWTSigningKeysRoundTrip(t *testing.T) {
+	want := jwtSigningKeys{
+		volumeWrite: "vw-key",
+		volumeRead:  "vr-key",
+		filerWrite:  "fw-key",
+		filerRead:   "fr-key",
+	}
+	cfg := seaweedv1.JWTSigningSpec{VolumeWrite: true, VolumeRead: true, FilerWrite: true, FilerRead: true}
+	if got := parseJWTSigningKeys(renderSecurityTOML(cfg, want, true)); got != want {
+		t.Errorf("parseJWTSigningKeys round trip = %+v, want %+v", got, want)
+	}
+}
+
+// A lingering Secret still listing [jwt.filer_signing] reads as if the
+// cluster enforced it.
+func TestEnsureSecurityConfig_PrunesSecretWhenNoLongerNeeded(t *testing.T) {
+	m := newSecurityTestSeaweed()
+	r := securityTestReconciler(t, m)
+	ctx := context.Background()
+	key := client.ObjectKey{Name: SecurityConfigSecretName(m), Namespace: m.Namespace}
+
+	if _, _, err := r.ensureSecurityConfig(ctx, m); err != nil {
+		t.Fatalf("ensureSecurityConfig with filerWrite on: %v", err)
+	}
+	if err := r.Get(ctx, key, &corev1.Secret{}); err != nil {
+		t.Fatalf("expected the Secret to exist while filerWrite is on: %v", err)
+	}
+
+	m.Spec.SecurityConfig = nil
+	if _, _, err := r.ensureSecurityConfig(ctx, m); err != nil {
+		t.Fatalf("ensureSecurityConfig after turning signing off: %v", err)
+	}
+	if err := r.Get(ctx, key, &corev1.Secret{}); !apierrors.IsNotFound(err) {
+		t.Errorf("expected the security Secret to be deleted, got err=%v", err)
+	}
+}
+
+// A Secret on the generated name that this CR does not control is somebody
+// else's.
+func TestEnsureSecurityConfig_LeavesUnownedSecretAlone(t *testing.T) {
+	m := newSecurityTestSeaweed()
+	m.Spec.SecurityConfig = nil
+	foreign := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: SecurityConfigSecretName(m), Namespace: m.Namespace},
+		Data:       map[string][]byte{"security.toml": []byte("not ours")},
+	}
+	r := securityTestReconciler(t, m, foreign)
+
+	if _, _, err := r.ensureSecurityConfig(context.Background(), m); err != nil {
+		t.Fatalf("ensureSecurityConfig: %v", err)
+	}
+	if err := r.Get(context.Background(), client.ObjectKey{Name: foreign.Name, Namespace: foreign.Namespace}, &corev1.Secret{}); err != nil {
+		t.Errorf("expected an unowned Secret to be left alone, got err=%v", err)
+	}
+}
+
+// Nothing else in the pod template changes when a section is added to a
+// cluster that already mounts the file, so the annotation is what rolls it.
+func TestJWTSigningRevisionAnnotation(t *testing.T) {
+	seaweed := func(cfg *seaweedv1.JWTSigningSpec, tls bool) *seaweedv1.Seaweed {
+		m := &seaweedv1.Seaweed{
+			ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+			Spec:       seaweedv1.SeaweedSpec{Master: &seaweedv1.MasterSpec{Replicas: 1}},
+		}
+		if cfg != nil {
+			m.Spec.SecurityConfig = &seaweedv1.SecurityConfigSpec{JWTSigning: cfg}
+		}
+		if tls {
+			m.Spec.TLS = &seaweedv1.TLSSpec{Enabled: true}
+		}
+		return m
+	}
+
+	t.Run("absent when no security.toml is mounted", func(t *testing.T) {
+		got := withJWTSigningAnnotation(seaweed(nil, false), map[string]string{"user": "kept"})
+		if _, ok := got[jwtSigningAnnotation]; ok {
+			t.Errorf("expected no annotation without a security.toml mount, got %v", got)
+		}
+		if got["user"] != "kept" {
+			t.Errorf("expected user annotations preserved, got %v", got)
+		}
+	})
+
+	t.Run("names the enabled sections", func(t *testing.T) {
+		m := seaweed(&seaweedv1.JWTSigningSpec{
+			VolumeWrite:         true,
+			FilerWrite:          true,
+			ExpiresAfterSeconds: &seaweedv1.JWTExpiresAfterSecondsSpec{VolumeWrite: 30},
+		}, false)
+		got := withJWTSigningAnnotation(m, map[string]string{"user": "kept"})
+		if want := "volumeWrite=30,filerWrite"; got[jwtSigningAnnotation] != want {
+			t.Errorf("annotation = %q, want %q", got[jwtSigningAnnotation], want)
+		}
+		if got["user"] != "kept" {
+			t.Errorf("expected user annotations preserved, got %v", got)
+		}
+	})
+
+	t.Run("a TLS-only cluster is still marked", func(t *testing.T) {
+		// Otherwise a TLS cluster upgrading from an operator that always wrote
+		// [jwt.filer_signing] keeps the old key in memory: nothing restarts.
+		got := withJWTSigningAnnotation(seaweed(nil, true), nil)
+		if got[jwtSigningAnnotation] != "none" {
+			t.Errorf("annotation = %q, want %q", got[jwtSigningAnnotation], "none")
+		}
+	})
+
+	t.Run("changing a flag changes the value", func(t *testing.T) {
+		before := jwtSigningRevision(seaweed(&seaweedv1.JWTSigningSpec{FilerWrite: true}, false))
+		after := jwtSigningRevision(seaweed(&seaweedv1.JWTSigningSpec{FilerWrite: true, VolumeWrite: true}, false))
+		if before == after {
+			t.Errorf("expected the revision to change when a section is added, got %q twice", before)
+		}
+	})
+
+	t.Run("stable across identical specs", func(t *testing.T) {
+		cfg := &seaweedv1.JWTSigningSpec{VolumeRead: true, FilerRead: true}
+		if a, b := jwtSigningRevision(seaweed(cfg, false)), jwtSigningRevision(seaweed(cfg, true)); a != b {
+			t.Errorf("revision must not depend on anything but the jwt flags: %q vs %q", a, b)
 		}
 	})
 }
@@ -127,7 +342,12 @@ func securityTestReconciler(t *testing.T, objs ...client.Object) *SeaweedReconci
 func newSecurityTestSeaweed() *seaweedv1.Seaweed {
 	return &seaweedv1.Seaweed{
 		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
-		Spec:       seaweedv1.SeaweedSpec{Filer: &seaweedv1.FilerSpec{Replicas: 1}},
+		Spec: seaweedv1.SeaweedSpec{
+			Filer: &seaweedv1.FilerSpec{Replicas: 1},
+			SecurityConfig: &seaweedv1.SecurityConfigSpec{
+				JWTSigning: &seaweedv1.JWTSigningSpec{FilerWrite: true},
+			},
+		},
 	}
 }
 
@@ -147,6 +367,38 @@ func TestEnsureSecuritySecret_CreatesSecret(t *testing.T) {
 	}
 	if !strings.Contains(string(secret.Data["security.toml"]), "[jwt.filer_signing]") {
 		t.Errorf("expected jwt.filer_signing section in Secret, got %q", secret.Data["security.toml"])
+	}
+}
+
+// Sharing a key across sections would let a token minted for one guard pass
+// another.
+func TestEnsureSecuritySecret_DistinctKeyPerSection(t *testing.T) {
+	m := newSecurityTestSeaweed()
+	m.Spec.SecurityConfig.JWTSigning = &seaweedv1.JWTSigningSpec{
+		VolumeWrite: true, VolumeRead: true, FilerWrite: true, FilerRead: true,
+	}
+	r := securityTestReconciler(t, m)
+
+	if _, _, err := r.ensureSecuritySecret(context.Background(), m); err != nil {
+		t.Fatalf("ensureSecuritySecret: %v", err)
+	}
+	secret := &corev1.Secret{}
+	if err := r.Get(context.Background(), client.ObjectKey{Name: SecurityConfigSecretName(m), Namespace: m.Namespace}, secret); err != nil {
+		t.Fatalf("get security Secret: %v", err)
+	}
+
+	keys := parseJWTSigningKeys(string(secret.Data["security.toml"]))
+	seen := map[string]string{}
+	for _, s := range jwtSections {
+		got := *s.key(&keys)
+		if got == "" {
+			t.Errorf("section %s: expected a generated key, got none", s.name)
+			continue
+		}
+		if other, dup := seen[got]; dup {
+			t.Errorf("section %s reuses the key of %s", s.name, other)
+		}
+		seen[got] = s.name
 	}
 }
 
@@ -200,8 +452,7 @@ func TestEnsureSecuritySecret_MigratesLegacyConfigMap(t *testing.T) {
 	if !strings.Contains(got, `key = "legacy-write"`) {
 		t.Errorf("expected legacy write key preserved, got %q", got)
 	}
-	// The legacy read key is intentionally dropped: [jwt.filer_signing.read]
-	// crashloops the filer probe and nothing signs read JWTs.
+	// This CR only asks for filerWrite, so the read section goes with its key.
 	if strings.Contains(got, `key = "legacy-read"`) || strings.Contains(got, "[jwt.filer_signing.read]") {
 		t.Errorf("expected legacy read key dropped, got %q", got)
 	}

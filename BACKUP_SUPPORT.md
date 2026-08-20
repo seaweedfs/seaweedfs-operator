@@ -180,7 +180,8 @@ is scoped with `-dirPrefix`.
 
 Snapshot/restore Jobs and mirror Deployments mount the cluster's `security.toml`
 and certificates the same way the core components do, so they work on clusters
-with `spec.tls.enabled: true`.
+with `spec.tls.enabled: true` — and pick up the JWT signing keys from
+`spec.securityConfig.jwtSigning` along with them.
 
 ## RBAC
 

@@ -24,8 +24,8 @@ limitations under the License.
 // default self-signed issuer).
 //
 // security.toml itself is provisioned as a Secret rather than a ConfigMap:
-// it carries the jwt.filer_signing HMAC keys, which are credentials (anyone
-// holding them can mint valid JWTs), so they must not sit in a ConfigMap.
+// it carries the [jwt.*] HMAC keys, which are credentials (anyone holding
+// them can mint valid JWTs), so they must not sit in a ConfigMap.
 //
 // We talk to cert-manager via unstructured.Unstructured instead of taking
 // a hard import dependency on the cert-manager Go module. Pulling in
@@ -146,27 +146,106 @@ func (r *SeaweedReconciler) ensureTLS(ctx context.Context, m *seaweedv1.Seaweed)
 	return ReconcileResult(nil)
 }
 
-// ensureSecurityConfig provisions the security.toml Secret whenever the
-// filer or admin server is in spec, regardless of TLS state. The filer needs
-// jwt.filer_signing.key to register the IAM gRPC service the Admin UI Users
-// tab calls; the admin needs the same key to sign Bearer tokens. Bundling
-// those JWT keys with cert-manager mTLS would force every operator user that
-// enables Admin to also pull in cert-manager just to make the Users tab work.
+// ensureSecurityConfig provisions the security.toml Secret when the CR asks
+// for JWT keys, mTLS material, or both, and drops it once neither is left —
+// stale keys no component mounts still read as if the cluster enforced them.
 func (r *SeaweedReconciler) ensureSecurityConfig(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	if !securityConfigNeeded(m) {
-		return ReconcileResult(nil)
+		if err := r.pruneOwnedSecret(ctx, m, SecurityConfigSecretName(m)); err != nil {
+			return ReconcileResult(err)
+		}
+		return ReconcileResult(r.pruneOwnedConfigMap(ctx, m, SecurityConfigSecretName(m)))
 	}
 	return r.ensureSecuritySecret(ctx, m)
 }
 
-// securityConfigNeeded reports whether the security.toml Secret should
-// exist for this CR. True when filer or admin is in spec, or whenever TLS
-// is enabled (the [grpc.*] sections live in the same file).
+// securityConfigNeeded reports whether the security.toml Secret should exist:
+// TLS puts the [grpc.*] sections in the same file. Nothing else in spec
+// implies it — rendering a section nobody asked for enforces a JWT nobody
+// opted into.
 func securityConfigNeeded(m *seaweedv1.Seaweed) bool {
-	if tlsEnabled(m) {
-		return true
+	return tlsEnabled(m) || jwtSigningEnabled(m)
+}
+
+func jwtSigningConfig(m *seaweedv1.Seaweed) seaweedv1.JWTSigningSpec {
+	if m.Spec.SecurityConfig == nil || m.Spec.SecurityConfig.JWTSigning == nil {
+		return seaweedv1.JWTSigningSpec{}
 	}
-	return m.Spec.Filer != nil || m.Spec.Admin != nil
+	return *m.Spec.SecurityConfig.JWTSigning
+}
+
+func jwtSigningExpiry(cfg seaweedv1.JWTSigningSpec) seaweedv1.JWTExpiresAfterSecondsSpec {
+	if cfg.ExpiresAfterSeconds == nil {
+		return seaweedv1.JWTExpiresAfterSecondsSpec{}
+	}
+	return *cfg.ExpiresAfterSeconds
+}
+
+func jwtSigningEnabled(m *seaweedv1.Seaweed) bool {
+	cfg := jwtSigningConfig(m)
+	for _, s := range jwtSections {
+		if s.enabled(cfg) {
+			return true
+		}
+	}
+	return false
+}
+
+// jwtSigningKeys carries the HMAC key of every [jwt.*] section. Only rendered
+// sections have one — there is nowhere else to keep a key.
+type jwtSigningKeys struct {
+	volumeWrite string
+	volumeRead  string
+	filerWrite  string
+	filerRead   string
+}
+
+// jwtSection ties one security.toml section to the spec field that turns it
+// on and its slot in jwtSigningKeys. Rendering, key preservation and the pod
+// annotation all walk this table.
+type jwtSection struct {
+	// name is the TOML header, field the JSON name used in the annotation.
+	name    string
+	field   string
+	comment string
+	enabled func(seaweedv1.JWTSigningSpec) bool
+	expires func(seaweedv1.JWTExpiresAfterSecondsSpec) int32
+	key     func(*jwtSigningKeys) *string
+}
+
+var jwtSections = []jwtSection{
+	{
+		name:    "jwt.signing",
+		field:   "volumeWrite",
+		comment: "# the master signs upload tokens; the volume server rejects unsigned writes",
+		enabled: func(s seaweedv1.JWTSigningSpec) bool { return s.VolumeWrite },
+		expires: func(e seaweedv1.JWTExpiresAfterSecondsSpec) int32 { return e.VolumeWrite },
+		key:     func(k *jwtSigningKeys) *string { return &k.volumeWrite },
+	},
+	{
+		name:    "jwt.signing.read",
+		field:   "volumeRead",
+		comment: "# the volume server requires a signed token on reads too",
+		enabled: func(s seaweedv1.JWTSigningSpec) bool { return s.VolumeRead },
+		expires: func(e seaweedv1.JWTExpiresAfterSecondsSpec) int32 { return e.VolumeRead },
+		key:     func(k *jwtSigningKeys) *string { return &k.volumeRead },
+	},
+	{
+		name:    "jwt.filer_signing",
+		field:   "filerWrite",
+		comment: "# the filer rejects unsigned HTTP writes and unsigned IAM gRPC calls",
+		enabled: func(s seaweedv1.JWTSigningSpec) bool { return s.FilerWrite },
+		expires: func(e seaweedv1.JWTExpiresAfterSecondsSpec) int32 { return e.FilerWrite },
+		key:     func(k *jwtSigningKeys) *string { return &k.filerWrite },
+	},
+	{
+		name:    "jwt.filer_signing.read",
+		field:   "filerRead",
+		comment: "# the filer rejects unsigned HTTP reads too; the S3 gateway signs its own",
+		enabled: func(s seaweedv1.JWTSigningSpec) bool { return s.FilerRead },
+		expires: func(e seaweedv1.JWTExpiresAfterSecondsSpec) int32 { return e.FilerRead },
+		key:     func(k *jwtSigningKeys) *string { return &k.filerRead },
+	},
 }
 
 // issuerRefForServerCert picks either the user-supplied issuer or the
@@ -289,20 +368,24 @@ func (r *SeaweedReconciler) ensureServerCertificate(ctx context.Context, m *seaw
 
 // ensureSecuritySecret writes the security.toml that every component reads
 // via -config_dir. All [grpc.<component>] stanzas point at the single shared
-// cert/key pair. It is a Secret rather than a ConfigMap because the
-// jwt.filer_signing keys it carries are HMAC credentials.
+// cert/key pair. It is a Secret because the JWT keys are HMAC credentials.
 //
-// JWT keys are generated once and preserved across reconciliations by reading
-// the existing material before rewriting it. This avoids silently rotating
-// JWT signing keys on every reconcile, which would invalidate live tokens.
+// Keys are read back before rewriting so a reconcile never rotates them out
+// from under live tokens.
 func (r *SeaweedReconciler) ensureSecuritySecret(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	name := SecurityConfigSecretName(m)
-	jwtFilerWrite, fromLegacyConfigMap, err := r.existingJWTSigningKeys(ctx, m, name)
+	keys, fromLegacyConfigMap, err := r.existingJWTSigningKeys(ctx, m, name)
 	if err != nil {
 		return ReconcileResult(err)
 	}
-	if jwtFilerWrite == "" {
-		jwtFilerWrite = randKey()
+	cfg := jwtSigningConfig(m)
+	for _, s := range jwtSections {
+		if !s.enabled(cfg) {
+			continue
+		}
+		if k := s.key(&keys); *k == "" {
+			*k = randKey()
+		}
 	}
 
 	secret := &corev1.Secret{
@@ -313,7 +396,7 @@ func (r *SeaweedReconciler) ensureSecuritySecret(ctx context.Context, m *seaweed
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			"security.toml": []byte(renderSecurityTOML(jwtFilerWrite, tlsEffective(m))),
+			"security.toml": []byte(renderSecurityTOML(cfg, keys, tlsEffective(m))),
 		},
 	}
 	if err := controllerutil.SetControllerReference(m, secret, r.Scheme); err != nil {
@@ -333,34 +416,40 @@ func (r *SeaweedReconciler) ensureSecuritySecret(ctx context.Context, m *seaweed
 	return ReconcileResult(nil)
 }
 
-// existingJWTSigningKeys returns the jwt.filer_signing write key already
-// provisioned for m, so a reconcile preserves it instead of rotating. It
-// prefers the security Secret and falls back to the legacy ConfigMap (operator
-// versions before security.toml moved to a Secret), keeping the key stable
-// across the upgrade. fromLegacyConfigMap is true only when the key came from
-// that ConfigMap, signalling the caller to clean it up. An empty string means
-// none exists yet — the caller generates a fresh one.
-func (r *SeaweedReconciler) existingJWTSigningKeys(ctx context.Context, m *seaweedv1.Seaweed, name string) (write string, fromLegacyConfigMap bool, err error) {
+// existingJWTSigningKeys returns the JWT signing keys already provisioned for
+// m. It prefers the security Secret and falls back to the legacy ConfigMap
+// (operator versions before security.toml moved to a Secret), keeping keys
+// stable across that upgrade; fromLegacyConfigMap then tells the caller to
+// clean the ConfigMap up. An empty key means the caller mints a fresh one.
+func (r *SeaweedReconciler) existingJWTSigningKeys(ctx context.Context, m *seaweedv1.Seaweed, name string) (keys jwtSigningKeys, fromLegacyConfigMap bool, err error) {
 	key := client.ObjectKey{Name: name, Namespace: m.Namespace}
 
 	secret := &corev1.Secret{}
 	err = r.Get(ctx, key, secret)
 	if err == nil {
-		return extractTOMLKey(string(secret.Data["security.toml"]), "jwt.filer_signing", "key"), false, nil
+		return parseJWTSigningKeys(string(secret.Data["security.toml"])), false, nil
 	}
 	if !apierrors.IsNotFound(err) {
-		return "", false, err
+		return jwtSigningKeys{}, false, err
 	}
 
 	cm := &corev1.ConfigMap{}
 	err = r.Get(ctx, key, cm)
 	if err == nil {
-		return extractTOMLKey(cm.Data["security.toml"], "jwt.filer_signing", "key"), true, nil
+		return parseJWTSigningKeys(cm.Data["security.toml"]), true, nil
 	}
 	if apierrors.IsNotFound(err) {
-		return "", false, nil
+		return jwtSigningKeys{}, false, nil
 	}
-	return "", false, err
+	return jwtSigningKeys{}, false, err
+}
+
+func parseJWTSigningKeys(toml string) jwtSigningKeys {
+	var keys jwtSigningKeys
+	for _, s := range jwtSections {
+		*s.key(&keys) = extractTOMLKey(toml, s.name, "key")
+	}
+	return keys
 }
 
 // deleteLegacySecurityConfigMap removes the pre-Secret security.toml ConfigMap
@@ -376,23 +465,26 @@ func (r *SeaweedReconciler) deleteLegacySecurityConfigMap(ctx context.Context, n
 	return nil
 }
 
-// renderSecurityTOML emits the [jwt.filer_signing] section always (the filer
-// needs it to register the IAM gRPC service, admin needs it to sign Bearer
-// tokens) and the [grpc.*] mTLS sections only when withTLS is true.
-//
-// [jwt.filer_signing.read] is intentionally omitted, for the same reason as
-// the volume-side [jwt.signing*] sections: emitting it makes the filer reject
-// every unsigned GET, but the operator never signs read JWTs for any client.
-// The readiness/liveness probe is a plain GET /, so a read-signing key would
-// answer it with 401 and crashloop the filer.
-func renderSecurityTOML(jwtFilerWrite string, withTLS bool) string {
+// renderSecurityTOML emits one [jwt.*] section per flag the CR turns on, and
+// the [grpc.*] mTLS sections when withTLS is true. seaweedfs treats a missing
+// key as "do not check", so leaving a section out is what disables it, and a
+// zero expiry keeps seaweedfs' own default.
+func renderSecurityTOML(cfg seaweedv1.JWTSigningSpec, keys jwtSigningKeys, withTLS bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, `# generated by seaweedfs-operator — do not edit
+	b.WriteString(`# generated by seaweedfs-operator — do not edit
 # this file is read by master, volume server, filer, and admin
+`)
 
-[jwt.filer_signing]
-key = %q
-`, jwtFilerWrite)
+	expiry := jwtSigningExpiry(cfg)
+	for _, s := range jwtSections {
+		if !s.enabled(cfg) {
+			continue
+		}
+		fmt.Fprintf(&b, "\n%s\n[%s]\nkey = %q\n", s.comment, s.name, *s.key(&keys))
+		if seconds := s.expires(expiry); seconds > 0 {
+			fmt.Fprintf(&b, "expires_after_seconds = %d\n", seconds)
+		}
+	}
 
 	if !withTLS {
 		return b.String()

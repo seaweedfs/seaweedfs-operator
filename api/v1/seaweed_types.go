@@ -112,6 +112,66 @@ type TLSIssuerRef struct {
 	Group string `json:"group,omitempty"`
 }
 
+// SecurityConfigSpec mirrors the Helm chart's
+// `global.seaweedfs.securityConfig`: the parts of security.toml that are not
+// TLS material.
+type SecurityConfigSpec struct {
+	// +optional
+	JWTSigning *JWTSigningSpec `json:"jwtSigning,omitempty"`
+}
+
+// JWTSigningSpec turns individual `[jwt.*]` sections of security.toml on. A
+// section that is off is not rendered, and seaweedfs does not enforce what it
+// cannot read. Keys are generated per section and preserved; turning one off
+// and on again mints a fresh key.
+type JWTSigningSpec struct {
+	// VolumeWrite renders `[jwt.signing]`: the volume server rejects writes
+	// without the token the master signs per assigned file id.
+	// +optional
+	VolumeWrite bool `json:"volumeWrite,omitempty"`
+
+	// VolumeRead renders `[jwt.signing.read]`: signed reads on the volume
+	// server, which weed mount and the CSI driver then need the key for.
+	// +optional
+	VolumeRead bool `json:"volumeRead,omitempty"`
+
+	// FilerWrite renders `[jwt.filer_signing]`: the filer rejects unsigned
+	// HTTP writes and unsigned IAM gRPC calls. The filer UI's upload form does
+	// not sign, so it stops working.
+	// +optional
+	FilerWrite bool `json:"filerWrite,omitempty"`
+
+	// FilerRead renders `[jwt.filer_signing.read]`: unsigned HTTP reads are
+	// rejected too, though the S3 gateway signs its own.
+	// +optional
+	FilerRead bool `json:"filerRead,omitempty"`
+
+	// ExpiresAfterSeconds overrides per-section token lifetimes. Zero keeps
+	// seaweedfs' own: 10s for writes, 60s for reads.
+	// +optional
+	ExpiresAfterSeconds *JWTExpiresAfterSecondsSpec `json:"expiresAfterSeconds,omitempty"`
+}
+
+// JWTExpiresAfterSecondsSpec carries per-section `expires_after_seconds`
+// overrides. Zero leaves a section without one.
+type JWTExpiresAfterSecondsSpec struct {
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	VolumeWrite int32 `json:"volumeWrite,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	VolumeRead int32 `json:"volumeRead,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	FilerWrite int32 `json:"filerWrite,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	FilerRead int32 `json:"filerRead,omitempty"`
+}
+
 // SeaweedSpec defines the desired state of Seaweed
 type SeaweedSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -120,6 +180,10 @@ type SeaweedSpec struct {
 	// TLS configures mTLS between SeaweedFS components. See TLSSpec.
 	// +optional
 	TLS *TLSSpec `json:"tls,omitempty"`
+
+	// SecurityConfig configures the JWT signing keys in security.toml.
+	// +optional
+	SecurityConfig *SecurityConfigSpec `json:"securityConfig,omitempty"`
 
 	// MetricsAddress is the Prometheus Pushgateway to push metrics to, as
 	// <host>:<port>. Set on the master, which passes it to the rest of the

@@ -87,6 +87,10 @@ func TestReconcile_SucceedsWithOnlyManagerRolePermissions(t *testing.T) {
 				},
 			},
 			Filer: &seaweedv1.FilerSpec{Replicas: 1},
+			// The security Secret exists only when something asks for it.
+			SecurityConfig: &seaweedv1.SecurityConfigSpec{
+				JWTSigning: &seaweedv1.JWTSigningSpec{FilerWrite: true},
+			},
 		},
 	}
 	if err := admin.Create(ctx, cr); err != nil {

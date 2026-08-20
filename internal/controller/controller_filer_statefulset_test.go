@@ -52,55 +52,91 @@ func TestBuildFilerStartupScript_MaxMB(t *testing.T) {
 	})
 }
 
-// On a fresh, no-TLS install the operator used to mount a security.toml that
-// enabled [jwt.filer_signing.read], which made the filer demand a signed JWT
-// on every GET. The readiness/liveness probe is an unauthenticated GET / on
-// the filer HTTP port, so the filer answered 401 ("wrong jwt"), the probe
-// failed, and the pod landed in CrashLoopBackOff.
-//
-// The invariant: the filer must not be probed with an unauthenticated read
-// while the security.toml mounted into the same pod requires JWT-signed reads.
-func TestFilerProbeNotRejectedByReadJWT(t *testing.T) {
-	// The minimal CR from the issue: filer present, no TLS, no admin.
+// Without the marker on the pod template, turning a section on changes only
+// the Secret and the running filer never re-reads it.
+func TestFilerStatefulSetCarriesJWTSigningAnnotation(t *testing.T) {
 	m := &seaweedv1.Seaweed{
-		ObjectMeta: metav1.ObjectMeta{Name: "seaweedfs", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
 		Spec: seaweedv1.SeaweedSpec{
-			Image:  "chrislusf/seaweedfs:3.96",
 			Master: &seaweedv1.MasterSpec{Replicas: 1},
-			Volume: &seaweedv1.VolumeSpec{Replicas: 1},
 			Filer:  &seaweedv1.FilerSpec{Replicas: 1},
 		},
 	}
 	r := &SeaweedReconciler{}
-	sts := r.createFilerStatefulSet(m)
 
-	c := filerContainer(t, &sts.Spec.Template.Spec)
-
-	// The probe the kubelet runs against the filer: an unauthenticated GET /
-	// on the filer HTTP port. It carries no Authorization header.
-	probe := c.ReadinessProbe
-	if probe == nil || probe.HTTPGet == nil {
-		t.Fatalf("expected an HTTP readiness probe on the filer container")
-	}
-	unauthenticatedReadProbe := probe.HTTPGet.Path == "/" &&
-		probe.HTTPGet.Port.IntValue() == seaweedv1.FilerHTTPPort
-	if !unauthenticatedReadProbe {
-		t.Fatalf("expected probe GET / on port %d, got %s:%s",
-			seaweedv1.FilerHTTPPort, probe.HTTPGet.Path, probe.HTTPGet.Port.String())
+	if got := r.createFilerStatefulSet(m).Spec.Template.Annotations; got[jwtSigningAnnotation] != "" {
+		t.Errorf("expected no jwt-signing annotation without a security.toml mount, got %v", got)
 	}
 
-	// The security.toml the operator mounts into this very pod, rendered for a
-	// no-TLS cluster exactly as ensureSecuritySecret writes it.
-	if !securityConfigNeeded(m) {
-		t.Fatalf("precondition: expected security.toml to be mounted for a filer CR")
+	m.Spec.SecurityConfig = &seaweedv1.SecurityConfigSpec{
+		JWTSigning: &seaweedv1.JWTSigningSpec{FilerWrite: true},
 	}
-	securityTOML := renderSecurityTOML("write-key", tlsEffective(m))
-	readJWTRequired := strings.Contains(securityTOML, "[jwt.filer_signing.read]")
+	if got := r.createFilerStatefulSet(m).Spec.Template.Annotations[jwtSigningAnnotation]; got != "filerWrite" {
+		t.Errorf("pod template annotation = %q, want %q", got, "filerWrite")
+	}
+}
 
-	// The bug was both holding at once: every probe GET answered with 401.
-	if unauthenticatedReadProbe && readJWTRequired {
-		t.Fatalf("filer is probed with an unauthenticated GET / but the mounted "+
-			"security.toml enables [jwt.filer_signing.read], so the probe gets "+
-			"401 \"wrong jwt\" and the pod CrashLoopBackOffs.\nsecurity.toml:\n%s", securityTOML)
+// The filer must never be probed with a request the security.toml mounted
+// into the same pod can reject. Builds before seaweedfs exempted GET / from
+// the read guard answer it 401 once [jwt.filer_signing.read] is set, which
+// CrashLoopBackOffs the pod; /healthz is outside the guard on every build.
+func TestFilerProbeNotRejectedByReadJWT(t *testing.T) {
+	cases := []struct {
+		name      string
+		jwt       *seaweedv1.JWTSigningSpec
+		wantPath  string
+		wantGuard bool
+	}{
+		{name: "no jwt signing", jwt: nil, wantPath: "/", wantGuard: false},
+		{name: "filer write only", jwt: &seaweedv1.JWTSigningSpec{FilerWrite: true}, wantPath: "/", wantGuard: false},
+		{name: "filer read", jwt: &seaweedv1.JWTSigningSpec{FilerRead: true}, wantPath: "/healthz", wantGuard: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &seaweedv1.Seaweed{
+				ObjectMeta: metav1.ObjectMeta{Name: "seaweedfs", Namespace: "default"},
+				Spec: seaweedv1.SeaweedSpec{
+					Image:  "chrislusf/seaweedfs:3.96",
+					Master: &seaweedv1.MasterSpec{Replicas: 1},
+					Volume: &seaweedv1.VolumeSpec{Replicas: 1},
+					Filer:  &seaweedv1.FilerSpec{Replicas: 1},
+				},
+			}
+			if tc.jwt != nil {
+				m.Spec.SecurityConfig = &seaweedv1.SecurityConfigSpec{JWTSigning: tc.jwt}
+			}
+			r := &SeaweedReconciler{}
+			sts := r.createFilerStatefulSet(m)
+
+			c := filerContainer(t, &sts.Spec.Template.Spec)
+
+			// The kubelet's probe carries no Authorization header.
+			for _, probe := range []struct {
+				kind string
+				p    *corev1.Probe
+			}{{"readiness", c.ReadinessProbe}, {"liveness", c.LivenessProbe}} {
+				if probe.p == nil || probe.p.HTTPGet == nil {
+					t.Fatalf("expected an HTTP %s probe on the filer container", probe.kind)
+				}
+				if probe.p.HTTPGet.Path != tc.wantPath || probe.p.HTTPGet.Port.IntValue() != seaweedv1.FilerHTTPPort {
+					t.Fatalf("expected %s probe GET %s on port %d, got %s:%s", probe.kind, tc.wantPath,
+						seaweedv1.FilerHTTPPort, probe.p.HTTPGet.Path, probe.p.HTTPGet.Port.String())
+				}
+			}
+
+			// The security.toml mounted into this very pod.
+			securityTOML := renderSecurityTOML(jwtSigningConfig(m), jwtSigningKeys{filerWrite: "w", filerRead: "r"}, tlsEffective(m))
+			readJWTRequired := strings.Contains(securityTOML, "[jwt.filer_signing.read]")
+			if readJWTRequired != tc.wantGuard {
+				t.Fatalf("[jwt.filer_signing.read] rendered = %v, want %v:\n%s", readJWTRequired, tc.wantGuard, securityTOML)
+			}
+
+			// The bug was both holding at once.
+			if readJWTRequired && c.ReadinessProbe.HTTPGet.Path == "/" {
+				t.Fatalf("filer is probed with an unauthenticated GET / but the mounted "+
+					"security.toml enables [jwt.filer_signing.read], so the probe gets "+
+					"401 \"wrong jwt\" and the pod CrashLoopBackOffs.\nsecurity.toml:\n%s", securityTOML)
+			}
+		})
 	}
 }

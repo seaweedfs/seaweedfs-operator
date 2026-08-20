@@ -135,6 +135,12 @@ func (c *IAMClient) lockUser(name string) func() {
 	return iamUserLocks.lock(c.filerGrpcAddress + "\x00" + name)
 }
 
+// IAMCredential is one access key / secret key pair registered on an identity.
+type IAMCredential struct {
+	AccessKey string
+	SecretKey string
+}
+
 // IAMUser is the subset of an IAM identity the operator reconciles. It is a
 // plain domain struct so the iam_pb types stay confined to this package.
 type IAMUser struct {
@@ -143,7 +149,27 @@ type IAMUser struct {
 	DisplayName string
 	Email       string
 	PolicyNames []string
-	AccessKeys  []string
+	Credentials []IAMCredential
+}
+
+// Credential returns the credential registered under accessKey, so a caller
+// can tell an unregistered key from one whose secret key has drifted.
+func (u *IAMUser) Credential(accessKey string) (IAMCredential, bool) {
+	for _, c := range u.Credentials {
+		if c.AccessKey == accessKey {
+			return c, true
+		}
+	}
+	return IAMCredential{}, false
+}
+
+// AccessKeys returns the identity's access key ids.
+func (u *IAMUser) AccessKeys() []string {
+	keys := make([]string, 0, len(u.Credentials))
+	for _, c := range u.Credentials {
+		keys = append(keys, c.AccessKey)
+	}
+	return keys
 }
 
 // GetUser fetches an identity. The raw gRPC error (codes.NotFound when the
@@ -222,6 +248,38 @@ func (c *IAMClient) CreateAccessKey(ctx context.Context, user, accessKey, secret
 				Status:    iam.AccessKeyStatusActive,
 			},
 		})
+		return err
+	})
+}
+
+// UpdateAccessKey replaces the secret key of an access key already registered
+// on an identity, leaving its other credentials and policies untouched. The
+// IAM service has no update-credential RPC and rejects re-creating an existing
+// access key, so the pair is rewritten through UpdateUser. Returns a
+// codes.NotFound error when the identity does not hold accessKey.
+func (c *IAMClient) UpdateAccessKey(ctx context.Context, user, accessKey, secretKey string) error {
+	defer c.lockUser(user)()
+	return c.withClient(ctx, func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error {
+		resp, err := client.GetUser(ctx, &iam_pb.GetUserRequest{Username: user})
+		if err != nil {
+			return err
+		}
+		id := resp.GetIdentity()
+		if id == nil {
+			return fmt.Errorf("user %q returned empty identity", user)
+		}
+		found := false
+		for _, cred := range id.Credentials {
+			if cred.AccessKey == accessKey {
+				cred.SecretKey = secretKey
+				found = true
+				break
+			}
+		}
+		if !found {
+			return status.Errorf(codes.NotFound, "access key %s not found on user %s", accessKey, user)
+		}
+		_, err = client.UpdateUser(ctx, &iam_pb.UpdateUserRequest{Username: user, Identity: id})
 		return err
 	})
 }
@@ -411,7 +469,7 @@ func identityToUser(id *iam_pb.Identity) *IAMUser {
 		u.Email = id.Account.EmailAddress
 	}
 	for _, cred := range id.Credentials {
-		u.AccessKeys = append(u.AccessKeys, cred.AccessKey)
+		u.Credentials = append(u.Credentials, IAMCredential{AccessKey: cred.AccessKey, SecretKey: cred.SecretKey})
 	}
 	return u
 }

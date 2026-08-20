@@ -151,10 +151,11 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return r.reconcileKey(ctx, &cred, user, secretName, secretNamespace, iamUser, admin)
 }
 
-// reconcileKey ensures the identity owns exactly the access key recorded in
-// the Secret. It adopts a user-populated Secret, generates and stores a fresh
-// key pair when the Secret is missing/incomplete, and removes a previously
-// generated key it is replacing.
+// reconcileKey ensures the identity owns exactly the key pair recorded in the
+// Secret. It adopts a user-populated Secret, generates and stores a fresh key
+// pair when the Secret is missing/incomplete, applies a rotated secret key
+// onto the registered access key, and removes a previously generated key it
+// is replacing.
 func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seaweedv1.S3Credentials, user, secretName, secretNamespace string, iamUser *swadmin.IAMUser, admin IAMAdmin) (ctrl.Result, error) {
 	akField, skField := credentialFields(cred)
 
@@ -198,10 +199,17 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 		}
 	}
 
-	// Register the key on the identity if it is not already present.
-	if !containsString(iamUser.AccessKeys, desiredAK) {
+	// Reconcile the identity against the pair the Secret holds: register the
+	// key when absent, rewrite its secret key when only that field rotated —
+	// the access key id stays, so there is no superseded pair to revoke below.
+	switch existing, present := iamUser.Credential(desiredAK); {
+	case !present:
 		if err := admin.CreateAccessKey(ctx, user, desiredAK, desiredSK); err != nil {
 			return r.fail(ctx, cred, "CreateAccessKeyFailed", err.Error())
+		}
+	case existing.SecretKey != desiredSK:
+		if err := admin.UpdateAccessKey(ctx, user, desiredAK, desiredSK); err != nil {
+			return r.fail(ctx, cred, "UpdateAccessKeyFailed", err.Error())
 		}
 	}
 
@@ -405,15 +413,6 @@ func credentialFields(cred *seaweedv1.S3Credentials) (akField, skField string) {
 		skField = defaultSecretKeyField
 	}
 	return akField, skField
-}
-
-func containsString(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }
 
 // SetupWithManager wires the reconciler into the manager.

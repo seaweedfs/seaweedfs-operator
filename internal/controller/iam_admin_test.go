@@ -66,12 +66,11 @@ func TestMapIAMError_PassesThroughOther(t *testing.T) {
 // ErrIAMNotFound when absent; DeleteUser/DeleteAccessKey/DeletePolicy are
 // idempotent; AttachPolicy/DetachPolicy require the user to exist.
 type fakeIAMAdmin struct {
-	mu         sync.Mutex
-	users      map[string]*swadmin.IAMUser
-	policies   map[string]string
-	secretKeys map[string]string // accessKey -> secretKey, to assert generation/adoption
-	providers  map[string]string // issuerURL -> arn
-	calls      []string
+	mu        sync.Mutex
+	users     map[string]*swadmin.IAMUser
+	policies  map[string]string
+	providers map[string]string // issuerURL -> arn
+	calls     []string
 
 	createUserErr   error
 	createAKErr     error
@@ -82,10 +81,9 @@ type fakeIAMAdmin struct {
 
 func newFakeIAMAdmin() *fakeIAMAdmin {
 	return &fakeIAMAdmin{
-		users:      map[string]*swadmin.IAMUser{},
-		policies:   map[string]string{},
-		secretKeys: map[string]string{},
-		providers:  map[string]string{},
+		users:     map[string]*swadmin.IAMUser{},
+		policies:  map[string]string{},
+		providers: map[string]string{},
 	}
 }
 
@@ -105,7 +103,7 @@ func (f *fakeIAMAdmin) GetUser(_ context.Context, name string) (*swadmin.IAMUser
 		return nil, ErrIAMNotFound
 	}
 	cp := *u
-	cp.AccessKeys = append([]string(nil), u.AccessKeys...)
+	cp.Credentials = append([]swadmin.IAMCredential(nil), u.Credentials...)
 	cp.PolicyNames = append([]string(nil), u.PolicyNames...)
 	return &cp, nil
 }
@@ -157,15 +155,29 @@ func (f *fakeIAMAdmin) CreateAccessKey(_ context.Context, user, accessKey, secre
 	if !ok {
 		return ErrIAMNotFound
 	}
-	for _, existing := range u.AccessKeys {
-		if existing == accessKey {
-			// Mirror the IAM service, which rejects a duplicate access key.
-			return errors.New("access key already exists")
+	if _, exists := u.Credential(accessKey); exists {
+		// Mirror the IAM service, which rejects a duplicate access key.
+		return errors.New("access key already exists")
+	}
+	u.Credentials = append(u.Credentials, swadmin.IAMCredential{AccessKey: accessKey, SecretKey: secretKey})
+	return nil
+}
+
+func (f *fakeIAMAdmin) UpdateAccessKey(_ context.Context, user, accessKey, secretKey string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("UpdateAccessKey:" + user + ":" + accessKey)
+	u, ok := f.users[user]
+	if !ok {
+		return ErrIAMNotFound
+	}
+	for i := range u.Credentials {
+		if u.Credentials[i].AccessKey == accessKey {
+			u.Credentials[i].SecretKey = secretKey
+			return nil
 		}
 	}
-	u.AccessKeys = append(u.AccessKeys, accessKey)
-	f.secretKeys[accessKey] = secretKey
-	return nil
+	return ErrIAMNotFound
 }
 
 func (f *fakeIAMAdmin) DeleteAccessKey(_ context.Context, user, accessKey string) error {
@@ -176,14 +188,13 @@ func (f *fakeIAMAdmin) DeleteAccessKey(_ context.Context, user, accessKey string
 	if !ok {
 		return nil
 	}
-	kept := u.AccessKeys[:0]
-	for _, ak := range u.AccessKeys {
-		if ak != accessKey {
-			kept = append(kept, ak)
+	kept := u.Credentials[:0]
+	for _, c := range u.Credentials {
+		if c.AccessKey != accessKey {
+			kept = append(kept, c)
 		}
 	}
-	u.AccessKeys = kept
-	delete(f.secretKeys, accessKey)
+	u.Credentials = kept
 	return nil
 }
 
@@ -289,7 +300,20 @@ func (f *fakeIAMAdmin) userKeys(name string) []string {
 	if !ok {
 		return nil
 	}
-	return append([]string(nil), u.AccessKeys...)
+	return u.AccessKeys()
+}
+
+// secretKeyFor returns the secret key the identity holds for accessKey, or ""
+// when the key is not registered.
+func (f *fakeIAMAdmin) secretKeyFor(user, accessKey string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, ok := f.users[user]
+	if !ok {
+		return ""
+	}
+	c, _ := u.Credential(accessKey)
+	return c.SecretKey
 }
 
 func (f *fakeIAMAdmin) PutOIDCProvider(_ context.Context, provider swadmin.OIDCProvider) (string, error) {

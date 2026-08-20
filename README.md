@@ -643,7 +643,10 @@ underlying IAM object. Set `reclaimPolicy: Retain` to opt out.
   absent or empty the operator **generates** a key pair and writes it
   (the operator-created `Secret` is annotated as managed and removed with
   the CR under `reclaimPolicy: Delete`); if the `Secret` already holds
-  both keys they are **adopted** and registered on the identity. A
+  both keys they are **adopted** and registered on the identity. A later
+  change to the `Secret` is **rotated onto the identity**: a new access
+  key is registered and the superseded pair revoked, and a rotation that
+  changes only the secret key is rewritten onto the same access key. A
   user-managed `Secret` is never deleted by the controller. The secret
   key is written only to the `Secret`, never to status.
 

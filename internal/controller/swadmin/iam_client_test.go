@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/seaweedfs/seaweedfs/weed/iam"
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
 	"github.com/seaweedfs/seaweedfs/weed/security"
 	"google.golang.org/grpc"
@@ -191,4 +192,111 @@ func (s *authRecordingIAM) GetUser(ctx context.Context, req *iam_pb.GetUserReque
 		return nil, s.authErr
 	}
 	return &iam_pb.GetUserResponse{Identity: &iam_pb.Identity{Name: req.Username}}, nil
+}
+
+// identityStoreIAM is a minimal in-memory IAM gRPC server that serves and
+// stores one identity, enough to exercise the read-modify-write path
+// UpdateAccessKey relies on. Messages cross the wire, so the served and
+// stored identities are never aliased with the client's copy.
+type identityStoreIAM struct {
+	iam_pb.UnimplementedSeaweedIdentityAccessManagementServer
+	identity *iam_pb.Identity
+	updates  int
+}
+
+func (s *identityStoreIAM) GetUser(_ context.Context, req *iam_pb.GetUserRequest) (*iam_pb.GetUserResponse, error) {
+	if s.identity == nil || s.identity.Name != req.Username {
+		return nil, status.Errorf(codes.NotFound, "user %s not found", req.Username)
+	}
+	return &iam_pb.GetUserResponse{Identity: s.identity}, nil
+}
+
+func (s *identityStoreIAM) UpdateUser(_ context.Context, req *iam_pb.UpdateUserRequest) (*iam_pb.UpdateUserResponse, error) {
+	if s.identity == nil || s.identity.Name != req.Username {
+		return nil, status.Errorf(codes.NotFound, "user %s not found", req.Username)
+	}
+	s.updates++
+	s.identity = req.Identity
+	return &iam_pb.UpdateUserResponse{}, nil
+}
+
+// startIAMServer serves impl on an ephemeral port and returns a client dialing it.
+func startIAMServer(t *testing.T, impl iam_pb.SeaweedIdentityAccessManagementServer) *IAMClient {
+	t.Helper()
+	srv := grpc.NewServer()
+	t.Cleanup(srv.Stop)
+	iam_pb.RegisterSeaweedIdentityAccessManagementServer(srv, impl)
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	go func() { _ = srv.Serve(lis) }()
+
+	// pb.ServerAddress derives the gRPC port as HTTPPort+10000, so hand the
+	// client the listening port minus 10000.
+	grpcPort := lis.Addr().(*net.TCPAddr).Port
+	if grpcPort < 10001 {
+		t.Skipf("ephemeral gRPC port %d too low to map to a valid HTTP port", grpcPort)
+	}
+	return NewIAMClient(net.JoinHostPort("127.0.0.1", strconv.Itoa(grpcPort-10000)), nil, nil)
+}
+
+// UpdateAccessKey must rewrite only the secret key of the named access key,
+// leaving the identity's other credentials and its policies intact — the IAM
+// service has no update-credential RPC, so this goes through UpdateUser.
+func TestIAMClient_UpdateAccessKey_RewritesSecretKeyInPlace(t *testing.T) {
+	store := &identityStoreIAM{identity: &iam_pb.Identity{
+		Name: "alice",
+		Credentials: []*iam_pb.Credential{
+			{AccessKey: "AKIAONE", SecretKey: "sk-one", Status: iam.AccessKeyStatusActive},
+			{AccessKey: "AKIATWO", SecretKey: "sk-two", Status: iam.AccessKeyStatusActive},
+		},
+		PolicyNames: []string{"rw"},
+	}}
+	c := startIAMServer(t, store)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.UpdateAccessKey(ctx, "alice", "AKIAONE", "sk-rotated"); err != nil {
+		t.Fatalf("UpdateAccessKey: %v", err)
+	}
+
+	user, err := c.GetUser(ctx, "alice")
+	if err != nil {
+		t.Fatalf("GetUser: %v", err)
+	}
+	if got, _ := user.Credential("AKIAONE"); got.SecretKey != "sk-rotated" {
+		t.Errorf("AKIAONE secret key = %q, want %q", got.SecretKey, "sk-rotated")
+	}
+	if got, _ := user.Credential("AKIATWO"); got.SecretKey != "sk-two" {
+		t.Errorf("AKIATWO secret key = %q, want it untouched", got.SecretKey)
+	}
+	if len(user.PolicyNames) != 1 || user.PolicyNames[0] != "rw" {
+		t.Errorf("policy names = %v, want [rw] preserved", user.PolicyNames)
+	}
+	// Fields the domain struct drops must survive the rewrite too.
+	if got := store.identity.Credentials[0].Status; got != iam.AccessKeyStatusActive {
+		t.Errorf("AKIAONE status = %q, want %q preserved", got, iam.AccessKeyStatusActive)
+	}
+}
+
+// An access key the identity does not hold is reported as NotFound, so the
+// caller can tell a drifted secret key from a key that was never registered.
+func TestIAMClient_UpdateAccessKey_UnknownKeyIsNotFound(t *testing.T) {
+	store := &identityStoreIAM{identity: &iam_pb.Identity{
+		Name:        "alice",
+		Credentials: []*iam_pb.Credential{{AccessKey: "AKIAONE", SecretKey: "sk-one"}},
+	}}
+	c := startIAMServer(t, store)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := c.UpdateAccessKey(ctx, "alice", "AKIAGONE", "sk-rotated")
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("UpdateAccessKey error = %v, want codes.NotFound", err)
+	}
+	if store.updates != 0 {
+		t.Errorf("UpdateUser calls = %d, want none", store.updates)
+	}
 }

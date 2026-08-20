@@ -35,6 +35,9 @@ func buildVolumeServerStartupScriptWithTopology(m *seaweedv1.Seaweed, dirs []str
 	}
 
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-volume-%s-peer.%s", m.Name, topologyName, m.Namespace))
+	if arg := ipBindArg(getVolumeServerConfigValue(topologySpec.IPBind, fallback.IPBind)); arg != "" {
+		commands = append(commands, arg)
+	}
 	if m.Spec.HostSuffix != nil && *m.Spec.HostSuffix != "" {
 		commands = append(commands, fmt.Sprintf("-publicUrl=$(POD_NAME).%s", *m.Spec.HostSuffix))
 	}
@@ -85,6 +88,9 @@ func buildVolumeServerStartupScript(m *seaweedv1.Seaweed, dirs []string, maxArg,
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.VolumeHTTPPort))
 	commands = append(commands, "-max="+maxArg)
 	commands = append(commands, "-ip="+ipArg)
+	if arg := ipBindArg(m.Spec.Volume.IPBind); arg != "" {
+		commands = append(commands, arg)
+	}
 	// $(POD_NAME) is a random suffix for DaemonSet pods, so a HostSuffix-based
 	// publicUrl would be unresolvable — only emit it for StatefulSet ordinals.
 	if m.Spec.HostSuffix != nil && *m.Spec.HostSuffix != "" && !m.Spec.Volume.IsDaemonSet() {

@@ -17,6 +17,9 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	commands := weedPreamble(m, m.BaseFilerSpec().LoggingArgs(), "filer")
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.FilerHTTPPort))
 	commands = append(commands, fmt.Sprintf("-ip=$(POD_NAME).%s-filer-peer.%s", m.Name, m.Namespace))
+	if arg := ipBindArg(m.Spec.Filer.IPBind); arg != "" {
+		commands = append(commands, arg)
+	}
 	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m)))
 	if s3Config := m.Spec.Filer.S3; s3Config != nil && s3Config.Enabled {
 		commands = append(commands, "-s3")

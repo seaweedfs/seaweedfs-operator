@@ -24,6 +24,14 @@ crds:
 
 ## Configure Kubernetes Rbac parameters
 rbac:
+  # -- Create the Roles, ClusterRoles and bindings the chart would otherwise
+  # install. Set to false when RBAC is provisioned out-of-band (e.g., a
+  # restricted cluster where a platform team owns it). Two service accounts
+  # then need the equivalent permissions bound before install: the operator's,
+  # and the pre-install webhook certificate hook's, which blocks the release if
+  # it cannot reach its secret and the webhook configurations. Setting
+  # webhook.certManager.enabled removes that hook.
+  create: true
   serviceAccount:
     # -- Specifies whether a service account should be created
     create: true

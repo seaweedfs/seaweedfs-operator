@@ -54,6 +54,11 @@ spec:
     # 1024 = 1 GiB per volume file. Total capacity is driven by the volume
     # servers' disks (see volume.requests.storage below).
     volumeSizeLimitMB: 1024
+    # OPTIONAL. Address the listeners bind to (weed's -ip.bind), also on
+    # volume and filer. Defaults to 0.0.0.0 like the official Helm chart:
+    # binding to the peer FQDN in -ip needs DNS a cold-started Pod does not
+    # have yet. Set an address to bind one interface, or "" to bind to -ip.
+    # ipBind: "0.0.0.0"
 
   volume:
     # 2 volume-server Pods. Combined with volumeServerDiskCount: 1 above, the

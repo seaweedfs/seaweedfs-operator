@@ -6199,6 +6199,8 @@ spec:
                       type: object
                     initContainers:
                       x-kubernetes-preserve-unknown-fields: true
+                    ipBind:
+                      type: string
                     labels:
                       additionalProperties:
                         type: string
@@ -8046,6 +8048,8 @@ spec:
                       type: object
                     initContainers:
                       x-kubernetes-preserve-unknown-fields: true
+                    ipBind:
+                      type: string
                     labels:
                       additionalProperties:
                         type: string
@@ -13151,6 +13155,8 @@ spec:
                       type: object
                     initContainers:
                       x-kubernetes-preserve-unknown-fields: true
+                    ipBind:
+                      type: string
                     kind:
                       default: StatefulSet
                       enum:
@@ -14838,6 +14844,8 @@ spec:
                         type: array
                       initContainers:
                         x-kubernetes-preserve-unknown-fields: true
+                      ipBind:
+                        type: string
                       labels:
                         additionalProperties:
                           type: string

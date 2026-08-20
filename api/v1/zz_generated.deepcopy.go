@@ -1229,6 +1229,11 @@ func (in *FilerSpec) DeepCopyInto(out *FilerSpec) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.IPBind != nil {
+		in, out := &in.IPBind, &out.IPBind
+		*out = new(string)
+		**out = **in
+	}
 	if in.Persistence != nil {
 		in, out := &in.Persistence, &out.Persistence
 		*out = new(PersistenceSpec)
@@ -1438,6 +1443,11 @@ func (in *MasterSpec) DeepCopyInto(out *MasterSpec) {
 	if in.MetricsPort != nil {
 		in, out := &in.MetricsPort, &out.MetricsPort
 		*out = new(int32)
+		**out = **in
+	}
+	if in.IPBind != nil {
+		in, out := &in.IPBind, &out.IPBind
+		*out = new(string)
 		**out = **in
 	}
 	if in.VolumePreallocate != nil {
@@ -3192,6 +3202,11 @@ func (in *VolumeServerConfig) DeepCopyInto(out *VolumeServerConfig) {
 	if in.MetricsPort != nil {
 		in, out := &in.MetricsPort, &out.MetricsPort
 		*out = new(int32)
+		**out = **in
+	}
+	if in.IPBind != nil {
+		in, out := &in.IPBind, &out.IPBind
+		*out = new(string)
 		**out = **in
 	}
 	if in.CompactionMBps != nil {

@@ -337,6 +337,11 @@ type MasterSpec struct {
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
+	// IPBind is the address this component's listeners bind to (weed's
+	// -ip.bind). Defaults to 0.0.0.0; "" binds to -ip instead.
+	// +optional
+	IPBind *string `json:"ipBind,omitempty"`
+
 	// Master-specific settings
 
 	VolumePreallocate  *bool   `json:"volumePreallocate,omitempty"`
@@ -379,6 +384,11 @@ type VolumeServerConfig struct {
 
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
+
+	// IPBind is the address this component's listeners bind to (weed's
+	// -ip.bind). Defaults to 0.0.0.0; "" binds to -ip instead.
+	// +optional
+	IPBind *string `json:"ipBind,omitempty"`
 
 	// Volume-specific settings
 	CompactionMBps      *int32 `json:"compactionMBps,omitempty"`
@@ -635,6 +645,11 @@ type FilerSpec struct {
 
 	// MetricsPort is the port that the prometheus metrics export listens on
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
+
+	// IPBind is the address this component's listeners bind to (weed's
+	// -ip.bind). Defaults to 0.0.0.0; "" binds to -ip instead.
+	// +optional
+	IPBind *string `json:"ipBind,omitempty"`
 
 	// Persistence mounts a volume for local filer data
 	Persistence *PersistenceSpec `json:"persistence,omitempty"`

@@ -422,6 +422,22 @@ func tlsConfigDirArg(m *seaweedv1.Seaweed) string {
 	return "-config_dir=" + securityConfigMountPath
 }
 
+const defaultIPBind = "0.0.0.0"
+
+// ipBindArg renders the -ip.bind flag, or "" to emit nothing. Without it weed
+// binds to the peer FQDN in -ip, which a cold-started pod cannot resolve yet;
+// an empty ipBind opts back into that behavior.
+func ipBindArg(ipBind *string) string {
+	bind := defaultIPBind
+	if ipBind != nil {
+		bind = *ipBind
+	}
+	if bind == "" {
+		return ""
+	}
+	return "-ip.bind=" + bind
+}
+
 // weedPreamble returns the `weed <logging args> [-config_dir=…] <subcommand>`
 // prefix common to every component startup script. loggingArgs comes from the
 // merged cluster/component LoggingArgs slice; when empty we fall back to the

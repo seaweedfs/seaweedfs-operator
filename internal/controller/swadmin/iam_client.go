@@ -45,11 +45,14 @@ func (k *keyedMutex) lock(key string) func() {
 	return m.Unlock
 }
 
-// iamUserLocks serializes the GetUser→mutate→UpdateUser sequences in
-// SetUserState / AttachPolicy / DetachPolicy. The SeaweedFS IAM service has no
+// iamUserLocks serializes every mutation of a single identity: the
+// GetUser→mutate→UpdateUser sequences in SetUserState / UpdateAccessKey /
+// AttachPolicy / DetachPolicy, and the Create/DeleteAccessKey RPCs those
+// sequences would otherwise overwrite. The SeaweedFS IAM service has no
 // ETag/versioning on identities, so without this lock two concurrent
 // reconciles touching the same user (e.g. an S3Identity disabling it while an
-// S3PolicyBinding attaches a policy) could clobber each other's write. The map
+// S3PolicyBinding attaches a policy, or a revoked key being restored by a
+// whole-identity write that read it) could clobber each other. The map
 // is package-global because each reconciler holds its own IAMClient, so the
 // lock has to live above any single client instance. Keyed by
 // filer-address + user, it does not guard against changes made outside the
@@ -135,6 +138,12 @@ func (c *IAMClient) lockUser(name string) func() {
 	return iamUserLocks.lock(c.filerGrpcAddress + "\x00" + name)
 }
 
+// IAMCredential is one access key / secret key pair registered on an identity.
+type IAMCredential struct {
+	AccessKey string
+	SecretKey string
+}
+
 // IAMUser is the subset of an IAM identity the operator reconciles. It is a
 // plain domain struct so the iam_pb types stay confined to this package.
 type IAMUser struct {
@@ -143,7 +152,27 @@ type IAMUser struct {
 	DisplayName string
 	Email       string
 	PolicyNames []string
-	AccessKeys  []string
+	Credentials []IAMCredential
+}
+
+// Credential returns the credential registered under accessKey, so a caller
+// can tell an unregistered key from one whose secret key has drifted.
+func (u *IAMUser) Credential(accessKey string) (IAMCredential, bool) {
+	for _, c := range u.Credentials {
+		if c.AccessKey == accessKey {
+			return c, true
+		}
+	}
+	return IAMCredential{}, false
+}
+
+// AccessKeys returns the identity's access key ids.
+func (u *IAMUser) AccessKeys() []string {
+	keys := make([]string, 0, len(u.Credentials))
+	for _, c := range u.Credentials {
+		keys = append(keys, c.AccessKey)
+	}
+	return keys
 }
 
 // GetUser fetches an identity. The raw gRPC error (codes.NotFound when the
@@ -213,6 +242,7 @@ func (c *IAMClient) DeleteUser(ctx context.Context, name string) error {
 // identity. The caller is responsible for not creating a duplicate access key
 // (the IAM service reports that as a generic error, not AlreadyExists).
 func (c *IAMClient) CreateAccessKey(ctx context.Context, user, accessKey, secretKey string) error {
+	defer c.lockUser(user)()
 	return c.withClient(ctx, func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error {
 		_, err := client.CreateAccessKey(ctx, &iam_pb.CreateAccessKeyRequest{
 			Username: user,
@@ -226,8 +256,41 @@ func (c *IAMClient) CreateAccessKey(ctx context.Context, user, accessKey, secret
 	})
 }
 
+// UpdateAccessKey replaces the secret key of an access key already registered
+// on an identity, leaving its other credentials and policies untouched. The
+// IAM service has no update-credential RPC and rejects re-creating an existing
+// access key, so the pair is rewritten through UpdateUser. Returns a
+// codes.NotFound error when the identity does not hold accessKey.
+func (c *IAMClient) UpdateAccessKey(ctx context.Context, user, accessKey, secretKey string) error {
+	defer c.lockUser(user)()
+	return c.withClient(ctx, func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error {
+		resp, err := client.GetUser(ctx, &iam_pb.GetUserRequest{Username: user})
+		if err != nil {
+			return err
+		}
+		id := resp.GetIdentity()
+		if id == nil {
+			return fmt.Errorf("user %q returned empty identity", user)
+		}
+		found := false
+		for _, cred := range id.Credentials {
+			if cred.AccessKey == accessKey {
+				cred.SecretKey = secretKey
+				found = true
+				break
+			}
+		}
+		if !found {
+			return status.Errorf(codes.NotFound, "access key %s not found on user %s", accessKey, user)
+		}
+		_, err = client.UpdateUser(ctx, &iam_pb.UpdateUserRequest{Username: user, Identity: id})
+		return err
+	})
+}
+
 // DeleteAccessKey removes a credential pair from an identity.
 func (c *IAMClient) DeleteAccessKey(ctx context.Context, user, accessKey string) error {
+	defer c.lockUser(user)()
 	return c.withClient(ctx, func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error {
 		_, err := client.DeleteAccessKey(ctx, &iam_pb.DeleteAccessKeyRequest{
 			Username:  user,
@@ -411,7 +474,7 @@ func identityToUser(id *iam_pb.Identity) *IAMUser {
 		u.Email = id.Account.EmailAddress
 	}
 	for _, cred := range id.Credentials {
-		u.AccessKeys = append(u.AccessKeys, cred.AccessKey)
+		u.Credentials = append(u.Credentials, IAMCredential{AccessKey: cred.AccessKey, SecretKey: cred.SecretKey})
 	}
 	return u
 }

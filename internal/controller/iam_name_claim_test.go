@@ -292,8 +292,8 @@ func TestS3Credentials_IdentityRefResolvesResourceName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get user: %v", err)
 	}
-	if len(user.AccessKeys) != 1 || user.AccessKeys[0] != got.Status.AccessKey {
-		t.Errorf("access keys on myapp-media = %v, want [%s]", user.AccessKeys, got.Status.AccessKey)
+	if keys := user.AccessKeys(); len(keys) != 1 || keys[0] != got.Status.AccessKey {
+		t.Errorf("access keys on myapp-media = %v, want [%s]", user.AccessKeys(), got.Status.AccessKey)
 	}
 }
 
@@ -319,8 +319,8 @@ func TestS3Credentials_IdentityRefFallsBackToIAMName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get user: %v", err)
 	}
-	if len(user.AccessKeys) != 1 {
-		t.Errorf("access keys on external = %v, want one key", user.AccessKeys)
+	if len(user.AccessKeys()) != 1 {
+		t.Errorf("access keys on external = %v, want one key", user.AccessKeys())
 	}
 }
 
@@ -358,8 +358,8 @@ func TestS3Credentials_Delete_CleansUpResolvedIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get user: %v", err)
 	}
-	if len(user.AccessKeys) != 0 {
-		t.Errorf("access keys = %v, want the provisioned key removed", user.AccessKeys)
+	if len(user.AccessKeys()) != 0 {
+		t.Errorf("access keys = %v, want the provisioned key removed", user.AccessKeys())
 	}
 }
 
@@ -409,8 +409,8 @@ func TestS3Credentials_PinnedIdentitySurvivesShadowingResource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get user: %v", err)
 	}
-	if len(shadowUser.AccessKeys) != 0 {
-		t.Errorf("keys on external-media = %v, want none (key must not move)", shadowUser.AccessKeys)
+	if len(shadowUser.AccessKeys()) != 0 {
+		t.Errorf("keys on external-media = %v, want none (key must not move)", shadowUser.AccessKeys())
 	}
 }
 

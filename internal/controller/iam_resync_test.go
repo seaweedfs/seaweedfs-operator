@@ -37,7 +37,6 @@ func (f *fakeIAMAdmin) simulateFilerRestart() {
 	f.users = map[string]*swadmin.IAMUser{}
 	f.policies = map[string]string{}
 	f.providers = map[string]string{}
-	f.secretKeys = map[string]string{}
 }
 
 // Success schedules a periodic resync, and re-running it re-creates a user the

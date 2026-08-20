@@ -373,8 +373,8 @@ func TestS3Credentials_AdoptsExistingSecret(t *testing.T) {
 	if keys := fa.userKeys("alice"); len(keys) != 1 || keys[0] != "AKIAADOPTED" {
 		t.Fatalf("expected adopted key AKIAADOPTED, got %v", keys)
 	}
-	if fa.secretKeys["AKIAADOPTED"] != "supersecret" {
-		t.Errorf("adopted secret key mismatch: %q", fa.secretKeys["AKIAADOPTED"])
+	if sk := fa.secretKeyFor("alice", "AKIAADOPTED"); sk != "supersecret" {
+		t.Errorf("adopted secret key mismatch: %q", sk)
 	}
 	var secret corev1.Secret
 	if err := cli.Get(context.Background(), types.NamespacedName{Namespace: "media", Name: "alice-secret"}, &secret); err != nil {
@@ -382,6 +382,86 @@ func TestS3Credentials_AdoptsExistingSecret(t *testing.T) {
 	}
 	if secret.Annotations[s3CredentialsManagedAnnotation] == "true" {
 		t.Error("pre-existing secret must not be marked managed")
+	}
+}
+
+// Rotating only the secretKey in the referenced Secret — the access key id
+// stays put, as External Secrets does when it refreshes one field — must be
+// applied to the identity, so the pair the Secret holds is the pair that
+// authenticates and the superseded secret stops working.
+func TestS3Credentials_AppliesRotatedSecretKey(t *testing.T) {
+	scheme := iamTestScheme(t)
+	existing := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice-secret", Namespace: "media"},
+		Data: map[string][]byte{
+			defaultAccessKeyField: []byte("AKIAROTATE"),
+			defaultSecretKeyField: []byte("oldsecret"),
+		},
+	}
+	cred := &seaweedv1.S3Credentials{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice-creds", Namespace: "media"},
+		Spec: seaweedv1.S3CredentialsSpec{
+			SeaweedRef:  iamSeaweedRef(),
+			IdentityRef: seaweedv1.S3IdentityRef{Name: "alice"},
+			SecretRef:   seaweedv1.S3SecretRef{Name: "alice-secret"},
+		},
+	}
+	cli := iamTestClient(t, scheme, newTestSeaweed(), existing, cred)
+	fa := newFakeIAMAdmin()
+	fa.seedUser("alice")
+	r := &S3CredentialsReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "alice-creds"}
+	secretKey := types.NamespacedName{Namespace: "media", Name: "alice-secret"}
+	reconcileStable(t, r, key, 5)
+	if sk := fa.secretKeyFor("alice", "AKIAROTATE"); sk != "oldsecret" {
+		t.Fatalf("precondition: adopted secret key = %q, want %q", sk, "oldsecret")
+	}
+
+	// Rotate just the secret key in the Secret.
+	var secret corev1.Secret
+	if err := cli.Get(context.Background(), secretKey, &secret); err != nil {
+		t.Fatalf("get secret: %v", err)
+	}
+	secret.Data[defaultSecretKeyField] = []byte("newsecret")
+	if err := cli.Update(context.Background(), &secret); err != nil {
+		t.Fatalf("update secret: %v", err)
+	}
+
+	reconcileStable(t, r, key, 5)
+
+	if keys := fa.userKeys("alice"); len(keys) != 1 || keys[0] != "AKIAROTATE" {
+		t.Fatalf("access keys on alice = %v, want the same single key AKIAROTATE", keys)
+	}
+	if sk := fa.secretKeyFor("alice", "AKIAROTATE"); sk != "newsecret" {
+		t.Errorf("IAM secret key = %q, want the rotated %q", sk, "newsecret")
+	}
+
+	// The Secret is the source of truth here; it must not be rewritten.
+	if err := cli.Get(context.Background(), secretKey, &secret); err != nil {
+		t.Fatalf("get secret: %v", err)
+	}
+	if got := string(secret.Data[defaultSecretKeyField]); got != "newsecret" {
+		t.Errorf("secret secretKey = %q, want the rotated %q", got, "newsecret")
+	}
+	if got := string(secret.Data[defaultAccessKeyField]); got != "AKIAROTATE" {
+		t.Errorf("secret accessKey = %q, want stable %q", got, "AKIAROTATE")
+	}
+
+	var got seaweedv1.S3Credentials
+	if err := cli.Get(context.Background(), key, &got); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status.AccessKey != "AKIAROTATE" || got.Status.Phase != seaweedv1.S3PhaseReady {
+		t.Errorf("status = %+v", got.Status)
+	}
+
+	// Converged: further resyncs must not keep rewriting the credential.
+	updates := countCalls(fa.calls, "UpdateAccessKey:alice:AKIAROTATE")
+	reconcileStable(t, r, key, 5)
+	if n := countCalls(fa.calls, "UpdateAccessKey:alice:AKIAROTATE"); n != updates {
+		t.Errorf("UpdateAccessKey calls = %d, want no further rewrite after %d", n, updates)
 	}
 }
 

@@ -50,6 +50,10 @@ type IAMAdmin interface {
 
 	// CreateAccessKey registers an explicit credential pair on an identity.
 	CreateAccessKey(ctx context.Context, user, accessKey, secretKey string) error
+	// UpdateAccessKey replaces the secret key of an access key already
+	// registered on an identity, keeping the access key id. Returns
+	// ErrIAMNotFound if the identity does not hold the access key.
+	UpdateAccessKey(ctx context.Context, user, accessKey, secretKey string) error
 	// DeleteAccessKey removes a credential pair. Idempotent.
 	DeleteAccessKey(ctx context.Context, user, accessKey string) error
 
@@ -138,6 +142,10 @@ func (a *swadminIAMAdmin) DeleteUser(ctx context.Context, name string) error {
 
 func (a *swadminIAMAdmin) CreateAccessKey(ctx context.Context, user, accessKey, secretKey string) error {
 	return mapIAMError(a.c.CreateAccessKey(ctx, user, accessKey, secretKey))
+}
+
+func (a *swadminIAMAdmin) UpdateAccessKey(ctx context.Context, user, accessKey, secretKey string) error {
+	return mapIAMError(a.c.UpdateAccessKey(ctx, user, accessKey, secretKey))
 }
 
 func (a *swadminIAMAdmin) DeleteAccessKey(ctx context.Context, user, accessKey string) error {

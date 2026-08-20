@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -200,24 +201,84 @@ func (s *authRecordingIAM) GetUser(ctx context.Context, req *iam_pb.GetUserReque
 // stored identities are never aliased with the client's copy.
 type identityStoreIAM struct {
 	iam_pb.UnimplementedSeaweedIdentityAccessManagementServer
+	mu       sync.Mutex
 	identity *iam_pb.Identity
 	updates  int
+
+	// When gate is non-nil every GetUser blocks on it, and the first call
+	// closes entered — enough to pin a read-modify-write open while another
+	// call races it.
+	gate    chan struct{}
+	entered chan struct{}
+	once    sync.Once
 }
 
 func (s *identityStoreIAM) GetUser(_ context.Context, req *iam_pb.GetUserRequest) (*iam_pb.GetUserResponse, error) {
+	if s.gate != nil {
+		s.once.Do(func() { close(s.entered) })
+		<-s.gate
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.identity == nil || s.identity.Name != req.Username {
 		return nil, status.Errorf(codes.NotFound, "user %s not found", req.Username)
 	}
-	return &iam_pb.GetUserResponse{Identity: s.identity}, nil
+	// Copy: the response is marshalled after this handler returns the lock.
+	return &iam_pb.GetUserResponse{Identity: cloneIdentity(s.identity)}, nil
 }
 
 func (s *identityStoreIAM) UpdateUser(_ context.Context, req *iam_pb.UpdateUserRequest) (*iam_pb.UpdateUserResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.identity == nil || s.identity.Name != req.Username {
 		return nil, status.Errorf(codes.NotFound, "user %s not found", req.Username)
 	}
 	s.updates++
 	s.identity = req.Identity
 	return &iam_pb.UpdateUserResponse{}, nil
+}
+
+func (s *identityStoreIAM) DeleteAccessKey(_ context.Context, req *iam_pb.DeleteAccessKeyRequest) (*iam_pb.DeleteAccessKeyResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.identity == nil || s.identity.Name != req.Username {
+		return nil, status.Errorf(codes.NotFound, "user %s not found", req.Username)
+	}
+	kept := s.identity.Credentials[:0]
+	for _, cred := range s.identity.Credentials {
+		if cred.AccessKey != req.AccessKey {
+			kept = append(kept, cred)
+		}
+	}
+	s.identity.Credentials = kept
+	return &iam_pb.DeleteAccessKeyResponse{}, nil
+}
+
+func (s *identityStoreIAM) accessKeys() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keys := make([]string, 0, len(s.identity.Credentials))
+	for _, cred := range s.identity.Credentials {
+		keys = append(keys, cred.AccessKey)
+	}
+	return keys
+}
+
+func cloneIdentity(id *iam_pb.Identity) *iam_pb.Identity {
+	out := &iam_pb.Identity{
+		Name:        id.Name,
+		Disabled:    id.Disabled,
+		Account:     id.Account,
+		PolicyNames: append([]string(nil), id.PolicyNames...),
+	}
+	for _, cred := range id.Credentials {
+		out.Credentials = append(out.Credentials, &iam_pb.Credential{
+			AccessKey: cred.AccessKey,
+			SecretKey: cred.SecretKey,
+			Status:    cred.Status,
+		})
+	}
+	return out
 }
 
 // startIAMServer serves impl on an ephemeral port and returns a client dialing it.
@@ -298,5 +359,55 @@ func TestIAMClient_UpdateAccessKey_UnknownKeyIsNotFound(t *testing.T) {
 	}
 	if store.updates != 0 {
 		t.Errorf("UpdateUser calls = %d, want none", store.updates)
+	}
+}
+
+// A credential delete that lands mid-rewrite must not be undone: UpdateAccessKey
+// writes the whole identity it read, so DeleteAccessKey has to wait for it
+// rather than be resurrected by the stale copy.
+func TestIAMClient_UpdateAccessKey_SerializesWithDelete(t *testing.T) {
+	store := &identityStoreIAM{
+		identity: &iam_pb.Identity{
+			Name: "alice",
+			Credentials: []*iam_pb.Credential{
+				{AccessKey: "AKIAONE", SecretKey: "sk-one"},
+				{AccessKey: "AKIATWO", SecretKey: "sk-two"},
+			},
+		},
+		gate:    make(chan struct{}),
+		entered: make(chan struct{}),
+	}
+	c := startIAMServer(t, store)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	updateDone := make(chan error, 1)
+	go func() { updateDone <- c.UpdateAccessKey(ctx, "alice", "AKIAONE", "sk-rotated") }()
+	select {
+	case <-store.entered:
+	case <-ctx.Done():
+		t.Fatal("UpdateAccessKey never reached GetUser")
+	}
+
+	// The delete now races the rewrite; it must block on the per-user lock.
+	deleteDone := make(chan error, 1)
+	go func() { deleteDone <- c.DeleteAccessKey(ctx, "alice", "AKIATWO") }()
+	select {
+	case err := <-deleteDone:
+		t.Fatalf("DeleteAccessKey ran during the rewrite (err=%v); it must wait for the lock", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	close(store.gate)
+	if err := <-updateDone; err != nil {
+		t.Fatalf("UpdateAccessKey: %v", err)
+	}
+	if err := <-deleteDone; err != nil {
+		t.Fatalf("DeleteAccessKey: %v", err)
+	}
+
+	if keys := store.accessKeys(); len(keys) != 1 || keys[0] != "AKIAONE" {
+		t.Fatalf("access keys = %v, want only AKIAONE — the revoked key must stay revoked", keys)
 	}
 }

@@ -45,11 +45,14 @@ func (k *keyedMutex) lock(key string) func() {
 	return m.Unlock
 }
 
-// iamUserLocks serializes the GetUser→mutate→UpdateUser sequences in
-// SetUserState / AttachPolicy / DetachPolicy. The SeaweedFS IAM service has no
+// iamUserLocks serializes every mutation of a single identity: the
+// GetUser→mutate→UpdateUser sequences in SetUserState / UpdateAccessKey /
+// AttachPolicy / DetachPolicy, and the Create/DeleteAccessKey RPCs those
+// sequences would otherwise overwrite. The SeaweedFS IAM service has no
 // ETag/versioning on identities, so without this lock two concurrent
 // reconciles touching the same user (e.g. an S3Identity disabling it while an
-// S3PolicyBinding attaches a policy) could clobber each other's write. The map
+// S3PolicyBinding attaches a policy, or a revoked key being restored by a
+// whole-identity write that read it) could clobber each other. The map
 // is package-global because each reconciler holds its own IAMClient, so the
 // lock has to live above any single client instance. Keyed by
 // filer-address + user, it does not guard against changes made outside the
@@ -239,6 +242,7 @@ func (c *IAMClient) DeleteUser(ctx context.Context, name string) error {
 // identity. The caller is responsible for not creating a duplicate access key
 // (the IAM service reports that as a generic error, not AlreadyExists).
 func (c *IAMClient) CreateAccessKey(ctx context.Context, user, accessKey, secretKey string) error {
+	defer c.lockUser(user)()
 	return c.withClient(ctx, func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error {
 		_, err := client.CreateAccessKey(ctx, &iam_pb.CreateAccessKeyRequest{
 			Username: user,
@@ -286,6 +290,7 @@ func (c *IAMClient) UpdateAccessKey(ctx context.Context, user, accessKey, secret
 
 // DeleteAccessKey removes a credential pair from an identity.
 func (c *IAMClient) DeleteAccessKey(ctx context.Context, user, accessKey string) error {
+	defer c.lockUser(user)()
 	return c.withClient(ctx, func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error {
 		_, err := client.DeleteAccessKey(ctx, &iam_pb.DeleteAccessKeyRequest{
 			Username:  user,

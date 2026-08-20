@@ -208,29 +208,54 @@ var _ = Describe("Volume server evacuation on scale-down", Ordered, Label("integ
 			masterPod = pods.Items[0].Name
 		}, time.Minute, time.Second*5).Should(Succeed())
 
-		By("growing volumes so both servers host data")
-		// replication=000 keeps every volume to a single copy, so the doomed
-		// server's volumes can always move onto the one remaining server. Grow
-		// once (retrying only a transient HTTP error), then wait separately for
-		// the new volumes to register so a slow heartbeat does not re-grow.
-		Eventually(func(g Gomega) {
-			_, err := masterGet("/vol/grow?count=6&replication=000")
-			g.Expect(err).NotTo(HaveOccurred())
-		}, time.Minute, time.Second*5).Should(Succeed())
-
+		By("waiting for both volume servers to register with the master")
+		// A pod that passes its readiness probe has not necessarily heartbeated
+		// to the master yet, and a grow only places volumes on servers the
+		// topology already knows about.
+		var doomedNode, survivorNode string
 		Eventually(func(g Gomega) {
 			ds, err := fetchTopology()
 			g.Expect(err).NotTo(HaveOccurred())
 			byNode := ds.volumesByNode()
-			g.Expect(byNode).To(HaveLen(2), "expected two registered volume servers")
-			var doomed int64 = -1
-			for url, n := range byNode {
-				if strings.HasPrefix(url, doomedNodePrefix) {
-					doomed = n
+			g.Expect(byNode).To(HaveLen(2), "expected two registered volume servers, got %v", byNode)
+			doomedNode, survivorNode = "", ""
+			for nodeURL := range byNode {
+				if strings.HasPrefix(nodeURL, doomedNodePrefix) {
+					doomedNode = nodeURL
+				} else {
+					survivorNode = nodeURL
 				}
 			}
-			g.Expect(doomed).To(BeNumerically(">", 0), "doomed server holds no volumes to evacuate")
+			g.Expect(doomedNode).NotTo(BeEmpty(), "doomed volume server is not registered: %v", byNode)
+			g.Expect(survivorNode).NotTo(BeEmpty(), "surviving volume server is not registered: %v", byNode)
 		}, time.Minute*2, time.Second*5).Should(Succeed())
+
+		By("growing volumes on both servers so the doomed one has data to evacuate")
+		// replication=000 keeps every volume to a single copy, so the doomed
+		// server's volumes can always move onto the one remaining server. An
+		// unpinned grow picks a server at random per volume and can leave the
+		// doomed one empty, so pin a grow to each node by its master node id.
+		// The counts stay well under the per-server max so the survivor has
+		// slots to spare for the evacuated volumes.
+		const volumesPerServer = 3
+		for _, node := range []string{doomedNode, survivorNode} {
+			Eventually(func(g Gomega) {
+				ds, err := fetchTopology()
+				g.Expect(err).NotTo(HaveOccurred())
+				// Grow only the shortfall: the master registers new volumes
+				// before it answers, so retrying a lost response tops up what
+				// is missing instead of growing a second batch.
+				if missing := volumesPerServer - ds.volumesByNode()[node]; missing > 0 {
+					_, err = masterGet(fmt.Sprintf("/vol/grow?count=%d&replication=000&dataNode=%s", missing, node))
+					g.Expect(err).NotTo(HaveOccurred())
+					ds, err = fetchTopology()
+					g.Expect(err).NotTo(HaveOccurred())
+				}
+				byNode := ds.volumesByNode()
+				g.Expect(byNode[node]).To(BeNumerically(">=", volumesPerServer),
+					"volume server %s did not receive its volumes: %v", node, byNode)
+			}, time.Minute, time.Second*5).Should(Succeed())
+		}
 
 		ds, err := fetchTopology()
 		Expect(err).NotTo(HaveOccurred())
@@ -271,8 +296,8 @@ var _ = Describe("Volume server evacuation on scale-down", Ordered, Label("integ
 			g.Expect(err).NotTo(HaveOccurred())
 			byNode := ds.volumesByNode()
 			// The doomed server is gone from the topology...
-			for url := range byNode {
-				g.Expect(url).NotTo(HavePrefix(doomedNodePrefix), "doomed server still registered")
+			for nodeURL := range byNode {
+				g.Expect(nodeURL).NotTo(HavePrefix(doomedNodePrefix), "doomed server still registered")
 			}
 			// ...and every volume it held now lives on the surviving server.
 			g.Expect(ds.totalVolumes()).To(Equal(totalBefore), "volumes were lost during scale-down")

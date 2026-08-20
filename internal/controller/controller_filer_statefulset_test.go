@@ -77,11 +77,12 @@ func TestFilerStatefulSetCarriesJWTSigningAnnotation(t *testing.T) {
 }
 
 // The filer must never be probed with a request the security.toml mounted
-// into the same pod rejects. GET / goes through the filer's read guard, so a
-// cluster that turns on jwtSigning.filerRead answers the probe with 401
-// ("wrong jwt") and the pod lands in CrashLoopBackOff — which is how the
-// operator used to behave on every fresh install, since it rendered
-// [jwt.filer_signing.read] unconditionally.
+// into the same pod can reject. Current seaweedfs exempts GET / from the read
+// guard, but seaweedfs builds before that exemption answer it with 401
+// ("wrong jwt") once [jwt.filer_signing.read] is set, and the pod lands in
+// CrashLoopBackOff — which is how the operator behaved on every fresh install
+// back when it rendered that section unconditionally. /healthz is outside the
+// guard in both.
 func TestFilerProbeNotRejectedByReadJWT(t *testing.T) {
 	cases := []struct {
 		name      string

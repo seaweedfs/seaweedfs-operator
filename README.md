@@ -509,10 +509,11 @@ Notes worth knowing before turning these on:
 - **The filer UI's upload form does not sign its requests**, so it stops
   working while `filerWrite` is on. Object PUT/GET through the S3 gateway is
   unaffected — the S3 gateway signs both.
-- With `filerRead` on, the operator points the filer's readiness/liveness
-  probes at `/healthz` instead of `/`, which stays outside the JWT guard.
-  Plain HTTP GETs against the filer (including the filer UI) need a signed
-  token from then on.
+- With `filerRead` on, plain HTTP GETs against the filer (including the filer
+  UI) need a signed token. The operator moves the filer's readiness/liveness
+  probes to `/healthz`, which is outside the read guard: current seaweedfs
+  exempts `GET /` from it too, but older builds do not and would crashloop the
+  filer.
 - With `filerWrite` on, the operator signs its own IAM gRPC calls (`S3Identity`,
   `S3Credentials`, `Bucket`, …) with the same key, so those keep working
   without any extra configuration.

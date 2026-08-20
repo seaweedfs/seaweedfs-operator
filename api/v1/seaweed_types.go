@@ -158,8 +158,8 @@ type JWTSigningSpec struct {
 	// FilerRead renders `[jwt.filer_signing.read]`: the filer rejects
 	// unsigned HTTP reads as well. The S3 gateway signs its reads, but plain
 	// HTTP GETs against the filer (including the filer UI) do not. The
-	// operator points the filer probes at /healthz, which stays unauthenticated,
-	// so enabling this does not crashloop the filer.
+	// operator moves the filer probes to /healthz, which is outside the read
+	// guard on every build, so enabling this cannot crashloop the filer.
 	// +optional
 	FilerRead bool `json:"filerRead,omitempty"`
 

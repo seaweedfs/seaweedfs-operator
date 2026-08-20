@@ -13,6 +13,20 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
+// filerProbePath picks the URL the kubelet probes. GET / goes through the
+// filer's read path, which 401s every unsigned request once
+// [jwt.filer_signing.read] is in security.toml — that would crashloop the
+// filer the moment jwtSigning.filerRead is turned on. /healthz is served off
+// the same port but outside the JWT guard, so it keeps answering. Only used
+// when the read key is on, since /healthz is younger than the operator's
+// oldest supported image.
+func filerProbePath(m *seaweedv1.Seaweed) string {
+	if jwtSigningConfig(m).FilerRead {
+		return "/healthz"
+	}
+	return "/"
+}
+
 func buildFilerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	commands := weedPreamble(m, m.BaseFilerSpec().LoggingArgs(), "filer")
 	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.FilerHTTPPort))
@@ -47,7 +61,7 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForFiler(m.Name)
 	podLabels := mergePodLabels(labels, m.BaseFilerSpec().Labels())
-	annotations := m.BaseFilerSpec().Annotations()
+	annotations := withJWTSigningAnnotation(m, m.BaseFilerSpec().Annotations())
 	ports := []corev1.ContainerPort{
 		{
 			ContainerPort: seaweedv1.FilerHTTPPort,
@@ -195,7 +209,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/",
+					Path:   filerProbePath(m),
 					Port:   intstr.FromInt(seaweedv1.FilerHTTPPort),
 					Scheme: corev1.URISchemeHTTP,
 				},
@@ -209,7 +223,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/",
+					Path:   filerProbePath(m),
 					Port:   intstr.FromInt(seaweedv1.FilerHTTPPort),
 					Scheme: corev1.URISchemeHTTP,
 				},

@@ -790,7 +790,7 @@ var (
 	_ reconcile.Reconciler = (*S3PolicyBindingReconciler)(nil)
 )
 
-// TestResolveSeaweedFiler_LoadsAdminSigningKey pins the issue #257 fix:
+// TestResolveSeaweedFiler_LoadsAdminSigningKey:
 // resolveSeaweedFiler must surface jwt.filer_signing.key from the rendered
 // security Secret so the IAM client can mint admin Bearer tokens. A
 // missing Secret (cluster mid-reconcile, or an externally managed cluster)
@@ -991,10 +991,13 @@ func assertOIDCGone(t *testing.T, cli client.Client, key types.NamespacedName) {
 }
 
 // newTestSeaweedWithFiler returns the standard test Seaweed CR with a Filer
-// spec so securityConfigNeeded returns true and the operator would render a
-// security.toml Secret with jwt.filer_signing.key.
+// spec, and jwtSigning.filerWrite on so the operator renders a security.toml
+// Secret carrying jwt.filer_signing.key.
 func newTestSeaweedWithFiler() *seaweedv1.Seaweed {
 	sw := newTestSeaweed()
 	sw.Spec.Filer = &seaweedv1.FilerSpec{Replicas: 1}
+	sw.Spec.SecurityConfig = &seaweedv1.SecurityConfigSpec{
+		JWTSigning: &seaweedv1.JWTSigningSpec{FilerWrite: true},
+	}
 	return sw
 }

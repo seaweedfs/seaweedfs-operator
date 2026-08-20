@@ -56,7 +56,7 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		got := buildAdminStartupScript(m, "-urlPrefix=/admin")
 		// `exec` must prefix weed so SIGTERM from the kubelet reaches weed
 		// instead of the /bin/sh wrapper.
-		if !strings.HasPrefix(got, "exec weed -logtostderr=true -config_dir=/etc/sw-security admin ") {
+		if !strings.HasPrefix(got, "exec weed -logtostderr=true admin ") {
 			t.Fatalf("expected exec'd weed command, got %q", got)
 		}
 		if !strings.Contains(got, "-urlPrefix=/admin") {
@@ -64,6 +64,26 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		}
 		if strings.Contains(got, adminCredentialsMountPath) {
 			t.Fatalf("expected no credentials preamble, got %q", got)
+		}
+	})
+
+	t.Run("jwt signing adds the security config dir", func(t *testing.T) {
+		// The admin server signs its IAM Bearer tokens with
+		// jwt.filer_signing.key, so it has to be pointed at security.toml —
+		// but only once the cluster asks for that key.
+		m := &seaweedv1.Seaweed{
+			ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+			Spec: seaweedv1.SeaweedSpec{
+				Master: &seaweedv1.MasterSpec{Replicas: 1},
+				Admin:  &seaweedv1.AdminSpec{},
+				SecurityConfig: &seaweedv1.SecurityConfigSpec{
+					JWTSigning: &seaweedv1.JWTSigningSpec{FilerWrite: true},
+				},
+			},
+		}
+		got := buildAdminStartupScript(m)
+		if !strings.HasPrefix(got, "exec weed -logtostderr=true -config_dir=/etc/sw-security admin ") {
+			t.Fatalf("expected -config_dir before the subcommand, got %q", got)
 		}
 	})
 
@@ -93,7 +113,7 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		if !strings.Contains(got, `set -- "$@" "-$key=$(cat "$f")"`) {
 			t.Errorf("expected preamble to append flags via positional parameters, got %q", got)
 		}
-		if !strings.Contains(got, `exec weed -logtostderr=true -config_dir=/etc/sw-security admin`) {
+		if !strings.Contains(got, `exec weed -logtostderr=true admin`) {
 			t.Errorf("expected weed to be exec'd after preamble, got %q", got)
 		}
 		if !strings.HasSuffix(got, ` "$@"`) {

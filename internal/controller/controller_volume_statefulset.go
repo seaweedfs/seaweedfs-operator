@@ -330,7 +330,7 @@ func (r *SeaweedReconciler) buildFlatVolumePodSpec(m *seaweedv1.Seaweed, disks v
 func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForVolumeServer(m.Name)
 	podLabels := mergePodLabels(labels, m.BaseVolumeSpec().Labels())
-	annotations := m.BaseVolumeSpec().Annotations()
+	annotations := withJWTSigningAnnotation(m, m.BaseVolumeSpec().Annotations())
 	replicas := int32(m.Spec.Volume.Replicas)
 	rollingUpdatePartition := int32(0)
 
@@ -375,7 +375,7 @@ func (r *SeaweedReconciler) createVolumeServerStatefulSet(m *seaweedv1.Seaweed) 
 func (r *SeaweedReconciler) createVolumeServerDaemonSet(m *seaweedv1.Seaweed) *appsv1.DaemonSet {
 	labels := labelsForVolumeServer(m.Name)
 	podLabels := mergePodLabels(labels, m.BaseVolumeSpec().Labels())
-	annotations := m.BaseVolumeSpec().Annotations()
+	annotations := withJWTSigningAnnotation(m, m.BaseVolumeSpec().Annotations())
 
 	disks := volumeServerDisksFor(m)
 	volumePodSpec := r.buildFlatVolumePodSpec(m, disks, "$(POD_IP)")
@@ -409,7 +409,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 	// the topology winning on collisions. BaseVolumeSpec() accessors already
 	// return cluster+volume merged.
 	podLabels := mergePodLabels(labels, mergeLabels(m.BaseVolumeSpec().Labels(), topologySpec.Labels))
-	annotations := mergeAnnotations(m.BaseVolumeSpec().Annotations(), topologySpec.Annotations)
+	annotations := withJWTSigningAnnotation(m, mergeAnnotations(m.BaseVolumeSpec().Annotations(), topologySpec.Annotations))
 	ports := []corev1.ContainerPort{
 		{
 			ContainerPort: seaweedv1.VolumeHTTPPort,

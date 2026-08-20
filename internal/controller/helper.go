@@ -373,9 +373,8 @@ func configSecretVolumeAndMount(volumeName, fileName string, sel *corev1.SecretK
 // renderSecurityTOML.
 //
 // The security Secret mount is included independently of the TLS Secret
-// mount, so filer + admin pods can pick up jwt.filer_signing.key (needed for
-// the IAM gRPC service the Admin UI Users tab calls) without requiring
-// cert-manager.
+// mount, so a cluster that only wants JWT signing keys does not have to pull
+// in cert-manager to get them.
 func tlsVolumesAndMounts(m *seaweedv1.Seaweed) ([]corev1.Volume, []corev1.VolumeMount) {
 	var volumes []corev1.Volume
 	var mounts []corev1.VolumeMount
@@ -410,6 +409,53 @@ func tlsVolumesAndMounts(m *seaweedv1.Seaweed) ([]corev1.Volume, []corev1.Volume
 		})
 	}
 	return volumes, mounts
+}
+
+// jwtSigningAnnotation records which [jwt.*] sections a pod was rendered for.
+// weed reads security.toml once at startup (and on SIGHUP), so flipping a
+// section on an existing cluster is invisible until the pods restart — and a
+// cluster where one component enforces a key its peers do not have rejects
+// traffic. Folding the section set into the pod template makes the restart
+// part of the same reconcile that changes the Secret.
+const jwtSigningAnnotation = "seaweed.seaweedfs.com/jwt-signing"
+
+// withJWTSigningAnnotation returns annotations plus the jwt-signing marker for
+// components that mount security.toml. The value is a pure function of the
+// spec — never of the generated keys — so it stays stable across reconciles
+// and only changes when the user changes a flag.
+func withJWTSigningAnnotation(m *seaweedv1.Seaweed, annotations map[string]string) map[string]string {
+	if !securityConfigNeeded(m) {
+		return annotations
+	}
+	merged := make(map[string]string, len(annotations)+1)
+	for k, v := range annotations {
+		merged[k] = v
+	}
+	merged[jwtSigningAnnotation] = jwtSigningRevision(m)
+	return merged
+}
+
+// jwtSigningRevision renders the enabled sections (with their expiry
+// overrides) as a short, human-readable token: "none", "volumeWrite", or
+// "volumeWrite=30,filerWrite".
+func jwtSigningRevision(m *seaweedv1.Seaweed) string {
+	cfg := jwtSigningConfig(m)
+	expiry := jwtSigningExpiry(cfg)
+	var parts []string
+	for _, s := range jwtSections {
+		if !s.enabled(cfg) {
+			continue
+		}
+		if seconds := s.expires(expiry); seconds > 0 {
+			parts = append(parts, fmt.Sprintf("%s=%d", s.field, seconds))
+			continue
+		}
+		parts = append(parts, s.field)
+	}
+	if len(parts) == 0 {
+		return "none"
+	}
+	return strings.Join(parts, ",")
 }
 
 // tlsConfigDirArg returns the additional top-level `weed` flag that tells

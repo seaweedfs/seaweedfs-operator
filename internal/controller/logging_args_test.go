@@ -233,10 +233,7 @@ func TestBuildAdminStartupScriptWithLoggingArgs(t *testing.T) {
 		},
 	}
 	got := buildAdminStartupScript(m)
-	// `-config_dir` is always present for admin (see securityConfigNeeded),
-	// so the assertion locks in the logging-arg ordering rather than the
-	// exact full prefix.
-	if !strings.Contains(got, "exec weed -logJson -config_dir=") {
+	if !strings.Contains(got, "exec weed -logJson admin") {
 		t.Fatalf("expected admin script to place -logJson directly after weed, got %q", got)
 	}
 	if strings.Contains(got, "-logtostderr=true") {

@@ -123,9 +123,9 @@ type filerTarget struct {
 
 // resolveSeaweedFiler looks up the Seaweed CR named by ref and returns its
 // filer address along with the admin signing key the operator rendered into
-// the cluster's security.toml Secret (issue #257: the filer's IAM gRPC
-// service rejects unauthenticated calls when jwt.filer_signing.key is set, so
-// the operator must sign its own Bearer tokens with the same key) and the
+// the cluster's security.toml Secret (the filer's IAM gRPC service rejects
+// unauthenticated calls when jwt.filer_signing.key is set, so the operator
+// must sign its own Bearer tokens with the same key) and the
 // gRPC transport credentials matching the cluster's mTLS state. found is
 // false (with a nil error) when the Seaweed CR does not exist, so callers can
 // surface a transient "cluster not found" condition and requeue rather than
@@ -167,12 +167,11 @@ func resolveSeaweedFiler(ctx context.Context, c client.Client, ref seaweedv1.Sea
 // loadFilerAdminSigningKey reads jwt.filer_signing.key from the
 // seaweedfs-security-config Secret the operator renders for sw. Returns
 // nil with no error when the Secret does not exist or its security.toml
-// has no key (the cluster will be running unauthenticated in that case).
-// A non-NotFound API error is propagated so the reconciler can requeue.
+// has no key — which is the normal state for a cluster that has not turned
+// on jwtSigning.filerWrite, and means the filer's IAM service accepts
+// unauthenticated calls. A non-NotFound API error is propagated so the
+// reconciler can requeue.
 func loadFilerAdminSigningKey(ctx context.Context, c client.Client, sw *seaweedv1.Seaweed) ([]byte, error) {
-	if !securityConfigNeeded(sw) {
-		return nil, nil
-	}
 	var secret corev1.Secret
 	err := c.Get(ctx, types.NamespacedName{Namespace: sw.Namespace, Name: SecurityConfigSecretName(sw)}, &secret)
 	if err != nil {

@@ -117,7 +117,7 @@ func adminRoutePath(extraArgs []string, route string) string {
 func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1.StatefulSet {
 	labels := labelsForAdmin(m.Name)
 	podLabels := mergePodLabels(labels, m.BaseAdminSpec().Labels())
-	annotations := m.BaseAdminSpec().Annotations()
+	annotations := withJWTSigningAnnotation(m, m.BaseAdminSpec().Annotations())
 	ports := []corev1.ContainerPort{
 		{
 			ContainerPort: seaweedv1.AdminHTTPPort,

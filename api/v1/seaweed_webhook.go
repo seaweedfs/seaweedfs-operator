@@ -87,6 +87,9 @@ func (v *SeaweedCustomValidator) ValidateCreate(_ context.Context, obj *Seaweed)
 		errs = append(errs, errors.New("spec.worker requires spec.admin to be configured"))
 	}
 
+	if err := obj.validateMasterPersistence(); err != nil {
+		errs = append(errs, err)
+	}
 	if err := obj.validateS3Exclusivity(); err != nil {
 		errs = append(errs, err)
 	}
@@ -110,6 +113,9 @@ func (v *SeaweedCustomValidator) ValidateUpdate(_ context.Context, _, obj *Seawe
 	}
 	if obj.Spec.Worker != nil && obj.Spec.Admin == nil {
 		errs = append(errs, errors.New("spec.worker requires spec.admin to be configured"))
+	}
+	if err := obj.validateMasterPersistence(); err != nil {
+		errs = append(errs, err)
 	}
 	if err := obj.validateS3Exclusivity(); err != nil {
 		errs = append(errs, err)
@@ -163,6 +169,22 @@ func (r *Seaweed) validateVolume() error {
 // CR. The two paths cannot safely share port 8333 between filer and a
 // standalone gateway on the same name, and supporting both in one CR
 // leads to ambiguous semantics for clients.
+// validateMasterPersistence rejects a single claim shared by several masters.
+// Every master keeps its raft log and snapshots under the same subdirectory of
+// -mdir, so replicas pointed at one volume either sit unschedulable behind a
+// ReadWriteOnce multi-attach error or, with ReadWriteMany, write over each
+// other's state. Per-replica claim templates are the only safe shape above one.
+func (r *Seaweed) validateMasterPersistence() error {
+	master := r.Spec.Master
+	if master == nil || master.Persistence == nil || !master.Persistence.Enabled {
+		return nil
+	}
+	if master.Persistence.ExistingClaim != nil && master.Replicas > 1 {
+		return fmt.Errorf("spec.master.persistence.existingClaim cannot be shared by %d masters; omit it so each replica gets its own claim", master.Replicas)
+	}
+	return nil
+}
+
 func (r *Seaweed) validateS3Exclusivity() error {
 	standalone := r.Spec.S3 != nil
 	embedded := r.Spec.Filer != nil && r.Spec.Filer.S3 != nil && r.Spec.Filer.S3.Enabled

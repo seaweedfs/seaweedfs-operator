@@ -295,3 +295,56 @@ func TestValidateBackup(t *testing.T) {
 		}
 	})
 }
+
+// Every master keeps its raft state under the same subdirectory of -mdir, so a
+// claim shared by several of them is never a working configuration.
+func TestValidateMasterPersistence(t *testing.T) {
+	withPersistence := func(replicas int32, persistence *PersistenceSpec) *Seaweed {
+		sw := baseValid()
+		sw.Spec.Master.Replicas = replicas
+		sw.Spec.Master.Persistence = persistence
+		return sw
+	}
+
+	t.Run("unset is fine", func(t *testing.T) {
+		if err := withPersistence(3, nil).validateMasterPersistence(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("claim templates are fine at any replica count", func(t *testing.T) {
+		sw := withPersistence(3, &PersistenceSpec{Enabled: true})
+		if err := sw.validateMasterPersistence(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("existing claim is fine for a single master", func(t *testing.T) {
+		claim := "my-claim"
+		sw := withPersistence(1, &PersistenceSpec{Enabled: true, ExistingClaim: &claim})
+		if err := sw.validateMasterPersistence(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("existing claim is rejected for several masters", func(t *testing.T) {
+		claim := "my-claim"
+		sw := withPersistence(3, &PersistenceSpec{Enabled: true, ExistingClaim: &claim})
+		err := sw.validateMasterPersistence()
+		if err == nil {
+			t.Fatal("expected an error for a claim shared by 3 masters")
+		}
+		if !strings.Contains(err.Error(), "existingClaim") {
+			t.Fatalf("error should name the offending field, got %v", err)
+		}
+	})
+
+	// Disabled persistence carries no claim, whatever else is set on it.
+	t.Run("disabled is fine", func(t *testing.T) {
+		claim := "my-claim"
+		sw := withPersistence(3, &PersistenceSpec{ExistingClaim: &claim})
+		if err := sw.validateMasterPersistence(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}

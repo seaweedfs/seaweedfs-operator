@@ -134,14 +134,17 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 	var persistentVolumeClaims []corev1.PersistentVolumeClaim
 	if dataDir, ok := masterDataDir(m); ok {
 		persistence := m.Spec.Master.Persistence
+		// A claim template lends its name to the mount, so the volume is named
+		// after the component either way. An existing claim only ever appears as
+		// a ClaimName: PVC names may carry dots and run to 253 characters, and a
+		// pod volume name may do neither.
 		claimName := m.Name + "-master"
 		if persistence.ExistingClaim != nil {
-			claimName = *persistence.ExistingClaim
 			masterPodSpec.Volumes = append(masterPodSpec.Volumes, corev1.Volume{
 				Name: claimName,
 				VolumeSource: corev1.VolumeSource{
 					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: claimName,
+						ClaimName: *persistence.ExistingClaim,
 					},
 				},
 			})

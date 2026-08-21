@@ -45,18 +45,18 @@ func TestBuildMasterStartupScript_MetricsAddress(t *testing.T) {
 // cluster's TopologyId. With no volume behind it the master ran on the
 // container's writable layer and lost that on every pod recreation.
 func TestMasterPersistence(t *testing.T) {
-	newMaster := func(persistence *seaweedv1.PersistenceSpec) *seaweedv1.Seaweed {
+	newMaster := func(replicas int32, persistence *seaweedv1.PersistenceSpec) *seaweedv1.Seaweed {
 		return &seaweedv1.Seaweed{
 			ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
 			Spec: seaweedv1.SeaweedSpec{
-				Master: &seaweedv1.MasterSpec{Replicas: 3, Persistence: persistence},
+				Master: &seaweedv1.MasterSpec{Replicas: replicas, Persistence: persistence},
 			},
 		}
 	}
 	r := &SeaweedReconciler{}
 
 	t.Run("unset leaves the master on its own default", func(t *testing.T) {
-		m := newMaster(nil)
+		m := newMaster(3, nil)
 		if got := buildMasterStartupScript(m); strings.Contains(got, "-mdir") {
 			t.Errorf("expected no -mdir flag when persistence is unset, got %q", got)
 		}
@@ -66,7 +66,7 @@ func TestMasterPersistence(t *testing.T) {
 	})
 
 	t.Run("enabled claims a volume and points -mdir at it", func(t *testing.T) {
-		m := newMaster(&seaweedv1.PersistenceSpec{Enabled: true, MountPath: ptr.To("/var/lib/seaweedfs")})
+		m := newMaster(3, &seaweedv1.PersistenceSpec{Enabled: true, MountPath: ptr.To("/var/lib/seaweedfs")})
 		if got := buildMasterStartupScript(m); !strings.Contains(got, "-mdir=/var/lib/seaweedfs") {
 			t.Errorf("expected -mdir at the mount path, got %q", got)
 		}
@@ -81,25 +81,27 @@ func TestMasterPersistence(t *testing.T) {
 		}
 	})
 
-	// An existing claim is shared, so it is a pod volume rather than a
-	// per-replica template.
-	t.Run("existing claim is mounted as is", func(t *testing.T) {
-		m := newMaster(&seaweedv1.PersistenceSpec{Enabled: true, ExistingClaim: ptr.To("my-pvc")})
+	// An existing claim is one volume shared by the whole StatefulSet, so it is
+	// only valid for a single master — the API rejects the rest. Its name stays
+	// in ClaimName: PVC names may carry dots and run to 253 characters, and a
+	// pod volume name may do neither.
+	t.Run("existing claim is referenced by name only", func(t *testing.T) {
+		m := newMaster(1, &seaweedv1.PersistenceSpec{Enabled: true, ExistingClaim: ptr.To("my.master.claim")})
 		sts := r.createMasterStatefulSet(m)
 		if vcts := sts.Spec.VolumeClaimTemplates; len(vcts) != 0 {
 			t.Errorf("expected no volumeClaimTemplates for an existing claim, got %d", len(vcts))
 		}
 		found := false
 		for _, vol := range sts.Spec.Template.Spec.Volumes {
-			if vol.Name == "my-pvc" && vol.PersistentVolumeClaim != nil && vol.PersistentVolumeClaim.ClaimName == "my-pvc" {
+			if vol.Name == "sw-master" && vol.PersistentVolumeClaim != nil && vol.PersistentVolumeClaim.ClaimName == "my.master.claim" {
 				found = true
 			}
 		}
 		if !found {
-			t.Errorf("expected a my-pvc volume, got %+v", sts.Spec.Template.Spec.Volumes)
+			t.Errorf("expected an sw-master volume bound to my.master.claim, got %+v", sts.Spec.Template.Spec.Volumes)
 		}
-		if !hasMount(sts, "my-pvc", "/data") {
-			t.Errorf("expected the master container to mount my-pvc at /data, got %+v", sts.Spec.Template.Spec.Containers[0].VolumeMounts)
+		if !hasMount(sts, "sw-master", "/data") {
+			t.Errorf("expected the master container to mount sw-master at /data, got %+v", sts.Spec.Template.Spec.Containers[0].VolumeMounts)
 		}
 	})
 }

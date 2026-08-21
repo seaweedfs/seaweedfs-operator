@@ -1485,6 +1485,11 @@ func (in *MasterSpec) DeepCopyInto(out *MasterSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.Persistence != nil {
+		in, out := &in.Persistence, &out.Persistence
+		*out = new(PersistenceSpec)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.VolumePreallocate != nil {
 		in, out := &in.VolumePreallocate, &out.VolumePreallocate
 		*out = new(bool)

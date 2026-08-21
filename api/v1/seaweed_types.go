@@ -406,6 +406,13 @@ type MasterSpec struct {
 	// +optional
 	IPBind *string `json:"ipBind,omitempty"`
 
+	// Persistence mounts a volume for the master's -mdir, which holds the raft
+	// log and snapshots and with them the cluster's identity (its TopologyId).
+	// Without it every master restart mints a new one. Off by default: turning
+	// it on adds a volumeClaimTemplate, which an existing StatefulSet cannot
+	// take without being recreated.
+	Persistence *PersistenceSpec `json:"persistence,omitempty"`
+
 	// Master-specific settings
 
 	VolumePreallocate  *bool   `json:"volumePreallocate,omitempty"`

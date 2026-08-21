@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -11,6 +12,21 @@ import (
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
+
+// masterDataDir returns the path the master's -mdir is mounted at, and whether
+// persistence is on at all. The raft log and snapshots live there, so without a
+// volume behind it the master loses its identity on every pod recreation.
+func masterDataDir(m *seaweedv1.Seaweed) (string, bool) {
+	persistence := m.Spec.Master.Persistence
+	if persistence == nil || !persistence.Enabled {
+		return "", false
+	}
+	mountPath := "/data"
+	if persistence.MountPath != nil {
+		mountPath = *persistence.MountPath
+	}
+	return mountPath, true
+}
 
 func buildMasterStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	command := weedPreamble(m, m.BaseMasterSpec().LoggingArgs(), "master")
@@ -44,6 +60,10 @@ func buildMasterStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string 
 	// here turns on push metrics for the whole cluster.
 	if m.Spec.MetricsAddress != "" {
 		command = append(command, fmt.Sprintf("-metrics.address=%s", m.Spec.MetricsAddress))
+	}
+
+	if dataDir, ok := masterDataDir(m); ok {
+		command = append(command, fmt.Sprintf("-mdir=%s", dataDir))
 	}
 
 	command = append(command, fmt.Sprintf("-ip=$(POD_NAME).%s-master-peer.%s", m.Name, m.Namespace))
@@ -110,6 +130,54 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 		masterPodSpec.Volumes = append(masterPodSpec.Volumes, tlsVols...)
 		masterConfigMounts = append(masterConfigMounts, tlsMounts...)
 	}
+
+	var persistentVolumeClaims []corev1.PersistentVolumeClaim
+	if dataDir, ok := masterDataDir(m); ok {
+		persistence := m.Spec.Master.Persistence
+		claimName := m.Name + "-master"
+		if persistence.ExistingClaim != nil {
+			claimName = *persistence.ExistingClaim
+			masterPodSpec.Volumes = append(masterPodSpec.Volumes, corev1.Volume{
+				Name: claimName,
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: claimName,
+					},
+				},
+			})
+		} else {
+			accessModes := persistence.AccessModes
+			if len(accessModes) == 0 {
+				accessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
+			}
+			persistentVolumeClaims = append(persistentVolumeClaims, corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        claimName,
+					Annotations: maps.Clone(persistence.Annotations),
+					Labels:      maps.Clone(persistence.Labels),
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes:      accessModes,
+					Resources:        persistence.Resources,
+					StorageClassName: persistence.StorageClassName,
+					Selector:         persistence.Selector,
+					VolumeName:       persistence.VolumeName,
+					VolumeMode:       persistence.VolumeMode,
+					DataSource:       persistence.DataSource,
+				},
+			})
+		}
+		subPath := ""
+		if persistence.SubPath != nil {
+			subPath = *persistence.SubPath
+		}
+		masterConfigMounts = append(masterConfigMounts, corev1.VolumeMount{
+			Name:      claimName,
+			MountPath: dataDir,
+			SubPath:   subPath,
+		})
+	}
+
 	masterPodSpec.EnableServiceLinks = &enableServiceLinks
 	masterPodSpec.Containers = []corev1.Container{{
 		Name:            "master",
@@ -183,6 +251,8 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 				},
 				Spec: masterPodSpec,
 			},
+			VolumeClaimTemplates:                 persistentVolumeClaims,
+			PersistentVolumeClaimRetentionPolicy: pvcRetentionPolicy(m),
 		},
 	}
 	// Set master instance as the owner and controller

@@ -53,6 +53,10 @@ func buildFilerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	if m.Spec.Filer.Iceberg != nil && m.Spec.Filer.Iceberg.Enabled {
 		commands = append(commands, fmt.Sprintf("-s3.port.iceberg=%d", m.Spec.Filer.Iceberg.IcebergEffectivePort()))
 	}
+	// Explicit config only: older images' fla9 drops an unknown flag and all args after it.
+	if m.Spec.Filer.Lance != nil && m.Spec.Filer.Lance.Enabled {
+		commands = append(commands, fmt.Sprintf("-s3.port.lance=%d", m.Spec.Filer.Lance.LanceEffectivePort()))
+	}
 	commands = append(commands, extraArgs...)
 
 	return strings.Join(commands, " ")
@@ -90,6 +94,12 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		ports = append(ports, corev1.ContainerPort{
 			ContainerPort: m.Spec.Filer.Iceberg.IcebergEffectivePort(),
 			Name:          "filer-iceberg",
+		})
+	}
+	if m.Spec.Filer.ServesLance() {
+		ports = append(ports, corev1.ContainerPort{
+			ContainerPort: m.Spec.Filer.Lance.LanceEffectivePort(),
+			Name:          "filer-lance",
 		})
 	}
 	replicas := int32(m.Spec.Filer.Replicas)

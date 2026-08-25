@@ -34,6 +34,7 @@ const (
 	FilerHTTPPort     = 8888
 	FilerS3Port       = 8333 // S3 port (IAM API is also available on this port when S3 is enabled)
 	FilerIcebergPort  = 8181 // Default Iceberg catalog REST API port
+	FilerLancePort    = 9101 // Default Lance Namespace REST API port
 	AdminHTTPPort     = 23646
 	SFTPPort          = 2222 // Default SFTP listen port
 
@@ -691,6 +692,17 @@ type IcebergConfig struct {
 	Port *int32 `json:"port,omitempty"`
 }
 
+// LanceConfig defines the Lance Namespace REST API configuration.
+// Absent means enabled: weed serves the namespace by default.
+type LanceConfig struct {
+	// +kubebuilder:default:=true
+	Enabled bool `json:"enabled,omitempty"`
+	// Port for the Lance Namespace REST API. Defaults to 9101 if not specified.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port *int32 `json:"port,omitempty"`
+}
+
 // FilerSpec is the spec for filers
 // +kubebuilder:validation:XValidation:rule="!(has(self.config) && has(self.configSecret))",message="config and configSecret are mutually exclusive"
 type FilerSpec struct {
@@ -741,6 +753,9 @@ type FilerSpec struct {
 	// Iceberg configuration for the Iceberg catalog REST API
 	Iceberg *IcebergConfig `json:"iceberg,omitempty"`
 
+	// Lance configuration for the Lance Namespace REST API
+	Lance *LanceConfig `json:"lance,omitempty"`
+
 	// Ingress configuration for the filer HTTP port.
 	// +optional
 	Ingress *IngressSpec `json:"ingress,omitempty"`
@@ -768,6 +783,21 @@ func (c *IcebergConfig) IcebergEffectivePort() int32 {
 		return *c.Port
 	}
 	return FilerIcebergPort
+}
+
+// LanceEffectivePort returns the Lance Namespace port, FilerLancePort (9101)
+// when unconfigured; nil-safe because an absent config still means the default.
+func (c *LanceConfig) LanceEffectivePort() int32 {
+	if c != nil && c.Port != nil {
+		return *c.Port
+	}
+	return FilerLancePort
+}
+
+// ServesLance reports whether the filer serves the Lance Namespace API:
+// matching weed's default-on, only an explicit enabled: false turns it off.
+func (f *FilerSpec) ServesLance() bool {
+	return f != nil && (f.Lance == nil || f.Lance.Enabled)
 }
 
 // AdminSpec is the spec for the admin server (single instance, stateless)

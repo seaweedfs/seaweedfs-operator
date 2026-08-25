@@ -35,7 +35,6 @@ const (
 	FilerS3Port       = 8333 // S3 port (IAM API is also available on this port when S3 is enabled)
 	FilerIcebergPort  = 8181 // Default Iceberg catalog REST API port
 	AdminHTTPPort     = 23646
-	WorkerMetricsPort = 9101 // Default worker metrics port (only used when metricsPort is configured)
 	SFTPPort          = 2222 // Default SFTP listen port
 
 	MasterGRPCPort = MasterHTTPPort + GRPCPortDelta
@@ -810,7 +809,9 @@ type WorkerSpec struct {
 	// The worker's readiness and liveness probes hit /ready and /health on this
 	// port, so the operator only creates them when metricsPort is set — and a
 	// readinessProbe/livenessProbe override therefore has no effect unless
-	// metricsPort is also configured.
+	// metricsPort is also configured. 9328 continues SeaweedFS's metrics
+	// series (master 9324, volume 9325, filer 9326, s3 9327); avoid 9101,
+	// which is the Lance Namespace API's port.
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
 	// Persistence mounts a volume for worker working directory

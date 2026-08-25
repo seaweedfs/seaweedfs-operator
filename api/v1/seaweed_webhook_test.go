@@ -348,3 +348,56 @@ func TestValidateMasterPersistence(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateWorker(t *testing.T) {
+	newWorker := func() *Seaweed {
+		sw := baseValid()
+		sw.Spec.Admin = &AdminSpec{}
+		sw.Spec.Filer = &FilerSpec{Replicas: 1}
+		sw.Spec.Worker = &WorkerSpec{Replicas: 1}
+		return sw
+	}
+
+	t.Run("worker with admin is fine", func(t *testing.T) {
+		if errs := newWorker().validateWorker(); len(errs) != 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+	})
+
+	t.Run("worker without admin is rejected", func(t *testing.T) {
+		sw := newWorker()
+		sw.Spec.Admin = nil
+		if errs := sw.validateWorker(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "spec.admin") {
+			t.Fatalf("expected admin requirement error, got %v", errs)
+		}
+	})
+
+	// The sidecar holds 9328 in the same pod, so the Go worker cannot.
+	t.Run("metricsPort 9328 with the sidecar is rejected", func(t *testing.T) {
+		sw := newWorker()
+		port := int32(WorkerLanceMetricsPort)
+		sw.Spec.Worker.MetricsPort = &port
+		if errs := sw.validateWorker(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "worker-lance") {
+			t.Fatalf("expected the port clash error, got %v", errs)
+		}
+	})
+
+	t.Run("metricsPort 9328 without the sidecar is fine", func(t *testing.T) {
+		sw := newWorker()
+		port := int32(WorkerLanceMetricsPort)
+		sw.Spec.Worker.MetricsPort = &port
+		sw.Spec.Filer.Lance = &LanceConfig{Enabled: false}
+		if errs := sw.validateWorker(); len(errs) != 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+	})
+
+	t.Run("another metricsPort is fine", func(t *testing.T) {
+		sw := newWorker()
+		port := int32(9350)
+		sw.Spec.Worker.MetricsPort = &port
+		if errs := sw.validateWorker(); len(errs) != 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+	})
+}

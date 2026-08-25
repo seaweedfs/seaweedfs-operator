@@ -43,6 +43,75 @@ func buildWorkerStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string 
 	return strings.Join(commands, " ")
 }
 
+// buildRustWorkerStartupScript renders the worker-lance sidecar's
+// /usr/bin/weed-worker command line.
+func buildRustWorkerStartupScript(m *seaweedv1.Seaweed) string {
+	commands := []string{"/usr/bin/weed-worker"}
+	commands = append(commands, fmt.Sprintf("--admin=%s", getAdminAddress(m)))
+	// The Rust default id is fixed, so replicas > 1 would collide without the pod name.
+	commands = append(commands, "--id=$(POD_NAME)")
+	// The sidecar itself is gated on ServesLance; the nil guard covers direct callers.
+	lancePort := int32(seaweedv1.FilerLancePort)
+	if m.Spec.Filer != nil {
+		lancePort = m.Spec.Filer.Lance.LanceEffectivePort()
+	}
+	commands = append(commands, fmt.Sprintf("--namespace=http://%s-filer:%d", m.Name, lancePort))
+	// The Rust binary reads no security.toml; it takes the same certificates as flags.
+	if tlsEffective(m) {
+		commands = append(commands,
+			fmt.Sprintf("--tls-ca=%s/ca.crt", tlsMountPath),
+			fmt.Sprintf("--tls-cert=%s/tls.crt", tlsMountPath),
+			fmt.Sprintf("--tls-key=%s/tls.key", tlsMountPath))
+	}
+	// -maxExecute defaults to 4 but --max-concurrency to 1, so render the shared 4.
+	maxConcurrency := int32(4)
+	if m.Spec.Worker.MaxExecute != nil {
+		maxConcurrency = *m.Spec.Worker.MaxExecute
+	}
+	commands = append(commands, fmt.Sprintf("--max-concurrency=%d", maxConcurrency))
+	// weed-worker binds metrics to loopback by default; probes need the pod IP.
+	commands = append(commands, fmt.Sprintf("--metrics-port=%d", seaweedv1.WorkerLanceMetricsPort))
+	commands = append(commands, "--metrics-ip=0.0.0.0")
+
+	// Images before 4.45 predate the binary; off amd64/arm64 it is an empty, exit-0 placeholder.
+	guard := `if [ ! -s /usr/bin/weed-worker ]; then echo "weed-worker is missing or empty in this image ($(uname -m)); it ships in images 4.45+ on amd64/arm64" >&2; exit 1; fi`
+
+	return guard + "\n" + strings.Join(commands, " ")
+}
+
+// workerProbes builds the /ready and /health probes a worker container serves on its metrics port.
+func workerProbes(port int32) (readiness, liveness *corev1.Probe) {
+	readiness = &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path:   "/ready",
+				Port:   intstr.FromInt(int(port)),
+				Scheme: corev1.URISchemeHTTP,
+			},
+		},
+		InitialDelaySeconds: 10,
+		TimeoutSeconds:      3,
+		PeriodSeconds:       15,
+		SuccessThreshold:    1,
+		FailureThreshold:    6,
+	}
+	liveness = &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path:   "/health",
+				Port:   intstr.FromInt(int(port)),
+				Scheme: corev1.URISchemeHTTP,
+			},
+		},
+		InitialDelaySeconds: 20,
+		TimeoutSeconds:      3,
+		PeriodSeconds:       30,
+		SuccessThreshold:    1,
+		FailureThreshold:    6,
+	}
+	return readiness, liveness
+}
+
 func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1.Deployment {
 	labels := labelsForWorker(m.Name)
 	podLabels := mergePodLabels(labels, m.BaseWorkerSpec().Labels())
@@ -99,7 +168,8 @@ func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1
 			SubPath:   subPath,
 		})
 	}
-	if tlsVols, tlsMounts := tlsVolumesAndMounts(m); len(tlsVols) > 0 {
+	tlsVols, tlsMounts := tlsVolumesAndMounts(m)
+	if len(tlsVols) > 0 {
 		workerPodSpec.Volumes = append(workerPodSpec.Volumes, tlsVols...)
 		volumeMounts = append(volumeMounts, tlsMounts...)
 	}
@@ -125,39 +195,38 @@ func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1
 	// below therefore only take effect when metricsPort is set; without a probe
 	// there is nothing to tune.
 	if m.Spec.Worker.MetricsPort != nil {
-		container.ReadinessProbe = &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/ready",
-					Port:   intstr.FromInt(int(*m.Spec.Worker.MetricsPort)),
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			InitialDelaySeconds: 10,
-			TimeoutSeconds:      3,
-			PeriodSeconds:       15,
-			SuccessThreshold:    1,
-			FailureThreshold:    6,
-		}
-		container.LivenessProbe = &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/health",
-					Port:   intstr.FromInt(int(*m.Spec.Worker.MetricsPort)),
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			InitialDelaySeconds: 20,
-			TimeoutSeconds:      3,
-			PeriodSeconds:       30,
-			SuccessThreshold:    1,
-			FailureThreshold:    6,
-		}
+		container.ReadinessProbe, container.LivenessProbe = workerProbes(*m.Spec.Worker.MetricsPort)
 		applyProbeOverrides(&container, m.BaseWorkerSpec().ReadinessProbe(), m.BaseWorkerSpec().LivenessProbe())
 	}
 
+	containers := []corev1.Container{container}
+	// The two workers share no jobs: weed-worker serves the lance_* family.
+	if m.Spec.Filer.ServesLance() {
+		lanceContainer := corev1.Container{
+			Name:            "worker-lance",
+			Image:           m.BaseWorkerSpec().Image(),
+			ImagePullPolicy: m.BaseWorkerSpec().ImagePullPolicy(),
+			SecurityContext: m.BaseWorkerSpec().ContainerSecurityContext(),
+			Env:             append(m.BaseWorkerSpec().Env(), kubernetesEnvVars...),
+			// No persistence: it backs -workingDir, which the Rust worker does not take.
+			VolumeMounts: tlsMounts,
+			Command: []string{
+				"/bin/sh",
+				"-ec",
+				buildRustWorkerStartupScript(m),
+			},
+			Ports: []corev1.ContainerPort{{
+				ContainerPort: seaweedv1.WorkerLanceMetricsPort,
+				Name:          "lance-metrics",
+			}},
+		}
+		lanceContainer.ReadinessProbe, lanceContainer.LivenessProbe = workerProbes(seaweedv1.WorkerLanceMetricsPort)
+		applyProbeOverrides(&lanceContainer, m.BaseWorkerSpec().ReadinessProbe(), m.BaseWorkerSpec().LivenessProbe())
+		containers = append(containers, lanceContainer)
+	}
+
 	workerPodSpec.EnableServiceLinks = &enableServiceLinks
-	workerPodSpec.Containers = append([]corev1.Container{container}, m.BaseWorkerSpec().Sidecars()...)
+	workerPodSpec.Containers = append(containers, m.BaseWorkerSpec().Sidecars()...)
 	workerPodSpec.InitContainers = append(workerPodSpec.InitContainers, m.BaseWorkerSpec().InitContainers()...)
 
 	return &appsv1.Deployment{

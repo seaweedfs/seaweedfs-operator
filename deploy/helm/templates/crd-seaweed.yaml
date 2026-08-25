@@ -6205,6 +6205,16 @@ spec:
                       additionalProperties:
                         type: string
                       type: object
+                    lance:
+                      properties:
+                        enabled:
+                          default: true
+                          type: boolean
+                        port:
+                          maximum: 65535
+                          minimum: 1
+                          type: integer
+                      type: object
                     limits:
                       additionalProperties:
                         anyOf:

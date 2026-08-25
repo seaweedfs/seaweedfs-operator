@@ -29,14 +29,14 @@ import (
 const (
 	GRPCPortDelta = 10000
 
-	MasterHTTPPort    = 9333
-	VolumeHTTPPort    = 8444
-	FilerHTTPPort     = 8888
-	FilerS3Port       = 8333 // S3 port (IAM API is also available on this port when S3 is enabled)
-	FilerIcebergPort  = 8181 // Default Iceberg catalog REST API port
-	AdminHTTPPort     = 23646
-	WorkerMetricsPort = 9101 // Default worker metrics port (only used when metricsPort is configured)
-	SFTPPort          = 2222 // Default SFTP listen port
+	MasterHTTPPort   = 9333
+	VolumeHTTPPort   = 8444
+	FilerHTTPPort    = 8888
+	FilerS3Port      = 8333 // S3 port (IAM API is also available on this port when S3 is enabled)
+	FilerIcebergPort = 8181 // Default Iceberg catalog REST API port
+	FilerLancePort   = 9101 // Default Lance Namespace REST API port
+	AdminHTTPPort    = 23646
+	SFTPPort         = 2222 // Default SFTP listen port
 
 	MasterGRPCPort = MasterHTTPPort + GRPCPortDelta
 	VolumeGRPCPort = VolumeHTTPPort + GRPCPortDelta
@@ -692,6 +692,17 @@ type IcebergConfig struct {
 	Port *int32 `json:"port,omitempty"`
 }
 
+// LanceConfig defines the Lance Namespace REST API configuration.
+// Absent means enabled: weed serves the namespace by default.
+type LanceConfig struct {
+	// +kubebuilder:default:=true
+	Enabled bool `json:"enabled,omitempty"`
+	// Port for the Lance Namespace REST API. Defaults to 9101 if not specified.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port *int32 `json:"port,omitempty"`
+}
+
 // FilerSpec is the spec for filers
 // +kubebuilder:validation:XValidation:rule="!(has(self.config) && has(self.configSecret))",message="config and configSecret are mutually exclusive"
 type FilerSpec struct {
@@ -742,6 +753,9 @@ type FilerSpec struct {
 	// Iceberg configuration for the Iceberg catalog REST API
 	Iceberg *IcebergConfig `json:"iceberg,omitempty"`
 
+	// Lance configuration for the Lance Namespace REST API
+	Lance *LanceConfig `json:"lance,omitempty"`
+
 	// Ingress configuration for the filer HTTP port.
 	// +optional
 	Ingress *IngressSpec `json:"ingress,omitempty"`
@@ -771,6 +785,21 @@ func (c *IcebergConfig) IcebergEffectivePort() int32 {
 	return FilerIcebergPort
 }
 
+// LanceEffectivePort returns the Lance Namespace port, FilerLancePort (9101)
+// when unconfigured; nil-safe because an absent config still means the default.
+func (c *LanceConfig) LanceEffectivePort() int32 {
+	if c != nil && c.Port != nil {
+		return *c.Port
+	}
+	return FilerLancePort
+}
+
+// ServesLance reports whether the filer serves the Lance Namespace API:
+// matching weed's default-on, only an explicit enabled: false turns it off.
+func (f *FilerSpec) ServesLance() bool {
+	return f != nil && (f.Lance == nil || f.Lance.Enabled)
+}
+
 // AdminSpec is the spec for the admin server (single instance, stateless)
 type AdminSpec struct {
 	ComponentSpec               `json:",inline"`
@@ -796,6 +825,10 @@ type AdminSpec struct {
 	Ingress *IngressSpec `json:"ingress,omitempty"`
 }
 
+// WorkerLanceMetricsPort is the fixed port the worker-lance sidecar serves
+// /health, /ready and /metrics on, continuing the 9324-9327 metrics series.
+const WorkerLanceMetricsPort = 9328
+
 // WorkerSpec is the spec for worker processes
 type WorkerSpec struct {
 	ComponentSpec               `json:",inline"`
@@ -810,7 +843,8 @@ type WorkerSpec struct {
 	// The worker's readiness and liveness probes hit /ready and /health on this
 	// port, so the operator only creates them when metricsPort is set — and a
 	// readinessProbe/livenessProbe override therefore has no effect unless
-	// metricsPort is also configured.
+	// metricsPort is also configured. Avoid 9101 (the Lance Namespace port)
+	// and 9328, held by the worker-lance sidecar in the same pod.
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
 	// Persistence mounts a volume for worker working directory

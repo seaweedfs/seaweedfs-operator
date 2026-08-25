@@ -83,9 +83,7 @@ func (v *SeaweedCustomValidator) ValidateCreate(_ context.Context, obj *Seaweed)
 		errs = append(errs, err)
 	}
 
-	if obj.Spec.Worker != nil && obj.Spec.Admin == nil {
-		errs = append(errs, errors.New("spec.worker requires spec.admin to be configured"))
-	}
+	errs = append(errs, obj.validateWorker()...)
 
 	if err := obj.validateMasterPersistence(); err != nil {
 		errs = append(errs, err)
@@ -111,9 +109,7 @@ func (v *SeaweedCustomValidator) ValidateUpdate(_ context.Context, _, obj *Seawe
 	} else if err := obj.validateVolume(); err != nil {
 		errs = append(errs, err)
 	}
-	if obj.Spec.Worker != nil && obj.Spec.Admin == nil {
-		errs = append(errs, errors.New("spec.worker requires spec.admin to be configured"))
-	}
+	errs = append(errs, obj.validateWorker()...)
 	if err := obj.validateMasterPersistence(); err != nil {
 		errs = append(errs, err)
 	}
@@ -192,6 +188,22 @@ func (r *Seaweed) validateS3Exclusivity() error {
 		return errors.New("spec.s3 and spec.filer.s3.enabled cannot both be set; spec.filer.s3 is deprecated — migrate to the top-level spec.s3 standalone gateway")
 	}
 	return nil
+}
+
+// validateWorker checks what the schema cannot: the admin the worker needs,
+// and metricsPort colliding with the sidecar's fixed 9328 in one pod.
+func (r *Seaweed) validateWorker() []error {
+	if r.Spec.Worker == nil {
+		return nil
+	}
+	var errs []error
+	if r.Spec.Admin == nil {
+		errs = append(errs, errors.New("spec.worker requires spec.admin to be configured"))
+	}
+	if r.Spec.Worker.MetricsPort != nil && *r.Spec.Worker.MetricsPort == WorkerLanceMetricsPort && r.Spec.Filer.ServesLance() {
+		errs = append(errs, fmt.Errorf("spec.worker.metricsPort %d is held by the worker-lance sidecar in the same pod; pick another port or set spec.filer.lance.enabled: false", WorkerLanceMetricsPort))
+	}
+	return errs
 }
 
 // validateSFTP enforces that the standalone SFTP gateway has a filer in

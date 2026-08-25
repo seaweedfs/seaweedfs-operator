@@ -825,6 +825,10 @@ type AdminSpec struct {
 	Ingress *IngressSpec `json:"ingress,omitempty"`
 }
 
+// WorkerLanceMetricsPort is the fixed port the worker-lance sidecar serves
+// /health, /ready and /metrics on, continuing the 9324-9327 metrics series.
+const WorkerLanceMetricsPort = 9328
+
 // WorkerSpec is the spec for worker processes
 type WorkerSpec struct {
 	ComponentSpec               `json:",inline"`
@@ -839,9 +843,8 @@ type WorkerSpec struct {
 	// The worker's readiness and liveness probes hit /ready and /health on this
 	// port, so the operator only creates them when metricsPort is set — and a
 	// readinessProbe/livenessProbe override therefore has no effect unless
-	// metricsPort is also configured. 9328 continues SeaweedFS's metrics
-	// series (master 9324, volume 9325, filer 9326, s3 9327); avoid 9101,
-	// which is the Lance Namespace API's port.
+	// metricsPort is also configured. Avoid 9101 (the Lance Namespace port)
+	// and 9328, held by the worker-lance sidecar in the same pod.
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
 
 	// Persistence mounts a volume for worker working directory

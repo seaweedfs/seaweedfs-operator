@@ -127,9 +127,10 @@ func (sa *SeaweedAdmin) ProcessCommand(ctx context.Context, cmd string) error {
 // registered with the master) is simply missing from the map. The caller uses
 // this to decide when an evacuated volume server is safe to remove.
 func (sa *SeaweedAdmin) VolumeServerVolumeCounts(ctx context.Context) (map[string]int, error) {
-	// WithClient resolves the master via a blocking GetMaster(Background()); cap
-	// the wait here the same way ProcessCommand does so a cluster the operator
-	// cannot reach surfaces a timeout instead of hanging the caller forever.
+	// WithClient waits for a master bounded only by its ctx, which here may
+	// have no deadline; cap the wait the same way ProcessCommand does so a
+	// cluster the operator cannot reach surfaces a timeout instead of hanging
+	// the caller forever.
 	waitCtx, cancel := context.WithTimeout(ctx, masterConnectionTimeout)
 	defer cancel()
 	if sa.commandEnv.MasterClient.GetMaster(waitCtx) == "" {
@@ -137,7 +138,7 @@ func (sa *SeaweedAdmin) VolumeServerVolumeCounts(ctx context.Context) (map[strin
 	}
 
 	var resp *master_pb.VolumeListResponse
-	err := sa.commandEnv.MasterClient.WithClient(false, func(client master_pb.SeaweedClient) error {
+	err := sa.commandEnv.MasterClient.WithClient(ctx, false, func(client master_pb.SeaweedClient) error {
 		r, e := client.VolumeList(ctx, &master_pb.VolumeListRequest{})
 		if e != nil {
 			return e

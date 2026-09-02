@@ -296,7 +296,7 @@ CONTROLLER_TOOLS_VERSION ?= v0.19.0
 ENVTEST_VERSION ?= latest
 
 # renovate: datasource=github-tags depName=kubernetes-sigs/kind
-KIND_VERSION ?= v0.23.0
+KIND_VERSION ?= v0.33.0
 # renovate: datasource=github-tags depName=helm/helm
 HELM_VERSION ?= v3.15.2
 # renovate: datasource=github-tags depName=losisin/helm-values-schema-json

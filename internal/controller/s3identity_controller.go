@@ -103,7 +103,7 @@ func (r *S3IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// Refuse rename attempts once provisioned. This check follows missing-cluster
 	// deletion cleanup so an invalid rename cannot trap the finalizer after the
 	// cluster is gone.
-	if identity.Status.IdentityName != "" && identity.Status.IdentityName != name {
+	if identity.DeletionTimestamp.IsZero() && identity.Status.IdentityName != "" && identity.Status.IdentityName != name {
 		return r.fail(ctx, &identity, "IdentityRenameNotSupported",
 			fmt.Sprintf("identity name change from %q to %q is not supported; restore the original name or recreate the resource",
 				identity.Status.IdentityName, name))

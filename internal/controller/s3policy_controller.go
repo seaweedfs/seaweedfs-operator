@@ -102,7 +102,7 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Refuse rename attempts once provisioned. This check follows missing-cluster
 	// deletion cleanup so an invalid rename cannot trap the finalizer after the
 	// cluster is gone.
-	if policy.Status.PolicyName != "" && policy.Status.PolicyName != name {
+	if policy.DeletionTimestamp.IsZero() && policy.Status.PolicyName != "" && policy.Status.PolicyName != name {
 		return r.fail(ctx, &policy, "PolicyRenameNotSupported",
 			fmt.Sprintf("policy name change from %q to %q is not supported; restore the original name or recreate the resource",
 				policy.Status.PolicyName, name))

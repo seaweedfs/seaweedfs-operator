@@ -169,7 +169,7 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	// move is to surface the error and let the user recreate. This check follows
 	// missing-cluster deletion cleanup so an invalid rename cannot trap the
 	// finalizer after the cluster is gone.
-	if bucket.Status.BucketName != "" && bucket.Status.BucketName != bucketName {
+	if bucket.DeletionTimestamp.IsZero() && bucket.Status.BucketName != "" && bucket.Status.BucketName != bucketName {
 		msg := fmt.Sprintf("bucket name change from %q to %q is not supported; restore the original name or recreate the resource",
 			bucket.Status.BucketName, bucketName)
 		return r.failPhase(ctx, &bucket, seaweedv1.BucketPhaseFailed, "BucketRenameNotSupported", msg)

@@ -216,3 +216,52 @@ func TestReconcile_ClusterGoneWhileDeleting_RenameMismatchDoesNotBlock(t *testin
 		}
 	})
 }
+
+// A rename attempt must not strand the finalizer. The rename guard runs before
+// the deletion path, so a Bucket whose spec.name diverged from
+// status.bucketName could never be deleted — the same stuck-finalizer symptom
+// as a missing cluster, from a different trigger.
+func TestReconcile_RenamedWhileDeleting_StillReleases(t *testing.T) {
+	now := metav1.Now()
+	bucket := newTestBucket("photos")
+	bucket.Spec.ReclaimPolicy = seaweedv1.BucketReclaimRetain
+	// Provisioned as "photos", spec since changed — a rename the operator refuses.
+	bucket.Status.BucketName = "photos-original"
+	bucket.Finalizers = []string{BucketFinalizer}
+	bucket.DeletionTimestamp = &now
+
+	fa := newFakeAdmin()
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err == nil {
+		t.Errorf("a renamed bucket could not be deleted; still present with finalizers %v", got.Finalizers)
+	}
+}
+
+// The guard must still refuse a rename on a live object.
+func TestReconcile_RenamedWhileLive_StillRefused(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Status.BucketName = "photos-original"
+
+	fa := newFakeAdmin()
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.BucketPhaseFailed {
+		t.Errorf("phase = %q, want Failed for a rename on a live bucket", got.Status.Phase)
+	}
+}

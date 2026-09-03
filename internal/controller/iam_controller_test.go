@@ -795,6 +795,69 @@ func TestS3Credentials_Delete_RetainKeepsKeyAndOrphansSecret(t *testing.T) {
 	}
 }
 
+func TestS3Credentials_Delete_DoesNotTouchAnotherCredentialsSecret(t *testing.T) {
+	for _, policy := range []seaweedv1.S3ReclaimPolicy{seaweedv1.S3ReclaimDelete, seaweedv1.S3ReclaimRetain} {
+		t.Run(string(policy), func(t *testing.T) {
+			scheme := iamTestScheme(t)
+			cred := &seaweedv1.S3Credentials{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "bob-creds",
+					Namespace:  "media",
+					UID:        "bob-uid",
+					Finalizers: []string{s3CredentialsFinalizer},
+				},
+				Spec: seaweedv1.S3CredentialsSpec{
+					SeaweedRef:    iamSeaweedRef(),
+					IdentityRef:   seaweedv1.S3IdentityRef{Name: "bob"},
+					SecretRef:     seaweedv1.S3SecretRef{Name: "shared-secret"},
+					ReclaimPolicy: policy,
+				},
+			}
+			controller := true
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "shared-secret",
+					Namespace:   "media",
+					UID:         "secret-uid",
+					Annotations: map[string]string{s3CredentialsManagedAnnotation: "true"},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: seaweedv1.GroupVersion.String(),
+						Kind:       "S3Credentials",
+						Name:       "alice-creds",
+						UID:        "alice-uid",
+						Controller: &controller,
+					}},
+				},
+			}
+			cli := iamTestClient(t, scheme, newTestSeaweed(), secret, cred)
+			fa := newFakeIAMAdmin()
+			r := &S3CredentialsReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+			r.AdminFactory = fakeIAMFactory(fa)
+
+			credKey := client.ObjectKeyFromObject(cred)
+			if err := cli.Delete(context.Background(), cred); err != nil {
+				t.Fatalf("delete credentials: %v", err)
+			}
+			reconcileOnce(t, r, credKey)
+
+			var got corev1.Secret
+			if err := cli.Get(context.Background(), client.ObjectKeyFromObject(secret), &got); err != nil {
+				t.Fatalf("another credential's Secret was removed: %v", err)
+			}
+			if !metav1.IsControlledBy(&got, &seaweedv1.S3Credentials{ObjectMeta: metav1.ObjectMeta{UID: "alice-uid"}}) {
+				t.Fatalf("another credential's owner reference changed: %v", got.OwnerReferences)
+			}
+
+			var after seaweedv1.S3Credentials
+			if err := cli.Get(context.Background(), credKey, &after); err != nil && !apierrors.IsNotFound(err) {
+				t.Fatalf("get deleted credentials: %v", err)
+			} else if err == nil && len(after.Finalizers) != 0 {
+				t.Fatalf("finalizer was not cleared: %v", after.Finalizers)
+			}
+		})
+	}
+}
+
 // --- S3PolicyBinding ---
 
 func TestS3PolicyBinding_AttachesAndDetaches(t *testing.T) {

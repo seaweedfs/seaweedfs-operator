@@ -155,6 +155,12 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	var seaweed seaweedv1.Seaweed
 	if err := r.Get(ctx, types.NamespacedName{Namespace: seaweedNS, Name: bucket.Spec.ClusterRef.Name}, &seaweed); err != nil {
 		if apierrors.IsNotFound(err) {
+			// The bucket lives in the cluster, so with the cluster gone there is
+			// nothing for handleDeletion to do. Release rather than requeue on a
+			// reference that will never resolve.
+			if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &bucket, BucketFinalizer); handled {
+				return ctrl.Result{}, err
+			}
 			r.setCondition(&bucket, seaweedv1.BucketConditionClusterReachable, metav1.ConditionFalse, "ClusterRefNotFound",
 				fmt.Sprintf("Seaweed %q not found in namespace %q", bucket.Spec.ClusterRef.Name, seaweedNS))
 			bucket.Status.Phase = seaweedv1.BucketPhasePending

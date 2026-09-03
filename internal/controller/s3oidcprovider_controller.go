@@ -76,14 +76,8 @@ func (r *S3OIDCProviderReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 	if !found {
-		// Cluster already gone: nothing to clean up from its IAM service, so let
-		// deletion proceed instead of requeuing forever on a missing reference.
-		if !provider.DeletionTimestamp.IsZero() {
-			controllerutil.RemoveFinalizer(&provider, s3OIDCProviderFinalizer)
-			if err := r.Update(ctx, &provider); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, nil
+		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &provider, s3OIDCProviderFinalizer); handled {
+			return ctrl.Result{}, err
 		}
 		return r.clusterNotFound(ctx, &provider)
 	}

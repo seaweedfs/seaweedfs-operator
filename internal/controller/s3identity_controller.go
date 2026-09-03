@@ -100,6 +100,9 @@ func (r *S3IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 	if !found {
+		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &identity, s3IdentityFinalizer); handled {
+			return ctrl.Result{}, err
+		}
 		return r.clusterNotFound(ctx, &identity)
 	}
 	setIAMCondition(&identity.Status.Conditions, identity.Generation, seaweedv1.S3ConditionClusterReachable, metav1.ConditionTrue, "Reachable", "")

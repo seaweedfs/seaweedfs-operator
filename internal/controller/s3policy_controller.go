@@ -98,6 +98,9 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 	if !found {
+		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &policy, s3PolicyFinalizer); handled {
+			return ctrl.Result{}, err
+		}
 		return r.clusterNotFound(ctx, &policy)
 	}
 	setIAMCondition(&policy.Status.Conditions, policy.Generation, seaweedv1.S3ConditionClusterReachable, metav1.ConditionTrue, "Reachable", "")

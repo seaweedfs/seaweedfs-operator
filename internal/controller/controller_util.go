@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // the following is adapted from tidb-operator/pkg/controller/generic_control.go
@@ -549,4 +550,24 @@ func mergePodTemplateMetadata(owner metav1.Object, existing, desired *corev1.Pod
 	owner.SetAnnotations(mergeStringMaps(owner.GetAnnotations(), map[string]string{
 		LastAppliedPodTemplateKeys: string(rendered),
 	}))
+}
+
+// releaseFinalizerIfDeleting drops finalizer from obj when obj is being deleted
+// and the Seaweed cluster it refers to no longer exists.
+//
+// A finalizer here exists to clean state out of that cluster. Once the cluster
+// is gone there is nothing left to clean, and requeuing on the missing
+// reference keeps the finalizer in place forever, so the object can never be
+// deleted. Removing a cluster before the resources that reference it is an
+// ordinary thing to do -- deleting a namespace does exactly that.
+//
+// Reports whether it handled obj; when true the caller returns immediately.
+func releaseFinalizerIfDeleting(ctx context.Context, c client.Client, obj client.Object, finalizer string) (bool, error) {
+	if obj.GetDeletionTimestamp().IsZero() {
+		return false, nil
+	}
+	if !controllerutil.RemoveFinalizer(obj, finalizer) {
+		return true, nil
+	}
+	return true, c.Update(ctx, obj)
 }

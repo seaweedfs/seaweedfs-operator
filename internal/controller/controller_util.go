@@ -501,3 +501,31 @@ func (r *SeaweedReconciler) probeServiceMonitorCRD() bool {
 	klog.Warningf("ServiceMonitor CRD probe returned unexpected error (assuming available): %v", err)
 	return true
 }
+
+// mergePodTemplateMetadata applies the desired pod template metadata to an
+// existing workload while preserving annotations and labels the operator does
+// not manage.
+//
+// Assigning ObjectMeta wholesale discards every key written by anything else,
+// which breaks the standard "annotate the pod template to trigger a restart"
+// mechanism that `kubectl rollout restart`, Reloader and the Vault Secrets
+// Operator's rolloutRestartTargets all rely on.
+//
+// It also does not cancel such a restart cleanly. The StatefulSet controller
+// rolls the highest ordinal first, so by the time the operator reverts the
+// template, that replica has already been recreated. Ordinal 0 still matches
+// the operator's canonical template and is never rolled at all, leaving a
+// StatefulSet permanently half rolled with no indication that it happened.
+//
+// The operator's own keys stay authoritative: anything it sets overwrites the
+// existing value. A key the operator previously set and no longer sets is kept
+// rather than removed, since there is nothing here to distinguish it from a key
+// another controller owns.
+func mergePodTemplateMetadata(existing, desired *corev1.PodTemplateSpec) {
+	annotations := mergeStringMaps(existing.Annotations, desired.Annotations)
+	labels := mergeStringMaps(existing.Labels, desired.Labels)
+
+	existing.ObjectMeta = desired.ObjectMeta
+	existing.Annotations = annotations
+	existing.Labels = labels
+}

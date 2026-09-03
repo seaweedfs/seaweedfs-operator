@@ -96,7 +96,7 @@ func (r *SeaweedReconciler) ensureVolumeServerStatefulSet(ctx context.Context, s
 		desiredStatefulSet := desired.(*appsv1.StatefulSet)
 
 		existingStatefulSet.Spec.Replicas = desiredStatefulSet.Spec.Replicas
-		existingStatefulSet.Spec.Template.ObjectMeta = desiredStatefulSet.Spec.Template.ObjectMeta
+		mergePodTemplateMetadata(&existingStatefulSet.Spec.Template, &desiredStatefulSet.Spec.Template)
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 		existingStatefulSet.Spec.PersistentVolumeClaimRetentionPolicy = desiredStatefulSet.Spec.PersistentVolumeClaimRetentionPolicy
 
@@ -132,7 +132,7 @@ func (r *SeaweedReconciler) ensureVolumeServerDaemonSet(ctx context.Context, sea
 		existingDaemonSet := existing.(*appsv1.DaemonSet)
 		desiredDaemonSet := desired.(*appsv1.DaemonSet)
 
-		existingDaemonSet.Spec.Template.ObjectMeta = desiredDaemonSet.Spec.Template.ObjectMeta
+		mergePodTemplateMetadata(&existingDaemonSet.Spec.Template, &desiredDaemonSet.Spec.Template)
 		existingDaemonSet.Spec.Template.Spec = desiredDaemonSet.Spec.Template.Spec
 		existingDaemonSet.Spec.UpdateStrategy = desiredDaemonSet.Spec.UpdateStrategy
 
@@ -264,7 +264,7 @@ func (r *SeaweedReconciler) ensureVolumeServerTopologyStatefulSet(ctx context.Co
 		desiredStatefulSet := desired.(*appsv1.StatefulSet)
 
 		existingStatefulSet.Spec.Replicas = desiredStatefulSet.Spec.Replicas
-		existingStatefulSet.Spec.Template.ObjectMeta = desiredStatefulSet.Spec.Template.ObjectMeta
+		mergePodTemplateMetadata(&existingStatefulSet.Spec.Template, &desiredStatefulSet.Spec.Template)
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 		existingStatefulSet.Spec.PersistentVolumeClaimRetentionPolicy = desiredStatefulSet.Spec.PersistentVolumeClaimRetentionPolicy
 

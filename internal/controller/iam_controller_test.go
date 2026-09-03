@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -344,44 +345,90 @@ func TestS3Credentials_GeneratesAndStores(t *testing.T) {
 	}
 }
 
-func TestS3Credentials_AdoptsExistingSecret(t *testing.T) {
-	scheme := iamTestScheme(t)
-	existing := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "alice-secret", Namespace: "media"},
-		Data: map[string][]byte{
-			defaultAccessKeyField: []byte("AKIAADOPTED"),
-			defaultSecretKeyField: []byte("supersecret"),
-		},
-	}
-	cred := &seaweedv1.S3Credentials{
-		ObjectMeta: metav1.ObjectMeta{Name: "alice-creds", Namespace: "media"},
-		Spec: seaweedv1.S3CredentialsSpec{
-			SeaweedRef:  iamSeaweedRef(),
-			IdentityRef: seaweedv1.S3IdentityRef{Name: "alice"},
-			SecretRef:   seaweedv1.S3SecretRef{Name: "alice-secret"},
-		},
-	}
-	cli := iamTestClient(t, scheme, newTestSeaweed(), existing, cred)
-	fa := newFakeIAMAdmin()
-	fa.seedUser("alice")
-	r := &S3CredentialsReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
-	r.AdminFactory = fakeIAMFactory(fa)
+func TestS3Credentials_RejectsUnownedExistingSecret(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		managed  bool
+		complete bool
+		owner    string
+		ownerUID types.UID
+	}{
+		{name: "unmanaged", complete: true},
+		{name: "managed by another credential", managed: true, owner: "other-creds", ownerUID: "other-uid"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scheme := iamTestScheme(t)
+			cred := &seaweedv1.S3Credentials{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "alice-creds",
+					Namespace:  "media",
+					UID:        "alice-uid",
+					Finalizers: []string{s3CredentialsFinalizer},
+				},
+				Spec: seaweedv1.S3CredentialsSpec{
+					SeaweedRef:  iamSeaweedRef(),
+					IdentityRef: seaweedv1.S3IdentityRef{Name: "alice"},
+					SecretRef:   seaweedv1.S3SecretRef{Name: "alice-secret"},
+				},
+			}
+			existing := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "alice-secret", Namespace: "media"},
+				Data: map[string][]byte{
+					defaultAccessKeyField: []byte("AKIAEXISTING"),
+				},
+			}
+			if tc.complete {
+				existing.Data[defaultSecretKeyField] = []byte("supersecret")
+			}
+			if tc.managed {
+				controller := true
+				existing.Annotations = map[string]string{s3CredentialsManagedAnnotation: "true"}
+				existing.OwnerReferences = []metav1.OwnerReference{{
+					APIVersion: seaweedv1.GroupVersion.String(),
+					Kind:       "S3Credentials",
+					Name:       tc.owner,
+					UID:        tc.ownerUID,
+					Controller: &controller,
+				}}
+			}
 
-	key := types.NamespacedName{Namespace: "media", Name: "alice-creds"}
-	reconcileStable(t, r, key, 5)
+			cli := iamTestClient(t, scheme, newTestSeaweed(), existing, cred)
+			fa := newFakeIAMAdmin()
+			fa.seedUser("alice")
+			r := &S3CredentialsReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+			r.AdminFactory = fakeIAMFactory(fa)
 
-	if keys := fa.userKeys("alice"); len(keys) != 1 || keys[0] != "AKIAADOPTED" {
-		t.Fatalf("expected adopted key AKIAADOPTED, got %v", keys)
-	}
-	if sk := fa.secretKeyFor("alice", "AKIAADOPTED"); sk != "supersecret" {
-		t.Errorf("adopted secret key mismatch: %q", sk)
-	}
-	var secret corev1.Secret
-	if err := cli.Get(context.Background(), types.NamespacedName{Namespace: "media", Name: "alice-secret"}, &secret); err != nil {
-		t.Fatalf("get secret: %v", err)
-	}
-	if secret.Annotations[s3CredentialsManagedAnnotation] == "true" {
-		t.Error("pre-existing secret must not be marked managed")
+			key := types.NamespacedName{Namespace: "media", Name: "alice-creds"}
+			if res := reconcileOnce(t, r, key); res.RequeueAfter == 0 {
+				t.Fatal("expected ownership conflict to requeue")
+			}
+			if keys := fa.userKeys("alice"); len(keys) != 0 {
+				t.Fatalf("ownership conflict created IAM keys: %v", keys)
+			}
+
+			var secret corev1.Secret
+			if err := cli.Get(context.Background(), client.ObjectKeyFromObject(existing), &secret); err != nil {
+				t.Fatalf("get secret: %v", err)
+			}
+			if got := string(secret.Data[defaultAccessKeyField]); got != "AKIAEXISTING" {
+				t.Errorf("secret access key = %q, want unchanged", got)
+			}
+			if _, found := secret.Data[defaultSecretKeyField]; found != tc.complete {
+				t.Errorf("secret key presence = %v, want %v", found, tc.complete)
+			}
+
+			var got seaweedv1.S3Credentials
+			if err := cli.Get(context.Background(), key, &got); err != nil {
+				t.Fatalf("get credentials: %v", err)
+			}
+			if got.Status.Phase != seaweedv1.S3PhaseFailed {
+				t.Errorf("phase = %q, want Failed", got.Status.Phase)
+			}
+			ready := meta.FindStatusCondition(got.Status.Conditions, seaweedv1.S3ConditionReady)
+			if ready == nil || ready.Reason != "SecretOwnershipConflict" {
+				t.Errorf("Ready condition = %+v", ready)
+			}
+		})
 	}
 }
 
@@ -391,19 +438,31 @@ func TestS3Credentials_AdoptsExistingSecret(t *testing.T) {
 // authenticates and the superseded secret stops working.
 func TestS3Credentials_AppliesRotatedSecretKey(t *testing.T) {
 	scheme := iamTestScheme(t)
-	existing := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "alice-secret", Namespace: "media"},
-		Data: map[string][]byte{
-			defaultAccessKeyField: []byte("AKIAROTATE"),
-			defaultSecretKeyField: []byte("oldsecret"),
-		},
-	}
 	cred := &seaweedv1.S3Credentials{
-		ObjectMeta: metav1.ObjectMeta{Name: "alice-creds", Namespace: "media"},
+		ObjectMeta: metav1.ObjectMeta{Name: "alice-creds", Namespace: "media", UID: "alice-uid"},
 		Spec: seaweedv1.S3CredentialsSpec{
 			SeaweedRef:  iamSeaweedRef(),
 			IdentityRef: seaweedv1.S3IdentityRef{Name: "alice"},
 			SecretRef:   seaweedv1.S3SecretRef{Name: "alice-secret"},
+		},
+	}
+	controller := true
+	existing := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "alice-secret",
+			Namespace:   "media",
+			Annotations: map[string]string{s3CredentialsManagedAnnotation: "true"},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: seaweedv1.GroupVersion.String(),
+				Kind:       "S3Credentials",
+				Name:       cred.Name,
+				UID:        cred.UID,
+				Controller: &controller,
+			}},
+		},
+		Data: map[string][]byte{
+			defaultAccessKeyField: []byte("AKIAROTATE"),
+			defaultSecretKeyField: []byte("oldsecret"),
 		},
 	}
 	cli := iamTestClient(t, scheme, newTestSeaweed(), existing, cred)

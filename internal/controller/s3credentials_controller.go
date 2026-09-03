@@ -183,6 +183,11 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 		return r.pending(ctx, cred, "SecretNotFound",
 			fmt.Sprintf("cross-namespace Secret %s/%s does not exist", secretNamespace, secretName))
 	}
+	if secretFound && !crossNamespace &&
+		(secret.Annotations[s3CredentialsManagedAnnotation] != "true" || !metav1.IsControlledBy(secret, cred)) {
+		return r.fail(ctx, cred, "SecretOwnershipConflict",
+			fmt.Sprintf("Secret %s/%s is not controlled by this S3Credentials", secretNamespace, secretName))
+	}
 
 	var existingAK, existingSK string
 	if secretFound {
@@ -241,9 +246,7 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 	return ctrl.Result{RequeueAfter: iamResyncInterval}, nil
 }
 
-// writeSecret creates or updates the Secret holding the key pair. A Secret the
-// operator creates is annotated as managed so the finalizer can delete it; a
-// pre-existing Secret is updated in place but never marked managed.
+// writeSecret creates or updates the Secret holding the key pair.
 func (r *S3CredentialsReconciler) writeSecret(ctx context.Context, cred *seaweedv1.S3Credentials, secret *corev1.Secret, secretFound bool, secretName, secretNamespace, akField, skField, ak, sk string) error {
 	if !secretFound {
 		newSecret := &corev1.Secret{

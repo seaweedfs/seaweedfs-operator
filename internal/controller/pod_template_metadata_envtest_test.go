@@ -64,7 +64,8 @@ func podTemplateOf(t *testing.T, obj client.Object) corev1.PodTemplateSpec {
 
 // assertTemplateAnnotations re-reads obj and checks that the restart
 // annotation stamped by another controller survived the reconcile while the
-// operator's own annotation was brought up to date.
+// operator's own annotation was brought up to date, or removed when checksum
+// is empty.
 func assertTemplateAnnotations(t *testing.T, ctx context.Context, cli client.Client, obj client.Object, checksum string) {
 	t.Helper()
 	if err := cli.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
@@ -157,6 +158,40 @@ func TestReconcile_PreservesPodTemplateAnnotationsFromOtherControllers(t *testin
 	for _, w := range workloads {
 		assertTemplateAnnotations(t, ctx, cli, w, "v2")
 	}
+
+	// Dropping the key from the CR drops it from every template; the foreign
+	// key still survives.
+	if err := cli.Get(ctx, req.NamespacedName, cr); err != nil {
+		t.Fatalf("re-read CR: %v", err)
+	}
+	delete(cr.Spec.Annotations, "checksum/config")
+	if err := cli.Update(ctx, cr); err != nil {
+		t.Fatalf("update CR: %v", err)
+	}
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatalf("reconcile after removal: %v", err)
+	}
+	for _, w := range workloads {
+		assertTemplateAnnotations(t, ctx, cli, w, "")
+	}
+
+	// A converged workload is not rewritten: the rendered-key record must
+	// come out byte-identical on every pass.
+	versions := map[string]string{}
+	for _, w := range workloads {
+		versions[w.GetName()] = w.GetResourceVersion()
+	}
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatalf("steady-state reconcile: %v", err)
+	}
+	for _, w := range workloads {
+		if err := cli.Get(ctx, client.ObjectKeyFromObject(w), w); err != nil {
+			t.Fatalf("get %s: %v", w.GetName(), err)
+		}
+		if w.GetResourceVersion() != versions[w.GetName()] {
+			t.Errorf("%s was rewritten by a steady-state reconcile", w.GetName())
+		}
+	}
 }
 
 // TestEnsureVolumeServerDaemonSet_PreservesPodTemplateAnnotationsFromOtherControllers
@@ -200,6 +235,12 @@ func TestEnsureVolumeServerDaemonSet_PreservesPodTemplateAnnotationsFromOtherCon
 		t.Fatalf("ensure DaemonSet after restart: %v", err)
 	}
 	assertTemplateAnnotations(t, ctx, cli, ds, "v2")
+
+	delete(cr.Spec.Annotations, "checksum/config")
+	if _, _, err := r.ensureVolumeServerDaemonSet(ctx, cr); err != nil {
+		t.Fatalf("ensure DaemonSet after removal: %v", err)
+	}
+	assertTemplateAnnotations(t, ctx, cli, ds, "")
 }
 
 // TestCreateOrUpdateDeployment_AddsAnnotationsToBareTemplate pins the
@@ -246,5 +287,15 @@ func TestCreateOrUpdateDeployment_AddsAnnotationsToBareTemplate(t *testing.T) {
 	}
 	if got.Spec.Template.Annotations["checksum/config"] != "v1" {
 		t.Errorf("template annotation checksum/config = %q, want v1", got.Spec.Template.Annotations["checksum/config"])
+	}
+
+	if _, err := r.CreateOrUpdateDeployment(deploy(nil)); err != nil {
+		t.Fatalf("update back to bare: %v", err)
+	}
+	if err := cli.Get(ctx, types.NamespacedName{Name: "bare", Namespace: ns}, &got); err != nil {
+		t.Fatalf("readback: %v", err)
+	}
+	if v, ok := got.Spec.Template.Annotations["checksum/config"]; ok {
+		t.Errorf("template annotation checksum/config = %q, want it removed", v)
 	}
 }

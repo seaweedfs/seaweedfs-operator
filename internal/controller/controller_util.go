@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 
 	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -28,6 +30,10 @@ const (
 
 	// LastAppliedConfigAnnotation is annotation key of last applied configuration
 	LastAppliedConfigAnnotation = "seaweedfs.com/last-applied-configuration"
+
+	// LastAppliedPodTemplateKeys is annotation key of the pod template labels
+	// and annotations the operator rendered on its last write
+	LastAppliedPodTemplateKeys = "seaweedfs.com/last-applied-podtemplate-keys"
 )
 
 // MergeFn is to resolve conflicts
@@ -169,7 +175,7 @@ func (r *SeaweedReconciler) CreateOrUpdateDeployment(deploy *appsv1.Deployment) 
 				existingDep.Spec.Strategy.RollingUpdate = desiredDep.Spec.Strategy.RollingUpdate
 			}
 		}
-		mergePodTemplateMetadata(&existingDep.Spec.Template, &desiredDep.Spec.Template)
+		mergePodTemplateMetadata(existingDep, &existingDep.Spec.Template, &desiredDep.Spec.Template)
 		// podSpec of deployment is hard to merge, use an annotation to assist
 		if DeploymentPodSpecChanged(desiredDep, existingDep) {
 			// Record last applied spec in favor of future equality check
@@ -499,30 +505,48 @@ func (r *SeaweedReconciler) probeServiceMonitorCRD() bool {
 	return true
 }
 
-// mergePodTemplateMetadata applies the desired pod template metadata to an
-// existing workload while preserving annotations and labels the operator does
-// not manage.
-//
-// Assigning ObjectMeta wholesale discards every key written by anything else,
-// which breaks the standard "annotate the pod template to trigger a restart"
-// mechanism that `kubectl rollout restart`, Reloader and the Vault Secrets
-// Operator's rolloutRestartTargets all rely on.
-//
-// It also does not cancel such a restart cleanly. The StatefulSet controller
-// rolls the highest ordinal first, so by the time the operator reverts the
-// template, that replica has already been recreated. Ordinal 0 still matches
-// the operator's canonical template and is never rolled at all, leaving a
-// StatefulSet permanently half rolled with no indication that it happened.
-//
-// The operator's own keys stay authoritative: anything it sets overwrites the
-// existing value. A key the operator previously set and no longer sets is kept
-// rather than removed, since there is nothing here to distinguish it from a key
-// another controller owns.
-func mergePodTemplateMetadata(existing, desired *corev1.PodTemplateSpec) {
+// podTemplateKeys is the LastAppliedPodTemplateKeys record.
+type podTemplateKeys struct {
+	Labels      []string `json:"labels,omitempty"`
+	Annotations []string `json:"annotations,omitempty"`
+}
+
+// mergePodTemplateMetadata applies the desired pod template labels and
+// annotations to an existing workload the way kubectl apply does: keys the
+// operator renders are overwritten, keys it rendered last time and no longer
+// does are removed, and keys it never managed are left alone. That keeps the
+// restart annotation kubectl rollout restart, Reloader and the Vault Secrets
+// Operator stamp on the template from being reverted mid-roll. The rendered
+// key set is recorded on the owning workload; without a record, nothing is
+// removed.
+func mergePodTemplateMetadata(owner metav1.Object, existing, desired *corev1.PodTemplateSpec) {
+	var last podTemplateKeys
+	if raw, ok := owner.GetAnnotations()[LastAppliedPodTemplateKeys]; ok {
+		_ = json.Unmarshal([]byte(raw), &last)
+	}
+
 	annotations := mergeStringMaps(existing.Annotations, desired.Annotations)
 	labels := mergeStringMaps(existing.Labels, desired.Labels)
+	for _, k := range last.Annotations {
+		if _, ok := desired.Annotations[k]; !ok {
+			delete(annotations, k)
+		}
+	}
+	for _, k := range last.Labels {
+		if _, ok := desired.Labels[k]; !ok {
+			delete(labels, k)
+		}
+	}
 
 	existing.ObjectMeta = desired.ObjectMeta
 	existing.Annotations = annotations
 	existing.Labels = labels
+
+	rendered, _ := json.Marshal(podTemplateKeys{
+		Labels:      slices.Sorted(maps.Keys(desired.Labels)),
+		Annotations: slices.Sorted(maps.Keys(desired.Annotations)),
+	})
+	owner.SetAnnotations(mergeStringMaps(owner.GetAnnotations(), map[string]string{
+		LastAppliedPodTemplateKeys: string(rendered),
+	}))
 }

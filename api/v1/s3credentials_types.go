@@ -80,8 +80,9 @@ type S3SecretRef struct {
 // bound to an identity and mirrored into a Kubernetes Secret.
 type S3CredentialsSpec struct {
 	// SeaweedRef points at the Seaweed cluster whose IAM service owns the
-	// identity.
+	// identity. Immutable; access keys cannot be moved between clusters.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="seaweedRef is immutable"
 	SeaweedRef SeaweedReference `json:"seaweedRef"`
 
 	// IdentityRef names the IAM identity (user) the credential belongs to.

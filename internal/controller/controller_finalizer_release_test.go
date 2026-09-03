@@ -1,9 +1,26 @@
+/*
+
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package controller
 
 import (
 	"context"
 	"testing"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -65,8 +82,8 @@ func TestReleaseFinalizerIfDeleting(t *testing.T) {
 		// No other holders, so the fake client reaps it immediately.
 		got := &seaweedv1.Bucket{}
 		key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
-		if err := cli.Get(ctx, key, got); err == nil {
-			t.Errorf("expected the object to be gone, still present with finalizers %v", got.Finalizers)
+		if err := cli.Get(ctx, key, got); !apierrors.IsNotFound(err) {
+			t.Fatalf("expected the object to be gone, got %v with finalizers %v", err, got.Finalizers)
 		}
 	})
 
@@ -112,8 +129,8 @@ func TestReconcile_ClusterGoneWhileDeleting_ReleasesBucket(t *testing.T) {
 	}
 
 	got := &seaweedv1.Bucket{}
-	if err := cli.Get(context.Background(), key, got); err == nil {
-		t.Errorf("bucket still present after its cluster was deleted, finalizers %v", got.Finalizers)
+	if err := cli.Get(context.Background(), key, got); !apierrors.IsNotFound(err) {
+		t.Fatalf("bucket still present after its cluster was deleted: %v, finalizers %v", err, got.Finalizers)
 	}
 
 	for _, c := range fa.calls {
@@ -121,4 +138,81 @@ func TestReconcile_ClusterGoneWhileDeleting_ReleasesBucket(t *testing.T) {
 			t.Errorf("no admin call should be attempted against a cluster that does not exist, got: %s", c)
 		}
 	}
+}
+
+// The API permits an unset name override to be set once. If that first value
+// differs from the metadata-name fallback already recorded in status, normal
+// reconciliation rejects the rename. Deletion must nevertheless release the
+// finalizer when the target cluster no longer exists.
+func TestReconcile_ClusterGoneWhileDeleting_RenameMismatchDoesNotBlock(t *testing.T) {
+	now := metav1.Now()
+
+	t.Run("bucket", func(t *testing.T) {
+		bucket := newTestBucket("photos")
+		bucket.Spec.Name = "renamed-photos"
+		bucket.Status.BucketName = "photos"
+		bucket.Finalizers = []string{BucketFinalizer}
+		bucket.DeletionTimestamp = &now
+
+		r, cli := testReconciler(t, newFakeAdmin(), bucket)
+		key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+		if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		if err := cli.Get(context.Background(), key, &seaweedv1.Bucket{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("deleting Bucket remains after missing-cluster reconcile: %v", err)
+		}
+	})
+
+	t.Run("identity", func(t *testing.T) {
+		scheme := finalizerTestScheme(t)
+		identity := &seaweedv1.S3Identity{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "alice",
+				Namespace:         "media",
+				Finalizers:        []string{s3IdentityFinalizer},
+				DeletionTimestamp: &now,
+			},
+			Spec: seaweedv1.S3IdentitySpec{
+				SeaweedRef: seaweedv1.SeaweedReference{Name: "prod"},
+				Name:       "renamed-alice",
+			},
+			Status: seaweedv1.S3IdentityStatus{IdentityName: "alice"},
+		}
+		cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(identity).Build()
+		r := &S3IdentityReconciler{Client: cli}
+		key := types.NamespacedName{Namespace: identity.Namespace, Name: identity.Name}
+		if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		if err := cli.Get(context.Background(), key, &seaweedv1.S3Identity{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("deleting S3Identity remains after missing-cluster reconcile: %v", err)
+		}
+	})
+
+	t.Run("policy", func(t *testing.T) {
+		scheme := finalizerTestScheme(t)
+		policy := &seaweedv1.S3Policy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "read",
+				Namespace:         "media",
+				Finalizers:        []string{s3PolicyFinalizer},
+				DeletionTimestamp: &now,
+			},
+			Spec: seaweedv1.S3PolicySpec{
+				SeaweedRef: seaweedv1.SeaweedReference{Name: "prod"},
+				Name:       "renamed-read",
+			},
+			Status: seaweedv1.S3PolicyStatus{PolicyName: "read"},
+		}
+		cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(policy).Build()
+		r := &S3PolicyReconciler{Client: cli}
+		key := types.NamespacedName{Namespace: policy.Namespace, Name: policy.Name}
+		if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		if err := cli.Get(context.Background(), key, &seaweedv1.S3Policy{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("deleting S3Policy remains after missing-cluster reconcile: %v", err)
+		}
+	})
 }

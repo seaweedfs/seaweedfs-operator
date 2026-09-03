@@ -40,8 +40,9 @@ type S3Account struct {
 // change without touching the identity itself.
 type S3IdentitySpec struct {
 	// SeaweedRef points at the Seaweed cluster whose IAM service owns this
-	// identity.
+	// identity. Immutable; identities cannot be moved between clusters.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="seaweedRef is immutable"
 	SeaweedRef SeaweedReference `json:"seaweedRef"`
 
 	// Name is the IAM user name. Defaults to .metadata.name. Immutable once

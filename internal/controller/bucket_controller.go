@@ -118,16 +118,6 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	bucketName := resolvedBucketName(&bucket)
 
-	// Refuse rename attempts. Once a bucket is provisioned, status.bucketName
-	// pins the name; any divergence indicates the user changed spec.name
-	// after the fact. Renames in S3 / SeaweedFS are not a thing — the safe
-	// move is to surface the error and let the user recreate.
-	if bucket.Status.BucketName != "" && bucket.Status.BucketName != bucketName {
-		msg := fmt.Sprintf("bucket name change from %q to %q is not supported; restore the original name or recreate the resource",
-			bucket.Status.BucketName, bucketName)
-		return r.failPhase(ctx, &bucket, seaweedv1.BucketPhaseFailed, "BucketRenameNotSupported", msg)
-	}
-
 	// Resolve the cluster reference. A cross-namespace clusterRef needs a
 	// ResourceReferenceGrant; skip on deletion to not block cleanup.
 	seaweedNS := bucket.Spec.ClusterRef.Namespace
@@ -172,6 +162,18 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, err
 	}
 	r.setCondition(&bucket, seaweedv1.BucketConditionClusterReachable, metav1.ConditionTrue, "Reachable", "")
+
+	// Refuse rename attempts. Once a bucket is provisioned, status.bucketName
+	// pins the name; any divergence indicates the user changed spec.name
+	// after the fact. Renames in S3 / SeaweedFS are not a thing — the safe
+	// move is to surface the error and let the user recreate. This check follows
+	// missing-cluster deletion cleanup so an invalid rename cannot trap the
+	// finalizer after the cluster is gone.
+	if bucket.Status.BucketName != "" && bucket.Status.BucketName != bucketName {
+		msg := fmt.Sprintf("bucket name change from %q to %q is not supported; restore the original name or recreate the resource",
+			bucket.Status.BucketName, bucketName)
+		return r.failPhase(ctx, &bucket, seaweedv1.BucketPhaseFailed, "BucketRenameNotSupported", msg)
+	}
 
 	masters := getMasterPeersString(&seaweed)
 	filer := getFilerAddress(&seaweed)

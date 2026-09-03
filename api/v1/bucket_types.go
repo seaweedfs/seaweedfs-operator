@@ -208,8 +208,10 @@ type BucketSpec struct {
 	// +kubebuilder:validation:XValidation:rule="oldSelf == '' || self == oldSelf",message="bucket name is immutable once set"
 	Name string `json:"name,omitempty"`
 
-	// ClusterRef points at the Seaweed CR that owns this bucket.
+	// ClusterRef points at the Seaweed CR that owns this bucket. Immutable;
+	// moving a bucket between clusters is not supported.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterRef is immutable"
 	ClusterRef BucketClusterRef `json:"clusterRef"`
 
 	// ReclaimPolicy controls what happens to the underlying bucket when

@@ -62,8 +62,10 @@ type S3Subject struct {
 // intact).
 type S3PolicyBindingSpec struct {
 	// SeaweedRef points at the Seaweed cluster whose IAM service owns the
-	// policy and identities.
+	// policy and identities. Immutable; bindings cannot be moved between
+	// clusters.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="seaweedRef is immutable"
 	SeaweedRef SeaweedReference `json:"seaweedRef"`
 
 	// PolicyRef names the IAM policy to attach. The policy must already

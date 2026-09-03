@@ -68,8 +68,9 @@ type S3PolicyStatement struct {
 // +kubebuilder:validation:XValidation:rule="(has(self.statements) && size(self.statements) > 0) != (has(self.policyDocument) && size(self.policyDocument) > 0)",message="set exactly one of spec.statements or spec.policyDocument"
 type S3PolicySpec struct {
 	// SeaweedRef points at the Seaweed cluster whose IAM service owns this
-	// policy.
+	// policy. Immutable; policies cannot be moved between clusters.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="seaweedRef is immutable"
 	SeaweedRef SeaweedReference `json:"seaweedRef"`
 
 	// Name is the IAM policy name. Defaults to .metadata.name. Immutable

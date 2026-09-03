@@ -977,6 +977,9 @@ spec:
                   required:
                     - name
                   type: object
+                  x-kubernetes-validations:
+                    - message: clusterRef is immutable
+                      rule: self == oldSelf
                 name:
                   pattern: ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
                   type: string
@@ -1359,6 +1362,9 @@ spec:
                   required:
                     - name
                   type: object
+                  x-kubernetes-validations:
+                    - message: seaweedRef is immutable
+                      rule: self == oldSelf
                 secretRef:
                   properties:
                     accessKeyField:
@@ -1524,6 +1530,9 @@ spec:
                   required:
                     - name
                   type: object
+                  x-kubernetes-validations:
+                    - message: seaweedRef is immutable
+                      rule: self == oldSelf
               required:
                 - seaweedRef
               type: object
@@ -1663,6 +1672,9 @@ spec:
                   required:
                     - name
                   type: object
+                  x-kubernetes-validations:
+                    - message: seaweedRef is immutable
+                      rule: self == oldSelf
                 thumbprints:
                   items:
                     pattern: ^[A-Fa-f0-9]{40}$
@@ -1804,6 +1816,9 @@ spec:
                   required:
                     - name
                   type: object
+                  x-kubernetes-validations:
+                    - message: seaweedRef is immutable
+                      rule: self == oldSelf
                 statements:
                   items:
                     properties:
@@ -1972,6 +1987,9 @@ spec:
                   required:
                     - name
                   type: object
+                  x-kubernetes-validations:
+                    - message: seaweedRef is immutable
+                      rule: self == oldSelf
                 subjects:
                   items:
                     properties:

@@ -99,7 +99,7 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 		desiredStatefulSet := desired.(*appsv1.StatefulSet)
 
 		existingStatefulSet.Spec.Replicas = desiredStatefulSet.Spec.Replicas
-		mergePodTemplateMetadata(&existingStatefulSet.Spec.Template, &desiredStatefulSet.Spec.Template)
+		mergePodTemplateMetadata(existingStatefulSet, &existingStatefulSet.Spec.Template, &desiredStatefulSet.Spec.Template)
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
 		return nil
 	})

@@ -169,10 +169,7 @@ func (r *SeaweedReconciler) CreateOrUpdateDeployment(deploy *appsv1.Deployment) 
 				existingDep.Spec.Strategy.RollingUpdate = desiredDep.Spec.Strategy.RollingUpdate
 			}
 		}
-		// pod selector of deployment is immutable, so we don't mutate the labels of pod
-		for k, v := range desiredDep.Spec.Template.Annotations {
-			existingDep.Spec.Template.Annotations[k] = v
-		}
+		mergePodTemplateMetadata(&existingDep.Spec.Template, &desiredDep.Spec.Template)
 		// podSpec of deployment is hard to merge, use an annotation to assist
 		if DeploymentPodSpecChanged(desiredDep, existingDep) {
 			// Record last applied spec in favor of future equality check

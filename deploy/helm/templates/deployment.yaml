@@ -59,6 +59,15 @@ spec:
         - name: ENABLE_WEBHOOKS
           value: "false"
         {{- end }}
+        {{- if .Values.csiDriver }}
+        {{- if .Values.csiDriver.enabled }}
+        - name: ENABLE_CSI_DRIVER
+          value: "true"
+        {{- end }}
+        {{- end }}
+        {{- with .Values.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         ports:
         - name: {{ .Values.port.name }}
           containerPort: {{ .Values.port.number }}

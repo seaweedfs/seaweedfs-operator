@@ -68,6 +68,14 @@ operator's manager container:
 ENABLE_CSI_DRIVER=true
 ```
 
+With the Helm chart, set it through the chart value rather than patching the
+Deployment:
+
+```yaml
+csiDriver:
+  enabled: true
+```
+
 A CSI driver is **node-global**: the kubelet registers exactly one driver per
 `driverName` per node, regardless of how many SeaweedFS clusters run on it.
 For that reason the driver is modeled as its own opt-in resource rather than a

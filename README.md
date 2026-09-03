@@ -876,7 +876,7 @@ filesystem alternative to the S3 API above.
 A CSI driver is node-global, so it is managed through its own opt-in
 `SeaweedCSIDriver` resource rather than a field on the `Seaweed` CR, and the
 controller is **off by default** — enable it with `ENABLE_CSI_DRIVER=true` on
-the operator manager. The driver can mount an operator-managed cluster
+the operator manager, or `csiDriver.enabled: true` with the Helm chart. The driver can mount an operator-managed cluster
 (`seaweedRef`, grant-gated across namespaces) or any external filer
 (`filerAddress`):
 

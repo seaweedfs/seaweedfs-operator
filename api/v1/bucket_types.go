@@ -49,7 +49,9 @@ const (
 	// CR is removed. The delete is refused (with a DeleteBlockedByRetention
 	// condition) if Object Lock retention still applies to any object in
 	// the bucket; flip the policy back to Retain and clear retention
-	// manually if you really need to override.
+	// manually if you really need to override. If the referenced Seaweed CR
+	// is absent, the finalizer waits for it to return unless cleanup is
+	// explicitly abandoned by annotation or the namespace is terminating.
 	BucketReclaimDelete BucketReclaimPolicy = "Delete"
 )
 

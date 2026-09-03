@@ -93,7 +93,9 @@ func (r *S3IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 	if !found {
-		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &identity, s3IdentityFinalizer); handled {
+		cleanupRequired := identity.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain
+		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &identity, s3IdentityFinalizer, cleanupRequired, r.Recorder,
+			seaweedRefKey(identity.Spec.SeaweedRef, identity.Namespace)); handled {
 			return ctrl.Result{}, err
 		}
 		return r.clusterNotFound(ctx, &identity)
@@ -103,7 +105,7 @@ func (r *S3IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// Refuse rename attempts once provisioned. This check follows missing-cluster
 	// deletion cleanup so an invalid rename cannot trap the finalizer after the
 	// cluster is gone.
-	if identity.Status.IdentityName != "" && identity.Status.IdentityName != name {
+	if identity.DeletionTimestamp.IsZero() && identity.Status.IdentityName != "" && identity.Status.IdentityName != name {
 		return r.fail(ctx, &identity, "IdentityRenameNotSupported",
 			fmt.Sprintf("identity name change from %q to %q is not supported; restore the original name or recreate the resource",
 				identity.Status.IdentityName, name))
@@ -115,7 +117,11 @@ func (r *S3IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	if !identity.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, &identity, name, admin)
+		deletionName := name
+		if identity.Status.IdentityName != "" {
+			deletionName = identity.Status.IdentityName
+		}
+		return r.handleDeletion(ctx, &identity, deletionName, admin)
 	}
 
 	if !controllerutil.ContainsFinalizer(&identity, s3IdentityFinalizer) {

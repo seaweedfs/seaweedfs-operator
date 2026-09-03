@@ -18,13 +18,16 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -52,7 +55,7 @@ func TestReleaseFinalizerIfDeleting(t *testing.T) {
 		bucket.Finalizers = []string{BucketFinalizer}
 		cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(bucket).Build()
 
-		handled, err := releaseFinalizerIfDeleting(ctx, cli, bucket, BucketFinalizer)
+		handled, err := releaseFinalizerIfDeleting(ctx, cli, bucket, BucketFinalizer, true, nil, "seaweedfs/prod")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -64,14 +67,14 @@ func TestReleaseFinalizerIfDeleting(t *testing.T) {
 		}
 	})
 
-	t.Run("deleting object has its finalizer dropped", func(t *testing.T) {
+	t.Run("deleting object without remote cleanup has its finalizer dropped", func(t *testing.T) {
 		now := metav1.Now()
 		bucket := newTestBucket("photos")
 		bucket.Finalizers = []string{BucketFinalizer}
 		bucket.DeletionTimestamp = &now
 		cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(bucket).Build()
 
-		handled, err := releaseFinalizerIfDeleting(ctx, cli, bucket, BucketFinalizer)
+		handled, err := releaseFinalizerIfDeleting(ctx, cli, bucket, BucketFinalizer, false, nil, "seaweedfs/prod")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -95,7 +98,7 @@ func TestReleaseFinalizerIfDeleting(t *testing.T) {
 		bucket.DeletionTimestamp = &now
 		cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(bucket).Build()
 
-		handled, err := releaseFinalizerIfDeleting(ctx, cli, bucket, BucketFinalizer)
+		handled, err := releaseFinalizerIfDeleting(ctx, cli, bucket, BucketFinalizer, true, nil, "seaweedfs/prod")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -106,11 +109,75 @@ func TestReleaseFinalizerIfDeleting(t *testing.T) {
 			t.Errorf("another controller's finalizer must survive, got %v", bucket.Finalizers)
 		}
 	})
+
+	t.Run("Delete cleanup waits while namespace is live", func(t *testing.T) {
+		now := metav1.Now()
+		bucket := newTestBucket("photos")
+		bucket.Finalizers = []string{BucketFinalizer}
+		bucket.DeletionTimestamp = &now
+		namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: bucket.Namespace}}
+		recorder := record.NewFakeRecorder(1)
+		cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(namespace, bucket).Build()
+
+		handled, err := releaseFinalizerIfDeleting(ctx, cli, bucket, BucketFinalizer, true, recorder, "seaweedfs/prod")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if handled {
+			t.Fatal("remote cleanup must remain pending while the namespace is live")
+		}
+		if !containsFinalizer(bucket.Finalizers, BucketFinalizer) {
+			t.Fatalf("cleanup finalizer was removed: %v", bucket.Finalizers)
+		}
+		select {
+		case event := <-recorder.Events:
+			if !strings.Contains(event, "CleanupBlocked") {
+				t.Fatalf("event = %q, want CleanupBlocked", event)
+			}
+		default:
+			t.Fatal("expected a CleanupBlocked warning event")
+		}
+	})
+
+	t.Run("annotation explicitly abandons Delete cleanup", func(t *testing.T) {
+		now := metav1.Now()
+		bucket := newTestBucket("photos")
+		bucket.Finalizers = []string{BucketFinalizer}
+		bucket.DeletionTimestamp = &now
+		bucket.Annotations = map[string]string{AllowCleanupAbandonmentAnnotation: "true"}
+		namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: bucket.Namespace}}
+		recorder := record.NewFakeRecorder(1)
+		cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(namespace, bucket).Build()
+
+		handled, err := releaseFinalizerIfDeleting(ctx, cli, bucket, BucketFinalizer, true, recorder, "seaweedfs/prod")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !handled {
+			t.Fatal("explicit cleanup abandonment must permit finalization")
+		}
+		select {
+		case event := <-recorder.Events:
+			if !strings.Contains(event, "CleanupAbandoned") {
+				t.Fatalf("event = %q, want CleanupAbandoned", event)
+			}
+		default:
+			t.Fatal("expected a CleanupAbandoned warning event")
+		}
+	})
 }
 
-// A Bucket whose cluster was deleted first must not be stuck forever. The
-// cluster lookup used to return RequeueAfter before the deletion path was
-// reached, so the finalizer was never removed and the object could not go away.
+func containsFinalizer(finalizers []string, want string) bool {
+	for _, finalizer := range finalizers {
+		if finalizer == want {
+			return true
+		}
+	}
+	return false
+}
+
+// A terminating namespace must not be stuck forever when its Seaweed cluster
+// was deleted first. Namespace termination is an explicit abandonment boundary.
 func TestReconcile_ClusterGoneWhileDeleting_ReleasesBucket(t *testing.T) {
 	now := metav1.Now()
 	bucket := newTestBucket("photos")
@@ -118,10 +185,14 @@ func TestReconcile_ClusterGoneWhileDeleting_ReleasesBucket(t *testing.T) {
 	bucket.Status.BucketName = "photos"
 	bucket.Finalizers = []string{BucketFinalizer}
 	bucket.DeletionTimestamp = &now
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: bucket.Namespace, DeletionTimestamp: &now, Finalizers: []string{"test.example/hold"}},
+		Spec:       corev1.NamespaceSpec{Finalizers: []corev1.FinalizerName{corev1.FinalizerKubernetes}},
+	}
 
 	fa := newFakeAdmin()
 	// Deliberately no newTestSeaweed(): the cluster is already gone.
-	r, cli := testReconciler(t, fa, bucket)
+	r, cli := testReconciler(t, fa, namespace, bucket)
 	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
 
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
@@ -137,6 +208,77 @@ func TestReconcile_ClusterGoneWhileDeleting_ReleasesBucket(t *testing.T) {
 		if c != "" {
 			t.Errorf("no admin call should be attempted against a cluster that does not exist, got: %s", c)
 		}
+	}
+}
+
+func TestReconcile_ClusterGoneDeleteWaitsForCleanup(t *testing.T) {
+	now := metav1.Now()
+	bucket := newTestBucket("photos")
+	bucket.Spec.ReclaimPolicy = seaweedv1.BucketReclaimDelete
+	bucket.Status.BucketName = "photos"
+	bucket.Finalizers = []string{BucketFinalizer}
+	bucket.DeletionTimestamp = &now
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: bucket.Namespace}}
+
+	r, cli := testReconciler(t, newFakeAdmin(), namespace, bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+	result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("missing cluster cleanup should be retried")
+	}
+
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if !containsFinalizer(got.Finalizers, BucketFinalizer) {
+		t.Fatalf("Delete cleanup finalizer was removed while cluster is absent: %v", got.Finalizers)
+	}
+}
+
+func TestS3Credentials_ClusterGoneDeletePreservesRemoteCleanup(t *testing.T) {
+	now := metav1.Now()
+	credential := &seaweedv1.S3Credentials{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "alice-creds",
+			Namespace:         "media",
+			Finalizers:        []string{s3CredentialsFinalizer},
+			DeletionTimestamp: &now,
+		},
+		Spec: seaweedv1.S3CredentialsSpec{
+			SeaweedRef:  iamSeaweedRef(),
+			IdentityRef: seaweedv1.S3IdentityRef{Name: "alice"},
+			SecretRef:   seaweedv1.S3SecretRef{Name: "alice-secret"},
+		},
+		Status: seaweedv1.S3CredentialsStatus{
+			AccessKey:    "AKIAEXAMPLE",
+			IdentityName: "alice",
+			SecretName:   "alice-secret",
+		},
+	}
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: credential.Namespace}}
+	scheme := iamTestScheme(t)
+	cli := iamTestClient(t, scheme, namespace, credential) // no Seaweed cluster
+	r := &S3CredentialsReconciler{Client: cli}
+	key := types.NamespacedName{Namespace: credential.Namespace, Name: credential.Name}
+
+	result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("missing cluster cleanup should be retried")
+	}
+
+	got := &seaweedv1.S3Credentials{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get credential: %v", err)
+	}
+	if !containsFinalizer(got.Finalizers, s3CredentialsFinalizer) {
+		t.Fatalf("Delete cleanup finalizer was removed while cluster is absent: %v", got.Finalizers)
 	}
 }
 
@@ -174,8 +316,9 @@ func TestReconcile_ClusterGoneWhileDeleting_RenameMismatchDoesNotBlock(t *testin
 				DeletionTimestamp: &now,
 			},
 			Spec: seaweedv1.S3IdentitySpec{
-				SeaweedRef: seaweedv1.SeaweedReference{Name: "prod"},
-				Name:       "renamed-alice",
+				SeaweedRef:    seaweedv1.SeaweedReference{Name: "prod"},
+				Name:          "renamed-alice",
+				ReclaimPolicy: seaweedv1.S3ReclaimRetain,
 			},
 			Status: seaweedv1.S3IdentityStatus{IdentityName: "alice"},
 		}
@@ -200,8 +343,9 @@ func TestReconcile_ClusterGoneWhileDeleting_RenameMismatchDoesNotBlock(t *testin
 				DeletionTimestamp: &now,
 			},
 			Spec: seaweedv1.S3PolicySpec{
-				SeaweedRef: seaweedv1.SeaweedReference{Name: "prod"},
-				Name:       "renamed-read",
+				SeaweedRef:    seaweedv1.SeaweedReference{Name: "prod"},
+				Name:          "renamed-read",
+				ReclaimPolicy: seaweedv1.S3ReclaimRetain,
 			},
 			Status: seaweedv1.S3PolicyStatus{PolicyName: "read"},
 		}
@@ -215,4 +359,139 @@ func TestReconcile_ClusterGoneWhileDeleting_RenameMismatchDoesNotBlock(t *testin
 			t.Fatalf("deleting S3Policy remains after missing-cluster reconcile: %v", err)
 		}
 	})
+}
+
+func TestReconcile_DeletingRenameUsesStatusPinnedName(t *testing.T) {
+	now := metav1.Now()
+
+	t.Run("bucket", func(t *testing.T) {
+		bucket := newTestBucket("photos")
+		bucket.Spec.Name = "renamed-photos"
+		bucket.Spec.ReclaimPolicy = seaweedv1.BucketReclaimDelete
+		bucket.Status.BucketName = "photos"
+		bucket.Finalizers = []string{BucketFinalizer}
+		bucket.DeletionTimestamp = &now
+
+		fa := newFakeAdmin()
+		fa.existsResp["photos"] = true
+		r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+		key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+		if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		if err := cli.Get(context.Background(), key, &seaweedv1.Bucket{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("deleting Bucket remains: %v", err)
+		}
+		calls := strings.Join(fa.calls, "\n")
+		if !strings.Contains(calls, "Delete:photos") || strings.Contains(calls, "Delete:renamed-photos") {
+			t.Fatalf("bucket deletion did not use status-pinned name; calls:\n%s", calls)
+		}
+	})
+
+	t.Run("identity", func(t *testing.T) {
+		scheme := iamTestScheme(t)
+		identity := &seaweedv1.S3Identity{
+			ObjectMeta: metav1.ObjectMeta{Name: "alice", Namespace: "media", Finalizers: []string{s3IdentityFinalizer}, DeletionTimestamp: &now},
+			Spec: seaweedv1.S3IdentitySpec{
+				SeaweedRef:    iamSeaweedRef(),
+				Name:          "renamed-alice",
+				ReclaimPolicy: seaweedv1.S3ReclaimDelete,
+			},
+			Status: seaweedv1.S3IdentityStatus{IdentityName: "alice"},
+		}
+		cli := iamTestClient(t, scheme, newTestSeaweed(), identity)
+		fa := newFakeIAMAdmin()
+		fa.seedUser("alice")
+		r := &S3IdentityReconciler{Client: cli}
+		r.AdminFactory = fakeIAMFactory(fa)
+		key := types.NamespacedName{Namespace: identity.Namespace, Name: identity.Name}
+		if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		if err := cli.Get(context.Background(), key, &seaweedv1.S3Identity{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("deleting S3Identity remains: %v", err)
+		}
+		calls := strings.Join(fa.calls, "\n")
+		if !strings.Contains(calls, "DeleteUser:alice") || strings.Contains(calls, "DeleteUser:renamed-alice") {
+			t.Fatalf("identity deletion did not use status-pinned name; calls:\n%s", calls)
+		}
+	})
+
+	t.Run("policy", func(t *testing.T) {
+		scheme := iamTestScheme(t)
+		policy := &seaweedv1.S3Policy{
+			ObjectMeta: metav1.ObjectMeta{Name: "read", Namespace: "media", Finalizers: []string{s3PolicyFinalizer}, DeletionTimestamp: &now},
+			Spec: seaweedv1.S3PolicySpec{
+				SeaweedRef:    iamSeaweedRef(),
+				Name:          "renamed-read",
+				ReclaimPolicy: seaweedv1.S3ReclaimDelete,
+			},
+			Status: seaweedv1.S3PolicyStatus{PolicyName: "read"},
+		}
+		cli := iamTestClient(t, scheme, newTestSeaweed(), policy)
+		fa := newFakeIAMAdmin()
+		fa.policies["read"] = "{}"
+		r := &S3PolicyReconciler{Client: cli}
+		r.AdminFactory = fakeIAMFactory(fa)
+		key := types.NamespacedName{Namespace: policy.Namespace, Name: policy.Name}
+		if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		if err := cli.Get(context.Background(), key, &seaweedv1.S3Policy{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("deleting S3Policy remains: %v", err)
+		}
+		calls := strings.Join(fa.calls, "\n")
+		if !strings.Contains(calls, "DeletePolicy:read") || strings.Contains(calls, "DeletePolicy:renamed-read") {
+			t.Fatalf("policy deletion did not use status-pinned name; calls:\n%s", calls)
+		}
+	})
+}
+
+// A rename attempt must not strand the finalizer. The rename guard runs before
+// the deletion path, so a Bucket whose spec.name diverged from
+// status.bucketName could never be deleted — the same stuck-finalizer symptom
+// as a missing cluster, from a different trigger.
+func TestReconcile_RenamedWhileDeleting_StillReleases(t *testing.T) {
+	now := metav1.Now()
+	bucket := newTestBucket("photos")
+	bucket.Spec.ReclaimPolicy = seaweedv1.BucketReclaimRetain
+	// Provisioned as "photos", spec since changed — a rename the operator refuses.
+	bucket.Status.BucketName = "photos-original"
+	bucket.Finalizers = []string{BucketFinalizer}
+	bucket.DeletionTimestamp = &now
+
+	fa := newFakeAdmin()
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err == nil {
+		t.Errorf("a renamed bucket could not be deleted; still present with finalizers %v", got.Finalizers)
+	}
+}
+
+// The guard must still refuse a rename on a live object.
+func TestReconcile_RenamedWhileLive_StillRefused(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Status.BucketName = "photos-original"
+
+	fa := newFakeAdmin()
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.BucketPhaseFailed {
+		t.Errorf("phase = %q, want Failed for a rename on a live bucket", got.Status.Phase)
+	}
 }

@@ -95,7 +95,9 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 	if !found {
-		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &binding, s3PolicyBindingFinalizer); handled {
+		cleanupRequired := binding.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain && len(binding.Status.AttachedSubjects) > 0
+		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &binding, s3PolicyBindingFinalizer, cleanupRequired, r.Recorder,
+			seaweedRefKey(binding.Spec.SeaweedRef, binding.Namespace)); handled {
 			return ctrl.Result{}, err
 		}
 		return r.clusterNotFound(ctx, &binding)

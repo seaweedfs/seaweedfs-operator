@@ -18,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -35,6 +36,11 @@ const (
 	// LastAppliedPodTemplateKeys is annotation key of the pod template labels
 	// and annotations the operator rendered on its last write
 	LastAppliedPodTemplateKeys = "seaweedfs.com/last-applied-podtemplate-keys"
+
+	// AllowCleanupAbandonmentAnnotation explicitly permits a deleting resource
+	// to finalize when its referenced Seaweed cluster is absent and remote
+	// cleanup therefore cannot be verified.
+	AllowCleanupAbandonmentAnnotation = "seaweed.seaweedfs.com/allow-cleanup-abandonment"
 )
 
 // MergeFn is to resolve conflicts
@@ -552,22 +558,70 @@ func mergePodTemplateMetadata(owner metav1.Object, existing, desired *corev1.Pod
 	}))
 }
 
-// releaseFinalizerIfDeleting drops finalizer from obj when obj is being deleted
-// and the Seaweed cluster it refers to no longer exists.
-//
-// A finalizer here exists to clean state out of that cluster. Once the cluster
-// is gone there is nothing left to clean, and requeuing on the missing
-// reference keeps the finalizer in place forever, so the object can never be
-// deleted. Removing a cluster before the resources that reference it is an
-// ordinary thing to do -- deleting a namespace does exactly that.
+// releaseFinalizerIfDeleting handles deletion when the referenced Seaweed
+// cluster is absent. Delete-policy resources whose remote cleanup remains
+// required keep their finalizer until cleanup becomes possible or abandonment
+// is explicit.
+// Namespace termination is also treated as abandonment so a missing cluster
+// cannot deadlock namespace deletion.
 //
 // Reports whether it handled obj; when true the caller returns immediately.
-func releaseFinalizerIfDeleting(ctx context.Context, c client.Client, obj client.Object, finalizer string) (bool, error) {
+func releaseFinalizerIfDeleting(ctx context.Context, c client.Client, obj client.Object, finalizer string, cleanupRequired bool, recorder record.EventRecorder, clusterRef string) (bool, error) {
 	if obj.GetDeletionTimestamp().IsZero() {
 		return false, nil
 	}
-	if !controllerutil.RemoveFinalizer(obj, finalizer) {
+	if !controllerutil.ContainsFinalizer(obj, finalizer) {
 		return true, nil
 	}
+
+	mayProceed, err := missingClusterCleanupMayProceed(ctx, c, obj, cleanupRequired, recorder, clusterRef)
+	if err != nil {
+		return true, err
+	}
+	if !mayProceed {
+		return false, nil
+	}
+
+	controllerutil.RemoveFinalizer(obj, finalizer)
 	return true, c.Update(ctx, obj)
+}
+
+// missingClusterCleanupMayProceed reports whether deletion may continue even
+// though remote cleanup cannot be attempted. It emits an event for Delete
+// resources whenever cleanup is blocked or deliberately abandoned.
+func missingClusterCleanupMayProceed(ctx context.Context, c client.Client, obj client.Object, cleanupRequired bool, recorder record.EventRecorder, clusterRef string) (bool, error) {
+	if !cleanupRequired {
+		return true, nil
+	}
+
+	reason := ""
+	if obj.GetAnnotations()[AllowCleanupAbandonmentAnnotation] == "true" {
+		reason = fmt.Sprintf("annotation %s is true", AllowCleanupAbandonmentAnnotation)
+	} else {
+		var namespace corev1.Namespace
+		if err := c.Get(ctx, client.ObjectKey{Name: obj.GetNamespace()}, &namespace); err != nil {
+			if !errors.IsNotFound(err) {
+				return false, err
+			}
+			reason = "the containing namespace no longer exists"
+		} else if !namespace.DeletionTimestamp.IsZero() {
+			reason = "the containing namespace is terminating"
+		}
+	}
+
+	if reason == "" {
+		if recorder != nil {
+			recorder.Eventf(obj, corev1.EventTypeWarning, "CleanupBlocked",
+				"Cannot complete Delete cleanup because Seaweed %q is absent while retained storage may still contain the remote object; restore the cluster or set annotation %s=\"true\" to abandon cleanup",
+				clusterRef, AllowCleanupAbandonmentAnnotation)
+		}
+		return false, nil
+	}
+
+	if recorder != nil {
+		recorder.Eventf(obj, corev1.EventTypeWarning, "CleanupAbandoned",
+			"Abandoned Delete cleanup for missing Seaweed %q because %s; retained storage may still contain the remote object",
+			clusterRef, reason)
+	}
+	return true, nil
 }

@@ -118,10 +118,21 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 	if !found {
-		// Still run the deletion path with no admin: the IAM calls are moot
-		// with the cluster gone, but the managed Secret is a local object and
-		// reclaimPolicy still decides what happens to it.
 		if !cred.DeletionTimestamp.IsZero() {
+			if controllerutil.ContainsFinalizer(&cred, s3CredentialsFinalizer) {
+				cleanupRequired := cred.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain && cred.Status.AccessKey != ""
+				mayProceed, err := missingClusterCleanupMayProceed(ctx, r.Client, &cred, cleanupRequired, r.Recorder,
+					seaweedRefKey(cred.Spec.SeaweedRef, cred.Namespace))
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+				if !mayProceed {
+					return r.clusterNotFound(ctx, &cred)
+				}
+			}
+			// Remote cleanup was either unnecessary or explicitly abandoned.
+			// Still run the deletion path so the managed Secret follows the
+			// reclaim policy.
 			return r.handleDeletion(ctx, &cred, user, secretName, secretNamespace, nil)
 		}
 		return r.clusterNotFound(ctx, &cred)
@@ -288,7 +299,7 @@ func (r *S3CredentialsReconciler) handleDeletion(ctx context.Context, cred *seaw
 	cred.Status.Phase = seaweedv1.S3PhaseTerminating
 
 	if cred.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain {
-		// A nil admin means the cluster is gone, so the access key went with it.
+		// A nil admin means missing-cluster cleanup was explicitly abandoned.
 		if admin != nil && cred.Status.AccessKey != "" {
 			// Idempotent: a key already gone must not block finalizer removal.
 			if err := admin.DeleteAccessKey(ctx, user, cred.Status.AccessKey); err != nil && !errors.Is(err, ErrIAMNotFound) {

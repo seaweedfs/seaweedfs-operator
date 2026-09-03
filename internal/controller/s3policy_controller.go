@@ -92,7 +92,9 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 	if !found {
-		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &policy, s3PolicyFinalizer); handled {
+		cleanupRequired := policy.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain
+		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &policy, s3PolicyFinalizer, cleanupRequired, r.Recorder,
+			seaweedRefKey(policy.Spec.SeaweedRef, policy.Namespace)); handled {
 			return ctrl.Result{}, err
 		}
 		return r.clusterNotFound(ctx, &policy)
@@ -102,7 +104,7 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Refuse rename attempts once provisioned. This check follows missing-cluster
 	// deletion cleanup so an invalid rename cannot trap the finalizer after the
 	// cluster is gone.
-	if policy.Status.PolicyName != "" && policy.Status.PolicyName != name {
+	if policy.DeletionTimestamp.IsZero() && policy.Status.PolicyName != "" && policy.Status.PolicyName != name {
 		return r.fail(ctx, &policy, "PolicyRenameNotSupported",
 			fmt.Sprintf("policy name change from %q to %q is not supported; restore the original name or recreate the resource",
 				policy.Status.PolicyName, name))
@@ -114,7 +116,11 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	if !policy.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, &policy, name, admin)
+		deletionName := name
+		if policy.Status.PolicyName != "" {
+			deletionName = policy.Status.PolicyName
+		}
+		return r.handleDeletion(ctx, &policy, deletionName, admin)
 	}
 
 	if !controllerutil.ContainsFinalizer(&policy, s3PolicyFinalizer) {

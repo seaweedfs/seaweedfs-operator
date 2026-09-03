@@ -47,7 +47,10 @@ type S3ReclaimPolicy string
 
 const (
 	// S3ReclaimDelete removes the underlying IAM object when the CR is
-	// deleted. This is the default — the CR owns the object's lifecycle.
+	// deleted. This is the default — the CR owns the object's lifecycle. If
+	// the referenced Seaweed CR is absent, the finalizer waits for it to
+	// return unless cleanup is explicitly abandoned by annotation or the
+	// namespace is terminating.
 	S3ReclaimDelete S3ReclaimPolicy = "Delete"
 
 	// S3ReclaimRetain leaves the underlying IAM object in place when the CR

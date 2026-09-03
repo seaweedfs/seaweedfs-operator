@@ -577,6 +577,12 @@ Supported per-bucket configuration:
   Object Lock retention applies). `Delete` only removes a bucket this
   CR actually created or adopted — a CR whose adoption was refused
   (`BucketAlreadyExists`) never deletes a bucket another resource owns.
+  If the referenced `Seaweed` CR is absent, `Delete` keeps the finalizer
+  because retained cluster storage may still contain the bucket. Restore
+  the cluster to complete deletion, or set the annotation
+  `seaweed.seaweedfs.com/allow-cleanup-abandonment: "true"` to explicitly
+  abandon remote cleanup. Namespace termination also abandons cleanup to
+  avoid deadlocking deletion; both abandonment paths emit a warning event.
 - `adoptExisting`: `false` (default) refuses a pre-existing bucket of
   the same name (condition `BucketAlreadyExists`, phase `Failed`);
   `true` adopts it and reconciles the spec onto it. This is the
@@ -688,6 +694,15 @@ Unlike `Bucket` (which holds data and defaults to `reclaimPolicy: Retain`),
 these resources are pure configuration: the CR is the source of truth, so
 they default to `reclaimPolicy: Delete` — deleting the CR removes the
 underlying IAM object. Set `reclaimPolicy: Retain` to opt out.
+
+When a `Delete` resource could still have remote state but its referenced
+`Seaweed` CR is absent, the controller keeps its finalizer: retained cluster
+storage may still contain that IAM state and recreating the cluster can make
+cleanup possible again. To deliberately proceed without remote cleanup, set
+`seaweed.seaweedfs.com/allow-cleanup-abandonment: "true"` on the deleting
+resource. Cleanup is also abandoned during namespace termination so a missing
+cluster cannot deadlock the namespace; the controller emits a warning event
+whenever it abandons `Delete` cleanup.
 
 - **`S3Identity`** — an IAM user. Created with no credentials by default;
   optionally carries `account` (display name / e-mail) and a `disabled`

@@ -145,10 +145,9 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	var seaweed seaweedv1.Seaweed
 	if err := r.Get(ctx, types.NamespacedName{Namespace: seaweedNS, Name: bucket.Spec.ClusterRef.Name}, &seaweed); err != nil {
 		if apierrors.IsNotFound(err) {
-			// The bucket lives in the cluster, so with the cluster gone there is
-			// nothing for handleDeletion to do. Release rather than requeue on a
-			// reference that will never resolve.
-			if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &bucket, BucketFinalizer); handled {
+			cleanupRequired := bucket.Spec.ReclaimPolicy == seaweedv1.BucketReclaimDelete && bucket.Status.BucketName != ""
+			if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &bucket, BucketFinalizer, cleanupRequired, r.Recorder,
+				types.NamespacedName{Namespace: seaweedNS, Name: bucket.Spec.ClusterRef.Name}.String()); handled {
 				return ctrl.Result{}, err
 			}
 			r.setCondition(&bucket, seaweedv1.BucketConditionClusterReachable, metav1.ConditionFalse, "ClusterRefNotFound",
@@ -169,7 +168,7 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	// move is to surface the error and let the user recreate. This check follows
 	// missing-cluster deletion cleanup so an invalid rename cannot trap the
 	// finalizer after the cluster is gone.
-	if bucket.Status.BucketName != "" && bucket.Status.BucketName != bucketName {
+	if bucket.DeletionTimestamp.IsZero() && bucket.Status.BucketName != "" && bucket.Status.BucketName != bucketName {
 		msg := fmt.Sprintf("bucket name change from %q to %q is not supported; restore the original name or recreate the resource",
 			bucket.Status.BucketName, bucketName)
 		return r.failPhase(ctx, &bucket, seaweedv1.BucketPhaseFailed, "BucketRenameNotSupported", msg)
@@ -195,7 +194,11 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	// Deletion path.
 	if !bucket.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, &bucket, bucketName, admin)
+		deletionName := bucketName
+		if bucket.Status.BucketName != "" {
+			deletionName = bucket.Status.BucketName
+		}
+		return r.handleDeletion(ctx, &bucket, deletionName, admin)
 	}
 
 	// Add finalizer if missing. Requeue immediately to pick up the

@@ -64,13 +64,6 @@ func (r *S3IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		name = identity.Name
 	}
 
-	// Refuse rename attempts once provisioned.
-	if identity.Status.IdentityName != "" && identity.Status.IdentityName != name {
-		return r.fail(ctx, &identity, "IdentityRenameNotSupported",
-			fmt.Sprintf("identity name change from %q to %q is not supported; restore the original name or recreate the resource",
-				identity.Status.IdentityName, name))
-	}
-
 	// Cross-namespace seaweedRef needs a grant; skip on deletion to not block cleanup.
 	if identity.DeletionTimestamp.IsZero() {
 		permitted, err := seaweedRefPermitted(ctx, r.Client, identity.Spec.SeaweedRef, kindS3Identity, identity.Namespace)
@@ -100,9 +93,21 @@ func (r *S3IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 	if !found {
+		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &identity, s3IdentityFinalizer); handled {
+			return ctrl.Result{}, err
+		}
 		return r.clusterNotFound(ctx, &identity)
 	}
 	setIAMCondition(&identity.Status.Conditions, identity.Generation, seaweedv1.S3ConditionClusterReachable, metav1.ConditionTrue, "Reachable", "")
+
+	// Refuse rename attempts once provisioned. This check follows missing-cluster
+	// deletion cleanup so an invalid rename cannot trap the finalizer after the
+	// cluster is gone.
+	if identity.Status.IdentityName != "" && identity.Status.IdentityName != name {
+		return r.fail(ctx, &identity, "IdentityRenameNotSupported",
+			fmt.Sprintf("identity name change from %q to %q is not supported; restore the original name or recreate the resource",
+				identity.Status.IdentityName, name))
+	}
 
 	admin, err := r.getIAMAdmin(target, log)
 	if err != nil {

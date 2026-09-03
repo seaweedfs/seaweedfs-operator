@@ -71,6 +71,9 @@ spec:
                 required:
                 - name
                 type: object
+                x-kubernetes-validations:
+                - message: seaweedRef is immutable
+                  rule: self == oldSelf
               subjects:
                 items:
                   properties:

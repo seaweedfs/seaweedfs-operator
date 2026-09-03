@@ -118,6 +118,12 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 	if !found {
+		// Still run the deletion path with no admin: the IAM calls are moot
+		// with the cluster gone, but the managed Secret is a local object and
+		// reclaimPolicy still decides what happens to it.
+		if !cred.DeletionTimestamp.IsZero() {
+			return r.handleDeletion(ctx, &cred, user, secretName, secretNamespace, nil)
+		}
 		return r.clusterNotFound(ctx, &cred)
 	}
 	setIAMCondition(&cred.Status.Conditions, cred.Generation, seaweedv1.S3ConditionClusterReachable, metav1.ConditionTrue, "Reachable", "")
@@ -282,7 +288,8 @@ func (r *S3CredentialsReconciler) handleDeletion(ctx context.Context, cred *seaw
 	cred.Status.Phase = seaweedv1.S3PhaseTerminating
 
 	if cred.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain {
-		if cred.Status.AccessKey != "" {
+		// A nil admin means the cluster is gone, so the access key went with it.
+		if admin != nil && cred.Status.AccessKey != "" {
 			// Idempotent: a key already gone must not block finalizer removal.
 			if err := admin.DeleteAccessKey(ctx, user, cred.Status.AccessKey); err != nil && !errors.Is(err, ErrIAMNotFound) {
 				setIAMCondition(&cred.Status.Conditions, cred.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DeleteAccessKeyFailed", err.Error())

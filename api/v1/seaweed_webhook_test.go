@@ -377,18 +377,21 @@ func TestValidateWorker(t *testing.T) {
 		sw := newWorker()
 		port := int32(WorkerLanceMetricsPort)
 		sw.Spec.Worker.MetricsPort = &port
+		sw.Spec.Filer.Lance = &LanceConfig{Enabled: true}
 		if errs := sw.validateWorker(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "worker-lance") {
 			t.Fatalf("expected the port clash error, got %v", errs)
 		}
 	})
 
 	t.Run("metricsPort 9328 without the sidecar is fine", func(t *testing.T) {
-		sw := newWorker()
-		port := int32(WorkerLanceMetricsPort)
-		sw.Spec.Worker.MetricsPort = &port
-		sw.Spec.Filer.Lance = &LanceConfig{Enabled: false}
-		if errs := sw.validateWorker(); len(errs) != 0 {
-			t.Fatalf("unexpected errors: %v", errs)
+		for _, lance := range []*LanceConfig{nil, {Enabled: false}} {
+			sw := newWorker()
+			port := int32(WorkerLanceMetricsPort)
+			sw.Spec.Worker.MetricsPort = &port
+			sw.Spec.Filer.Lance = lance
+			if errs := sw.validateWorker(); len(errs) != 0 {
+				t.Fatalf("lance %+v: unexpected errors: %v", lance, errs)
+			}
 		}
 	})
 

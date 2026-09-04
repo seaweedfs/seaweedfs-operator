@@ -693,7 +693,6 @@ type IcebergConfig struct {
 }
 
 // LanceConfig defines the Lance Namespace REST API configuration.
-// Absent means enabled: weed serves the namespace by default.
 type LanceConfig struct {
 	// +kubebuilder:default:=true
 	Enabled bool `json:"enabled,omitempty"`
@@ -786,7 +785,7 @@ func (c *IcebergConfig) IcebergEffectivePort() int32 {
 }
 
 // LanceEffectivePort returns the Lance Namespace port, FilerLancePort (9101)
-// when unconfigured; nil-safe because an absent config still means the default.
+// when unconfigured; nil-safe.
 func (c *LanceConfig) LanceEffectivePort() int32 {
 	if c != nil && c.Port != nil {
 		return *c.Port
@@ -794,10 +793,11 @@ func (c *LanceConfig) LanceEffectivePort() int32 {
 	return FilerLancePort
 }
 
-// ServesLance reports whether the filer serves the Lance Namespace API:
-// matching weed's default-on, only an explicit enabled: false turns it off.
+// ServesLance reports whether the filer serves the Lance Namespace API.
+// Explicit opt-in like Iceberg: spec.image may predate Lance, so an absent
+// block must not advertise a port nothing listens on.
 func (f *FilerSpec) ServesLance() bool {
-	return f != nil && (f.Lance == nil || f.Lance.Enabled)
+	return f != nil && f.Lance != nil && f.Lance.Enabled
 }
 
 // AdminSpec is the spec for the admin server (single instance, stateless)

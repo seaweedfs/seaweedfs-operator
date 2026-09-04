@@ -79,7 +79,10 @@ var _ = AfterSuite(func() {
 		return
 	}
 	By("cleanup", func() {
-		cmd := exec.Command("make", "undeploy")
+		// AfterSuite also runs when BeforeSuite fails part-way, before the
+		// operator was deployed. Tolerate NotFound so the cleanup does not
+		// report a second failure that buries the real setup error.
+		cmd := exec.Command("make", "undeploy", "ignore-not-found=true")
 		_, err := utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
 

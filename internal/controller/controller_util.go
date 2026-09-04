@@ -596,6 +596,13 @@ func recordFinalizerReleased(recorder record.EventRecorder, obj runtime.Object, 
 // provisioned, else the spec-derived fallback. Deletion must target what was
 // actually created: spec.name may since have been set to a value the reconciler
 // refused as a rename, and that name was never provisioned.
+//
+// The fallback is deliberate, not a gap in ownership. IAM users and policies
+// are owned by name -- a CR adopts an existing one of its name on first
+// reconcile, with no opt-in -- so a CR that never recorded a name still
+// manages the one it names, and CreateUser may well have succeeded before the
+// status write failed. Bucket differs: it gates adoption behind
+// spec.adoptExisting and so refuses to delete when status is empty.
 func provisionedName(recorded, fallback string) string {
 	if recorded != "" {
 		return recorded

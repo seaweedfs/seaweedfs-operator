@@ -10,7 +10,7 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-// newWorkerCluster leaves spec.filer.lance unset, the default-on shape most CRs have.
+// newWorkerCluster leaves spec.filer.lance unset; tests that need the sidecar enable it.
 func newWorkerCluster(worker *seaweedv1.WorkerSpec) *seaweedv1.Seaweed {
 	return &seaweedv1.Seaweed{
 		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
@@ -117,8 +117,15 @@ func TestBuildRustWorkerStartupScript_CustomLancePort(t *testing.T) {
 func TestCreateWorkerDeploymentLanceSidecar(t *testing.T) {
 	r := &SeaweedReconciler{}
 
+	// The sidecar exits 1 on images without weed-worker, so an unset block must not run it.
 	m := newWorkerCluster(&seaweedv1.WorkerSpec{Replicas: 1})
 	pod := &r.createWorkerDeployment(m).Spec.Template.Spec
+	if podContainer(t, pod, "worker-lance") != nil {
+		t.Errorf("expected no sidecar with lance unset, got %v", pod.Containers)
+	}
+
+	m.Spec.Filer.Lance = &seaweedv1.LanceConfig{Enabled: true}
+	pod = &r.createWorkerDeployment(m).Spec.Template.Spec
 
 	worker := podContainer(t, pod, "worker")
 	if worker == nil {
@@ -158,6 +165,7 @@ func TestCreateWorkerDeploymentPersistencePlacement(t *testing.T) {
 		Replicas:    1,
 		Persistence: &seaweedv1.PersistenceSpec{Enabled: true},
 	})
+	m.Spec.Filer.Lance = &seaweedv1.LanceConfig{Enabled: true}
 	r := &SeaweedReconciler{}
 	pod := &r.createWorkerDeployment(m).Spec.Template.Spec
 

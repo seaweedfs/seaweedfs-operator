@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -50,6 +51,66 @@ func TestBuildFilerStartupScript_MaxMB(t *testing.T) {
 			t.Errorf("expected no -maxMB flag when unset, got %q", got)
 		}
 	})
+}
+
+// The -s3.port.lance flag, the container port and both Service ports must
+// agree: an absent spec.filer.lance advertises nothing, since spec.image may
+// predate Lance and a port nobody listens on would still roll the filer.
+func TestFilerLanceExposureFollowsFlag(t *testing.T) {
+	customPort := int32(19101)
+	cases := []struct {
+		name     string
+		lance    *seaweedv1.LanceConfig
+		wantPort int32 // 0 means off everywhere
+	}{
+		{name: "unset", lance: nil},
+		{name: "disabled", lance: &seaweedv1.LanceConfig{Enabled: false}},
+		{name: "enabled", lance: &seaweedv1.LanceConfig{Enabled: true}, wantPort: seaweedv1.FilerLancePort},
+		{name: "custom port", lance: &seaweedv1.LanceConfig{Enabled: true, Port: &customPort}, wantPort: customPort},
+	}
+	namedPort := func(ports []corev1.ServicePort) int32 {
+		for _, p := range ports {
+			if p.Name == "filer-lance" {
+				return p.Port
+			}
+		}
+		return 0
+	}
+	r := &SeaweedReconciler{}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &seaweedv1.Seaweed{
+				ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+				Spec: seaweedv1.SeaweedSpec{
+					Master: &seaweedv1.MasterSpec{Replicas: 1},
+					Filer:  &seaweedv1.FilerSpec{Replicas: 1, Lance: tc.lance},
+				},
+			}
+
+			script := buildFilerStartupScript(m)
+			if hasFlag := strings.Contains(script, "-s3.port.lance="); hasFlag != (tc.wantPort != 0) {
+				t.Errorf("-s3.port.lance rendered = %v, want %v: %q", hasFlag, tc.wantPort != 0, script)
+			} else if hasFlag && !strings.Contains(script, fmt.Sprintf("-s3.port.lance=%d", tc.wantPort)) {
+				t.Errorf("expected -s3.port.lance=%d in %q", tc.wantPort, script)
+			}
+
+			var got int32
+			for _, p := range filerContainer(t, &r.createFilerStatefulSet(m).Spec.Template.Spec).Ports {
+				if p.Name == "filer-lance" {
+					got = p.ContainerPort
+				}
+			}
+			if got != tc.wantPort {
+				t.Errorf("filer-lance container port = %d, want %d", got, tc.wantPort)
+			}
+
+			for _, svc := range []*corev1.Service{r.createFilerService(m), r.createFilerPeerService(m)} {
+				if got := namedPort(svc.Spec.Ports); got != tc.wantPort {
+					t.Errorf("%s filer-lance port = %d, want %d", svc.Name, got, tc.wantPort)
+				}
+			}
+		})
+	}
 }
 
 // Without the marker on the pod template, turning a section on changes only

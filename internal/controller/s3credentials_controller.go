@@ -189,11 +189,22 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 		return r.pending(ctx, cred, "SecretNotFound",
 			fmt.Sprintf("cross-namespace Secret %s/%s does not exist", secretNamespace, secretName))
 	}
+	if secretFound && !crossNamespace &&
+		(secret.Annotations[s3CredentialsManagedAnnotation] != "true" || !metav1.IsControlledBy(secret, cred)) {
+		return r.fail(ctx, cred, "SecretOwnershipConflict",
+			fmt.Sprintf("Secret %s/%s is not controlled by this S3Credentials", secretNamespace, secretName))
+	}
 
 	var existingAK, existingSK string
 	if secretFound {
 		existingAK = string(secret.Data[akField])
 		existingSK = string(secret.Data[skField])
+	}
+
+	// A foreign Secret is read-only: it supplies the pair or nothing happens.
+	if crossNamespace && (existingAK == "" || existingSK == "") {
+		return r.pending(ctx, cred, "SecretIncomplete",
+			fmt.Sprintf("cross-namespace Secret %s/%s must hold both %q and %q", secretNamespace, secretName, akField, skField))
 	}
 
 	desiredAK, desiredSK := existingAK, existingSK
@@ -203,6 +214,17 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 		if err != nil {
 			return r.fail(ctx, cred, "GenerateFailed", err.Error())
 		}
+	}
+
+	// Persist the pair before registering it: the Secret is the record the
+	// next pass reconciles the identity against, so a key is never minted
+	// without one. A Secret that appeared since the lookup is not ours;
+	// requeue so the ownership check above reports it.
+	if err := r.writeSecret(ctx, cred, secret, secretFound, secretName, secretNamespace, akField, skField, desiredAK, desiredSK); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, err
 	}
 
 	// Reconcile the identity against the pair the Secret holds: register the
@@ -217,11 +239,6 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 		if err := admin.UpdateAccessKey(ctx, user, desiredAK, desiredSK); err != nil {
 			return r.fail(ctx, cred, "UpdateAccessKeyFailed", err.Error())
 		}
-	}
-
-	// Mirror the key pair into the Secret.
-	if err := r.writeSecret(ctx, cred, secret, secretFound, secretName, secretNamespace, akField, skField, desiredAK, desiredSK); err != nil {
-		return ctrl.Result{}, err
 	}
 
 	// Remove a previously generated key we just replaced.
@@ -247,9 +264,7 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 	return ctrl.Result{RequeueAfter: iamResyncInterval}, nil
 }
 
-// writeSecret creates or updates the Secret holding the key pair. A Secret the
-// operator creates is annotated as managed so the finalizer can delete it; a
-// pre-existing Secret is updated in place but never marked managed.
+// writeSecret creates or updates the Secret holding the key pair.
 func (r *S3CredentialsReconciler) writeSecret(ctx context.Context, cred *seaweedv1.S3Credentials, secret *corev1.Secret, secretFound bool, secretName, secretNamespace, akField, skField, ak, sk string) error {
 	if !secretFound {
 		newSecret := &corev1.Secret{
@@ -302,17 +317,13 @@ func (r *S3CredentialsReconciler) handleDeletion(ctx context.Context, cred *seaw
 		// Never touch a Secret in a foreign namespace. The controller did not
 		// create it there and another S3Credentials may legitimately own it.
 		if secretNamespace == cred.Namespace {
-			if err := r.deleteManagedSecret(ctx, secretNamespace, secretName); err != nil {
+			if err := r.deleteManagedSecret(ctx, cred, secretNamespace, secretName); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
 	} else {
-		// Retain: an operator-created Secret carries a controller owner
-		// reference, so removing the finalizer would let garbage collection
-		// delete it along with the access key we are deliberately keeping.
-		// Orphan it first so both the key and the Secret survive.
 		if secretNamespace == cred.Namespace {
-			if err := r.orphanManagedSecret(ctx, secretNamespace, secretName); err != nil {
+			if err := r.orphanManagedSecret(ctx, cred, secretNamespace, secretName); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
@@ -328,35 +339,36 @@ func (r *S3CredentialsReconciler) handleDeletion(ctx context.Context, cred *seaw
 	return ctrl.Result{}, nil
 }
 
-// deleteManagedSecret removes the Secret only if the operator created it
-// (carries the managed annotation). A user-managed Secret is left untouched.
-func (r *S3CredentialsReconciler) deleteManagedSecret(ctx context.Context, namespace, name string) error {
+// deleteManagedSecret removes a Secret managed by cred.
+func (r *S3CredentialsReconciler) deleteManagedSecret(ctx context.Context, cred *seaweedv1.S3Credentials, namespace, name string) error {
 	secret, found, err := r.getSecret(ctx, namespace, name)
 	if err != nil || !found {
 		return err
 	}
-	if secret.Annotations[s3CredentialsManagedAnnotation] != "true" {
+	if secret.Annotations[s3CredentialsManagedAnnotation] != "true" || !metav1.IsControlledBy(secret, cred) {
 		return nil
 	}
-	if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
+	uid := secret.UID
+	if err := r.Delete(ctx, secret, client.Preconditions{UID: &uid}); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	return nil
 }
 
-// orphanManagedSecret strips the controller owner reference from an
-// operator-created Secret so it is not garbage-collected when the
-// S3Credentials CR is deleted under reclaimPolicy: Retain. A user-managed
-// Secret (no managed annotation) is left untouched.
-func (r *S3CredentialsReconciler) orphanManagedSecret(ctx context.Context, namespace, name string) error {
+// orphanManagedSecret removes cred's controller reference for Retain. The
+// owner reference alone is what lets garbage collection remove the Secret,
+// so it is stripped whenever cred controls the Secret, annotated or not.
+func (r *S3CredentialsReconciler) orphanManagedSecret(ctx context.Context, cred *seaweedv1.S3Credentials, namespace, name string) error {
 	secret, found, err := r.getSecret(ctx, namespace, name)
 	if err != nil || !found {
 		return err
 	}
-	if secret.Annotations[s3CredentialsManagedAnnotation] != "true" || len(secret.OwnerReferences) == 0 {
+	if !metav1.IsControlledBy(secret, cred) {
 		return nil
 	}
-	secret.OwnerReferences = nil
+	if err := controllerutil.RemoveControllerReference(cred, secret, r.Scheme); err != nil {
+		return err
+	}
 	return r.Update(ctx, secret)
 }
 

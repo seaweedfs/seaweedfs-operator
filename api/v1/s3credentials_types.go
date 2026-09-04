@@ -37,18 +37,13 @@ type S3IdentityRef struct {
 // secret key. The Secret defaults to the same namespace as the S3Credentials
 // resource; set Namespace to reference a Secret in another namespace.
 //
-// On first reconcile the controller reads the Secret: if both keys are
-// already present it adopts them (registering the access key on the IAM user
-// if needed); otherwise it generates a fresh key pair and writes it back.
-// A Secret created by the controller is labelled as operator-managed and is
-// removed together with the IAM access key when the CR is deleted with
-// reclaimPolicy: Delete. A pre-existing (user-managed) Secret is never
-// deleted by the controller.
+// In the same namespace, the controller creates and owns the Secret. It
+// refuses to adopt an existing Secret that it does not control.
 //
 // A cross-namespace reference is denied unless a ResourceReferenceGrant in the
 // Secret's namespace permits it (the CR stays Pending until then). A
-// cross-namespace Secret must already exist; the controller never creates
-// Secrets in foreign namespaces.
+// cross-namespace Secret must already exist and supplies the key pair; the
+// controller never creates Secrets in foreign namespaces.
 type S3SecretRef struct {
 	// Name of the Secret. Defaults to .metadata.name of the S3Credentials.
 	// +optional

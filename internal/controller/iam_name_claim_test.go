@@ -373,6 +373,7 @@ func TestS3Credentials_PinnedIdentitySurvivesShadowingResource(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "ext-creds",
 			Namespace:  "media",
+			UID:        "ext-creds-uid",
 			Finalizers: []string{s3CredentialsFinalizer},
 		},
 		Spec: seaweedv1.S3CredentialsSpec{
@@ -381,9 +382,21 @@ func TestS3Credentials_PinnedIdentitySurvivesShadowingResource(t *testing.T) {
 		},
 		Status: seaweedv1.S3CredentialsStatus{AccessKey: "AKIA123", IdentityName: "external"},
 	}
+	controller := true
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "ext-creds", Namespace: "media"},
-		Data:       map[string][]byte{"accessKey": []byte("AKIA123"), "secretKey": []byte("sk")},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "ext-creds",
+			Namespace:   "media",
+			Annotations: map[string]string{s3CredentialsManagedAnnotation: "true"},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: seaweedv1.GroupVersion.String(),
+				Kind:       "S3Credentials",
+				Name:       cred.Name,
+				UID:        cred.UID,
+				Controller: &controller,
+			}},
+		},
+		Data: map[string][]byte{"accessKey": []byte("AKIA123"), "secretKey": []byte("sk")},
 	}
 	cli := iamTestClient(t, scheme, newTestSeaweed(), shadow, cred, secret)
 	fa := newFakeIAMAdmin()

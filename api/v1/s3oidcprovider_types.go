@@ -27,8 +27,9 @@ import (
 // without the static -iam.config file (which freezes the dynamic IAM store).
 type S3OIDCProviderSpec struct {
 	// SeaweedRef points at the Seaweed cluster whose IAM service owns this
-	// provider.
+	// provider. Immutable; providers cannot be moved between clusters.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="seaweedRef is immutable"
 	SeaweedRef SeaweedReference `json:"seaweedRef"`
 
 	// IssuerURL is the OIDC issuer URL (e.g. "https://accounts.google.com" or

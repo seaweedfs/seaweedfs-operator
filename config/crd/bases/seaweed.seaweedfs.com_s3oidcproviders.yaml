@@ -74,6 +74,9 @@ spec:
                 required:
                 - name
                 type: object
+                x-kubernetes-validations:
+                - message: seaweedRef is immutable
+                  rule: self == oldSelf
               thumbprints:
                 items:
                   pattern: ^[A-Fa-f0-9]{40}$

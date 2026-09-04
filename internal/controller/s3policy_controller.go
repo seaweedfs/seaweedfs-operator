@@ -63,12 +63,6 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		name = policy.Name
 	}
 
-	if policy.Status.PolicyName != "" && policy.Status.PolicyName != name {
-		return r.fail(ctx, &policy, "PolicyRenameNotSupported",
-			fmt.Sprintf("policy name change from %q to %q is not supported; restore the original name or recreate the resource",
-				policy.Status.PolicyName, name))
-	}
-
 	// Cross-namespace seaweedRef needs a grant; skip on deletion to not block cleanup.
 	if policy.DeletionTimestamp.IsZero() {
 		permitted, err := seaweedRefPermitted(ctx, r.Client, policy.Spec.SeaweedRef, kindS3Policy, policy.Namespace)
@@ -98,9 +92,21 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 	if !found {
+		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &policy, s3PolicyFinalizer); handled {
+			return ctrl.Result{}, err
+		}
 		return r.clusterNotFound(ctx, &policy)
 	}
 	setIAMCondition(&policy.Status.Conditions, policy.Generation, seaweedv1.S3ConditionClusterReachable, metav1.ConditionTrue, "Reachable", "")
+
+	// Refuse rename attempts once provisioned. This check follows missing-cluster
+	// deletion cleanup so an invalid rename cannot trap the finalizer after the
+	// cluster is gone.
+	if policy.DeletionTimestamp.IsZero() && policy.Status.PolicyName != "" && policy.Status.PolicyName != name {
+		return r.fail(ctx, &policy, "PolicyRenameNotSupported",
+			fmt.Sprintf("policy name change from %q to %q is not supported; restore the original name or recreate the resource",
+				policy.Status.PolicyName, name))
+	}
 
 	admin, err := r.getIAMAdmin(target, log)
 	if err != nil {

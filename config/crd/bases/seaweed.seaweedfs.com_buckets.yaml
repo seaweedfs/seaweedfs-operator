@@ -93,6 +93,9 @@ spec:
                 required:
                 - name
                 type: object
+                x-kubernetes-validations:
+                - message: clusterRef is immutable
+                  rule: self == oldSelf
               name:
                 pattern: ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
                 type: string

@@ -118,16 +118,6 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	bucketName := resolvedBucketName(&bucket)
 
-	// Refuse rename attempts. Once a bucket is provisioned, status.bucketName
-	// pins the name; any divergence indicates the user changed spec.name
-	// after the fact. Renames in S3 / SeaweedFS are not a thing — the safe
-	// move is to surface the error and let the user recreate.
-	if bucket.Status.BucketName != "" && bucket.Status.BucketName != bucketName {
-		msg := fmt.Sprintf("bucket name change from %q to %q is not supported; restore the original name or recreate the resource",
-			bucket.Status.BucketName, bucketName)
-		return r.failPhase(ctx, &bucket, seaweedv1.BucketPhaseFailed, "BucketRenameNotSupported", msg)
-	}
-
 	// Resolve the cluster reference. A cross-namespace clusterRef needs a
 	// ResourceReferenceGrant; skip on deletion to not block cleanup.
 	seaweedNS := bucket.Spec.ClusterRef.Namespace
@@ -155,6 +145,12 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	var seaweed seaweedv1.Seaweed
 	if err := r.Get(ctx, types.NamespacedName{Namespace: seaweedNS, Name: bucket.Spec.ClusterRef.Name}, &seaweed); err != nil {
 		if apierrors.IsNotFound(err) {
+			// The bucket lives in the cluster, so with the cluster gone there is
+			// nothing for handleDeletion to do. Release rather than requeue on a
+			// reference that will never resolve.
+			if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &bucket, BucketFinalizer); handled {
+				return ctrl.Result{}, err
+			}
 			r.setCondition(&bucket, seaweedv1.BucketConditionClusterReachable, metav1.ConditionFalse, "ClusterRefNotFound",
 				fmt.Sprintf("Seaweed %q not found in namespace %q", bucket.Spec.ClusterRef.Name, seaweedNS))
 			bucket.Status.Phase = seaweedv1.BucketPhasePending
@@ -166,6 +162,18 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, err
 	}
 	r.setCondition(&bucket, seaweedv1.BucketConditionClusterReachable, metav1.ConditionTrue, "Reachable", "")
+
+	// Refuse rename attempts. Once a bucket is provisioned, status.bucketName
+	// pins the name; any divergence indicates the user changed spec.name
+	// after the fact. Renames in S3 / SeaweedFS are not a thing — the safe
+	// move is to surface the error and let the user recreate. This check follows
+	// missing-cluster deletion cleanup so an invalid rename cannot trap the
+	// finalizer after the cluster is gone.
+	if bucket.DeletionTimestamp.IsZero() && bucket.Status.BucketName != "" && bucket.Status.BucketName != bucketName {
+		msg := fmt.Sprintf("bucket name change from %q to %q is not supported; restore the original name or recreate the resource",
+			bucket.Status.BucketName, bucketName)
+		return r.failPhase(ctx, &bucket, seaweedv1.BucketPhaseFailed, "BucketRenameNotSupported", msg)
+	}
 
 	masters := getMasterPeersString(&seaweed)
 	filer := getFilerAddress(&seaweed)

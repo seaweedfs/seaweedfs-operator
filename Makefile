@@ -168,6 +168,13 @@ PROMETHEUS_OPERATOR_VERSION ?= v0.74.0
 # renovate: datasource=github-tags depName=jetstack/cert-manager
 CERT_MANAGER_VERSION ?= v1.15.0
 
+# Remote manifests are downloaded with curl before being handed to kubectl.
+# `kubectl apply -f <url>` performs a single GET with no retry, so one transient
+# GitHub 5xx (seen in CI) fails the whole kind-prepare run. curl's --retry
+# already treats 408/429/5xx as transient; --retry-all-errors also covers
+# connection resets and similar network blips.
+CURL_FETCH ?= curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --retry-all-errors
+
 ifndef ignore-not-found
   ignore-not-found = false
 endif
@@ -255,12 +262,14 @@ kind-delete: kind ## Create kubernetes cluster using Kind.
 	fi
 
 .PHONY: kind-prepare
-kind-prepare: kind-create
+kind-prepare: kind-create $(LOCALBIN)
 	# Install prometheus operator
-	$(KUBECTL) apply --server-side -f "https://github.com/prometheus-operator/prometheus-operator/releases/download/$(PROMETHEUS_OPERATOR_VERSION)/bundle.yaml"
+	$(CURL_FETCH) -o $(LOCALBIN)/prometheus-operator-bundle.yaml "https://github.com/prometheus-operator/prometheus-operator/releases/download/$(PROMETHEUS_OPERATOR_VERSION)/bundle.yaml"
+	$(KUBECTL) apply --server-side -f $(LOCALBIN)/prometheus-operator-bundle.yaml
 	$(KUBECTL) wait deployment.apps/prometheus-operator --for condition=Available --namespace default --timeout 5m
 	# Install cert-manager operator
-	$(KUBECTL) apply --server-side -f "https://github.com/jetstack/cert-manager/releases/download/$(CERT_MANAGER_VERSION)/cert-manager.yaml"
+	$(CURL_FETCH) -o $(LOCALBIN)/cert-manager.yaml "https://github.com/jetstack/cert-manager/releases/download/$(CERT_MANAGER_VERSION)/cert-manager.yaml"
+	$(KUBECTL) apply --server-side -f $(LOCALBIN)/cert-manager.yaml
 	$(KUBECTL) wait deployment.apps/cert-manager-webhook --for condition=Available --namespace cert-manager --timeout 5m
 
 ##@ Dependencies

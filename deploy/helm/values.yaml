@@ -69,6 +69,22 @@ image:
 # -- Set number of pod replicas
 replicaCount: 1
 
+## The SeaweedCSIDriver controller, which reconciles SeaweedCSIDriver resources
+## into the CSI driver's node and mount DaemonSets. The manager registers it only
+## when ENABLE_CSI_DRIVER=true; otherwise a SeaweedCSIDriver CR is accepted and
+## silently does nothing, which is a confusing way to find out it is off.
+csiDriver:
+  # -- Register the SeaweedCSIDriver controller by setting ENABLE_CSI_DRIVER=true
+  # on the manager. Off by default, matching the manager's own default.
+  enabled: false
+
+# -- Additional environment variables for the manager container. Takes the usual
+# env list form, so a value can come from a secretKeyRef or fieldRef as well as
+# a literal.
+extraEnv: []
+#  - name: SOME_FLAG
+#    value: "true"
+
 # -- Bucket usage stats refresh configuration. The operator periodically
 # calls collection.list per Seaweed cluster and patches status.usage on
 # each Bucket. Leave refreshInterval empty to use the in-binary default

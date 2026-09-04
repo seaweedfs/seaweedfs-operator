@@ -795,7 +795,8 @@ func (c *LanceConfig) LanceEffectivePort() int32 {
 
 // ServesLance reports whether the filer serves the Lance Namespace API.
 // Explicit opt-in like Iceberg: spec.image may predate Lance, so an absent
-// block must not advertise a port nothing listens on.
+// block must not advertise a port nothing listens on, nor render a flag
+// that older images' fla9 drops along with every argument after it.
 func (f *FilerSpec) ServesLance() bool {
 	return f != nil && f.Lance != nil && f.Lance.Enabled
 }

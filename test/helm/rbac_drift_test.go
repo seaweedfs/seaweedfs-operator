@@ -31,8 +31,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
+	"strings"
 	"testing"
 
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -44,34 +46,146 @@ import (
 // the chart-rendered manager ClusterRole. Extra rules in the Helm chart
 // (e.g., the conditional ServiceMonitor block) are allowed; missing
 // rules are not.
+//
+// config/rbac/role.yaml is generated from every controller's markers,
+// including the SeaweedCSIDriver controller's, so the chart is rendered
+// with csiDriver.enabled=true: that is the state in which the manager
+// registers every controller the kustomize role accounts for.
+// TestHelmManagerRoleCSIGate covers the default render.
 func TestHelmManagerRoleIsSupersetOfKustomize(t *testing.T) {
 	root := projectRoot(t)
 
-	helmRules := helmManagerRules(t, filepath.Join(root, "deploy", "helm"))
+	helmRules := helmManagerRules(t, filepath.Join(root, "deploy", "helm"), "--set", "csiDriver.enabled=true")
 	kustomizeRules := kustomizeManagerRules(t, filepath.Join(root, "config", "rbac", "role.yaml"))
 
-	helmTriples := flattenRules(helmRules)
-	kustomizeTriples := flattenRules(kustomizeRules)
-
-	var missing []ruleTriple
-	for triple := range kustomizeTriples {
-		if !helmTriples[triple] {
-			missing = append(missing, triple)
-		}
-	}
+	missing := missingTriples(flattenRules(kustomizeRules), flattenRules(helmRules))
 	if len(missing) == 0 {
 		return
 	}
 
-	sort.Slice(missing, func(i, j int) bool {
-		return missing[i].String() < missing[j].String()
-	})
 	t.Errorf("Helm chart manager-role is missing %d (apiGroup, resource, verb) triple(s) granted by config/rbac/role.yaml.", len(missing))
 	t.Errorf("Update deploy/helm/templates/rbac/role.yaml to include these rules:")
 	for _, m := range missing {
 		t.Errorf("  - %s", m)
 	}
 	t.Errorf("Reason this matters: kubebuilder regenerates config/rbac/role.yaml from controller markers, but the Helm chart's RBAC is hand-maintained. Without parity, fresh Helm installs deploy with stale permissions and the operator fails to watch its own resources at startup.")
+}
+
+// csiControllerFile declares the only controller the manager registers
+// conditionally, on ENABLE_CSI_DRIVER (see cmd/main.go). The chart sets
+// that variable from csiDriver.enabled and gates the controller's RBAC on
+// the same value, so a default install does not hold cluster-wide
+// bind/escalate, CSIDriver, node, or PersistentVolume grants it cannot use.
+const csiControllerFile = "seaweedcsidriver_controller.go"
+
+// TestHelmManagerRoleCSIGate pins both sides of the csiDriver.enabled RBAC
+// gate against the kubebuilder markers in internal/controller:
+//
+//   - the default render must still grant every triple declared by the
+//     always-on controllers, so the gate cannot swallow a rule some other
+//     controller needs (a marker added elsewhere for a resource the CSI
+//     block currently owns shows up here);
+//   - the default render must grant none of the triples only the CSI
+//     controller declares, so the gate stays a gate.
+//
+// Rendering with the flag on is covered by
+// TestHelmManagerRoleIsSupersetOfKustomize.
+func TestHelmManagerRoleCSIGate(t *testing.T) {
+	root := projectRoot(t)
+	chartDir := filepath.Join(root, "deploy", "helm")
+
+	csiTriples, otherTriples := controllerMarkerTriples(t, filepath.Join(root, "internal", "controller"))
+	if len(csiTriples) == 0 || len(otherTriples) == 0 {
+		t.Fatalf("parsed %d CSI and %d non-CSI rbac markers from internal/controller; expected both non-empty", len(csiTriples), len(otherTriples))
+	}
+	defaultTriples := flattenRules(helmManagerRules(t, chartDir))
+
+	if missing := missingTriples(otherTriples, defaultTriples); len(missing) > 0 {
+		t.Errorf("Default Helm render is missing %d triple(s) declared by controllers that run regardless of ENABLE_CSI_DRIVER:", len(missing))
+		for _, m := range missing {
+			t.Errorf("  - %s", m)
+		}
+		t.Errorf("Move these out of the csiDriver.enabled block in deploy/helm/templates/rbac/role.yaml (or add them); a marker outside %s now needs them.", csiControllerFile)
+	}
+
+	csiOnly := map[ruleTriple]bool{}
+	for triple := range csiTriples {
+		if !otherTriples[triple] {
+			csiOnly[triple] = true
+		}
+	}
+	var leaked []ruleTriple
+	for triple := range csiOnly {
+		if defaultTriples[triple] {
+			leaked = append(leaked, triple)
+		}
+	}
+	if len(leaked) > 0 {
+		sort.Slice(leaked, func(i, j int) bool { return leaked[i].String() < leaked[j].String() })
+		t.Errorf("Default Helm render grants %d triple(s) only the SeaweedCSIDriver controller declares; they belong inside the csiDriver.enabled block in deploy/helm/templates/rbac/role.yaml:", len(leaked))
+		for _, l := range leaked {
+			t.Errorf("  - %s", l)
+		}
+	}
+}
+
+// missingTriples returns, sorted, every triple in want that got lacks.
+func missingTriples(want, got map[ruleTriple]bool) []ruleTriple {
+	var missing []ruleTriple
+	for triple := range want {
+		if !got[triple] {
+			missing = append(missing, triple)
+		}
+	}
+	sort.Slice(missing, func(i, j int) bool { return missing[i].String() < missing[j].String() })
+	return missing
+}
+
+// rbacMarker matches one `// +kubebuilder:rbac:groups=...,resources=...,verbs=...`
+// line. Only the three fields the manager role is generated from are
+// parsed; namespace-scoped markers are not used in this repo.
+var rbacMarker = regexp.MustCompile(`\+kubebuilder:rbac:groups=([^,]*),resources=([^,\s]*),verbs=([^,\s]*)`)
+
+// controllerMarkerTriples reads every non-test Go file in dir and returns
+// the (apiGroup, resource, verb) triples declared by csiControllerFile and
+// by all other files. This mirrors what controller-gen feeds into
+// config/rbac/role.yaml, but keeps the per-controller attribution the
+// generated role flattens away.
+func controllerMarkerTriples(t *testing.T, dir string) (csi, other map[ruleTriple]bool) {
+	t.Helper()
+	csi, other = map[ruleTriple]bool{}, map[ruleTriple]bool{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		into := other
+		if name == csiControllerFile {
+			into = csi
+		}
+		for _, m := range rbacMarker.FindAllStringSubmatch(string(data), -1) {
+			for _, g := range strings.Split(m[1], ";") {
+				// controller-gen accepts both spellings of the core group.
+				if g = strings.Trim(g, `"`); g == "core" {
+					g = ""
+				}
+				for _, res := range strings.Split(m[2], ";") {
+					for _, v := range strings.Split(m[3], ";") {
+						into[ruleTriple{apiGroup: g, resource: res, verb: v}] = true
+					}
+				}
+			}
+		}
+	}
+	return csi, other
 }
 
 // ruleTriple is one (apiGroup, resource, verb) grant. PolicyRule is a
@@ -108,11 +222,11 @@ func flattenRules(rules []rbacv1.PolicyRule) map[ruleTriple]bool {
 	return out
 }
 
-func helmManagerRules(t *testing.T, chartDir string) []rbacv1.PolicyRule {
+func helmManagerRules(t *testing.T, chartDir string, extraArgs ...string) []rbacv1.PolicyRule {
 	t.Helper()
-	// Render with the chart's default values — exactly what
-	// `helm install seaweedfs/seaweedfs-operator` produces for a
-	// fresh user. Rendering with every feature toggle enabled
+	// Render with the chart's default values unless the caller says
+	// otherwise — exactly what `helm install seaweedfs/seaweedfs-operator`
+	// produces for a fresh user. Rendering with feature toggles enabled
 	// (e.g., serviceMonitor.enabled=true) would compare against the
 	// unconditional kustomize role and mask any rule gated behind a
 	// values flag — users hit the operator running with default-Helm
@@ -124,8 +238,12 @@ func helmManagerRules(t *testing.T, chartDir string) []rbacv1.PolicyRule {
 	// scoped to "only granted when feature X is enabled" is fine in
 	// principle, but it has to be tied to a runtime signal the
 	// operator code itself observes — not a Helm value the operator
-	// binary knows nothing about.
-	cmd := exec.Command("helm", "template", "drift-test", chartDir)
+	// binary knows nothing about. csiDriver.enabled is the one toggle
+	// that qualifies: it is what sets ENABLE_CSI_DRIVER, so the
+	// controller that needs the gated rules only runs when they are
+	// granted. TestHelmManagerRoleCSIGate holds the two together.
+	args := append([]string{"template", "drift-test", chartDir}, extraArgs...)
+	cmd := exec.Command("helm", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

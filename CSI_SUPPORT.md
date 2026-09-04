@@ -76,6 +76,13 @@ csiDriver:
   enabled: true
 ```
 
+The same value grants the manager the RBAC this controller needs and nothing
+else does — `CSIDriver` and `StorageClass` management, node and
+`PersistentVolume` access, and cluster-wide `bind`/`escalate` on roles so it
+can create the driver's own ClusterRoles. A chart install with the controller
+off holds none of those. Setting `ENABLE_CSI_DRIVER` through `extraEnv` is
+rejected at render time for that reason.
+
 A CSI driver is **node-global**: the kubelet registers exactly one driver per
 `driverName` per node, regardless of how many SeaweedFS clusters run on it.
 For that reason the driver is modeled as its own opt-in resource rather than a

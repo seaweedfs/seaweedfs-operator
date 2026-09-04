@@ -1,6 +1,6 @@
 # seaweedfs-operator
 
-![Version: 0.1.36](https://img.shields.io/badge/Version-0.1.36-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.33](https://img.shields.io/badge/AppVersion-1.0.33-informational?style=flat-square)
+![Version: 0.1.40](https://img.shields.io/badge/Version-0.1.40-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.37](https://img.shields.io/badge/AppVersion-1.0.37-informational?style=flat-square)
 
 A Helm chart for the seaweedfs-operator
 
@@ -19,8 +19,8 @@ A Helm chart for the seaweedfs-operator
 | commonAnnotations | object | `{}` | Annotations for all the deployed objects |
 | commonLabels | object | `{}` | Labels for all the deployed objects |
 | crds.create | bool | `true` | Install the Seaweed CRD as part of the release. Set to false when the CRD is managed out-of-band (e.g., cluster-scoped GitOps or a shared CRD across namespaces) so `helm install/upgrade` won't try to create or adopt it. |
-| csiDriver.enabled | bool | `false` | Register the SeaweedCSIDriver controller by setting ENABLE_CSI_DRIVER=true on the manager. Off by default, matching the manager's own default. |
-| extraEnv | list | `[]` | Additional environment variables for the manager container. Takes the usual env list form, so a value can come from a secretKeyRef or fieldRef as well as a literal. |
+| csiDriver.enabled | bool | `false` | Register the SeaweedCSIDriver controller by setting ENABLE_CSI_DRIVER=true on the manager, and grant the manager the extra RBAC that controller needs (CSIDrivers, StorageClasses, nodes, PersistentVolumes, and cluster-wide bind/escalate on roles so it can create the driver's own ClusterRoles). Off by default, matching the manager's own default; a default install gets none of those grants. |
+| extraEnv | list | `[]` | Additional environment variables for the manager container. Takes the usual env list form, so a value can come from a secretKeyRef or fieldRef as well as a literal. ENABLE_CSI_DRIVER is rejected here — set csiDriver.enabled, which also grants the matching RBAC. |
 | fullnameOverride | string | `""` | String to fully override common.names.fullname template |
 | global | object | `{"imageRegistry":""}` | Global Docker image parameters. global.imageRegistry, when set, overrides the registry of every image in the chart; leave empty to use each image's own. |
 | grafanaDashboard.additionalLabels | object | `{"grafana_dashboard":"1"}` | Labels added to the Grafana Dashboard ConfigMap so the Grafana sidecar discovers it. kube-prometheus-stack only matches `grafana_dashboard: "1"`; the standalone grafana chart matches any value. Set a key to `null` to drop it — an empty map merges with the default rather than replacing it. |

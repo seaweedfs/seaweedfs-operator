@@ -743,6 +743,81 @@ func TestS3Credentials_CrossNamespaceSecret_MissingEntersPending(t *testing.T) {
 	}
 }
 
+// A foreign Secret is consumed, never repaired: when it lacks either field the
+// credential waits for whoever owns it to fill it in rather than overwriting
+// the fields it does hold with a generated pair.
+func TestS3Credentials_CrossNamespaceSecret_IncompleteStaysUntouched(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data map[string][]byte
+	}{
+		{name: "missing secret key", data: map[string][]byte{defaultAccessKeyField: []byte("AKIAXNAMESPACE")}},
+		{name: "missing access key", data: map[string][]byte{defaultSecretKeyField: []byte("xnssecretkey")}},
+		{name: "empty", data: nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scheme := iamTestScheme(t)
+			existing := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "shared-secret", Namespace: "secrets"},
+				Data:       tc.data,
+			}
+			cred := &seaweedv1.S3Credentials{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "alice-creds",
+					Namespace:  "media",
+					Finalizers: []string{s3CredentialsFinalizer},
+				},
+				Spec: seaweedv1.S3CredentialsSpec{
+					SeaweedRef:  iamSeaweedRef(),
+					IdentityRef: seaweedv1.S3IdentityRef{Name: "alice"},
+					SecretRef:   seaweedv1.S3SecretRef{Name: "shared-secret", Namespace: "secrets"},
+				},
+			}
+			cli := iamTestClient(t, scheme, newTestSeaweed(), existing, cred)
+			fa := newFakeIAMAdmin()
+			fa.seedUser("alice")
+			r := &S3CredentialsReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+			r.AdminFactory = fakeIAMFactory(fa)
+
+			key := types.NamespacedName{Namespace: "media", Name: "alice-creds"}
+			if res := reconcileOnce(t, r, key); res.RequeueAfter == 0 {
+				t.Fatal("expected requeue while waiting for the foreign secret to be completed")
+			}
+			if keys := fa.userKeys("alice"); len(keys) != 0 {
+				t.Fatalf("incomplete foreign secret minted IAM keys: %v", keys)
+			}
+
+			var secret corev1.Secret
+			if err := cli.Get(context.Background(), client.ObjectKeyFromObject(existing), &secret); err != nil {
+				t.Fatalf("get secret: %v", err)
+			}
+			if len(secret.Data) != len(tc.data) {
+				t.Fatalf("foreign secret data was modified: %v", secret.Data)
+			}
+			for k, v := range tc.data {
+				if string(secret.Data[k]) != string(v) {
+					t.Errorf("foreign secret %s = %q, want %q", k, secret.Data[k], v)
+				}
+			}
+			if secret.Annotations[s3CredentialsManagedAnnotation] == "true" || len(secret.OwnerReferences) != 0 {
+				t.Errorf("foreign secret was claimed: annotations=%v owners=%v", secret.Annotations, secret.OwnerReferences)
+			}
+
+			var got seaweedv1.S3Credentials
+			if err := cli.Get(context.Background(), key, &got); err != nil {
+				t.Fatalf("get credentials: %v", err)
+			}
+			if got.Status.Phase != seaweedv1.S3PhasePending || got.Status.AccessKey != "" {
+				t.Errorf("status = %+v, want Pending with no access key", got.Status)
+			}
+			ready := meta.FindStatusCondition(got.Status.Conditions, seaweedv1.S3ConditionReady)
+			if ready == nil || ready.Reason != "SecretIncomplete" {
+				t.Errorf("Ready condition = %+v", ready)
+			}
+		})
+	}
+}
+
 func TestS3Credentials_CrossNamespaceSecret_DeleteDoesNotTouchForeignSecret(t *testing.T) {
 	scheme := iamTestScheme(t)
 	// A secret in a foreign namespace that happens to carry the managed annotation

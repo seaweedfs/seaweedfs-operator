@@ -195,6 +195,12 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 		existingSK = string(secret.Data[skField])
 	}
 
+	// A foreign Secret is read-only: it supplies the pair or nothing happens.
+	if crossNamespace && (existingAK == "" || existingSK == "") {
+		return r.pending(ctx, cred, "SecretIncomplete",
+			fmt.Sprintf("cross-namespace Secret %s/%s must hold both %q and %q", secretNamespace, secretName, akField, skField))
+	}
+
 	desiredAK, desiredSK := existingAK, existingSK
 	if desiredAK == "" || desiredSK == "" {
 		// Generate a fresh key pair to provision and store.

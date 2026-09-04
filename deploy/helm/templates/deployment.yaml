@@ -66,6 +66,11 @@ spec:
         {{- end }}
         {{- end }}
         {{- with .Values.extraEnv }}
+        {{- range . }}
+        {{- if eq .name "ENABLE_CSI_DRIVER" }}
+        {{- fail "set csiDriver.enabled instead of ENABLE_CSI_DRIVER in extraEnv: that value also grants the manager the RBAC the SeaweedCSIDriver controller needs" }}
+        {{- end }}
+        {{- end }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         ports:

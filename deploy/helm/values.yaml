@@ -75,12 +75,17 @@ replicaCount: 1
 ## silently does nothing, which is a confusing way to find out it is off.
 csiDriver:
   # -- Register the SeaweedCSIDriver controller by setting ENABLE_CSI_DRIVER=true
-  # on the manager. Off by default, matching the manager's own default.
+  # on the manager, and grant the manager the extra RBAC that controller needs
+  # (CSIDrivers, StorageClasses, nodes, PersistentVolumes, and cluster-wide
+  # bind/escalate on roles so it can create the driver's own ClusterRoles).
+  # Off by default, matching the manager's own default; a default install gets
+  # none of those grants.
   enabled: false
 
 # -- Additional environment variables for the manager container. Takes the usual
 # env list form, so a value can come from a secretKeyRef or fieldRef as well as
-# a literal.
+# a literal. ENABLE_CSI_DRIVER is rejected here — set csiDriver.enabled, which
+# also grants the matching RBAC.
 extraEnv: []
 #  - name: SOME_FLAG
 #    value: "true"

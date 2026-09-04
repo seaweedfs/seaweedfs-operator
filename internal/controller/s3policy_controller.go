@@ -92,7 +92,7 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 	if !found {
-		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &policy, s3PolicyFinalizer); handled {
+		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, r.Recorder, &policy, s3PolicyFinalizer, seaweedRefKey(policy.Spec.SeaweedRef, policy.Namespace)); handled {
 			return ctrl.Result{}, err
 		}
 		return r.clusterNotFound(ctx, &policy)
@@ -114,7 +114,10 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	if !policy.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, &policy, name, admin)
+		// Delete the IAM policy this CR provisioned, not the one a refused
+		// rename now names: that policy was never created by this CR and may
+		// belong to someone else.
+		return r.handleDeletion(ctx, &policy, provisionedName(policy.Status.PolicyName, name), admin)
 	}
 
 	if !controllerutil.ContainsFinalizer(&policy, s3PolicyFinalizer) {

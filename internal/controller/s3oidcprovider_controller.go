@@ -76,7 +76,7 @@ func (r *S3OIDCProviderReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 	if !found {
-		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &provider, s3OIDCProviderFinalizer); handled {
+		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, r.Recorder, &provider, s3OIDCProviderFinalizer, seaweedRefKey(provider.Spec.SeaweedRef, provider.Namespace)); handled {
 			return ctrl.Result{}, err
 		}
 		return r.clusterNotFound(ctx, &provider)

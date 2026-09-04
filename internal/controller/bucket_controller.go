@@ -148,7 +148,7 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			// The bucket lives in the cluster, so with the cluster gone there is
 			// nothing for handleDeletion to do. Release rather than requeue on a
 			// reference that will never resolve.
-			if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &bucket, BucketFinalizer); handled {
+			if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, r.Recorder, &bucket, BucketFinalizer, seaweedNS+"/"+bucket.Spec.ClusterRef.Name); handled {
 				return ctrl.Result{}, err
 			}
 			r.setCondition(&bucket, seaweedv1.BucketConditionClusterReachable, metav1.ConditionFalse, "ClusterRefNotFound",
@@ -195,7 +195,7 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	// Deletion path.
 	if !bucket.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, &bucket, bucketName, admin)
+		return r.handleDeletion(ctx, &bucket, admin)
 	}
 
 	// Add finalizer if missing. Requeue immediately to pick up the
@@ -406,7 +406,7 @@ func (r *BucketReconciler) reconcileBucket(ctx context.Context, bucket *seaweedv
 // handleDeletion drives the reclaim-policy path. Retain just removes the
 // finalizer; Delete attempts s3.bucket.delete and surfaces retention
 // blocks as a condition with a backoff retry.
-func (r *BucketReconciler) handleDeletion(ctx context.Context, bucket *seaweedv1.Bucket, bucketName string, admin BucketAdmin) (ctrl.Result, error) {
+func (r *BucketReconciler) handleDeletion(ctx context.Context, bucket *seaweedv1.Bucket, admin BucketAdmin) (ctrl.Result, error) {
 	log := r.Log.WithValues("bucket", types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name})
 
 	if !controllerutil.ContainsFinalizer(bucket, BucketFinalizer) {
@@ -415,9 +415,13 @@ func (r *BucketReconciler) handleDeletion(ctx context.Context, bucket *seaweedv1
 
 	bucket.Status.Phase = seaweedv1.BucketPhaseTerminating
 
-	// Only delete the bucket this CR created: Status.BucketName is empty when
+	// Only delete the bucket this CR created. Status.BucketName pins the name
+	// actually provisioned: spec.name may since have been set to a value the
+	// reconciler refused as a rename, and that name was never provisioned, so
+	// the spec-derived name is not the deletion target. It is empty when
 	// adoption was refused, so such a CR must not delete a bucket it doesn't own.
-	if bucket.Spec.ReclaimPolicy == seaweedv1.BucketReclaimDelete && bucket.Status.BucketName == bucketName {
+	bucketName := bucket.Status.BucketName
+	if bucket.Spec.ReclaimPolicy == seaweedv1.BucketReclaimDelete && bucketName != "" {
 		err := admin.DeleteBucket(ctx, bucketName)
 		switch {
 		case err == nil, errors.Is(err, ErrBucketNotFound):

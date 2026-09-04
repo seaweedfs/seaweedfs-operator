@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -25,8 +26,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
@@ -51,8 +54,9 @@ func TestReleaseFinalizerIfDeleting(t *testing.T) {
 		bucket := newTestBucket("photos")
 		bucket.Finalizers = []string{BucketFinalizer}
 		cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(bucket).Build()
+		rec := record.NewFakeRecorder(1)
 
-		handled, err := releaseFinalizerIfDeleting(ctx, cli, bucket, BucketFinalizer)
+		handled, err := releaseFinalizerIfDeleting(ctx, cli, rec, bucket, BucketFinalizer, "seaweedfs/prod")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -62,6 +66,9 @@ func TestReleaseFinalizerIfDeleting(t *testing.T) {
 		if len(bucket.Finalizers) != 1 {
 			t.Errorf("finalizer was removed from a live object: %v", bucket.Finalizers)
 		}
+		if len(rec.Events) != 0 {
+			t.Errorf("no event expected for a live object, got %q", <-rec.Events)
+		}
 	})
 
 	t.Run("deleting object has its finalizer dropped", func(t *testing.T) {
@@ -70,8 +77,9 @@ func TestReleaseFinalizerIfDeleting(t *testing.T) {
 		bucket.Finalizers = []string{BucketFinalizer}
 		bucket.DeletionTimestamp = &now
 		cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(bucket).Build()
+		rec := record.NewFakeRecorder(1)
 
-		handled, err := releaseFinalizerIfDeleting(ctx, cli, bucket, BucketFinalizer)
+		handled, err := releaseFinalizerIfDeleting(ctx, cli, rec, bucket, BucketFinalizer, "seaweedfs/prod")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -85,6 +93,17 @@ func TestReleaseFinalizerIfDeleting(t *testing.T) {
 		if err := cli.Get(ctx, key, got); !apierrors.IsNotFound(err) {
 			t.Fatalf("expected the object to be gone, got %v with finalizers %v", err, got.Finalizers)
 		}
+
+		// With the object and the cluster both gone, the Event is the only
+		// trace that reclaim was skipped.
+		select {
+		case ev := <-rec.Events:
+			if !strings.Contains(ev, "Warning FinalizerReleased") || !strings.Contains(ev, `"seaweedfs/prod"`) {
+				t.Errorf("event = %q, want a FinalizerReleased warning naming the missing cluster", ev)
+			}
+		default:
+			t.Error("expected a FinalizerReleased event to be recorded")
+		}
 	})
 
 	t.Run("finalizer already absent is still handled", func(t *testing.T) {
@@ -94,8 +113,9 @@ func TestReleaseFinalizerIfDeleting(t *testing.T) {
 		bucket.Finalizers = []string{"example.com/other"}
 		bucket.DeletionTimestamp = &now
 		cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(bucket).Build()
+		rec := record.NewFakeRecorder(1)
 
-		handled, err := releaseFinalizerIfDeleting(ctx, cli, bucket, BucketFinalizer)
+		handled, err := releaseFinalizerIfDeleting(ctx, cli, rec, bucket, BucketFinalizer, "seaweedfs/prod")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -104,6 +124,21 @@ func TestReleaseFinalizerIfDeleting(t *testing.T) {
 		}
 		if len(bucket.Finalizers) != 1 || bucket.Finalizers[0] != "example.com/other" {
 			t.Errorf("another controller's finalizer must survive, got %v", bucket.Finalizers)
+		}
+		if len(rec.Events) != 0 {
+			t.Errorf("nothing was released, so no event expected, got %q", <-rec.Events)
+		}
+	})
+
+	t.Run("nil recorder is tolerated", func(t *testing.T) {
+		now := metav1.Now()
+		bucket := newTestBucket("photos")
+		bucket.Finalizers = []string{BucketFinalizer}
+		bucket.DeletionTimestamp = &now
+		cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(bucket).Build()
+
+		if handled, err := releaseFinalizerIfDeleting(ctx, cli, nil, bucket, BucketFinalizer, "seaweedfs/prod"); !handled || err != nil {
+			t.Fatalf("handled=%v err=%v, want handled with no error", handled, err)
 		}
 	})
 }
@@ -264,4 +299,113 @@ func TestReconcile_RenamedWhileLive_StillRefused(t *testing.T) {
 	if got.Status.Phase != seaweedv1.BucketPhaseFailed {
 		t.Errorf("phase = %q, want Failed for a rename on a live bucket", got.Status.Phase)
 	}
+}
+
+// Letting a renamed object through to deletion is only safe if deletion
+// targets what was provisioned. Status pins that name; spec now carries the
+// refused rename, which names something this CR never created — and, for IAM,
+// possibly someone else's user or policy. reclaimPolicy: Delete must remove
+// the former and leave the latter alone.
+func TestReconcile_RenamedWhileDeleting_DeletesProvisionedName(t *testing.T) {
+	now := metav1.Now()
+
+	t.Run("bucket", func(t *testing.T) {
+		bucket := newTestBucket("photos")
+		bucket.Spec.Name = "renamed-photos"
+		bucket.Spec.ReclaimPolicy = seaweedv1.BucketReclaimDelete
+		bucket.Status.BucketName = "photos"
+		bucket.Finalizers = []string{BucketFinalizer}
+		bucket.DeletionTimestamp = &now
+
+		fa := newFakeAdmin()
+		fa.existsResp["photos"] = true
+		fa.existsResp["renamed-photos"] = true // a foreign bucket that happens to carry the new name
+		r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+		key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+		if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+
+		if !hasCall(fa.calls, "Delete:photos") {
+			t.Errorf("the provisioned bucket was orphaned; calls=%v", fa.calls)
+		}
+		if _, foreign := fa.existsResp["renamed-photos"]; !foreign {
+			t.Errorf("a bucket this CR never provisioned was deleted; calls=%v", fa.calls)
+		}
+		if err := cli.Get(context.Background(), key, &seaweedv1.Bucket{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("deleting Bucket remains: %v", err)
+		}
+	})
+
+	t.Run("identity", func(t *testing.T) {
+		scheme := iamTestScheme(t)
+		identity := &seaweedv1.S3Identity{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "alice",
+				Namespace:         "media",
+				Finalizers:        []string{s3IdentityFinalizer},
+				DeletionTimestamp: &now,
+			},
+			Spec: seaweedv1.S3IdentitySpec{
+				SeaweedRef:    iamSeaweedRef(),
+				Name:          "renamed-alice",
+				ReclaimPolicy: seaweedv1.S3ReclaimDelete,
+			},
+			Status: seaweedv1.S3IdentityStatus{IdentityName: "alice"},
+		}
+		cli := iamTestClient(t, scheme, newTestSeaweed(), identity)
+		fa := newFakeIAMAdmin()
+		fa.seedUser("alice")
+		fa.seedUser("renamed-alice") // a foreign user that happens to carry the new name
+		r := &S3IdentityReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+		r.AdminFactory = fakeIAMFactory(fa)
+		key := types.NamespacedName{Namespace: identity.Namespace, Name: identity.Name}
+		reconcileOnce(t, r, key)
+
+		if _, err := fa.GetUser(context.Background(), "alice"); err == nil {
+			t.Errorf("the provisioned IAM user was orphaned; calls=%v", fa.calls)
+		}
+		if _, err := fa.GetUser(context.Background(), "renamed-alice"); err != nil {
+			t.Errorf("an IAM user this CR never provisioned was deleted; calls=%v", fa.calls)
+		}
+		if err := cli.Get(context.Background(), key, &seaweedv1.S3Identity{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("deleting S3Identity remains: %v", err)
+		}
+	})
+
+	t.Run("policy", func(t *testing.T) {
+		scheme := iamTestScheme(t)
+		policy := &seaweedv1.S3Policy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "read",
+				Namespace:         "media",
+				Finalizers:        []string{s3PolicyFinalizer},
+				DeletionTimestamp: &now,
+			},
+			Spec: seaweedv1.S3PolicySpec{
+				SeaweedRef:    iamSeaweedRef(),
+				Name:          "renamed-read",
+				ReclaimPolicy: seaweedv1.S3ReclaimDelete,
+			},
+			Status: seaweedv1.S3PolicyStatus{PolicyName: "read"},
+		}
+		cli := iamTestClient(t, scheme, newTestSeaweed(), policy)
+		fa := newFakeIAMAdmin()
+		fa.policies["read"] = "{}"
+		fa.policies["renamed-read"] = "{}" // a foreign policy that happens to carry the new name
+		r := &S3PolicyReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+		r.AdminFactory = fakeIAMFactory(fa)
+		key := types.NamespacedName{Namespace: policy.Namespace, Name: policy.Name}
+		reconcileOnce(t, r, key)
+
+		if _, err := fa.GetPolicy(context.Background(), "read"); err == nil {
+			t.Errorf("the provisioned IAM policy was orphaned; calls=%v", fa.calls)
+		}
+		if _, err := fa.GetPolicy(context.Background(), "renamed-read"); err != nil {
+			t.Errorf("an IAM policy this CR never provisioned was deleted; calls=%v", fa.calls)
+		}
+		if err := cli.Get(context.Background(), key, &seaweedv1.S3Policy{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("deleting S3Policy remains: %v", err)
+		}
+	})
 }

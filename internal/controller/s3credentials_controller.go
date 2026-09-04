@@ -322,6 +322,9 @@ func (r *S3CredentialsReconciler) handleDeletion(ctx context.Context, cred *seaw
 	if err := r.Update(ctx, cred); err != nil {
 		return ctrl.Result{}, err
 	}
+	if admin == nil {
+		recordFinalizerReleased(r.Recorder, cred, seaweedRefKey(cred.Spec.SeaweedRef, cred.Namespace))
+	}
 	return ctrl.Result{}, nil
 }
 

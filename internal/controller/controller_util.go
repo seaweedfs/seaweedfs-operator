@@ -18,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -553,7 +554,8 @@ func mergePodTemplateMetadata(owner metav1.Object, existing, desired *corev1.Pod
 }
 
 // releaseFinalizerIfDeleting drops finalizer from obj when obj is being deleted
-// and the Seaweed cluster it refers to no longer exists.
+// and the Seaweed cluster it refers to, cluster ("namespace/name"), no longer
+// exists.
 //
 // A finalizer here exists to clean state out of that cluster. Once the cluster
 // is gone there is nothing left to clean, and requeuing on the missing
@@ -561,13 +563,42 @@ func mergePodTemplateMetadata(owner metav1.Object, existing, desired *corev1.Pod
 // deleted. Removing a cluster before the resources that reference it is an
 // ordinary thing to do -- deleting a namespace does exactly that.
 //
+// The release is recorded as an Event on obj. Whatever reclaimPolicy asked for
+// did not happen, and with the object about to disappear and the cluster
+// already gone, the Event is the only trace left for an operator to find.
+//
 // Reports whether it handled obj; when true the caller returns immediately.
-func releaseFinalizerIfDeleting(ctx context.Context, c client.Client, obj client.Object, finalizer string) (bool, error) {
+func releaseFinalizerIfDeleting(ctx context.Context, c client.Client, recorder record.EventRecorder, obj client.Object, finalizer, cluster string) (bool, error) {
 	if obj.GetDeletionTimestamp().IsZero() {
 		return false, nil
 	}
 	if !controllerutil.RemoveFinalizer(obj, finalizer) {
 		return true, nil
 	}
-	return true, c.Update(ctx, obj)
+	if err := c.Update(ctx, obj); err != nil {
+		return true, err
+	}
+	recordFinalizerReleased(recorder, obj, cluster)
+	return true, nil
+}
+
+// recordFinalizerReleased emits the Event that records obj's finalizer being
+// released because cluster no longer exists. Tests leave the recorder nil.
+func recordFinalizerReleased(recorder record.EventRecorder, obj runtime.Object, cluster string) {
+	if recorder == nil {
+		return
+	}
+	recorder.Eventf(obj, corev1.EventTypeWarning, "FinalizerReleased",
+		"Seaweed cluster %q no longer exists; finalizer released without cleaning up cluster state", cluster)
+}
+
+// provisionedName returns the name recorded in status once a resource has been
+// provisioned, else the spec-derived fallback. Deletion must target what was
+// actually created: spec.name may since have been set to a value the reconciler
+// refused as a rename, and that name was never provisioned.
+func provisionedName(recorded, fallback string) string {
+	if recorded != "" {
+		return recorded
+	}
+	return fallback
 }

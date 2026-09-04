@@ -93,7 +93,7 @@ func (r *S3IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 	if !found {
-		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, &identity, s3IdentityFinalizer); handled {
+		if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, r.Recorder, &identity, s3IdentityFinalizer, seaweedRefKey(identity.Spec.SeaweedRef, identity.Namespace)); handled {
 			return ctrl.Result{}, err
 		}
 		return r.clusterNotFound(ctx, &identity)
@@ -115,7 +115,10 @@ func (r *S3IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	if !identity.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, &identity, name, admin)
+		// Delete the IAM user this CR provisioned, not the one a refused
+		// rename now names: that user was never created by this CR and may
+		// belong to someone else.
+		return r.handleDeletion(ctx, &identity, provisionedName(identity.Status.IdentityName, name), admin)
 	}
 
 	if !controllerutil.ContainsFinalizer(&identity, s3IdentityFinalizer) {

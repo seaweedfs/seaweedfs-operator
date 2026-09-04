@@ -204,6 +204,17 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 		}
 	}
 
+	// Persist the pair before registering it: the Secret is the record the
+	// next pass reconciles the identity against, so a key is never minted
+	// without one. A Secret that appeared since the lookup is not ours;
+	// requeue so the ownership check above reports it.
+	if err := r.writeSecret(ctx, cred, secret, secretFound, secretName, secretNamespace, akField, skField, desiredAK, desiredSK); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile the identity against the pair the Secret holds: register the
 	// key when absent, rewrite its secret key when only that field rotated —
 	// the access key id stays, so there is no superseded pair to revoke below.
@@ -216,11 +227,6 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 		if err := admin.UpdateAccessKey(ctx, user, desiredAK, desiredSK); err != nil {
 			return r.fail(ctx, cred, "UpdateAccessKeyFailed", err.Error())
 		}
-	}
-
-	// Mirror the key pair into the Secret.
-	if err := r.writeSecret(ctx, cred, secret, secretFound, secretName, secretNamespace, akField, skField, desiredAK, desiredSK); err != nil {
-		return ctrl.Result{}, err
 	}
 
 	// Remove a previously generated key we just replaced.
@@ -333,13 +339,15 @@ func (r *S3CredentialsReconciler) deleteManagedSecret(ctx context.Context, cred 
 	return nil
 }
 
-// orphanManagedSecret removes cred's controller reference for Retain.
+// orphanManagedSecret removes cred's controller reference for Retain. The
+// owner reference alone is what lets garbage collection remove the Secret,
+// so it is stripped whenever cred controls the Secret, annotated or not.
 func (r *S3CredentialsReconciler) orphanManagedSecret(ctx context.Context, cred *seaweedv1.S3Credentials, namespace, name string) error {
 	secret, found, err := r.getSecret(ctx, namespace, name)
 	if err != nil || !found {
 		return err
 	}
-	if secret.Annotations[s3CredentialsManagedAnnotation] != "true" || !metav1.IsControlledBy(secret, cred) {
+	if !metav1.IsControlledBy(secret, cred) {
 		return nil
 	}
 	if err := controllerutil.RemoveControllerReference(cred, secret, r.Scheme); err != nil {

@@ -65,8 +65,7 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		if strings.Contains(got, adminCredentialsMountPath) {
 			t.Fatalf("expected no credentials preamble, got %q", got)
 		}
-		// Without authentication weed admin refuses to bind a non-loopback
-		// address, so the operator must not add -ip=0.0.0.0 here.
+		// Without auth, weed admin refuses a non-loopback bind.
 		if strings.Contains(got, "-ip=0.0.0.0") {
 			t.Fatalf("expected no -ip=0.0.0.0 without a credentials secret, got %q", got)
 		}
@@ -123,17 +122,14 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		if !strings.HasSuffix(got, ` "$@"`) {
 			t.Errorf("expected weed command to expand positional parameters at the end, got %q", got)
 		}
-		// With authentication enabled, the operator binds the wildcard so the
-		// kubelet's liveness/readiness probes can reach the admin HTTP port
-		// on the pod IP (#384).
+		// With auth enabled, bind the wildcard so probes can reach the pod IP (#384).
 		if !strings.Contains(got, "-ip=0.0.0.0") {
 			t.Errorf("expected -ip=0.0.0.0 with a credentials secret, got %q", got)
 		}
 	})
 
 	t.Run("credentials secret extraArgs override -ip", func(t *testing.T) {
-		// -ip=0.0.0.0 is placed before extraArgs so a user can still pin a
-		// different bind address; fla9 takes the last occurrence of a flag.
+		// -ip=0.0.0.0 lands before extraArgs so a user can still override it.
 		m := &seaweedv1.Seaweed{
 			ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
 			Spec: seaweedv1.SeaweedSpec{

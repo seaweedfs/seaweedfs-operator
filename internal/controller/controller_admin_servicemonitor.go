@@ -28,7 +28,7 @@ func (r *SeaweedReconciler) createAdminServiceMonitor(m *seaweedv1.Seaweed) *mon
 				},
 			},
 			Selector: metav1.LabelSelector{
-				MatchLabels: labels,
+				MatchLabels: metricsServiceLabels(labels),
 			},
 		},
 	}

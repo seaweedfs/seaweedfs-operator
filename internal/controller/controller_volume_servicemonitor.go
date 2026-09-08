@@ -24,7 +24,7 @@ func (r *SeaweedReconciler) createVolumeServerServiceMonitor(m *seaweedv1.Seawee
 				},
 			},
 			Selector: metav1.LabelSelector{
-				MatchLabels: labels,
+				MatchLabels: metricsServiceLabels(labels),
 			},
 		},
 	}
@@ -49,7 +49,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyServiceMonitor(m *seaweedv
 				},
 			},
 			Selector: metav1.LabelSelector{
-				MatchLabels: labels,
+				MatchLabels: metricsServiceLabels(labels),
 			},
 		},
 	}

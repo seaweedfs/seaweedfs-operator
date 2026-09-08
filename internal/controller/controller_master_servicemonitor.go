@@ -23,7 +23,7 @@ func (r *SeaweedReconciler) createMasterServiceMonitor(m *seaweedv1.Seaweed) *mo
 				},
 			},
 			Selector: metav1.LabelSelector{
-				MatchLabels: labels,
+				MatchLabels: metricsServiceLabels(labels),
 			},
 		},
 	}

@@ -122,14 +122,18 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		if !strings.HasSuffix(got, ` "$@"`) {
 			t.Errorf("expected weed command to expand positional parameters at the end, got %q", got)
 		}
-		// With auth enabled, bind the wildcard so probes can reach the pod IP (#384).
-		if !strings.Contains(got, "-ip=0.0.0.0") {
-			t.Errorf("expected -ip=0.0.0.0 with a credentials secret, got %q", got)
+		// -ip=0.0.0.0 is gated on the adminPassword key existing in the mounted
+		// secret, so a secret missing that key can't expose the admin API (#387).
+		if !strings.Contains(got, `[ -f `+adminCredentialsMountPath+`/adminPassword ] && ipArg="-ip=0.0.0.0"`) {
+			t.Errorf("expected adminPassword-gated ipArg assignment, got %q", got)
+		}
+		if !strings.Contains(got, `$ipArg`) {
+			t.Errorf("expected $ipArg expansion in the exec command, got %q", got)
 		}
 	})
 
 	t.Run("credentials secret extraArgs override -ip", func(t *testing.T) {
-		// -ip=0.0.0.0 lands before extraArgs so a user can still override it.
+		// $ipArg lands before extraArgs so a user can still override -ip.
 		m := &seaweedv1.Seaweed{
 			ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
 			Spec: seaweedv1.SeaweedSpec{
@@ -140,13 +144,13 @@ func TestBuildAdminStartupScript(t *testing.T) {
 			},
 		}
 		got := buildAdminStartupScript(m, "-ip=127.0.0.1")
-		defaultIdx := strings.Index(got, "-ip=0.0.0.0")
+		ipArgIdx := strings.Index(got, `$ipArg`)
 		overrideIdx := strings.Index(got, "-ip=127.0.0.1")
-		if defaultIdx < 0 || overrideIdx < 0 {
-			t.Fatalf("expected both the default and override -ip flags, got %q", got)
+		if ipArgIdx < 0 || overrideIdx < 0 {
+			t.Fatalf("expected $ipArg and the extraArgs override, got %q", got)
 		}
-		if !(defaultIdx < overrideIdx) {
-			t.Errorf("expected -ip=0.0.0.0 before the extraArgs override, got %q", got)
+		if !(ipArgIdx < overrideIdx) {
+			t.Errorf("expected $ipArg before the extraArgs override, got %q", got)
 		}
 	})
 

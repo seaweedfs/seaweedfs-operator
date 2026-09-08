@@ -25,33 +25,40 @@ const adminCredentialsMountPath = "/etc/sw/admin"
 var adminCredentialKeys = []string{"adminUser", "adminPassword", "readOnlyUser", "readOnlyPassword"}
 
 func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
-	commands := weedPreamble(m, m.BaseAdminSpec().LoggingArgs(), "admin")
-	commands = append(commands, fmt.Sprintf("-port=%d", seaweedv1.AdminHTTPPort))
-	commands = append(commands, fmt.Sprintf("-master=%s", getMasterPeersString(m)))
+	pre := weedPreamble(m, m.BaseAdminSpec().LoggingArgs(), "admin")
+	pre = append(pre, fmt.Sprintf("-port=%d", seaweedv1.AdminHTTPPort))
+	pre = append(pre, fmt.Sprintf("-master=%s", getMasterPeersString(m)))
 	if m.Spec.Admin.MetricsPort != nil {
-		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Admin.MetricsPort))
-	}
-	commands = append(commands, extraArgs...)
-
-	weedCmd := strings.Join(commands, " ")
-
-	// When a CredentialsSecret is mounted, resolve each well-known key from
-	// the projected files into `-<key>=<value>` flags at container start, so
-	// weed admin boots with authentication enabled. Keys with no file on disk
-	// are skipped, keeping readOnlyUser/readOnlyPassword optional. `set --`
-	// builds positional parameters so values containing spaces or special
-	// characters expand safely through `"$@"`. `exec` replaces the /bin/sh
-	// wrapper with weed so SIGTERM from the kubelet reaches weed directly.
-	if m.Spec.Admin.CredentialsSecret != nil && m.Spec.Admin.CredentialsSecret.Name != "" {
-		preamble := "set --; " +
-			"for key in " + strings.Join(adminCredentialKeys, " ") + "; do " +
-			`f="` + adminCredentialsMountPath + `/$key"; ` +
-			`[ -f "$f" ] && set -- "$@" "-$key=$(cat "$f")"; ` +
-			"done; "
-		return preamble + "exec " + weedCmd + ` "$@"`
+		pre = append(pre, fmt.Sprintf("-metricsPort=%d", *m.Spec.Admin.MetricsPort))
 	}
 
-	return "exec " + weedCmd
+	hasCredentials := m.Spec.Admin.CredentialsSecret != nil && m.Spec.Admin.CredentialsSecret.Name != ""
+
+	// Without a CredentialsSecret, weed admin must stay on loopback: it
+	// refuses a non-loopback bind without authentication.
+	if !hasCredentials {
+		cmd := append(pre, extraArgs...)
+		return "exec " + strings.Join(cmd, " ")
+	}
+
+	// With a CredentialsSecret, bind the wildcard so the kubelet's probes can
+	// reach the admin HTTP port on the pod IP (#384). Fail closed if the
+	// adminPassword key is missing: weed admin refuses a non-loopback bind
+	// without authentication, and silently falling back to loopback would
+	// leave probes broken with no visible error. $ipArg lands before
+	// extraArgs so a user can still override -ip.
+	preCmd := strings.Join(pre, " ")
+	extraCmd := ""
+	if len(extraArgs) > 0 {
+		extraCmd = " " + strings.Join(extraArgs, " ")
+	}
+	preamble := "set --; " +
+		"for key in " + strings.Join(adminCredentialKeys, " ") + "; do " +
+		`f="` + adminCredentialsMountPath + `/$key"; ` +
+		`[ -f "$f" ] && set -- "$@" "-$key=$(cat "$f")"; ` +
+		"done; " +
+		`[ -f ` + adminCredentialsMountPath + `/adminPassword ] || { echo "admin: CredentialsSecret mounted without adminPassword key; refusing to bind 0.0.0.0 without authentication" >&2; exit 1; }; `
+	return preamble + "exec " + preCmd + " -ip=0.0.0.0" + extraCmd + ` "$@"`
 }
 
 // adminURLPrefix scans weed admin ExtraArgs for a -urlPrefix flag and returns

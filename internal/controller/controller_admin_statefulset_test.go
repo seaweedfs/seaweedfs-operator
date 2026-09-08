@@ -122,18 +122,18 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		if !strings.HasSuffix(got, ` "$@"`) {
 			t.Errorf("expected weed command to expand positional parameters at the end, got %q", got)
 		}
-		// -ip=0.0.0.0 is gated on the adminPassword key existing in the mounted
-		// secret, so a secret missing that key can't expose the admin API (#387).
-		if !strings.Contains(got, `[ -f `+adminCredentialsMountPath+`/adminPassword ] && ipArg="-ip=0.0.0.0"`) {
-			t.Errorf("expected adminPassword-gated ipArg assignment, got %q", got)
+		// Fail closed if adminPassword is missing, so a misconfigured secret
+		// can't expose the admin API or silently leave probes broken (#387).
+		if !strings.Contains(got, `[ -f `+adminCredentialsMountPath+`/adminPassword ] || { echo "admin: CredentialsSecret mounted without adminPassword key; refusing to bind 0.0.0.0 without authentication" >&2; exit 1; }`) {
+			t.Errorf("expected adminPassword fail-closed guard, got %q", got)
 		}
-		if !strings.Contains(got, `$ipArg`) {
-			t.Errorf("expected $ipArg expansion in the exec command, got %q", got)
+		if !strings.Contains(got, `-ip=0.0.0.0`) {
+			t.Errorf("expected -ip=0.0.0.0 with a credentials secret, got %q", got)
 		}
 	})
 
 	t.Run("credentials secret extraArgs override -ip", func(t *testing.T) {
-		// $ipArg lands before extraArgs so a user can still override -ip.
+		// -ip=0.0.0.0 lands before extraArgs so a user can still override it.
 		m := &seaweedv1.Seaweed{
 			ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
 			Spec: seaweedv1.SeaweedSpec{
@@ -144,13 +144,13 @@ func TestBuildAdminStartupScript(t *testing.T) {
 			},
 		}
 		got := buildAdminStartupScript(m, "-ip=127.0.0.1")
-		ipArgIdx := strings.Index(got, `$ipArg`)
+		defaultIdx := strings.Index(got, "-ip=0.0.0.0")
 		overrideIdx := strings.Index(got, "-ip=127.0.0.1")
-		if ipArgIdx < 0 || overrideIdx < 0 {
-			t.Fatalf("expected $ipArg and the extraArgs override, got %q", got)
+		if defaultIdx < 0 || overrideIdx < 0 {
+			t.Fatalf("expected -ip=0.0.0.0 and the extraArgs override, got %q", got)
 		}
-		if !(ipArgIdx < overrideIdx) {
-			t.Errorf("expected $ipArg before the extraArgs override, got %q", got)
+		if !(defaultIdx < overrideIdx) {
+			t.Errorf("expected -ip=0.0.0.0 before the extraArgs override, got %q", got)
 		}
 	})
 

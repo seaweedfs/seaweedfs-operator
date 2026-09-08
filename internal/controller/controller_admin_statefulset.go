@@ -42,12 +42,11 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	}
 
 	// With a CredentialsSecret, bind the wildcard so the kubelet's probes can
-	// reach the admin HTTP port on the pod IP (#384). Gate -ip=0.0.0.0 on the
-	// adminPassword key actually being present in the mounted secret, so a
-	// secret missing that key can't expose the admin API unauthenticated on
-	// weed builds that lack the upstream non-loopback auth guard. The shell
-	// sets ipArg before extraArgs (baked into the string below) so a user can
-	// still override -ip; fla9 takes the last flag occurrence.
+	// reach the admin HTTP port on the pod IP (#384). Fail closed if the
+	// adminPassword key is missing: weed admin refuses a non-loopback bind
+	// without authentication, and silently falling back to loopback would
+	// leave probes broken with no visible error. $ipArg lands before
+	// extraArgs so a user can still override -ip.
 	preCmd := strings.Join(pre, " ")
 	extraCmd := ""
 	if len(extraArgs) > 0 {
@@ -58,9 +57,8 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 		`f="` + adminCredentialsMountPath + `/$key"; ` +
 		`[ -f "$f" ] && set -- "$@" "-$key=$(cat "$f")"; ` +
 		"done; " +
-		`ipArg=""; ` +
-		`[ -f ` + adminCredentialsMountPath + `/adminPassword ] && ipArg="-ip=0.0.0.0"; `
-	return preamble + "exec " + preCmd + " $ipArg" + extraCmd + ` "$@"`
+		`[ -f ` + adminCredentialsMountPath + `/adminPassword ] || { echo "admin: CredentialsSecret mounted without adminPassword key; refusing to bind 0.0.0.0 without authentication" >&2; exit 1; }; `
+	return preamble + "exec " + preCmd + " -ip=0.0.0.0" + extraCmd + ` "$@"`
 }
 
 // adminURLPrefix scans weed admin ExtraArgs for a -urlPrefix flag and returns

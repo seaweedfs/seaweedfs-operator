@@ -85,7 +85,7 @@ func (r *SeaweedReconciler) createVolumeServerService(m *seaweedv1.Seaweed, i in
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceName,
 			Namespace: m.Namespace,
-			Labels:    labels,
+			Labels:    metricsServiceLabels(labels),
 			Annotations: map[string]string{
 				"service.alpha.kubernetes.io/tolerate-unready-endpoints": "true",
 			},
@@ -197,7 +197,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyService(m *seaweedv1.Seawe
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceName,
 			Namespace: m.Namespace,
-			Labels:    labels,
+			Labels:    metricsServiceLabels(labels),
 			Annotations: map[string]string{
 				"service.alpha.kubernetes.io/tolerate-unready-endpoints": "true",
 			},

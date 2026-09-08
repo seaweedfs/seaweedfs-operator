@@ -9,6 +9,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+	"github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
 )
 
 const (
@@ -117,6 +118,13 @@ func mergeLabels(base, override map[string]string) map[string]string {
 	}
 
 	return merged
+}
+
+// metricsServiceLabels returns labels with the metrics-service marker added.
+// Used on regular Service ObjectMeta and ServiceMonitor selectors, never on
+// Spec.Selector or peer Services.
+func metricsServiceLabels(labels map[string]string) map[string]string {
+	return mergeLabels(labels, map[string]string{label.MetricsServiceLabelKey: "true"})
 }
 
 // mergeAnnotations merges cluster-level annotations with component-level annotations

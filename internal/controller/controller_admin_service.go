@@ -81,7 +81,7 @@ func (r *SeaweedReconciler) createAdminService(m *seaweedv1.Seaweed) *corev1.Ser
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      m.Name + "-admin",
 			Namespace: m.Namespace,
-			Labels:    labels,
+			Labels:    metricsServiceLabels(labels),
 			Annotations: map[string]string{
 				"service.alpha.kubernetes.io/tolerate-unready-endpoints": "true",
 			},

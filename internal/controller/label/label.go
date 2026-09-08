@@ -19,4 +19,8 @@ const (
 	// PodName is to select pod by name
 	// https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#pod-selector
 	PodName string = "statefulset.kubernetes.io/pod-name"
+
+	// MetricsServiceLabelKey marks Services a ServiceMonitor should scrape.
+	// Set only on regular Services, not headless peer Services.
+	MetricsServiceLabelKey string = "seaweedfs-operator/metrics-service"
 )

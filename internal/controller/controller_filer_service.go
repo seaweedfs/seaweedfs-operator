@@ -135,7 +135,7 @@ func (r *SeaweedReconciler) createFilerService(m *seaweedv1.Seaweed) *corev1.Ser
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      m.Name + "-filer",
 			Namespace: m.Namespace,
-			Labels:    labels,
+			Labels:    metricsServiceLabels(labels),
 			Annotations: map[string]string{
 				"service.alpha.kubernetes.io/tolerate-unready-endpoints": "true",
 			},

@@ -24,7 +24,7 @@ func (r *SeaweedReconciler) createFilerServiceMonitor(m *seaweedv1.Seaweed) *mon
 				},
 			},
 			Selector: metav1.LabelSelector{
-				MatchLabels: labels,
+				MatchLabels: metricsServiceLabels(labels),
 			},
 		},
 	}

@@ -65,6 +65,11 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		if strings.Contains(got, adminCredentialsMountPath) {
 			t.Fatalf("expected no credentials preamble, got %q", got)
 		}
+		// Without authentication weed admin refuses to bind a non-loopback
+		// address, so the operator must not add -ip=0.0.0.0 here.
+		if strings.Contains(got, "-ip=0.0.0.0") {
+			t.Fatalf("expected no -ip=0.0.0.0 without a credentials secret, got %q", got)
+		}
 	})
 
 	t.Run("jwt signing adds the security config dir", func(t *testing.T) {
@@ -118,6 +123,35 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		if !strings.HasSuffix(got, ` "$@"`) {
 			t.Errorf("expected weed command to expand positional parameters at the end, got %q", got)
 		}
+		// With authentication enabled, the operator binds the wildcard so the
+		// kubelet's liveness/readiness probes can reach the admin HTTP port
+		// on the pod IP (#384).
+		if !strings.Contains(got, "-ip=0.0.0.0") {
+			t.Errorf("expected -ip=0.0.0.0 with a credentials secret, got %q", got)
+		}
+	})
+
+	t.Run("credentials secret extraArgs override -ip", func(t *testing.T) {
+		// -ip=0.0.0.0 is placed before extraArgs so a user can still pin a
+		// different bind address; fla9 takes the last occurrence of a flag.
+		m := &seaweedv1.Seaweed{
+			ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+			Spec: seaweedv1.SeaweedSpec{
+				Master: &seaweedv1.MasterSpec{Replicas: 1},
+				Admin: &seaweedv1.AdminSpec{
+					CredentialsSecret: &corev1.LocalObjectReference{Name: "admin-creds"},
+				},
+			},
+		}
+		got := buildAdminStartupScript(m, "-ip=127.0.0.1")
+		defaultIdx := strings.Index(got, "-ip=0.0.0.0")
+		overrideIdx := strings.Index(got, "-ip=127.0.0.1")
+		if defaultIdx < 0 || overrideIdx < 0 {
+			t.Fatalf("expected both the default and override -ip flags, got %q", got)
+		}
+		if !(defaultIdx < overrideIdx) {
+			t.Errorf("expected -ip=0.0.0.0 before the extraArgs override, got %q", got)
+		}
 	})
 
 	t.Run("empty credentials secret name skips preamble", func(t *testing.T) {
@@ -133,6 +167,9 @@ func TestBuildAdminStartupScript(t *testing.T) {
 		got := buildAdminStartupScript(m)
 		if strings.Contains(got, adminCredentialsMountPath) {
 			t.Fatalf("expected no credentials preamble for empty secret name, got %q", got)
+		}
+		if strings.Contains(got, "-ip=0.0.0.0") {
+			t.Fatalf("expected no -ip=0.0.0.0 for empty secret name, got %q", got)
 		}
 	})
 }

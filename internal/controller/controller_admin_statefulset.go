@@ -31,6 +31,18 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	if m.Spec.Admin.MetricsPort != nil {
 		commands = append(commands, fmt.Sprintf("-metricsPort=%d", *m.Spec.Admin.MetricsPort))
 	}
+
+	// weed admin binds to 127.0.0.1 by default, which the kubelet cannot
+	// reach on the pod IP, so liveness/readiness probes always fail (#384).
+	// Bind to the wildcard so probes can connect. weed admin refuses to
+	// bind a non-loopback address without authentication (adminPassword or
+	// [https.admin] mTLS in security.toml), so only do this when a
+	// CredentialsSecret is mounted — which is also when authentication is
+	// enabled. Place it before extraArgs so a user can still override -ip.
+	hasCredentials := m.Spec.Admin.CredentialsSecret != nil && m.Spec.Admin.CredentialsSecret.Name != ""
+	if hasCredentials {
+		commands = append(commands, "-ip=0.0.0.0")
+	}
 	commands = append(commands, extraArgs...)
 
 	weedCmd := strings.Join(commands, " ")
@@ -42,7 +54,7 @@ func buildAdminStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	// builds positional parameters so values containing spaces or special
 	// characters expand safely through `"$@"`. `exec` replaces the /bin/sh
 	// wrapper with weed so SIGTERM from the kubelet reaches weed directly.
-	if m.Spec.Admin.CredentialsSecret != nil && m.Spec.Admin.CredentialsSecret.Name != "" {
+	if hasCredentials {
 		preamble := "set --; " +
 			"for key in " + strings.Join(adminCredentialKeys, " ") + "; do " +
 			`f="` + adminCredentialsMountPath + `/$key"; ` +

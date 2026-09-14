@@ -342,6 +342,7 @@ func (r *SeaweedReconciler) ensureServerCertificate(ctx context.Context, m *seaw
 		name + "-filer-peer",
 		name + "-admin",
 		name + "-worker",
+		name + "-s3",
 		fmt.Sprintf("*.%s-master-peer.%s.svc.cluster.local", name, ns),
 		fmt.Sprintf("*.%s-volume-peer.%s.svc.cluster.local", name, ns),
 		fmt.Sprintf("*.%s-filer-peer.%s.svc.cluster.local", name, ns),

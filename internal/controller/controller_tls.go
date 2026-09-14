@@ -518,6 +518,10 @@ key  = "%[1]s/tls.key"
 [grpc.client]
 cert = "%[1]s/tls.crt"
 key  = "%[1]s/tls.key"
+
+[grpc.s3]
+cert = "%[1]s/tls.crt"
+key  = "%[1]s/tls.key"
 `, tlsMountPath)
 	return b.String()
 }

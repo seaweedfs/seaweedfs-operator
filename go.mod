@@ -154,7 +154,7 @@ require (
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/seaweedfs/goexif v2.0.0+incompatible // indirect
-	github.com/seaweedfs/seaweedfs v0.0.0-20260908034521-d997fba15755
+	github.com/seaweedfs/seaweedfs v0.0.0-20260914013409-ea179963c0a4
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
@@ -166,7 +166,7 @@ require (
 	github.com/viant/ptrie v1.0.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/exp v0.0.0-20260709172345-9ea1abe57597 // indirect
 	golang.org/x/image v0.45.0 // indirect
 	golang.org/x/net v0.58.0 // indirect

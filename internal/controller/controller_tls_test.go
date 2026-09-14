@@ -184,6 +184,13 @@ func TestRenderSecurityTOML(t *testing.T) {
 		if !strings.Contains(got, "[grpc.filer]") {
 			t.Errorf("expected [grpc.filer] section with TLS, got %q", got)
 		}
+		if !strings.Contains(got, "[grpc.s3]") {
+			t.Errorf("expected [grpc.s3] section with TLS, got %q", got)
+		}
+		expectedS3TLS := "[grpc.s3]\ncert = \"" + tlsMountPath + "/tls.crt\"\nkey  = \"" + tlsMountPath + "/tls.key\""
+		if !strings.Contains(got, expectedS3TLS) {
+			t.Errorf("expected [grpc.s3] section with TLS credentials, got %q", got)
+		}
 		if !strings.Contains(got, tlsMountPath+"/tls.crt") {
 			t.Errorf("expected mount path %q in cert refs, got %q", tlsMountPath, got)
 		}

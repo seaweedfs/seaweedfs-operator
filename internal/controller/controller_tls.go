@@ -342,6 +342,7 @@ func (r *SeaweedReconciler) ensureServerCertificate(ctx context.Context, m *seaw
 		name + "-filer-peer",
 		name + "-admin",
 		name + "-worker",
+		name + "-s3",
 		fmt.Sprintf("*.%s-master-peer.%s.svc.cluster.local", name, ns),
 		fmt.Sprintf("*.%s-volume-peer.%s.svc.cluster.local", name, ns),
 		fmt.Sprintf("*.%s-filer-peer.%s.svc.cluster.local", name, ns),
@@ -516,6 +517,10 @@ cert = "%[1]s/tls.crt"
 key  = "%[1]s/tls.key"
 
 [grpc.client]
+cert = "%[1]s/tls.crt"
+key  = "%[1]s/tls.key"
+
+[grpc.s3]
 cert = "%[1]s/tls.crt"
 key  = "%[1]s/tls.key"
 `, tlsMountPath)

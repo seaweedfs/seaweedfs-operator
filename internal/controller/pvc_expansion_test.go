@@ -230,6 +230,55 @@ func TestReconcileVolumeClaimTemplates_SkipsResizeInProgress(t *testing.T) {
 	noEvent(t, recorder)
 }
 
+// FileSystemResizePending lingers until a pod restarts, which this flow never
+// performs — a later, larger request must still be applied on top of it.
+func TestReconcileVolumeClaimTemplates_ExpandsPastFileSystemResizePending(t *testing.T) {
+	pvc := expansionTestPVC("default", "mount0-weed-volume-0", "100Gi", "expandable")
+	pvc.Status.Conditions = []corev1.PersistentVolumeClaimCondition{{
+		Type:   corev1.PersistentVolumeClaimFileSystemResizePending,
+		Status: corev1.ConditionTrue,
+	}}
+	recorder := record.NewFakeRecorder(10)
+	r := expansionTestReconciler(t, recorder,
+		expansionTestStorageClass("expandable", true),
+		pvc,
+	)
+	cr := expansionTestSeaweed("default")
+
+	existing := expansionTestStatefulSet("default", 1, expansionTestClaimTemplate("mount0", "100Gi", "expandable"))
+	desired := expansionTestStatefulSet("default", 1, expansionTestClaimTemplate("mount0", "200Gi", "expandable"))
+
+	if err := r.reconcileVolumeClaimTemplates(context.Background(), cr, existing, desired); err != nil {
+		t.Fatal(err)
+	}
+	if got := pvcStorageRequest(t, r.Client, "default", "mount0-weed-volume-0"); got.Cmp(resource.MustParse("200Gi")) != 0 {
+		t.Errorf("PVC storage = %s, want 200Gi", got.String())
+	}
+}
+
+// A claim retained past the replica count by
+// persistentVolumeClaimRetentionPolicy is reused on the next scale-up, so it
+// must be expanded too even though its ordinal is out of range.
+func TestReconcileVolumeClaimTemplates_ExpandsRetainedPVC(t *testing.T) {
+	recorder := record.NewFakeRecorder(10)
+	r := expansionTestReconciler(t, recorder,
+		expansionTestStorageClass("expandable", true),
+		expansionTestPVC("default", "mount0-weed-volume-0", "100Gi", "expandable"),
+		expansionTestPVC("default", "mount0-weed-volume-3", "100Gi", "expandable"),
+	)
+	cr := expansionTestSeaweed("default")
+
+	existing := expansionTestStatefulSet("default", 1, expansionTestClaimTemplate("mount0", "100Gi", "expandable"))
+	desired := expansionTestStatefulSet("default", 1, expansionTestClaimTemplate("mount0", "200Gi", "expandable"))
+
+	if err := r.reconcileVolumeClaimTemplates(context.Background(), cr, existing, desired); err != nil {
+		t.Fatal(err)
+	}
+	if got := pvcStorageRequest(t, r.Client, "default", "mount0-weed-volume-3"); got.Cmp(resource.MustParse("200Gi")) != 0 {
+		t.Errorf("retained PVC storage = %s, want 200Gi", got.String())
+	}
+}
+
 func TestReconcileVolumeClaimTemplates_SkipsAlreadyRequestedPVC(t *testing.T) {
 	recorder := record.NewFakeRecorder(10)
 	r := expansionTestReconciler(t, recorder,
@@ -305,5 +354,33 @@ func TestReconcileVolumeClaimTemplates_UsesDefaultStorageClass(t *testing.T) {
 	}
 	if got := pvcStorageRequest(t, r.Client, "default", "mount0-weed-volume-0"); got.Cmp(resource.MustParse("200Gi")) != 0 {
 		t.Errorf("PVC storage = %s, want 200Gi via the default StorageClass", got.String())
+	}
+}
+
+// With several default StorageClasses, Kubernetes uses the newest one — the
+// expansion check must resolve the same class or it can read
+// allowVolumeExpansion off the wrong object.
+func TestReconcileVolumeClaimTemplates_UsesNewestDefaultStorageClass(t *testing.T) {
+	oldDefault := expansionTestStorageClass("old-default", false)
+	oldDefault.Annotations = map[string]string{"storageclass.kubernetes.io/is-default-class": "true"}
+	oldDefault.CreationTimestamp = metav1.NewTime(time.Now().Add(-time.Hour))
+	newDefault := expansionTestStorageClass("new-default", true)
+	newDefault.Annotations = map[string]string{"storageclass.kubernetes.io/is-default-class": "true"}
+	newDefault.CreationTimestamp = metav1.Now()
+
+	pvc := expansionTestPVC("default", "mount0-weed-volume-0", "100Gi", "")
+	pvc.Spec.StorageClassName = nil
+	recorder := record.NewFakeRecorder(10)
+	r := expansionTestReconciler(t, recorder, oldDefault, newDefault, pvc)
+	cr := expansionTestSeaweed("default")
+
+	existing := expansionTestStatefulSet("default", 1, expansionTestClaimTemplate("mount0", "100Gi", ""))
+	desired := expansionTestStatefulSet("default", 1, expansionTestClaimTemplate("mount0", "200Gi", ""))
+
+	if err := r.reconcileVolumeClaimTemplates(context.Background(), cr, existing, desired); err != nil {
+		t.Fatal(err)
+	}
+	if got := pvcStorageRequest(t, r.Client, "default", "mount0-weed-volume-0"); got.Cmp(resource.MustParse("200Gi")) != 0 {
+		t.Errorf("PVC storage = %s, want 200Gi — newest default StorageClass allows expansion", got.String())
 	}
 }

@@ -113,6 +113,8 @@ type SeaweedReconciler struct {
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 
 // Reconcile implements the reconciliation logic
 func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -571,6 +573,14 @@ func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(ctx context.Context, s
 		}
 
 		return ErrStatefulSetDeleted
+	}
+
+	// Storage-size increases don't need a StatefulSet rebuild: patch the live
+	// PVCs directly when the StorageClass supports expansion.
+	if handled, err := r.handleVolumeExpansion(ctx, seaweedCR, existing, desired); err != nil {
+		return err
+	} else if handled {
+		return nil
 	}
 
 	// Warn but don't fail reconciliation — this requires manual intervention.

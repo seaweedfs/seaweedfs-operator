@@ -125,15 +125,13 @@ func (r *SeaweedReconciler) expandClaimPVCs(ctx context.Context, seaweedCR *seaw
 	return nil
 }
 
-// pvcResizeInProgress reports whether a resize was already requested for the
-// claim and the CSI driver has not finished it yet.
+// pvcResizeInProgress reports whether controller-side expansion is still
+// running. FileSystemResizePending is deliberately not blocking: it lingers
+// until a pod restart we don't perform, so suppressing on it would wedge any
+// later, larger request.
 func pvcResizeInProgress(pvc *corev1.PersistentVolumeClaim) bool {
 	for _, condition := range pvc.Status.Conditions {
-		if condition.Status != corev1.ConditionTrue {
-			continue
-		}
-		if condition.Type == corev1.PersistentVolumeClaimResizing ||
-			condition.Type == corev1.PersistentVolumeClaimFileSystemResizePending {
+		if condition.Type == corev1.PersistentVolumeClaimResizing && condition.Status == corev1.ConditionTrue {
 			return true
 		}
 	}

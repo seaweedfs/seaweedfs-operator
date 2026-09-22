@@ -169,11 +169,15 @@ func (r *SeaweedReconciler) claimAllowsExpansion(ctx context.Context, pvc *corev
 			return false, "<default>", err
 		}
 		for i := range scList.Items {
-			annotations := scList.Items[i].Annotations
-			if annotations["storageclass.kubernetes.io/is-default-class"] == "true" ||
-				annotations["storageclass.beta.kubernetes.io/is-default-class"] == "true" {
-				sc = &scList.Items[i]
-				break
+			candidate := &scList.Items[i]
+			annotations := candidate.Annotations
+			if annotations["storageclass.kubernetes.io/is-default-class"] != "true" &&
+				annotations["storageclass.beta.kubernetes.io/is-default-class"] != "true" {
+				continue
+			}
+			// Kubernetes resolves multiple defaults to the newest one.
+			if sc == nil || candidate.CreationTimestamp.After(sc.CreationTimestamp.Time) {
+				sc = candidate
 			}
 		}
 		if sc == nil {

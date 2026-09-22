@@ -3,6 +3,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -10,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
@@ -63,21 +66,23 @@ func (r *SeaweedReconciler) expandClaimPVCs(ctx context.Context, seaweedCR *seaw
 		return nil
 	}
 
-	var replicas int32
-	if statefulSet.Spec.Replicas != nil {
-		replicas = *statefulSet.Spec.Replicas
+	// StatefulSet PVCs are named <claim>-<statefulset>-<ordinal>. Listing by
+	// prefix also reaches claims retained beyond the current replica count by
+	// persistentVolumeClaimRetentionPolicy.
+	pvcList := &corev1.PersistentVolumeClaimList{}
+	if err := r.List(ctx, pvcList, client.InNamespace(statefulSet.Namespace)); err != nil {
+		return err
 	}
+	prefix := desiredClaim.Name + "-" + statefulSet.Name + "-"
 
 	warned := false
-	for ord := int32(0); ord < replicas; ord++ {
-		pvcName := fmt.Sprintf("%s-%s-%d", desiredClaim.Name, statefulSet.Name, ord)
-		pvc := &corev1.PersistentVolumeClaim{}
-		err := r.Get(ctx, types.NamespacedName{Namespace: statefulSet.Namespace, Name: pvcName}, pvc)
-		if errors.IsNotFound(err) {
+	for i := range pvcList.Items {
+		pvc := &pvcList.Items[i]
+		if !strings.HasPrefix(pvc.Name, prefix) {
 			continue
 		}
-		if err != nil {
-			return err
+		if _, err := strconv.Atoi(strings.TrimPrefix(pvc.Name, prefix)); err != nil {
+			continue
 		}
 
 		if actual := pvc.Spec.Resources.Requests.Storage(); actual != nil && actual.Cmp(*target) >= 0 {

@@ -165,6 +165,26 @@ rules:
   - get
   - list
   - watch
+# The Seaweed controller reads and expands claim PVCs on every reconcile,
+# so these are needed even when the CSI driver controller is disabled.
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - get
+  - list
+  - watch
 {{- if .Values.csiDriver }}
 {{- if .Values.csiDriver.enabled }}
 # Rules only the SeaweedCSIDriver controller needs, from the kubebuilder

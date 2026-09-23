@@ -165,8 +165,6 @@ rules:
   - get
   - list
   - watch
-# The Seaweed controller reads and expands claim PVCs on every reconcile,
-# so these are needed even when the CSI driver controller is disabled.
 - apiGroups:
   - ""
   resources:

@@ -575,8 +575,8 @@ func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(ctx context.Context, s
 		return ErrStatefulSetDeleted
 	}
 
-	// Storage-size increases don't need a StatefulSet rebuild: patch the live
-	// PVCs directly when the StorageClass supports expansion.
+	// Storage-size increases patch live PVCs in place instead of rebuilding
+	// the StatefulSet.
 	if handled, err := r.handleVolumeExpansion(ctx, seaweedCR, existing, desired); err != nil {
 		return err
 	} else if handled {

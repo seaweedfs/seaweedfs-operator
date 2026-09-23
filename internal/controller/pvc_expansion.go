@@ -17,11 +17,8 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-// handleVolumeExpansion applies VolumeClaimTemplates drift that is limited to
-// a storage size increase by patching the live PVCs in place — the template
-// itself is immutable on the StatefulSet and is never modified. It reports
-// whether every drifted template was a storage-only change; any other drift is
-// left for the caller's warning path.
+// handleVolumeExpansion applies storage-size increases to the live PVCs in
+// place and reports whether all template drift was storage-only.
 func (r *SeaweedReconciler) handleVolumeExpansion(ctx context.Context, seaweedCR *seaweedv1.Seaweed, existing, desired *appsv1.StatefulSet) (bool, error) {
 	if len(existing.Spec.VolumeClaimTemplates) != len(desired.Spec.VolumeClaimTemplates) {
 		return false, nil
@@ -48,17 +45,15 @@ func (r *SeaweedReconciler) handleVolumeExpansion(ctx context.Context, seaweedCR
 	return handled, nil
 }
 
-// pvcEqualExceptStorageRequests compares two claim templates on
-// pvcSemanticallyEqual's surface with the resources.requests diff masked out.
+// pvcEqualExceptStorageRequests compares claim templates with
+// resources.requests masked out.
 func pvcEqualExceptStorageRequests(a, b corev1.PersistentVolumeClaim) bool {
 	a.Spec.Resources.Requests = b.Spec.Resources.Requests
 	return pvcSemanticallyEqual(a, b)
 }
 
-// expandClaimPVCs grows each live PVC spawned from a claim template whose
-// desired storage request increased. PVCs already at or above the target —
-// including ones whose earlier patch the CSI driver is still fulfilling — are
-// skipped, so a reconcile during an in-flight resize is a no-op.
+// expandClaimPVCs grows the live PVCs of a claim template to the desired
+// size. PVCs already at or above the target are skipped.
 func (r *SeaweedReconciler) expandClaimPVCs(ctx context.Context, seaweedCR *seaweedv1.Seaweed, statefulSet *appsv1.StatefulSet, existingClaim, desiredClaim corev1.PersistentVolumeClaim) error {
 	target := desiredClaim.Spec.Resources.Requests.Storage()
 	current := existingClaim.Spec.Resources.Requests.Storage()
@@ -66,9 +61,8 @@ func (r *SeaweedReconciler) expandClaimPVCs(ctx context.Context, seaweedCR *seaw
 		return nil
 	}
 
-	// StatefulSet PVCs are named <claim>-<statefulset>-<ordinal>. Listing by
-	// prefix also reaches claims retained beyond the current replica count by
-	// persistentVolumeClaimRetentionPolicy.
+	// PVCs are named <claim>-<statefulset>-<ordinal>; the prefix also matches
+	// claims retained past the replica count.
 	pvcList := &corev1.PersistentVolumeClaimList{}
 	if err := r.List(ctx, pvcList, client.InNamespace(statefulSet.Namespace)); err != nil {
 		return err
@@ -126,9 +120,8 @@ func (r *SeaweedReconciler) expandClaimPVCs(ctx context.Context, seaweedCR *seaw
 }
 
 // pvcResizeInProgress reports whether controller-side expansion is still
-// running. FileSystemResizePending is deliberately not blocking: it lingers
-// until a pod restart we don't perform, so suppressing on it would wedge any
-// later, larger request.
+// running. FileSystemResizePending is not blocking: it lingers until a pod
+// restart we don't perform.
 func pvcResizeInProgress(pvc *corev1.PersistentVolumeClaim) bool {
 	for _, condition := range pvc.Status.Conditions {
 		if condition.Type == corev1.PersistentVolumeClaimResizing && condition.Status == corev1.ConditionTrue {
@@ -138,10 +131,9 @@ func pvcResizeInProgress(pvc *corev1.PersistentVolumeClaim) bool {
 	return false
 }
 
-// claimAllowsExpansion resolves the claim's effective StorageClass — the
-// PVC's own (apiserver-defaulted) name, then the template's, then the cluster
-// default — and reports whether it sets allowVolumeExpansion. A missing or
-// explicitly empty class is not expandable.
+// claimAllowsExpansion reports whether the claim's effective StorageClass —
+// the PVC's name, then the template's, then the cluster default — allows
+// expansion. A missing or explicitly empty class is not expandable.
 func (r *SeaweedReconciler) claimAllowsExpansion(ctx context.Context, pvc *corev1.PersistentVolumeClaim, templateStorageClassName *string) (bool, string, error) {
 	name := pvc.Spec.StorageClassName
 	if name == nil {

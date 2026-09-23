@@ -230,8 +230,7 @@ func TestReconcileVolumeClaimTemplates_SkipsResizeInProgress(t *testing.T) {
 	noEvent(t, recorder)
 }
 
-// FileSystemResizePending lingers until a pod restarts, which this flow never
-// performs — a later, larger request must still be applied on top of it.
+// FileSystemResizePending must not block a later, larger request.
 func TestReconcileVolumeClaimTemplates_ExpandsPastFileSystemResizePending(t *testing.T) {
 	pvc := expansionTestPVC("default", "mount0-weed-volume-0", "100Gi", "expandable")
 	pvc.Status.Conditions = []corev1.PersistentVolumeClaimCondition{{
@@ -256,9 +255,7 @@ func TestReconcileVolumeClaimTemplates_ExpandsPastFileSystemResizePending(t *tes
 	}
 }
 
-// A claim retained past the replica count by
-// persistentVolumeClaimRetentionPolicy is reused on the next scale-up, so it
-// must be expanded too even though its ordinal is out of range.
+// PVCs retained past the replica count must still be expanded.
 func TestReconcileVolumeClaimTemplates_ExpandsRetainedPVC(t *testing.T) {
 	recorder := record.NewFakeRecorder(10)
 	r := expansionTestReconciler(t, recorder,
@@ -357,9 +354,7 @@ func TestReconcileVolumeClaimTemplates_UsesDefaultStorageClass(t *testing.T) {
 	}
 }
 
-// With several default StorageClasses, Kubernetes uses the newest one — the
-// expansion check must resolve the same class or it can read
-// allowVolumeExpansion off the wrong object.
+// Multiple defaults resolve to the newest StorageClass.
 func TestReconcileVolumeClaimTemplates_UsesNewestDefaultStorageClass(t *testing.T) {
 	oldDefault := expansionTestStorageClass("old-default", false)
 	oldDefault.Annotations = map[string]string{"storageclass.kubernetes.io/is-default-class": "true"}

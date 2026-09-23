@@ -354,7 +354,7 @@ func TestS3Credentials_RejectsUnownedExistingSecret(t *testing.T) {
 		owner    string
 		ownerUID types.UID
 	}{
-		{name: "unmanaged", complete: true},
+		{name: "unmanaged without both fields"},
 		{name: "managed by another credential", managed: true, owner: "other-creds", ownerUID: "other-uid"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -433,9 +433,86 @@ func TestS3Credentials_RejectsUnownedExistingSecret(t *testing.T) {
 	}
 }
 
+// A complete Secret the user supplies — the GitOps case — is adopted
+// read-only: its keys land on the identity while the object is never
+// written, annotated or owned.
+func TestS3Credentials_AdoptsUserManagedSecret(t *testing.T) {
+	scheme := iamTestScheme(t)
+	cred := &seaweedv1.S3Credentials{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice-creds", Namespace: "media"},
+		Spec: seaweedv1.S3CredentialsSpec{
+			SeaweedRef:  iamSeaweedRef(),
+			IdentityRef: seaweedv1.S3IdentityRef{Name: "alice"},
+			SecretRef:   seaweedv1.S3SecretRef{Name: "alice-secret"},
+		},
+	}
+	existing := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "alice-secret",
+			Namespace:   "media",
+			Annotations: map[string]string{"sealedsecrets.bitnami.com/managed": "true"},
+		},
+		Data: map[string][]byte{
+			defaultAccessKeyField: []byte("AKIAEXISTING"),
+			defaultSecretKeyField: []byte("supersecret"),
+		},
+	}
+	cli := iamTestClient(t, scheme, newTestSeaweed(), existing, cred)
+	fa := newFakeIAMAdmin()
+	fa.seedUser("alice")
+	r := &S3CredentialsReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "alice-creds"}
+	reconcileStable(t, r, key, 5)
+
+	if keys := fa.userKeys("alice"); len(keys) != 1 || keys[0] != "AKIAEXISTING" {
+		t.Fatalf("keys on alice = %v, want the adopted AKIAEXISTING", keys)
+	}
+	if sk := fa.secretKeyFor("alice", "AKIAEXISTING"); sk != "supersecret" {
+		t.Errorf("IAM secret key = %q, want %q", sk, "supersecret")
+	}
+
+	secretKey := types.NamespacedName{Namespace: "media", Name: "alice-secret"}
+	var secret corev1.Secret
+	if err := cli.Get(context.Background(), secretKey, &secret); err != nil {
+		t.Fatalf("get secret: %v", err)
+	}
+	if got := string(secret.Data[defaultAccessKeyField]); got != "AKIAEXISTING" {
+		t.Errorf("secret accessKey = %q, want unchanged", got)
+	}
+	if secret.Annotations[s3CredentialsManagedAnnotation] != "" {
+		t.Errorf("user-managed Secret was annotated: %v", secret.Annotations)
+	}
+	if len(secret.OwnerReferences) != 0 {
+		t.Errorf("user-managed Secret gained owner references: %v", secret.OwnerReferences)
+	}
+
+	var got seaweedv1.S3Credentials
+	if err := cli.Get(context.Background(), key, &got); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status.AccessKey != "AKIAEXISTING" || got.Status.SecretName != "alice-secret" ||
+		got.Status.Phase != seaweedv1.S3PhaseReady {
+		t.Errorf("status = %+v", got.Status)
+	}
+
+	// Re-reconcile is idempotent and keeps the Secret untouched.
+	reconcileStable(t, r, key, 5)
+	if keys := fa.userKeys("alice"); len(keys) != 1 {
+		t.Fatalf("expected reconcile to be idempotent, keys = %v", keys)
+	}
+	if err := cli.Get(context.Background(), secretKey, &secret); err != nil {
+		t.Fatalf("get secret: %v", err)
+	}
+	if len(secret.OwnerReferences) != 0 {
+		t.Errorf("user-managed Secret gained owner references: %v", secret.OwnerReferences)
+	}
+}
+
 // A Secret that appears between the lookup and the create belongs to someone
-// else. The reconcile must back off into the ownership conflict without having
-// minted an IAM key that status never recorded and deletion could never revoke.
+// else. Losing the create race must not mint an IAM key; the next pass adopts
+// the complete user-managed Secret read-only instead.
 func TestS3Credentials_SecretRacesIntoExistence_LeaksNoKey(t *testing.T) {
 	scheme := iamTestScheme(t)
 	cred := &seaweedv1.S3Credentials{
@@ -492,10 +569,10 @@ func TestS3Credentials_SecretRacesIntoExistence_LeaksNoKey(t *testing.T) {
 	}
 
 	if res := reconcileOnce(t, r, key); res.RequeueAfter == 0 {
-		t.Fatal("expected ownership conflict to requeue")
+		t.Fatal("expected resync requeue after adopting the Secret")
 	}
-	if keys := fa.userKeys("alice"); len(keys) != 0 {
-		t.Fatalf("ownership conflict created IAM keys: %v", keys)
+	if keys := fa.userKeys("alice"); len(keys) != 1 || keys[0] != "AKIARIVAL" {
+		t.Fatalf("adopted keys on alice = %v, want [AKIARIVAL]", keys)
 	}
 
 	var secret corev1.Secret
@@ -505,20 +582,22 @@ func TestS3Credentials_SecretRacesIntoExistence_LeaksNoKey(t *testing.T) {
 	if got := string(secret.Data[defaultAccessKeyField]); got != "AKIARIVAL" {
 		t.Errorf("rival secret access key = %q, want unchanged", got)
 	}
+	if got := string(secret.Data[defaultSecretKeyField]); got != "rivalsecret" {
+		t.Errorf("rival secret key = %q, want unchanged", got)
+	}
+	if secret.Annotations[s3CredentialsManagedAnnotation] != "" {
+		t.Errorf("user-managed secret was annotated: %v", secret.Annotations)
+	}
 	if metav1.IsControlledBy(&secret, cred) {
-		t.Errorf("rival secret was adopted: %v", secret.OwnerReferences)
+		t.Errorf("user-managed secret gained an owner reference: %v", secret.OwnerReferences)
 	}
 
 	var got seaweedv1.S3Credentials
 	if err := cli.Get(context.Background(), key, &got); err != nil {
 		t.Fatalf("get credentials: %v", err)
 	}
-	if got.Status.Phase != seaweedv1.S3PhaseFailed || got.Status.AccessKey != "" {
-		t.Errorf("status = %+v, want Failed with no access key", got.Status)
-	}
-	ready := meta.FindStatusCondition(got.Status.Conditions, seaweedv1.S3ConditionReady)
-	if ready == nil || ready.Reason != "SecretOwnershipConflict" {
-		t.Errorf("Ready condition = %+v", ready)
+	if got.Status.Phase != seaweedv1.S3PhaseReady || got.Status.AccessKey != "AKIARIVAL" {
+		t.Errorf("status = %+v, want Ready with the adopted key", got.Status)
 	}
 }
 
@@ -908,6 +987,61 @@ func TestS3Credentials_Delete_RemovesKeyAndManagedSecret(t *testing.T) {
 	err := cli.Get(context.Background(), types.NamespacedName{Namespace: "media", Name: "alice-secret"}, &secret)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("expected managed secret deleted, got err=%v", err)
+	}
+}
+
+// Deleting the credential removes the IAM key it registered but must not
+// touch a Secret it only adopted.
+func TestS3Credentials_Delete_LeavesUserManagedSecret(t *testing.T) {
+	scheme := iamTestScheme(t)
+	cred := &seaweedv1.S3Credentials{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice-creds", Namespace: "media"},
+		Spec: seaweedv1.S3CredentialsSpec{
+			SeaweedRef:  iamSeaweedRef(),
+			IdentityRef: seaweedv1.S3IdentityRef{Name: "alice"},
+			SecretRef:   seaweedv1.S3SecretRef{Name: "alice-secret"},
+		},
+	}
+	existing := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice-secret", Namespace: "media"},
+		Data: map[string][]byte{
+			defaultAccessKeyField: []byte("AKIAEXISTING"),
+			defaultSecretKeyField: []byte("supersecret"),
+		},
+	}
+	cli := iamTestClient(t, scheme, newTestSeaweed(), existing, cred)
+	fa := newFakeIAMAdmin()
+	fa.seedUser("alice")
+	r := &S3CredentialsReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+
+	key := types.NamespacedName{Namespace: "media", Name: "alice-creds"}
+	reconcileStable(t, r, key, 5)
+	if keys := fa.userKeys("alice"); len(keys) != 1 {
+		t.Fatalf("setup: expected 1 adopted key, got %v", keys)
+	}
+
+	var live seaweedv1.S3Credentials
+	if err := cli.Get(context.Background(), key, &live); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if err := cli.Delete(context.Background(), &live); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reconcileOnce(t, r, key)
+
+	if k := fa.userKeys("alice"); len(k) != 0 {
+		t.Errorf("expected access key removed, got %v", k)
+	}
+	var secret corev1.Secret
+	if err := cli.Get(context.Background(), types.NamespacedName{Namespace: "media", Name: "alice-secret"}, &secret); err != nil {
+		t.Fatalf("user-managed Secret was removed: %v", err)
+	}
+	if got := string(secret.Data[defaultAccessKeyField]); got != "AKIAEXISTING" {
+		t.Errorf("user-managed Secret data changed: %v", secret.Data)
+	}
+	if len(secret.OwnerReferences) != 0 {
+		t.Errorf("user-managed Secret gained owner references: %v", secret.OwnerReferences)
 	}
 }
 

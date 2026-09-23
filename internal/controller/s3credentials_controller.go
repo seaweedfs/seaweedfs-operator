@@ -189,16 +189,24 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 		return r.pending(ctx, cred, "SecretNotFound",
 			fmt.Sprintf("cross-namespace Secret %s/%s does not exist", secretNamespace, secretName))
 	}
-	if secretFound && !crossNamespace &&
-		(secret.Annotations[s3CredentialsManagedAnnotation] != "true" || !metav1.IsControlledBy(secret, cred)) {
-		return r.fail(ctx, cred, "SecretOwnershipConflict",
-			fmt.Sprintf("Secret %s/%s is not controlled by this S3Credentials", secretNamespace, secretName))
-	}
-
 	var existingAK, existingSK string
 	if secretFound {
 		existingAK = string(secret.Data[akField])
 		existingSK = string(secret.Data[skField])
+	}
+
+	// A same-namespace Secret the controller does not own is rejected when it
+	// belongs to another S3Credentials or lacks the pair; a complete one is
+	// adopted read-only below.
+	if secretFound && !crossNamespace && !metav1.IsControlledBy(secret, cred) {
+		switch {
+		case secret.Annotations[s3CredentialsManagedAnnotation] == "true":
+			return r.fail(ctx, cred, "SecretOwnershipConflict",
+				fmt.Sprintf("Secret %s/%s is managed by another S3Credentials", secretNamespace, secretName))
+		case existingAK == "" || existingSK == "":
+			return r.fail(ctx, cred, "SecretOwnershipConflict",
+				fmt.Sprintf("Secret %s/%s does not hold both %q and %q", secretNamespace, secretName, akField, skField))
+		}
 	}
 
 	// A foreign Secret is read-only: it supplies the pair or nothing happens.
@@ -283,6 +291,11 @@ func (r *S3CredentialsReconciler) writeSecret(ctx context.Context, cred *seaweed
 			return err
 		}
 		return r.Create(ctx, newSecret)
+	}
+
+	// A Secret the controller does not own is adopted read-only.
+	if !metav1.IsControlledBy(secret, cred) {
+		return nil
 	}
 
 	if string(secret.Data[akField]) == ak && string(secret.Data[skField]) == sk {

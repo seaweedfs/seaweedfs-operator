@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -30,7 +31,7 @@ func (r *SeaweedReconciler) ensureMaster(ctx context.Context, seaweedCR *seaweed
 		return
 	}
 
-	if done, result, err = r.ensureMasterStatefulSet(seaweedCR); done {
+	if done, result, err = r.ensureMasterStatefulSet(ctx, seaweedCR); done {
 		return
 	}
 
@@ -87,7 +88,7 @@ func (r *SeaweedReconciler) waitForMasterStatefulSet(seaweedCR *seaweedv1.Seawee
 
 }
 
-func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+func (r *SeaweedReconciler) ensureMasterStatefulSet(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-master-statefulset", seaweedCR.Name)
 
 	masterStatefulSet := r.createMasterStatefulSet(seaweedCR)
@@ -101,8 +102,14 @@ func (r *SeaweedReconciler) ensureMasterStatefulSet(seaweedCR *seaweedv1.Seaweed
 		existingStatefulSet.Spec.Replicas = desiredStatefulSet.Spec.Replicas
 		mergePodTemplateMetadata(existingStatefulSet, &existingStatefulSet.Spec.Template, &desiredStatefulSet.Spec.Template)
 		existingStatefulSet.Spec.Template.Spec = desiredStatefulSet.Spec.Template.Spec
-		return nil
+		existingStatefulSet.Spec.PersistentVolumeClaimRetentionPolicy = desiredStatefulSet.Spec.PersistentVolumeClaimRetentionPolicy
+
+		return r.reconcileVolumeClaimTemplates(ctx, seaweedCR, existingStatefulSet, desiredStatefulSet)
 	})
+	if errors.Is(err, ErrStatefulSetDeleted) {
+		log.Info("master StatefulSet deleted for VolumeClaimTemplates update, requeueing")
+		return true, ctrl.Result{Requeue: true}, nil
+	}
 	log.Info("ensure master stateful set " + masterStatefulSet.Name)
 	return ReconcileResult(err)
 }

@@ -31,6 +31,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 	"github.com/seaweedfs/seaweedfs-operator/internal/controller/swadmin"
@@ -196,9 +198,13 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 	}
 
 	// A same-namespace Secret the controller does not own is rejected when it
-	// belongs to another S3Credentials or lacks the pair; a complete one is
-	// adopted read-only below.
+	// is controlled by or provisioned for another S3Credentials, or lacks the
+	// pair; a complete user-managed one is adopted read-only below.
 	if secretFound && !crossNamespace && !metav1.IsControlledBy(secret, cred) {
+		if owner := metav1.GetControllerOf(secret); owner != nil && owner.Kind == kindS3Credentials {
+			return r.fail(ctx, cred, "SecretOwnershipConflict",
+				fmt.Sprintf("Secret %s/%s is controlled by another S3Credentials", secretNamespace, secretName))
+		}
 		switch {
 		case secret.Annotations[s3CredentialsManagedAnnotation] == "true":
 			return r.fail(ctx, cred, "SecretOwnershipConflict",
@@ -318,13 +324,19 @@ func (r *S3CredentialsReconciler) handleDeletion(ctx context.Context, cred *seaw
 	if cred.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain {
 		// A nil admin means the cluster is gone, so the access key went with it.
 		if admin != nil && cred.Status.AccessKey != "" {
-			// Idempotent: a key already gone must not block finalizer removal.
-			if err := admin.DeleteAccessKey(ctx, user, cred.Status.AccessKey); err != nil && !errors.Is(err, ErrIAMNotFound) {
-				setIAMCondition(&cred.Status.Conditions, cred.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DeleteAccessKeyFailed", err.Error())
-				if updateErr := r.Status().Update(ctx, cred); updateErr != nil {
-					r.Log.Error(updateErr, "status update during deletion")
-				}
+			shared, err := r.accessKeyIsClaimed(ctx, cred, user)
+			if err != nil {
 				return ctrl.Result{}, err
+			}
+			// Idempotent: a key already gone must not block finalizer removal.
+			if !shared {
+				if err := admin.DeleteAccessKey(ctx, user, cred.Status.AccessKey); err != nil && !errors.Is(err, ErrIAMNotFound) {
+					setIAMCondition(&cred.Status.Conditions, cred.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DeleteAccessKeyFailed", err.Error())
+					if updateErr := r.Status().Update(ctx, cred); updateErr != nil {
+						r.Log.Error(updateErr, "status update during deletion")
+					}
+					return ctrl.Result{}, err
+				}
 			}
 		}
 		// Never touch a Secret in a foreign namespace. The controller did not
@@ -350,6 +362,28 @@ func (r *S3CredentialsReconciler) handleDeletion(ctx context.Context, cred *seaw
 		recordFinalizerReleased(r.Recorder, cred, seaweedRefKey(cred.Spec.SeaweedRef, cred.Namespace))
 	}
 	return ctrl.Result{}, nil
+}
+
+// accessKeyIsClaimed reports whether another live S3Credentials on the same
+// cluster recorded this user and access key, so deletion does not revoke a
+// key a surviving credential still authenticates with.
+func (r *S3CredentialsReconciler) accessKeyIsClaimed(ctx context.Context, cred *seaweedv1.S3Credentials, user string) (bool, error) {
+	var creds seaweedv1.S3CredentialsList
+	if err := r.List(ctx, &creds); err != nil {
+		return false, err
+	}
+	refKey := seaweedRefKey(cred.Spec.SeaweedRef, cred.Namespace)
+	for i := range creds.Items {
+		other := &creds.Items[i]
+		if other.UID == cred.UID || !other.DeletionTimestamp.IsZero() ||
+			seaweedRefKey(other.Spec.SeaweedRef, other.Namespace) != refKey {
+			continue
+		}
+		if other.Status.IdentityName == user && other.Status.AccessKey == cred.Status.AccessKey {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // deleteManagedSecret removes a Secret managed by cred.
@@ -450,6 +484,31 @@ func credentialFields(cred *seaweedv1.S3Credentials) (akField, skField string) {
 	return akField, skField
 }
 
+// mapSecretToCredentials enqueues every S3Credentials referencing a changed
+// Secret, including adopted Secrets the controller does not own, so a rotated
+// pair reaches IAM without waiting for the periodic resync.
+func (r *S3CredentialsReconciler) mapSecretToCredentials(ctx context.Context, obj client.Object) []reconcile.Request {
+	var creds seaweedv1.S3CredentialsList
+	if err := r.List(ctx, &creds); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for i := range creds.Items {
+		cred := &creds.Items[i]
+		name, namespace := cred.Spec.SecretRef.Name, cred.Spec.SecretRef.Namespace
+		if name == "" {
+			name = cred.Name
+		}
+		if namespace == "" {
+			namespace = cred.Namespace
+		}
+		if name == obj.GetName() && namespace == obj.GetNamespace() {
+			reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(cred)})
+		}
+	}
+	return reqs
+}
+
 // SetupWithManager wires the reconciler into the manager.
 func (r *S3CredentialsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.AdminFactory == nil {
@@ -458,5 +517,6 @@ func (r *S3CredentialsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&seaweedv1.S3Credentials{}).
 		Owns(&corev1.Secret{}).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.mapSecretToCredentials)).
 		Complete(r)
 }

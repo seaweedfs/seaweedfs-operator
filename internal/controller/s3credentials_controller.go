@@ -255,10 +255,17 @@ func (r *S3CredentialsReconciler) reconcileKey(ctx context.Context, cred *seawee
 		}
 	}
 
-	// Remove a previously generated key we just replaced.
+	// Remove a previously generated key we just replaced, unless another
+	// credential still claims it.
 	if cred.Status.AccessKey != "" && cred.Status.AccessKey != desiredAK {
-		if err := admin.DeleteAccessKey(ctx, user, cred.Status.AccessKey); err != nil {
-			return r.fail(ctx, cred, "RotateCleanupFailed", err.Error())
+		shared, err := r.accessKeyIsClaimed(ctx, cred, user)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !shared {
+			if err := admin.DeleteAccessKey(ctx, user, cred.Status.AccessKey); err != nil {
+				return r.fail(ctx, cred, "RotateCleanupFailed", err.Error())
+			}
 		}
 	}
 
@@ -376,10 +383,17 @@ func (r *S3CredentialsReconciler) accessKeyIsClaimed(ctx context.Context, cred *
 	for i := range creds.Items {
 		other := &creds.Items[i]
 		if other.UID == cred.UID || !other.DeletionTimestamp.IsZero() ||
+			other.Status.AccessKey != cred.Status.AccessKey ||
 			seaweedRefKey(other.Spec.SeaweedRef, other.Namespace) != refKey {
 			continue
 		}
-		if other.Status.IdentityName == user && other.Status.AccessKey == cred.Status.AccessKey {
+		// Keys recorded before pinning carry no IdentityName; they were
+		// provisioned under the literal identity reference name.
+		otherUser := other.Status.IdentityName
+		if otherUser == "" {
+			otherUser = other.Spec.IdentityRef.Name
+		}
+		if otherUser == user {
 			return true, nil
 		}
 	}

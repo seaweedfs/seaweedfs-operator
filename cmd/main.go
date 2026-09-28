@@ -257,22 +257,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	// The S3OIDCProvider transport is not wired yet (the filer IAM gRPC service
-	// has no OIDC methods), so registering it would fail-loop on every cluster.
-	// Keep it off by default until the server-side RPCs land; opt in with
-	// ENABLE_S3_OIDC_PROVIDER=true for development.
-	if os.Getenv("ENABLE_S3_OIDC_PROVIDER") == "true" {
-		if err = (&controller.S3OIDCProviderReconciler{
-			Client:   mgr.GetClient(),
-			Log:      ctrl.Log.WithName("controller").WithName("S3OIDCProvider"),
-			Scheme:   mgr.GetScheme(),
-			Recorder: mgr.GetEventRecorderFor("s3oidcprovider-controller"),
-		}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "S3OIDCProvider")
-			os.Exit(1)
-		}
-	} else {
-		setupLog.Info("S3OIDCProvider controller disabled (set ENABLE_S3_OIDC_PROVIDER=true to enable; requires filer OIDC gRPC support)")
+	// A cluster whose SeaweedFS predates the OIDC provider and role RPCs
+	// answers Unimplemented; those CRs go Failed with an upgrade message
+	// rather than retrying opaquely.
+	if err = (&controller.S3OIDCProviderReconciler{
+		Client:   mgr.GetClient(),
+		Log:      ctrl.Log.WithName("controller").WithName("S3OIDCProvider"),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("s3oidcprovider-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "S3OIDCProvider")
+		os.Exit(1)
+	}
+	if err = (&controller.S3RoleReconciler{
+		Client:   mgr.GetClient(),
+		Log:      ctrl.Log.WithName("controller").WithName("S3Role"),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("s3role-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "S3Role")
+		os.Exit(1)
 	}
 
 	// The CSI driver deployment is a node-global concern and ships off by

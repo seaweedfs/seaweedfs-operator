@@ -79,6 +79,12 @@ type IAMAdmin interface {
 	// DeleteOIDCProvider removes the OIDC provider identified by issuer URL.
 	// Idempotent.
 	DeleteOIDCProvider(ctx context.Context, issuerURL string) error
+
+	// PutRole creates or replaces an STS role (trust policy + attached
+	// policies) and returns its ARN.
+	PutRole(ctx context.Context, role swadmin.IAMRole) (string, error)
+	// DeleteRole removes a role. Idempotent.
+	DeleteRole(ctx context.Context, name string) error
 }
 
 // IAMAdminFactory creates an IAMAdmin for the IAM service on a target filer.
@@ -96,6 +102,10 @@ var (
 	// ErrIAMUserAlreadyExists is returned by CreateUser when the name is
 	// already taken.
 	ErrIAMUserAlreadyExists = errors.New("iam user already exists")
+	// ErrIAMUnsupported indicates the cluster's IAM service does not
+	// implement the call — a SeaweedFS release older than the one that added
+	// it (OIDC providers and roles over the filer IAM gRPC service).
+	ErrIAMUnsupported = errors.New("the Seaweed cluster's IAM service does not support this operation; upgrade SeaweedFS")
 )
 
 // swadminIAMAdmin is the default IAMAdmin, backed by swadmin.IAMClient. The
@@ -205,6 +215,22 @@ func (a *swadminIAMAdmin) DeleteOIDCProvider(ctx context.Context, issuerURL stri
 	return err
 }
 
+func (a *swadminIAMAdmin) PutRole(ctx context.Context, role swadmin.IAMRole) (string, error) {
+	arn, err := a.c.PutRole(ctx, role)
+	if err != nil {
+		return "", mapIAMError(err)
+	}
+	return arn, nil
+}
+
+func (a *swadminIAMAdmin) DeleteRole(ctx context.Context, name string) error {
+	err := mapIAMError(a.c.DeleteRole(ctx, name))
+	if errors.Is(err, ErrIAMNotFound) {
+		return nil
+	}
+	return err
+}
+
 // mapIAMError translates IAM gRPC status codes into the package sentinels the
 // reconcilers branch on. Non-status errors and other codes pass through.
 func mapIAMError(err error) error {
@@ -216,6 +242,8 @@ func mapIAMError(err error) error {
 		return ErrIAMNotFound
 	case codes.AlreadyExists:
 		return ErrIAMUserAlreadyExists
+	case codes.Unimplemented:
+		return ErrIAMUnsupported
 	default:
 		return err
 	}

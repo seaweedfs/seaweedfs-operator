@@ -112,6 +112,7 @@ rules:
   - s3oidcproviders
   - s3policies
   - s3policybindings
+  - s3roles
   - seaweedbackups
   - seaweedrestores
   - seaweeds
@@ -134,6 +135,7 @@ rules:
   - s3oidcproviders/finalizers
   - s3policies/finalizers
   - s3policybindings/finalizers
+  - s3roles/finalizers
   - seaweedbackups/finalizers
   - seaweedrestores/finalizers
   - seaweeds/finalizers
@@ -150,6 +152,7 @@ rules:
   - s3oidcproviders/status
   - s3policies/status
   - s3policybindings/status
+  - s3roles/status
   - seaweedbackups/status
   - seaweedrestores/status
   - seaweeds/status

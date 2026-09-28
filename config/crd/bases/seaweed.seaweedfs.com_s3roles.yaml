@@ -1,0 +1,195 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: s3roles.seaweed.seaweedfs.com
+spec:
+  group: seaweed.seaweedfs.com
+  names:
+    categories:
+    - seaweedfs
+    kind: S3Role
+    listKind: S3RoleList
+    plural: s3roles
+    shortNames:
+    - s3role
+    singular: s3role
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.seaweedRef.name
+      name: Cluster
+      type: string
+    - jsonPath: .status.roleName
+      name: Role
+      type: string
+    - jsonPath: .status.roleArn
+      name: ARN
+      priority: 1
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              description:
+                maxLength: 1000
+                type: string
+              maxSessionDuration:
+                format: int64
+                maximum: 43200
+                minimum: 3600
+                type: integer
+              name:
+                maxLength: 64
+                minLength: 1
+                pattern: ^[\w+=,.@-]+$
+                type: string
+                x-kubernetes-validations:
+                - message: role name is immutable once set
+                  rule: oldSelf == '' || self == oldSelf
+              policyRefs:
+                items:
+                  properties:
+                    name:
+                      maxLength: 128
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  type: object
+                maxItems: 10
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              reclaimPolicy:
+                default: Delete
+                enum:
+                - Delete
+                - Retain
+                type: string
+              seaweedRef:
+                properties:
+                  name:
+                    minLength: 1
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: seaweedRef is immutable
+                  rule: self == oldSelf
+              webIdentity:
+                properties:
+                  providerRef:
+                    properties:
+                      name:
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  subjects:
+                    items:
+                      maxLength: 1024
+                      minLength: 1
+                      type: string
+                    maxItems: 100
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: set
+                    x-kubernetes-validations:
+                    - message: 'a subject must not contain ''${'': the policy engine
+                        expands it as a variable'
+                      rule: self.all(s, !s.contains('${'))
+                required:
+                - providerRef
+                - subjects
+                type: object
+            required:
+            - seaweedRef
+            - webIdentity
+            type: object
+          status:
+            properties:
+              attachedPolicies:
+                items:
+                  type: string
+                type: array
+              conditions:
+                items:
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                enum:
+                - Pending
+                - Ready
+                - Failed
+                - Terminating
+                type: string
+              roleArn:
+                type: string
+              roleName:
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

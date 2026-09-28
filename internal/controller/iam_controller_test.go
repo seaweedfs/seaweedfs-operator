@@ -74,6 +74,7 @@ func iamTestClientNoGrants(t *testing.T, scheme *runtime.Scheme, objs ...client.
 			&seaweedv1.S3Policy{},
 			&seaweedv1.S3PolicyBinding{},
 			&seaweedv1.S3OIDCProvider{},
+			&seaweedv1.S3Role{},
 		).
 		Build()
 }
@@ -93,6 +94,7 @@ func defaultTestRefGrants() []client.Object {
 					{Group: groupSeaweed, Kind: kindS3Policy, Namespace: "media"},
 					{Group: groupSeaweed, Kind: kindS3PolicyBinding, Namespace: "media"},
 					{Group: groupSeaweed, Kind: kindS3OIDCProvider, Namespace: "media"},
+					{Group: groupSeaweed, Kind: kindS3Role, Namespace: "media"},
 					{Group: groupSeaweed, Kind: kindBucket, Namespace: "media"},
 				},
 				To: []seaweedv1.ReferenceGrantTo{{Group: groupSeaweed, Kind: kindSeaweed}},

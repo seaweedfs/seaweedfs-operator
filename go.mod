@@ -5,14 +5,14 @@ go 1.26.6
 require (
 	github.com/go-logr/logr v1.4.4
 	github.com/onsi/ginkgo/v2 v2.33.0
-	github.com/onsi/gomega v1.43.1
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.94.0
+	github.com/onsi/gomega v1.44.0
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.94.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/stretchr/testify v1.12.1
-	google.golang.org/grpc v1.85.0-dev.0.20260915183914-4e49413dcab7
-	k8s.io/api v0.37.0
-	k8s.io/apimachinery v0.37.0
-	k8s.io/client-go v0.37.0
+	google.golang.org/grpc v1.86.0-dev
+	k8s.io/api v0.37.1
+	k8s.io/apimachinery v0.37.1
+	k8s.io/client-go v0.37.1
 	k8s.io/klog v1.0.0
 	sigs.k8s.io/controller-runtime v0.25.1
 )
@@ -110,7 +110,7 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	k8s.io/apiserver v0.37.0 // indirect
 	k8s.io/component-base v0.37.0 // indirect
-	k8s.io/streaming v0.37.0 // indirect
+	k8s.io/streaming v0.37.1 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect

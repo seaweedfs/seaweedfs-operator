@@ -42,12 +42,14 @@ type S3RoleWebIdentity struct {
 	// Subjects is the exact set of token "sub" claims allowed to assume the
 	// role — for a SPIFFE issuer, SPIFFE IDs such as
 	// "spiffe://example.org/ns/app/sa/app". Matched exactly; no wildcards,
-	// and no "${", which the IAM policy engine would expand as a variable.
+	// and no variable reference (a "$" followed by "{"), which the IAM policy engine would expand. The
+	// rule and this text spell that pair out rather than write it: Flux's postBuild substitution reads
+	// the CRD, and a literal one fails its build ("unable to parse variable name").
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=100
 	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=1024
-	// +kubebuilder:validation:XValidation:rule="self.all(s, !s.contains('${'))",message="a subject must not contain '${': the policy engine expands it as a variable"
+	// +kubebuilder:validation:XValidation:rule="self.all(s, !s.contains('$' + '{'))",message="a subject must not contain a variable reference (a dollar sign followed by an opening brace): the policy engine expands it"
 	// +listType=set
 	Subjects []string `json:"subjects"`
 }

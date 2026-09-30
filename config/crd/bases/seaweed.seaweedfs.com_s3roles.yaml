@@ -117,9 +117,10 @@ spec:
                     type: array
                     x-kubernetes-list-type: set
                     x-kubernetes-validations:
-                    - message: 'a subject must not contain ''${'': the policy engine
-                        expands it as a variable'
-                      rule: self.all(s, !s.contains('${'))
+                    - message: 'a subject must not contain a variable reference (a
+                        dollar sign followed by an opening brace): the policy engine
+                        expands it'
+                      rule: self.all(s, !s.contains('$' + '{'))
                 required:
                 - providerRef
                 - subjects

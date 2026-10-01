@@ -66,6 +66,25 @@ func TestCreateOrUpdateServiceDropsStaleAnnotations(t *testing.T) {
 	}
 }
 
+// Service builders hand their spec's annotation map to the Service directly;
+// the bookkeeping annotation must land on a copy so the custom resource's map
+// is never mutated.
+func TestCreateOrUpdateServiceDoesNotMutateInput(t *testing.T) {
+	r, _ := componentIngressTestReconciler(t)
+
+	src := map[string]string{"example.com/key": "v"}
+	svc := testService(src, corev1.ServiceTypeClusterIP)
+	if _, err := r.CreateOrUpdateService(svc); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, ok := src[LastAppliedServiceAnnotations]; ok {
+		t.Fatal("caller annotation map was mutated")
+	}
+	if _, ok := svc.Annotations[LastAppliedServiceAnnotations]; ok {
+		t.Fatal("caller service was mutated")
+	}
+}
+
 // A Service that predates the bookkeeping annotation carries no rendered-key
 // record; the merge must not guess and delete annotations it cannot prove it
 // wrote.

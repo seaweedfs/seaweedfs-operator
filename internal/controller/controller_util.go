@@ -202,10 +202,11 @@ func (r *SeaweedReconciler) CreateOrUpdateDeployment(deploy *appsv1.Deployment) 
 
 func (r *SeaweedReconciler) CreateOrUpdateService(svc *corev1.Service) (*corev1.Service, error) {
 	rendered, _ := json.Marshal(slices.Sorted(maps.Keys(svc.Annotations)))
-	svc.Annotations = mergeStringMaps(svc.Annotations, map[string]string{
+	desired := svc.DeepCopy()
+	desired.Annotations = mergeStringMaps(desired.Annotations, map[string]string{
 		LastAppliedServiceAnnotations: string(rendered),
 	})
-	result, err := r.CreateOrUpdate(svc, func(existing, desired runtime.Object) error {
+	result, err := r.CreateOrUpdate(desired, func(existing, desired runtime.Object) error {
 		existingSvc := existing.(*corev1.Service)
 		desiredSvc := desired.(*corev1.Service)
 

@@ -85,6 +85,35 @@ func TestCreateOrUpdateServiceDoesNotMutateInput(t *testing.T) {
 	}
 }
 
+// A malformed rendered-key record decodes partially; the entries that do
+// decode must not drive annotation removal, so decode failures discard the
+// whole record.
+func TestCreateOrUpdateServiceIgnoresMalformedRecord(t *testing.T) {
+	ctx := context.Background()
+	r, _ := componentIngressTestReconciler(t)
+	r.Log = logf.FromContext(ctx)
+
+	svc := testService(map[string]string{
+		LastAppliedServiceAnnotations:     `["foreign.example.com/managed", 42]`,
+		"foreign.example.com/managed":     "keep",
+		"foreign.example.com/managed-too": "keep-too",
+	}, corev1.ServiceTypeClusterIP)
+	if err := r.Create(ctx, svc); err != nil {
+		t.Fatalf("seed service: %v", err)
+	}
+
+	got, err := r.CreateOrUpdateService(testService(nil, corev1.ServiceTypeClusterIP))
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got.Annotations["foreign.example.com/managed"] != "keep" {
+		t.Fatal("malformed record caused annotation removal")
+	}
+	if got.Annotations["foreign.example.com/managed-too"] != "keep-too" {
+		t.Fatal("malformed record caused annotation removal")
+	}
+}
+
 // A Service that predates the bookkeeping annotation carries no rendered-key
 // record; the merge must not guess and delete annotations it cannot prove it
 // wrote.

@@ -566,7 +566,9 @@ func mergePodTemplateMetadata(owner metav1.Object, existing, desired *corev1.Pod
 func mergeServiceAnnotations(existing *corev1.Service, desired map[string]string) {
 	var last []string
 	if raw, ok := existing.Annotations[LastAppliedServiceAnnotations]; ok {
-		_ = json.Unmarshal([]byte(raw), &last)
+		if err := json.Unmarshal([]byte(raw), &last); err != nil {
+			last = nil
+		}
 	}
 	merged := mergeStringMaps(existing.Annotations, desired)
 	for _, k := range last {

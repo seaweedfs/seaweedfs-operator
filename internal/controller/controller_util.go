@@ -36,6 +36,10 @@ const (
 	// LastAppliedPodTemplateKeys is annotation key of the pod template labels
 	// and annotations the operator rendered on its last write
 	LastAppliedPodTemplateKeys = "seaweedfs.com/last-applied-podtemplate-keys"
+
+	// LastAppliedServiceAnnotations is annotation key of the Service
+	// annotation keys the operator rendered on its last write
+	LastAppliedServiceAnnotations = "seaweedfs.com/last-applied-service-annotations"
 )
 
 // MergeFn is to resolve conflicts
@@ -197,16 +201,15 @@ func (r *SeaweedReconciler) CreateOrUpdateDeployment(deploy *appsv1.Deployment) 
 }
 
 func (r *SeaweedReconciler) CreateOrUpdateService(svc *corev1.Service) (*corev1.Service, error) {
+	rendered, _ := json.Marshal(slices.Sorted(maps.Keys(svc.Annotations)))
+	svc.Annotations = mergeStringMaps(svc.Annotations, map[string]string{
+		LastAppliedServiceAnnotations: string(rendered),
+	})
 	result, err := r.CreateOrUpdate(svc, func(existing, desired runtime.Object) error {
 		existingSvc := existing.(*corev1.Service)
 		desiredSvc := desired.(*corev1.Service)
 
-		if existingSvc.Annotations == nil {
-			existingSvc.Annotations = map[string]string{}
-		}
-		for k, v := range desiredSvc.Annotations {
-			existingSvc.Annotations[k] = v
-		}
+		mergeServiceAnnotations(existingSvc, desiredSvc.Annotations)
 		existingSvc.Labels = desiredSvc.Labels
 		equal, err := ServiceEqual(desiredSvc, existingSvc)
 		if err != nil {
@@ -551,6 +554,26 @@ func mergePodTemplateMetadata(owner metav1.Object, existing, desired *corev1.Pod
 	owner.SetAnnotations(mergeStringMaps(owner.GetAnnotations(), map[string]string{
 		LastAppliedPodTemplateKeys: string(rendered),
 	}))
+}
+
+// mergeServiceAnnotations applies the rendered Service annotations the way
+// mergePodTemplateMetadata does for pod templates: rendered keys are
+// overwritten, keys rendered last time and no longer rendered are removed,
+// and keys the operator never rendered are left alone. The caller records
+// the rendered key set on the desired object under
+// LastAppliedServiceAnnotations; without a record, nothing is removed.
+func mergeServiceAnnotations(existing *corev1.Service, desired map[string]string) {
+	var last []string
+	if raw, ok := existing.Annotations[LastAppliedServiceAnnotations]; ok {
+		_ = json.Unmarshal([]byte(raw), &last)
+	}
+	merged := mergeStringMaps(existing.Annotations, desired)
+	for _, k := range last {
+		if _, ok := desired[k]; !ok {
+			delete(merged, k)
+		}
+	}
+	existing.Annotations = merged
 }
 
 // releaseFinalizerIfDeleting drops finalizer from obj when obj is being deleted

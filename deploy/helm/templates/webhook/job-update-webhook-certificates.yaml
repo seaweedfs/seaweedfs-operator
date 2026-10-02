@@ -173,6 +173,9 @@ rules:
     resources:
       - validatingwebhookconfigurations
       - mutatingwebhookconfigurations
+    resourceNames:
+      - {{ include "seaweedfs-operator.validatingWebhookName" . }}
+      - {{ include "seaweedfs-operator.mutatingWebhookName" . }}
     verbs:
       - get
       - update

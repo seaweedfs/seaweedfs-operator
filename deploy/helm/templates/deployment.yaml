@@ -1,3 +1,6 @@
+{{- if eq (int .Values.port.number) (int .Values.healthProbe.port) }}
+{{- fail "healthProbe.port must differ from port.number because the health and metrics servers bind separately" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -49,7 +52,7 @@ spec:
         args:
         - --leader-elect
         - --metrics-bind-address=:{{ .Values.port.number }}
-        - --health-probe-bind-address=:8081
+        - --health-probe-bind-address=:{{ .Values.healthProbe.port }}
         {{- if .Values.bucketUsage }}
         {{- if .Values.bucketUsage.refreshInterval }}
         - --bucket-usage-refresh-interval={{ .Values.bucketUsage.refreshInterval }}
@@ -82,7 +85,7 @@ spec:
           containerPort: 9443
           protocol: TCP
         - name: health
-          containerPort: 8081
+          containerPort: {{ .Values.healthProbe.port }}
           protocol: TCP
         livenessProbe:
           httpGet:

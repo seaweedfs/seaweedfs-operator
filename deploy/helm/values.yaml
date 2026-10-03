@@ -104,6 +104,11 @@ port:
   # -- container port number to use for the Kubernete service and ingress
   number: 8080
 
+healthProbe:
+  # -- Port used by the manager's liveness and readiness endpoints. Must differ
+  # from port.number because the health and metrics servers bind separately.
+  port: 8081
+
 ## Configure Service
 service:
   # -- name of the port to use for Kubernetes service

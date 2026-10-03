@@ -18,14 +18,17 @@ package helm
 
 import (
 	"encoding/json"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 )
 
+// TestHelmOperatorDeploymentSecurity verifies the manager's default hardening.
 func TestHelmOperatorDeploymentSecurity(t *testing.T) {
 	docs := renderDocs(t, filepath.Join(projectRoot(t), "deploy", "helm"))
 
@@ -77,6 +80,44 @@ func TestHelmOperatorDeploymentSecurity(t *testing.T) {
 	}
 }
 
+// TestHelmHealthProbePortIsConfigurable verifies custom ports and rejects a
+// collision with the separately bound metrics server.
+func TestHelmHealthProbePortIsConfigurable(t *testing.T) {
+	chartDir := filepath.Join(projectRoot(t), "deploy", "helm")
+	docs := renderDocs(t, chartDir, "--set", "healthProbe.port=18081")
+
+	var deployment appsv1.Deployment
+	decodeRenderedDocument(t, docs, "Deployment/rbac-test-seaweedfs-operator", &deployment)
+	manager := deployment.Spec.Template.Spec.Containers[0]
+	if !containsString(manager.Args, "--health-probe-bind-address=:18081") {
+		t.Errorf("operator args %v do not use the configured health probe port", manager.Args)
+	}
+	var healthPort int32
+	for _, port := range manager.Ports {
+		if port.Name == "health" {
+			healthPort = port.ContainerPort
+		}
+	}
+	if healthPort != 18081 {
+		t.Errorf("health container port = %d, want 18081", healthPort)
+	}
+
+	helm, err := exec.LookPath("helm")
+	if err != nil {
+		t.Skipf("helm not found in PATH; skipping collision validation: %v", err)
+	}
+	cmd := exec.Command(helm, "template", "rbac-test", chartDir, "--set", "port.number=8081")
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("helm template accepted identical metrics and health probe ports")
+	}
+	if !strings.Contains(string(output), "healthProbe.port must differ from port.number") {
+		t.Fatalf("helm template failed without the expected port collision message:\n%s", output)
+	}
+}
+
+// TestWebhookCertificateRBACIsResourceScoped verifies that the certificate
+// updater can modify only the release-owned admission configurations.
 func TestWebhookCertificateRBACIsResourceScoped(t *testing.T) {
 	docs := renderDocs(t, filepath.Join(projectRoot(t), "deploy", "helm"))
 
@@ -89,23 +130,26 @@ func TestWebhookCertificateRBACIsResourceScoped(t *testing.T) {
 	)
 
 	want := []string{
-		"rbac-test-seaweedfs-operator-mutating-webhook-configuration",
 		"rbac-test-seaweedfs-operator-validating-webhook-configuration",
+		"rbac-test-seaweedfs-operator-mutating-webhook-configuration",
 	}
-	for _, rule := range role.Rules {
-		if reflect.DeepEqual(rule.Resources, []string{
-			"validatingwebhookconfigurations",
-			"mutatingwebhookconfigurations",
-		}) {
-			if !reflect.DeepEqual(rule.ResourceNames, want) {
-				t.Fatalf("webhook patch resourceNames = %v, want %v", rule.ResourceNames, want)
-			}
-			return
-		}
+	if len(role.Rules) != 1 {
+		t.Fatalf("webhook certificate ClusterRole has %d rules, want exactly 1", len(role.Rules))
 	}
-	t.Fatal("webhook certificate ClusterRole has no admission-registration rule")
+	rule := role.Rules[0]
+	wantResources := []string{
+		"validatingwebhookconfigurations",
+		"mutatingwebhookconfigurations",
+	}
+	if !reflect.DeepEqual(rule.Resources, wantResources) {
+		t.Fatalf("webhook certificate ClusterRole resources = %v, want %v", rule.Resources, wantResources)
+	}
+	if !reflect.DeepEqual(rule.ResourceNames, want) {
+		t.Fatalf("webhook patch resourceNames = %v, want %v", rule.ResourceNames, want)
+	}
 }
 
+// decodeRenderedDocument decodes one rendered Helm resource into a typed value.
 func decodeRenderedDocument(t *testing.T, docs []map[string]any, key string, target any) {
 	t.Helper()
 	for _, doc := range docs {
@@ -124,6 +168,7 @@ func decodeRenderedDocument(t *testing.T, docs []map[string]any, key string, tar
 	t.Fatalf("rendered chart has no %s", key)
 }
 
+// containsString reports whether values contains want.
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

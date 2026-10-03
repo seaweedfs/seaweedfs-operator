@@ -33,6 +33,12 @@ helm repo add seaweedfs-operator https://seaweedfs.github.io/seaweedfs-operator/
 helm template seaweedfs-operator seaweedfs-operator/seaweedfs-operator
 ```
 
+The chart applies a `RuntimeDefault` seccomp profile to the operator pod,
+configures manager health probes, and scopes webhook certificate updates to
+the release's webhook configurations. See
+[#405](https://github.com/seaweedfs/seaweedfs-operator/issues/405) and
+[#406](https://github.com/seaweedfs/seaweedfs-operator/pull/406).
+
 > **Note**: For versions prior to 0.1.2, the legacy repository URL `https://seaweedfs.github.io/seaweedfs-operator/helm` can still be used, but new releases will only be published to the main repository URL above.
 
 #### Upgrading from chart versions <= 0.1.14

@@ -106,7 +106,7 @@ port:
 
 healthProbe:
   # -- Port used by the manager's liveness and readiness endpoints. Must differ
-  # from port.number because the health and metrics servers bind separately.
+  # from port.number and, when webhooks are enabled, from webhook port 9443.
   port: 8081
 
 ## Configure Service

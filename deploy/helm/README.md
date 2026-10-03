@@ -25,7 +25,7 @@ A Helm chart for the seaweedfs-operator
 | global | object | `{"imageRegistry":""}` | Global Docker image parameters. global.imageRegistry, when set, overrides the registry of every image in the chart; leave empty to use each image's own. |
 | grafanaDashboard.additionalLabels | object | `{"grafana_dashboard":"1"}` | Labels added to the Grafana Dashboard ConfigMap so the Grafana sidecar discovers it. kube-prometheus-stack only matches `grafana_dashboard: "1"`; the standalone grafana chart matches any value. Set a key to `null` to drop it — an empty map merges with the default rather than replacing it. |
 | grafanaDashboard.enabled | bool | `true` | Enable or disable Grafana Dashboard configmap |
-| healthProbe.port | int | `8081` | Port used by the manager's liveness and readiness endpoints. Must differ from port.number because the health and metrics servers bind separately. |
+| healthProbe.port | int | `8081` | Port used by the manager's liveness and readiness endpoints. Must differ from port.number and, when webhooks are enabled, from webhook port 9443. |
 | image.pullPolicy | string | `"IfNotPresent"` | Specify a imagePullPolicy # Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent' # ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images |
 | image.registry | string | `"chrislusf"` |  |
 | image.repository | string | `"seaweedfs-operator"` |  |

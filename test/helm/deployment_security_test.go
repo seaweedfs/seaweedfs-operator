@@ -17,12 +17,15 @@ limitations under the License.
 package helm
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -80,8 +83,8 @@ func TestHelmOperatorDeploymentSecurity(t *testing.T) {
 	}
 }
 
-// TestHelmHealthProbePortIsConfigurable verifies custom ports and rejects a
-// collision with the separately bound metrics server.
+// TestHelmHealthProbePortIsConfigurable verifies custom ports and rejects
+// collisions with the separately bound metrics and webhook servers.
 func TestHelmHealthProbePortIsConfigurable(t *testing.T) {
 	chartDir := filepath.Join(projectRoot(t), "deploy", "helm")
 	docs := renderDocs(t, chartDir, "--set", "healthProbe.port=18081")
@@ -106,14 +109,35 @@ func TestHelmHealthProbePortIsConfigurable(t *testing.T) {
 	if err != nil {
 		t.Skipf("helm not found in PATH; skipping collision validation: %v", err)
 	}
-	cmd := exec.Command(helm, "template", "rbac-test", chartDir, "--set", "port.number=8081")
-	output, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatal("helm template accepted identical metrics and health probe ports")
+	collisionCases := []struct {
+		name string
+		args []string
+	}{
+		{name: "metrics", args: []string{"--set", "port.number=8081"}},
+		{name: "webhook", args: []string{"--set", "healthProbe.port=9443"}},
 	}
-	if !strings.Contains(string(output), "healthProbe.port must differ from port.number") {
-		t.Fatalf("helm template failed without the expected port collision message:\n%s", output)
+	for _, tc := range collisionCases {
+		t.Run("rejects "+tc.name+" collision", func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			args := append([]string{"template", "rbac-test", chartDir}, tc.args...)
+			cmd := exec.CommandContext(ctx, helm, args...)
+			output, err := cmd.CombinedOutput()
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				t.Fatalf("helm template timed out after 30s while checking %s port collision", tc.name)
+			}
+			if err == nil {
+				t.Fatalf("helm template accepted a health probe port colliding with the %s server", tc.name)
+			}
+			if !strings.Contains(string(output), "healthProbe.port must differ from port.number") {
+				t.Fatalf("helm template failed without the expected port collision message:\n%s", output)
+			}
+		})
 	}
+
+	renderDocs(t, chartDir,
+		"--set", "healthProbe.port=9443",
+		"--set", "webhook.enabled=false")
 }
 
 // TestWebhookCertificateRBACIsResourceScoped verifies that the certificate

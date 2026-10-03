@@ -3,6 +3,7 @@ package swadmin
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -378,10 +379,14 @@ func (c *IAMClient) SetBucketAccess(ctx context.Context, bucket, user, actions s
 			id = &iam_pb.Identity{Name: user}
 			isNewUser = true
 		}
+		before := id.Actions
 		setBucketActions(id, bucket, actions)
 		if isNewUser {
 			_, err = client.CreateUser(ctx, &iam_pb.CreateUserRequest{Identity: id})
 			return err
+		}
+		if slices.Equal(before, id.Actions) {
+			return nil
 		}
 		_, err = client.UpdateUser(ctx, &iam_pb.UpdateUserRequest{Username: user, Identity: id})
 		return err

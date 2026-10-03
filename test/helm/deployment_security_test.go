@@ -84,7 +84,7 @@ func TestHelmOperatorDeploymentSecurity(t *testing.T) {
 }
 
 // TestHelmHealthProbePortIsConfigurable verifies custom ports and rejects
-// collisions with the separately bound metrics and webhook servers.
+// port-number and port-name collisions.
 func TestHelmHealthProbePortIsConfigurable(t *testing.T) {
 	chartDir := filepath.Join(projectRoot(t), "deploy", "helm")
 	docs := renderDocs(t, chartDir, "--set", "healthProbe.port=18081")
@@ -110,33 +110,55 @@ func TestHelmHealthProbePortIsConfigurable(t *testing.T) {
 		t.Skipf("helm not found in PATH; skipping collision validation: %v", err)
 	}
 	collisionCases := []struct {
-		name string
-		args []string
+		name        string
+		args        []string
+		wantMessage string
 	}{
-		{name: "metrics", args: []string{"--set", "port.number=8081"}},
-		{name: "webhook", args: []string{"--set", "healthProbe.port=9443"}},
+		{
+			name:        "metrics and health ports",
+			args:        []string{"--set", "port.number=8081"},
+			wantMessage: "healthProbe.port must differ from port.number",
+		},
+		{
+			name:        "health and webhook ports",
+			args:        []string{"--set", "healthProbe.port=9443"},
+			wantMessage: "both ports must differ from webhook port 9443",
+		},
+		{
+			name:        "metrics and webhook ports",
+			args:        []string{"--set", "port.number=9443"},
+			wantMessage: "both ports must differ from webhook port 9443",
+		},
+		{
+			name:        "metrics and health port names",
+			args:        []string{"--set", "port.name=health"},
+			wantMessage: `port.name must not be "health"`,
+		},
 	}
 	for _, tc := range collisionCases {
-		t.Run("rejects "+tc.name+" collision", func(t *testing.T) {
+		t.Run("rejects "+tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			args := append([]string{"template", "rbac-test", chartDir}, tc.args...)
 			cmd := exec.CommandContext(ctx, helm, args...)
 			output, err := cmd.CombinedOutput()
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				t.Fatalf("helm template timed out after 30s while checking %s port collision", tc.name)
+				t.Fatalf("helm template timed out after 30s while checking %s", tc.name)
 			}
 			if err == nil {
-				t.Fatalf("helm template accepted a health probe port colliding with the %s server", tc.name)
+				t.Fatalf("helm template accepted invalid configuration with %s", tc.name)
 			}
-			if !strings.Contains(string(output), "healthProbe.port must differ from port.number") {
-				t.Fatalf("helm template failed without the expected port collision message:\n%s", output)
+			if !strings.Contains(string(output), tc.wantMessage) {
+				t.Fatalf("helm template failed without expected message %q:\n%s", tc.wantMessage, output)
 			}
 		})
 	}
 
 	renderDocs(t, chartDir,
 		"--set", "healthProbe.port=9443",
+		"--set", "webhook.enabled=false")
+	renderDocs(t, chartDir,
+		"--set", "port.number=9443",
 		"--set", "webhook.enabled=false")
 }
 

@@ -1,6 +1,10 @@
 {{- $healthProbePort := int .Values.healthProbe.port }}
-{{- if or (eq (int .Values.port.number) $healthProbePort) (and .Values.webhook.enabled (eq 9443 $healthProbePort)) }}
-{{- fail "healthProbe.port must differ from port.number and, when webhooks are enabled, from webhook port 9443" }}
+{{- $metricsPort := int .Values.port.number }}
+{{- if or (eq $metricsPort $healthProbePort) (and .Values.webhook.enabled (or (eq 9443 $healthProbePort) (eq 9443 $metricsPort))) }}
+{{- fail "healthProbe.port must differ from port.number; when webhooks are enabled, both ports must differ from webhook port 9443" }}
+{{- end }}
+{{- if eq .Values.port.name "health" }}
+{{- fail "port.name must not be \"health\" because that name is reserved for the manager health port" }}
 {{- end }}
 apiVersion: apps/v1
 kind: Deployment

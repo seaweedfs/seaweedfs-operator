@@ -99,9 +99,11 @@ bucketUsage:
 
 ## Configure container port
 port:
-  # -- name of the container port to use for the Kubernete service and ingress
+  # -- name of the container port to use for the Kubernete service and ingress.
+  # "health" is reserved for the manager health port.
   name: http
-  # -- container port number to use for the Kubernete service and ingress
+  # -- container port number to use for the Kubernete service and ingress.
+  # When webhooks are enabled this must differ from webhook port 9443.
   number: 8080
 
 healthProbe:

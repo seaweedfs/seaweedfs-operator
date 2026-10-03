@@ -17,6 +17,7 @@ limitations under the License.
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -74,6 +75,16 @@ type SeaweedBackupSpec struct {
 	// +optional
 	// +kubebuilder:default:="/"
 	FilerPath string `json:"filerPath,omitempty"`
+
+	// PodSecurityContext configures pod-level security attributes for the
+	// snapshot Job. Unset fields retain Kubernetes defaults.
+	// +optional
+	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
+
+	// ContainerSecurityContext configures security attributes for the
+	// snapshot container. Unset fields retain Kubernetes defaults.
+	// +optional
+	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 }
 
 // SeaweedBackupStatus reflects the observed state of a backup.

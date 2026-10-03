@@ -29,3 +29,11 @@ spec:
   #   requests:
   #     cpu: 100m
   #     memory: 128Mi
+  # podSecurityContext:
+  #   seccompProfile:
+  #     type: RuntimeDefault
+  # containerSecurityContext:
+  #   allowPrivilegeEscalation: false
+  #   capabilities:
+  #     drop:
+  #       - ALL

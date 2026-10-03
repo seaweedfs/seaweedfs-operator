@@ -15,3 +15,13 @@ spec:
   #   storageName: pvc
   #   metaPath: seaweed-sample/seaweedbackup-sample/filer.meta.gz
   filerPath: /
+  # Optional pod and restore-container hardening. Choose runAsUser/fsGroup
+  # values that can read the configured backup PVC.
+  # podSecurityContext:
+  #   seccompProfile:
+  #     type: RuntimeDefault
+  # containerSecurityContext:
+  #   allowPrivilegeEscalation: false
+  #   capabilities:
+  #     drop:
+  #       - ALL

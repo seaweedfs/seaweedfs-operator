@@ -17,6 +17,7 @@ limitations under the License.
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -78,6 +79,16 @@ type SeaweedRestoreSpec struct {
 	// +optional
 	// +kubebuilder:default:="/"
 	FilerPath string `json:"filerPath,omitempty"`
+
+	// PodSecurityContext configures pod-level security attributes for the
+	// restore Job. Unset fields retain Kubernetes defaults.
+	// +optional
+	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
+
+	// ContainerSecurityContext configures security attributes for the restore
+	// container. Unset fields retain Kubernetes defaults.
+	// +optional
+	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 }
 
 // SeaweedRestoreStatus reflects the observed state of a restore.

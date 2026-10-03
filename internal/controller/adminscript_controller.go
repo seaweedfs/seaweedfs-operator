@@ -143,6 +143,7 @@ func (r *AdminScriptReconciler) buildCronJob(script *seaweedv1.AdminScript, clus
 		Affinity:         script.Spec.Affinity,
 		Tolerations:      script.Spec.Tolerations,
 		ImagePullSecrets: adminScriptImagePullSecrets(script, cluster),
+		SecurityContext:  script.Spec.PodSecurityContext,
 	}
 	if script.Spec.ServiceAccountName != "" {
 		podSpec.ServiceAccountName = script.Spec.ServiceAccountName
@@ -174,6 +175,7 @@ func (r *AdminScriptReconciler) buildCronJob(script *seaweedv1.AdminScript, clus
 		Env:             env,
 		EnvFrom:         envFrom,
 		Resources:       filterContainerResources(script.Spec.Resources),
+		SecurityContext: script.Spec.ContainerSecurityContext,
 		VolumeMounts:    volumeMounts,
 	}}
 

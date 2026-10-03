@@ -938,6 +938,10 @@ spec:
   `credentialsSecret` projects a Secret's keys into the run pod as environment
   variables for scripts that need them (defaults to the cluster's admin
   `credentialsSecret` when set).
+- `podSecurityContext` and `containerSecurityContext` optionally harden each
+  scheduled run. They are copied to the CronJob pod and `weed-shell` container
+  without adding operator defaults; verify `readOnlyRootFilesystem` against the
+  selected image because scripts run through `/bin/sh`.
 - Status surfaces `phase` (`Pending`/`Active`/`Suspended`), the managed
   `cronJobName`, and the CronJob's `lastScheduleTime`/`lastSuccessfulTime`.
 

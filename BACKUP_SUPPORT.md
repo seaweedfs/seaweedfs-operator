@@ -176,6 +176,34 @@ back from the reserved filer path for object stores via `weed filer.cat`) and
 runs `fs.meta.load` into the target filer. When `filerPath` is not `/`, the load
 is scoped with `-dirPrefix`.
 
+## Snapshot and restore Job security
+
+`SeaweedBackup` and `SeaweedRestore` accept optional `podSecurityContext` and
+`containerSecurityContext` fields. They are copied to the generated Job pod and
+its `snapshot` or `restore` container without adding operator defaults. For
+example:
+
+```yaml
+spec:
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+```
+
+When using filesystem storage, select `runAsUser` and `fsGroup` values that can
+access the backup PVC. Test `readOnlyRootFilesystem` with the selected SeaweedFS
+image because the commands run through `/bin/sh`; snapshot staging itself uses
+the writable `/scratch` `emptyDir`.
+
+Cron-created backups from `spec.backup.schedule` currently leave these fields
+unset. Use an explicitly created `SeaweedBackup` when these settings are
+required.
+
 ## TLS clusters
 
 Snapshot/restore Jobs and mirror Deployments mount the cluster's `security.toml`

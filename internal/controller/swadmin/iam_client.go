@@ -385,7 +385,7 @@ func (c *IAMClient) SetBucketAccess(ctx context.Context, bucket, user, actions s
 			_, err = client.CreateUser(ctx, &iam_pb.CreateUserRequest{Identity: id})
 			return err
 		}
-		if slices.Equal(before, id.Actions) {
+		if slices.Equal(slices.Sorted(slices.Values(before)), slices.Sorted(slices.Values(id.Actions))) {
 			return nil
 		}
 		_, err = client.UpdateUser(ctx, &iam_pb.UpdateUserRequest{Username: user, Identity: id})

@@ -99,12 +99,14 @@ func TestIAMClient_SetBucketAccess_PreservesOtherGrants(t *testing.T) {
 // A resync that finds the grant already applied must not issue UpdateUser:
 // each update writes a metadata event the filer persists to its meta log, so
 // the 5-minute bucket resync would grow volumes on an idle cluster
-// (seaweedfs/seaweedfs#11571).
+// (seaweedfs/seaweedfs#11571). The comparison is set-wise: with grants on
+// several buckets, setBucketActions moves the reconciled bucket to the end,
+// and treating that reorder as a change would write on every resync.
 func TestIAMClient_SetBucketAccess_SkipsUnchangedUpdate(t *testing.T) {
 	key := []byte("test-jwt-signing-key")
 	srv := newBucketAccessIAM(key, &iam_pb.Identity{
 		Name:    "uploader",
-		Actions: []string{"Read:photos", "Write:photos"},
+		Actions: []string{"Read:photos", "Write:photos", "List:other"},
 	})
 	filer := startBucketAccessIAM(t, srv)
 
@@ -125,7 +127,7 @@ func TestIAMClient_SetBucketAccess_SkipsUnchangedUpdate(t *testing.T) {
 	if srv.updateCalls != 1 {
 		t.Fatalf("UpdateUser calls = %d, want 1", srv.updateCalls)
 	}
-	assertActions(t, srv.actions("uploader"), "Read:photos")
+	assertActions(t, srv.actions("uploader"), "List:other", "Read:photos")
 }
 
 func assertActions(t *testing.T, got []string, want ...string) {

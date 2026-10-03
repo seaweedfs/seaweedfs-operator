@@ -140,6 +140,11 @@ func TestHelmHealthProbePortIsConfigurable(t *testing.T) {
 			wantMessage: `port.name must not be "https"`,
 		},
 		{
+			name:        "fractional health port",
+			args:        []string{"--set", "healthProbe.port=8081.5"},
+			wantMessage: "healthProbe.port must be an integer",
+		},
+		{
 			name:        "out-of-range health port",
 			args:        []string{"--set", "healthProbe.port=0"},
 			wantMessage: "healthProbe.port must be a valid TCP port",

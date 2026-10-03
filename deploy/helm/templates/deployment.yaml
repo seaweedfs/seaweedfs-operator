@@ -1,5 +1,8 @@
 {{- $healthProbePort := int .Values.healthProbe.port }}
 {{- $metricsPort := int .Values.port.number }}
+{{- if ne (float64 .Values.healthProbe.port) (float64 $healthProbePort) }}
+{{- fail "healthProbe.port must be an integer" }}
+{{- end }}
 {{- if or (lt $healthProbePort 1) (gt $healthProbePort 65535) }}
 {{- fail "healthProbe.port must be a valid TCP port (1-65535)" }}
 {{- end }}

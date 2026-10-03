@@ -96,6 +96,38 @@ func TestIAMClient_SetBucketAccess_PreservesOtherGrants(t *testing.T) {
 	}
 }
 
+// A resync that finds the grant already applied must not issue UpdateUser:
+// each update writes a metadata event the filer persists to its meta log, so
+// the 5-minute bucket resync would grow volumes on an idle cluster
+// (seaweedfs/seaweedfs#11571).
+func TestIAMClient_SetBucketAccess_SkipsUnchangedUpdate(t *testing.T) {
+	key := []byte("test-jwt-signing-key")
+	srv := newBucketAccessIAM(key, &iam_pb.Identity{
+		Name:    "uploader",
+		Actions: []string{"Read:photos", "Write:photos"},
+	})
+	filer := startBucketAccessIAM(t, srv)
+
+	c := NewIAMClient(filer, key, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := c.SetBucketAccess(ctx, "photos", "uploader", "Read,Write"); err != nil {
+		t.Fatalf("SetBucketAccess: %v", err)
+	}
+	if srv.updateCalls != 0 {
+		t.Fatalf("UpdateUser called for an unchanged grant (%d times)", srv.updateCalls)
+	}
+
+	if err := c.SetBucketAccess(ctx, "photos", "uploader", "Read"); err != nil {
+		t.Fatalf("SetBucketAccess: %v", err)
+	}
+	if srv.updateCalls != 1 {
+		t.Fatalf("UpdateUser calls = %d, want 1", srv.updateCalls)
+	}
+	assertActions(t, srv.actions("uploader"), "Read:photos")
+}
+
 func assertActions(t *testing.T, got []string, want ...string) {
 	t.Helper()
 	w := make(map[string]bool, len(want))
@@ -140,10 +172,11 @@ type bucketAccessIAM struct {
 	iam_pb.UnimplementedSeaweedIdentityAccessManagementServer
 	key security.SigningKey
 
-	mu       sync.Mutex
-	users    map[string]*iam_pb.Identity
-	authSeen bool
-	authErr  error
+	mu          sync.Mutex
+	users       map[string]*iam_pb.Identity
+	authSeen    bool
+	authErr     error
+	updateCalls int
 }
 
 func newBucketAccessIAM(key []byte, seed ...*iam_pb.Identity) *bucketAccessIAM {
@@ -204,6 +237,7 @@ func (s *bucketAccessIAM) UpdateUser(ctx context.Context, req *iam_pb.UpdateUser
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.updateCalls++
 	s.users[req.Username] = req.Identity
 	return &iam_pb.UpdateUserResponse{}, nil
 }

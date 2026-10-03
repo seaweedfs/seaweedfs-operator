@@ -172,9 +172,16 @@ rules:
       - admissionregistration.k8s.io
     resources:
       - validatingwebhookconfigurations
-      - mutatingwebhookconfigurations
     resourceNames:
       - {{ include "seaweedfs-operator.validatingWebhookName" . }}
+    verbs:
+      - get
+      - update
+  - apiGroups:
+      - admissionregistration.k8s.io
+    resources:
+      - mutatingwebhookconfigurations
+    resourceNames:
       - {{ include "seaweedfs-operator.mutatingWebhookName" . }}
     verbs:
       - get

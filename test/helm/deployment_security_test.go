@@ -134,6 +134,16 @@ func TestHelmHealthProbePortIsConfigurable(t *testing.T) {
 			args:        []string{"--set", "port.name=health"},
 			wantMessage: `port.name must not be "health"`,
 		},
+		{
+			name:        "metrics and webhook port names",
+			args:        []string{"--set", "port.name=https"},
+			wantMessage: `port.name must not be "https"`,
+		},
+		{
+			name:        "out-of-range health port",
+			args:        []string{"--set", "healthProbe.port=0"},
+			wantMessage: "healthProbe.port must be a valid TCP port",
+		},
 	}
 	for _, tc := range collisionCases {
 		t.Run("rejects "+tc.name, func(t *testing.T) {
@@ -175,23 +185,33 @@ func TestWebhookCertificateRBACIsResourceScoped(t *testing.T) {
 		&role,
 	)
 
-	want := []string{
-		"rbac-test-seaweedfs-operator-validating-webhook-configuration",
-		"rbac-test-seaweedfs-operator-mutating-webhook-configuration",
+	wantRules := []struct {
+		resource string
+		name     string
+	}{
+		{
+			resource: "validatingwebhookconfigurations",
+			name:     "rbac-test-seaweedfs-operator-validating-webhook-configuration",
+		},
+		{
+			resource: "mutatingwebhookconfigurations",
+			name:     "rbac-test-seaweedfs-operator-mutating-webhook-configuration",
+		},
 	}
-	if len(role.Rules) != 1 {
-		t.Fatalf("webhook certificate ClusterRole has %d rules, want exactly 1", len(role.Rules))
+	if len(role.Rules) != len(wantRules) {
+		t.Fatalf("webhook certificate ClusterRole has %d rules, want exactly %d", len(role.Rules), len(wantRules))
 	}
-	rule := role.Rules[0]
-	wantResources := []string{
-		"validatingwebhookconfigurations",
-		"mutatingwebhookconfigurations",
-	}
-	if !reflect.DeepEqual(rule.Resources, wantResources) {
-		t.Fatalf("webhook certificate ClusterRole resources = %v, want %v", rule.Resources, wantResources)
-	}
-	if !reflect.DeepEqual(rule.ResourceNames, want) {
-		t.Fatalf("webhook patch resourceNames = %v, want %v", rule.ResourceNames, want)
+	for i, want := range wantRules {
+		rule := role.Rules[i]
+		if !reflect.DeepEqual(rule.Resources, []string{want.resource}) {
+			t.Fatalf("webhook certificate ClusterRole rule %d resources = %v, want %v", i, rule.Resources, want.resource)
+		}
+		if !reflect.DeepEqual(rule.ResourceNames, []string{want.name}) {
+			t.Fatalf("webhook certificate ClusterRole rule %d resourceNames = %v, want %v", i, rule.ResourceNames, want.name)
+		}
+		if !reflect.DeepEqual(rule.Verbs, []string{"get", "update"}) {
+			t.Fatalf("webhook certificate ClusterRole rule %d verbs = %v, want [get update]", i, rule.Verbs)
+		}
 	}
 }
 

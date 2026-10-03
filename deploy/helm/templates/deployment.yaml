@@ -1,3 +1,20 @@
+{{- $healthProbePort := int .Values.healthProbe.port }}
+{{- $metricsPort := int .Values.port.number }}
+{{- if ne (float64 .Values.healthProbe.port) (float64 $healthProbePort) }}
+{{- fail "healthProbe.port must be an integer" }}
+{{- end }}
+{{- if or (lt $healthProbePort 1) (gt $healthProbePort 65535) }}
+{{- fail "healthProbe.port must be a valid TCP port (1-65535)" }}
+{{- end }}
+{{- if or (eq $metricsPort $healthProbePort) (and .Values.webhook.enabled (or (eq 9443 $healthProbePort) (eq 9443 $metricsPort))) }}
+{{- fail "healthProbe.port must differ from port.number; when webhooks are enabled, both ports must differ from webhook port 9443" }}
+{{- end }}
+{{- if eq .Values.port.name "health" }}
+{{- fail "port.name must not be \"health\" because that name is reserved for the manager health port" }}
+{{- end }}
+{{- if and .Values.webhook.enabled (eq .Values.port.name "https") }}
+{{- fail "port.name must not be \"https\" because that name is reserved for the webhook port" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -49,6 +66,7 @@ spec:
         args:
         - --leader-elect
         - --metrics-bind-address=:{{ .Values.port.number }}
+        - --health-probe-bind-address=:{{ .Values.healthProbe.port }}
         {{- if .Values.bucketUsage }}
         {{- if .Values.bucketUsage.refreshInterval }}
         - --bucket-usage-refresh-interval={{ .Values.bucketUsage.refreshInterval }}
@@ -77,9 +95,26 @@ spec:
         - name: {{ .Values.port.name }}
           containerPort: {{ .Values.port.number }}
           protocol: TCP
+        {{- if .Values.webhook.enabled }}
         - name: https
-          containerPort: 443
+          containerPort: 9443
           protocol: TCP
+        {{- end }}
+        - name: health
+          containerPort: {{ .Values.healthProbe.port }}
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
         {{- if .Values.resources }}
         resources: {{- toYaml .Values.resources | nindent 12 }}
         {{- end }}

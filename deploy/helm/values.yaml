@@ -99,10 +99,19 @@ bucketUsage:
 
 ## Configure container port
 port:
-  # -- name of the container port to use for the Kubernete service and ingress
+  # -- name of the container port to use for the Kubernete service and ingress.
+  # "health" is reserved for the manager health port, and when webhooks are
+  # enabled "https" is reserved for the webhook port.
   name: http
-  # -- container port number to use for the Kubernete service and ingress
+  # -- container port number to use for the Kubernete service and ingress.
+  # When webhooks are enabled this must differ from webhook port 9443.
   number: 8080
+
+healthProbe:
+  # -- Port used by the manager's liveness and readiness endpoints. Must be a
+  # valid TCP port and differ from port.number and, when webhooks are enabled,
+  # from webhook port 9443.
+  port: 8081
 
 ## Configure Service
 service:
@@ -200,6 +209,8 @@ podSecurityContext:
   runAsNonRoot: true
   runAsUser: 65532
   fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
 
 ## Security context for containers
 ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/

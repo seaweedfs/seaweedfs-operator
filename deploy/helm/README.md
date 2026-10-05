@@ -1,6 +1,6 @@
 # seaweedfs-operator
 
-![Version: 0.1.40](https://img.shields.io/badge/Version-0.1.40-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.37](https://img.shields.io/badge/AppVersion-1.0.37-informational?style=flat-square)
+![Version: 0.1.43](https://img.shields.io/badge/Version-0.1.43-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.40](https://img.shields.io/badge/AppVersion-1.0.40-informational?style=flat-square)
 
 A Helm chart for the seaweedfs-operator
 
@@ -25,6 +25,7 @@ A Helm chart for the seaweedfs-operator
 | global | object | `{"imageRegistry":""}` | Global Docker image parameters. global.imageRegistry, when set, overrides the registry of every image in the chart; leave empty to use each image's own. |
 | grafanaDashboard.additionalLabels | object | `{"grafana_dashboard":"1"}` | Labels added to the Grafana Dashboard ConfigMap so the Grafana sidecar discovers it. kube-prometheus-stack only matches `grafana_dashboard: "1"`; the standalone grafana chart matches any value. Set a key to `null` to drop it — an empty map merges with the default rather than replacing it. |
 | grafanaDashboard.enabled | bool | `true` | Enable or disable Grafana Dashboard configmap |
+| healthProbe.port | int | `8081` | Port used by the manager's liveness and readiness endpoints. Must be a valid TCP port and differ from port.number and, when webhooks are enabled, from webhook port 9443. |
 | image.pullPolicy | string | `"IfNotPresent"` | Specify a imagePullPolicy # Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent' # ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images |
 | image.registry | string | `"chrislusf"` |  |
 | image.repository | string | `"seaweedfs-operator"` |  |
@@ -34,8 +35,9 @@ A Helm chart for the seaweedfs-operator
 | podSecurityContext.fsGroup | int | `65532` |  |
 | podSecurityContext.runAsNonRoot | bool | `true` |  |
 | podSecurityContext.runAsUser | int | `65532` |  |
-| port.name | string | `"http"` | name of the container port to use for the Kubernete service and ingress |
-| port.number | int | `8080` | container port number to use for the Kubernete service and ingress |
+| podSecurityContext.seccompProfile.type | string | `"RuntimeDefault"` |  |
+| port.name | string | `"http"` | name of the container port to use for the Kubernete service and ingress. "health" is reserved for the manager health port, and when webhooks are enabled "https" is reserved for the webhook port. |
+| port.number | int | `8080` | container port number to use for the Kubernete service and ingress. When webhooks are enabled this must differ from webhook port 9443. |
 | rbac.create | bool | `true` | Create the Roles, ClusterRoles and bindings the chart would otherwise install. Set to false when RBAC is provisioned out-of-band (e.g., a restricted cluster where a platform team owns it). Two service accounts then need the equivalent permissions bound before install: the operator's, and the pre-install webhook certificate hook's, which blocks the release if it cannot reach its secret and the webhook configurations. Setting webhook.certManager.enabled removes that hook. |
 | rbac.serviceAccount.annotations | object | `{}` | Annotations to add to the service account |
 | rbac.serviceAccount.automount | bool | `true` | Automount service account token for the server service account |

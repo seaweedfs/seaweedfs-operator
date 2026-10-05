@@ -324,3 +324,94 @@ func TestCreateMasterStatefulSet_NoSecurityContextByDefault(t *testing.T) {
 		t.Fatalf("master container securityContext should default to nil, got %#v", c.SecurityContext)
 	}
 }
+
+// TestBuildSnapshotJob_PropagatesSecurityContext verifies snapshot Job wiring.
+func TestBuildSnapshotJob_PropagatesSecurityContext(t *testing.T) {
+	cluster := testCluster()
+	cluster.Spec.Filer = &seaweedv1.FilerSpec{Replicas: 1}
+	backup := &seaweedv1.SeaweedBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "snapshot", Namespace: "default"},
+		Spec: seaweedv1.SeaweedBackupSpec{
+			ClusterName:              cluster.Name,
+			StorageName:              "object-store",
+			PodSecurityContext:       samplePodSecurityContext(),
+			ContainerSecurityContext: sampleContainerSecurityContext(),
+		},
+	}
+
+	job, _ := buildSnapshotJob(cluster, "snapshot", backup, seaweedv1.BackupStorageSpec{})
+	assertSecurityContexts(t, job.Spec.Template.Spec, "snapshot")
+}
+
+// TestBuildRestoreJob_PropagatesSecurityContext verifies restore Job wiring.
+func TestBuildRestoreJob_PropagatesSecurityContext(t *testing.T) {
+	cluster := testCluster()
+	cluster.Spec.Filer = &seaweedv1.FilerSpec{Replicas: 1}
+	restore := &seaweedv1.SeaweedRestore{
+		ObjectMeta: metav1.ObjectMeta{Name: "restore", Namespace: "default"},
+		Spec: seaweedv1.SeaweedRestoreSpec{
+			ClusterName:              cluster.Name,
+			PodSecurityContext:       samplePodSecurityContext(),
+			ContainerSecurityContext: sampleContainerSecurityContext(),
+		},
+	}
+
+	job := buildRestoreJob(
+		cluster,
+		"restore",
+		restore,
+		seaweedv1.BackupStorageSpec{},
+		"",
+		"http://filer/restore.meta.gz",
+	)
+	assertSecurityContexts(t, job.Spec.Template.Spec, "restore")
+}
+
+// TestBuildBackupAndRestoreJobs_NoSecurityContextByDefault preserves existing
+// behavior when users do not opt into workload security contexts.
+func TestBuildBackupAndRestoreJobs_NoSecurityContextByDefault(t *testing.T) {
+	cluster := testCluster()
+	cluster.Spec.Filer = &seaweedv1.FilerSpec{Replicas: 1}
+	backup := &seaweedv1.SeaweedBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "snapshot", Namespace: "default"},
+		Spec: seaweedv1.SeaweedBackupSpec{
+			ClusterName: cluster.Name,
+			StorageName: "object-store",
+		},
+	}
+	restore := &seaweedv1.SeaweedRestore{
+		ObjectMeta: metav1.ObjectMeta{Name: "restore", Namespace: "default"},
+		Spec:       seaweedv1.SeaweedRestoreSpec{ClusterName: cluster.Name},
+	}
+
+	snapshotJob, _ := buildSnapshotJob(cluster, "snapshot", backup, seaweedv1.BackupStorageSpec{})
+	restoreJob := buildRestoreJob(
+		cluster,
+		"restore",
+		restore,
+		seaweedv1.BackupStorageSpec{},
+		"",
+		"http://filer/restore.meta.gz",
+	)
+	for name, pod := range map[string]corev1.PodSpec{
+		"snapshot": snapshotJob.Spec.Template.Spec,
+		"restore":  restoreJob.Spec.Template.Spec,
+	} {
+		if pod.SecurityContext != nil {
+			t.Errorf("%s pod securityContext should default to nil, got %#v", name, pod.SecurityContext)
+		}
+		if c := mainContainer(t, pod.Containers, name); c.SecurityContext != nil {
+			t.Errorf("%s container securityContext should default to nil, got %#v", name, c.SecurityContext)
+		}
+	}
+}
+
+// TestBuildAdminScriptCronJob_PropagatesSecurityContext verifies CronJob wiring.
+func TestBuildAdminScriptCronJob_PropagatesSecurityContext(t *testing.T) {
+	script := testAdminScript()
+	script.Spec.PodSecurityContext = samplePodSecurityContext()
+	script.Spec.ContainerSecurityContext = sampleContainerSecurityContext()
+
+	cron := (&AdminScriptReconciler{}).buildCronJob(script, testCluster())
+	assertSecurityContexts(t, cron.Spec.JobTemplate.Spec.Template.Spec, "weed-shell")
+}

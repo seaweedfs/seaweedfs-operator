@@ -12,3 +12,13 @@ spec:
   storageName: pvc
   # Filer subtree to snapshot.
   filerPath: /
+  # Optional pod and snapshot-container hardening. Choose runAsUser/fsGroup
+  # values that can write to the configured backup PVC.
+  # podSecurityContext:
+  #   seccompProfile:
+  #     type: RuntimeDefault
+  # containerSecurityContext:
+  #   allowPrivilegeEscalation: false
+  #   capabilities:
+  #     drop:
+  #       - ALL

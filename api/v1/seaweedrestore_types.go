@@ -17,6 +17,7 @@ limitations under the License.
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -58,6 +59,8 @@ type BackupSource struct {
 // via `fs.meta.load`. Exactly one of BackupName / BackupSource must be set.
 //
 // +kubebuilder:validation:XValidation:rule="has(self.backupName) != has(self.backupSource)",message="exactly one of backupName or backupSource must be set"
+// +kubebuilder:validation:XValidation:rule="has(self.podSecurityContext) == has(oldSelf.podSecurityContext) && (!has(self.podSecurityContext) || self.podSecurityContext == oldSelf.podSecurityContext)",message="podSecurityContext is immutable; create a new SeaweedRestore to use different settings"
+// +kubebuilder:validation:XValidation:rule="has(self.containerSecurityContext) == has(oldSelf.containerSecurityContext) && (!has(self.containerSecurityContext) || self.containerSecurityContext == oldSelf.containerSecurityContext)",message="containerSecurityContext is immutable; create a new SeaweedRestore to use different settings"
 type SeaweedRestoreSpec struct {
 	// ClusterName is the Seaweed CR, in the same namespace, to restore into.
 	// Immutable once set.
@@ -78,6 +81,16 @@ type SeaweedRestoreSpec struct {
 	// +optional
 	// +kubebuilder:default:="/"
 	FilerPath string `json:"filerPath,omitempty"`
+
+	// PodSecurityContext configures immutable pod-level security attributes for
+	// the restore Job. Unset fields retain Kubernetes defaults.
+	// +optional
+	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
+
+	// ContainerSecurityContext configures immutable security attributes for
+	// the restore container. Unset fields retain Kubernetes defaults.
+	// +optional
+	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 }
 
 // SeaweedRestoreStatus reflects the observed state of a restore.

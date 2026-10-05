@@ -148,7 +148,14 @@ func restoreScript(m *seaweedv1.Seaweed, localPath, filerURL, filerPath string) 
 // backupPodSpec assembles the shared one-container pod that runs `command`,
 // wiring TLS config, an emptyDir scratch dir, and (for filesystem storages)
 // the backup PVC.
-func backupPodSpec(m *seaweedv1.Seaweed, name, command string, st seaweedv1.BackupStorageSpec, mountPVC bool) corev1.PodSpec {
+func backupPodSpec(
+	m *seaweedv1.Seaweed,
+	name, command string,
+	st seaweedv1.BackupStorageSpec,
+	mountPVC bool,
+	podSecurityContext *corev1.PodSecurityContext,
+	containerSecurityContext *corev1.SecurityContext,
+) corev1.PodSpec {
 	scratchVol := corev1.Volume{
 		Name:         "scratch",
 		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
@@ -171,11 +178,13 @@ func backupPodSpec(m *seaweedv1.Seaweed, name, command string, st seaweedv1.Back
 		RestartPolicy:      corev1.RestartPolicyNever,
 		ImagePullSecrets:   m.Spec.ImagePullSecrets,
 		EnableServiceLinks: &enableServiceLinks,
+		SecurityContext:    podSecurityContext,
 		Containers: []corev1.Container{{
 			Name:            name,
 			Image:           backupImage(m),
 			ImagePullPolicy: m.Spec.ImagePullPolicy,
 			Command:         []string{"/bin/sh", "-ec", command},
+			SecurityContext: containerSecurityContext,
 			VolumeMounts:    mounts,
 		}},
 		Volumes: volumes,
@@ -185,7 +194,15 @@ func backupPodSpec(m *seaweedv1.Seaweed, name, command string, st seaweedv1.Back
 // buildSnapshotJob returns the metadata-snapshot Job for a SeaweedBackup.
 func buildSnapshotJob(m *seaweedv1.Seaweed, jobName string, backup *seaweedv1.SeaweedBackup, st seaweedv1.BackupStorageSpec) (*batchv1.Job, string) {
 	script, dest := snapshotScript(m, st, backup.Spec.ClusterName, backup.Name, backup.Spec.FilerPath)
-	pod := backupPodSpec(m, "snapshot", script, st, true)
+	pod := backupPodSpec(
+		m,
+		"snapshot",
+		script,
+		st,
+		true,
+		backup.Spec.PodSecurityContext,
+		backup.Spec.ContainerSecurityContext,
+	)
 	labels := map[string]string{
 		seaweedv1.LabelBackupCluster: backup.Spec.ClusterName,
 	}
@@ -199,7 +216,15 @@ func buildSnapshotJob(m *seaweedv1.Seaweed, jobName string, backup *seaweedv1.Se
 // localPath / filerURL is set by the caller depending on the storage type.
 func buildRestoreJob(m *seaweedv1.Seaweed, jobName string, restore *seaweedv1.SeaweedRestore, st seaweedv1.BackupStorageSpec, localPath, filerURL string) *batchv1.Job {
 	script := restoreScript(m, localPath, filerURL, restore.Spec.FilerPath)
-	pod := backupPodSpec(m, "restore", script, st, localPath != "")
+	pod := backupPodSpec(
+		m,
+		"restore",
+		script,
+		st,
+		localPath != "",
+		restore.Spec.PodSecurityContext,
+		restore.Spec.ContainerSecurityContext,
+	)
 	labels := map[string]string{seaweedv1.LabelBackupCluster: restore.Spec.ClusterName}
 	return newJob(restore.Namespace, jobName, labels, pod)
 }

@@ -154,6 +154,16 @@ type AdminScriptSpec struct {
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
+	// PodSecurityContext configures pod-level security attributes for each
+	// scheduled run. Unset fields retain Kubernetes defaults.
+	// +optional
+	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
+
+	// ContainerSecurityContext configures security attributes for the
+	// weed-shell container. Unset fields retain Kubernetes defaults.
+	// +optional
+	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
+
 	// ServiceAccountName runs the pod under a specific ServiceAccount. The
 	// operator does not create it. Defaults to the namespace default SA.
 	// +optional

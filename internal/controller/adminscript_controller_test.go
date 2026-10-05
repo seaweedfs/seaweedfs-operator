@@ -1,12 +1,17 @@
 package controller
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 	"github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
@@ -185,4 +190,43 @@ func TestBuildCronJobCredentialsSecret(t *testing.T) {
 			t.Errorf("envFrom secret = %q, want script-creds", name)
 		}
 	})
+}
+
+// TestCreateOrUpdateCronJobUpdatesSecurityContexts verifies that changing an
+// AdminScript updates the stored CronJob template used by future runs.
+func TestCreateOrUpdateCronJobUpdatesSecurityContexts(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := seaweedv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add Seaweed scheme: %v", err)
+	}
+	if err := batchv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add batch scheme: %v", err)
+	}
+
+	r := &AdminScriptReconciler{
+		Client:   fake.NewClientBuilder().WithScheme(scheme).Build(),
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(2),
+	}
+	ctx := context.Background()
+	script := testAdminScript()
+	cluster := testCluster()
+	initial := r.buildCronJob(script, cluster)
+	if _, err := r.createOrUpdateCronJob(ctx, script, initial); err != nil {
+		t.Fatalf("create initial CronJob: %v", err)
+	}
+
+	script.Spec.PodSecurityContext = samplePodSecurityContext()
+	script.Spec.ContainerSecurityContext = sampleContainerSecurityContext()
+	updated := r.buildCronJob(script, cluster)
+	if _, err := r.createOrUpdateCronJob(ctx, script, updated); err != nil {
+		t.Fatalf("update CronJob security contexts: %v", err)
+	}
+
+	stored := &batchv1.CronJob{}
+	key := types.NamespacedName{Name: updated.Name, Namespace: updated.Namespace}
+	if err := r.Get(ctx, key, stored); err != nil {
+		t.Fatalf("get updated CronJob: %v", err)
+	}
+	assertSecurityContexts(t, stored.Spec.JobTemplate.Spec.Template.Spec, "weed-shell")
 }

@@ -17,18 +17,26 @@ package manager
 import (
 	"bytes"
 	"io"
-	"os"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
+	"sigs.k8s.io/kustomize/api/krusty"
+	"sigs.k8s.io/kustomize/kyaml/filesys"
 )
 
+// TestManagerDeploymentSecurityContext verifies the Deployment produced by the
+// default Kustomize overlay, which is the manifest installed by make deploy.
 func TestManagerDeploymentSecurityContext(t *testing.T) {
-	data, err := os.ReadFile("manager.yaml")
+	kustomizer := krusty.MakeKustomizer(krusty.MakeDefaultOptions())
+	resources, err := kustomizer.Run(filesys.MakeFsOnDisk(), "../default")
 	if err != nil {
-		t.Fatalf("read manager manifest: %v", err)
+		t.Fatalf("build default Kustomize overlay: %v", err)
+	}
+	data, err := resources.AsYaml()
+	if err != nil {
+		t.Fatalf("serialize default Kustomize overlay: %v", err)
 	}
 
 	var deployment appsv1.Deployment
@@ -61,6 +69,7 @@ func TestManagerDeploymentSecurityContext(t *testing.T) {
 	assertManagerContainerSecurityContext(t, pod.Containers[0].SecurityContext)
 }
 
+// assertManagerPodSecurityContext checks the hardened pod-level defaults.
 func assertManagerPodSecurityContext(t *testing.T, securityContext *corev1.PodSecurityContext) {
 	t.Helper()
 	if securityContext == nil {
@@ -81,6 +90,7 @@ func assertManagerPodSecurityContext(t *testing.T, securityContext *corev1.PodSe
 	}
 }
 
+// assertManagerContainerSecurityContext checks the hardened manager-container defaults.
 func assertManagerContainerSecurityContext(t *testing.T, securityContext *corev1.SecurityContext) {
 	t.Helper()
 	if securityContext == nil {
@@ -109,6 +119,7 @@ func assertManagerContainerSecurityContext(t *testing.T, securityContext *corev1
 	}
 }
 
+// containsCapability reports whether the capability drop list contains want.
 func containsCapability(capabilities *corev1.Capabilities, want corev1.Capability) bool {
 	if capabilities == nil {
 		return false

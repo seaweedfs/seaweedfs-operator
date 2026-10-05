@@ -180,8 +180,10 @@ is scoped with `-dirPrefix`.
 
 `SeaweedBackup` and `SeaweedRestore` accept optional `podSecurityContext` and
 `containerSecurityContext` fields. They are copied to the generated Job pod and
-its `snapshot` or `restore` container without adding operator defaults. For
-example:
+its `snapshot` or `restore` container without adding operator defaults. These
+fields are immutable because the corresponding Job pod template cannot be
+updated after creation. Create a new backup or restore resource to use different
+security settings. For example:
 
 ```yaml
 spec:

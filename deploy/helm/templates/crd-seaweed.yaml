@@ -2449,6 +2449,16 @@ spec:
                 - clusterName
                 - storageName
               type: object
+              x-kubernetes-validations:
+                - message: podSecurityContext is immutable; create a new SeaweedBackup
+                    to use different settings
+                  rule: has(self.podSecurityContext) == has(oldSelf.podSecurityContext)
+                    && (!has(self.podSecurityContext) || self.podSecurityContext == oldSelf.podSecurityContext)
+                - message: containerSecurityContext is immutable; create a new SeaweedBackup
+                    to use different settings
+                  rule: has(self.containerSecurityContext) == has(oldSelf.containerSecurityContext)
+                    && (!has(self.containerSecurityContext) || self.containerSecurityContext
+                    == oldSelf.containerSecurityContext)
             status:
               properties:
                 completionTime:
@@ -3612,6 +3622,15 @@ spec:
               x-kubernetes-validations:
                 - message: exactly one of backupName or backupSource must be set
                   rule: has(self.backupName) != has(self.backupSource)
+                - message: podSecurityContext is immutable; create a new SeaweedRestore
+                    to use different settings
+                  rule: has(self.podSecurityContext) == has(oldSelf.podSecurityContext)
+                    && (!has(self.podSecurityContext) || self.podSecurityContext == oldSelf.podSecurityContext)
+                - message: containerSecurityContext is immutable; create a new SeaweedRestore
+                    to use different settings
+                  rule: has(self.containerSecurityContext) == has(oldSelf.containerSecurityContext)
+                    && (!has(self.containerSecurityContext) || self.containerSecurityContext
+                    == oldSelf.containerSecurityContext)
             status:
               properties:
                 completionTime:

@@ -945,6 +945,12 @@ spec:
 - Status surfaces `phase` (`Pending`/`Active`/`Suspended`), the managed
   `cronJobName`, and the CronJob's `lastScheduleTime`/`lastSuccessfulTime`.
 
+Opt-in security contexts for standalone backup, restore, and AdminScript
+workloads are tracked in
+[#409](https://github.com/seaweedfs/seaweedfs-operator/issues/409) and
+implemented by
+[#408](https://github.com/seaweedfs/seaweedfs-operator/pull/408).
+
 `kubectl get adminscripts` (short name `swas`) lists them. Example:
 `config/samples/seaweed_v1_adminscript.yaml`.
 

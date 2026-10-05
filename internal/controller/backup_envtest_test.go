@@ -125,6 +125,8 @@ func TestCELRestoreBackupNameXorSource(t *testing.T) {
 	_ = cli.Delete(ctx, ok)
 }
 
+// TestCELBackupImmutability verifies identity and workload security settings
+// cannot change after the snapshot resource is created.
 func TestCELBackupImmutability(t *testing.T) {
 	_, cli := mustEnvtest(t)
 	ctx := context.Background()
@@ -150,5 +152,48 @@ func TestCELBackupImmutability(t *testing.T) {
 	}
 	if got.Spec.FilerPath != "/" {
 		t.Errorf("expected default filerPath '/', got %q", got.Spec.FilerPath)
+	}
+
+	got.Spec.PodSecurityContext = samplePodSecurityContext()
+	if err := cli.Update(ctx, &got); err == nil {
+		t.Fatal("expected CEL to reject adding podSecurityContext after backup creation")
+	}
+	if err := cli.Get(ctx, client.ObjectKeyFromObject(bk), &got); err != nil {
+		t.Fatal(err)
+	}
+	got.Spec.ContainerSecurityContext = sampleContainerSecurityContext()
+	if err := cli.Update(ctx, &got); err == nil {
+		t.Fatal("expected CEL to reject adding containerSecurityContext after backup creation")
+	}
+}
+
+// TestCELRestoreSecurityContextImmutability verifies a restore requires a new
+// resource when its workload security settings need to change.
+func TestCELRestoreSecurityContextImmutability(t *testing.T) {
+	_, cli := mustEnvtest(t)
+	ctx := context.Background()
+
+	restore := &seaweedv1.SeaweedRestore{
+		ObjectMeta: metav1.ObjectMeta{GenerateName: "cel-rst-security-", Namespace: "default"},
+		Spec: seaweedv1.SeaweedRestoreSpec{
+			ClusterName: "c1",
+			BackupName:  "bk1",
+		},
+	}
+	if err := cli.Create(ctx, restore); err != nil {
+		t.Fatalf("create restore: %v", err)
+	}
+	defer func() { _ = cli.Delete(ctx, restore) }()
+
+	restore.Spec.PodSecurityContext = samplePodSecurityContext()
+	if err := cli.Update(ctx, restore); err == nil {
+		t.Fatal("expected CEL to reject adding podSecurityContext after restore creation")
+	}
+	if err := cli.Get(ctx, client.ObjectKeyFromObject(restore), restore); err != nil {
+		t.Fatal(err)
+	}
+	restore.Spec.ContainerSecurityContext = sampleContainerSecurityContext()
+	if err := cli.Update(ctx, restore); err == nil {
+		t.Fatal("expected CEL to reject adding containerSecurityContext after restore creation")
 	}
 }

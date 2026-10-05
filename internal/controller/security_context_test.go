@@ -325,6 +325,7 @@ func TestCreateMasterStatefulSet_NoSecurityContextByDefault(t *testing.T) {
 	}
 }
 
+// TestBuildSnapshotJob_PropagatesSecurityContext verifies snapshot Job wiring.
 func TestBuildSnapshotJob_PropagatesSecurityContext(t *testing.T) {
 	cluster := testCluster()
 	cluster.Spec.Filer = &seaweedv1.FilerSpec{Replicas: 1}
@@ -342,6 +343,7 @@ func TestBuildSnapshotJob_PropagatesSecurityContext(t *testing.T) {
 	assertSecurityContexts(t, job.Spec.Template.Spec, "snapshot")
 }
 
+// TestBuildRestoreJob_PropagatesSecurityContext verifies restore Job wiring.
 func TestBuildRestoreJob_PropagatesSecurityContext(t *testing.T) {
 	cluster := testCluster()
 	cluster.Spec.Filer = &seaweedv1.FilerSpec{Replicas: 1}
@@ -365,6 +367,8 @@ func TestBuildRestoreJob_PropagatesSecurityContext(t *testing.T) {
 	assertSecurityContexts(t, job.Spec.Template.Spec, "restore")
 }
 
+// TestBuildBackupAndRestoreJobs_NoSecurityContextByDefault preserves existing
+// behavior when users do not opt into workload security contexts.
 func TestBuildBackupAndRestoreJobs_NoSecurityContextByDefault(t *testing.T) {
 	cluster := testCluster()
 	cluster.Spec.Filer = &seaweedv1.FilerSpec{Replicas: 1}
@@ -402,6 +406,7 @@ func TestBuildBackupAndRestoreJobs_NoSecurityContextByDefault(t *testing.T) {
 	}
 }
 
+// TestBuildAdminScriptCronJob_PropagatesSecurityContext verifies CronJob wiring.
 func TestBuildAdminScriptCronJob_PropagatesSecurityContext(t *testing.T) {
 	script := testAdminScript()
 	script.Spec.PodSecurityContext = samplePodSecurityContext()

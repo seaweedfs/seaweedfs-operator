@@ -58,6 +58,8 @@ const (
 
 // SeaweedBackupSpec is a single, on-demand or scheduled, point-in-time filer
 // metadata snapshot (`fs.meta.save`) stored on a named backup storage.
+// +kubebuilder:validation:XValidation:rule="has(self.podSecurityContext) == has(oldSelf.podSecurityContext) && (!has(self.podSecurityContext) || self.podSecurityContext == oldSelf.podSecurityContext)",message="podSecurityContext is immutable; create a new SeaweedBackup to use different settings"
+// +kubebuilder:validation:XValidation:rule="has(self.containerSecurityContext) == has(oldSelf.containerSecurityContext) && (!has(self.containerSecurityContext) || self.containerSecurityContext == oldSelf.containerSecurityContext)",message="containerSecurityContext is immutable; create a new SeaweedBackup to use different settings"
 type SeaweedBackupSpec struct {
 	// ClusterName is the Seaweed CR, in the same namespace, to back up.
 	// Immutable once set.
@@ -76,13 +78,13 @@ type SeaweedBackupSpec struct {
 	// +kubebuilder:default:="/"
 	FilerPath string `json:"filerPath,omitempty"`
 
-	// PodSecurityContext configures pod-level security attributes for the
-	// snapshot Job. Unset fields retain Kubernetes defaults.
+	// PodSecurityContext configures immutable pod-level security attributes for
+	// the snapshot Job. Unset fields retain Kubernetes defaults.
 	// +optional
 	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
 
-	// ContainerSecurityContext configures security attributes for the
-	// snapshot container. Unset fields retain Kubernetes defaults.
+	// ContainerSecurityContext configures immutable security attributes for
+	// the snapshot container. Unset fields retain Kubernetes defaults.
 	// +optional
 	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 }

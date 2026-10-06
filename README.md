@@ -118,6 +118,11 @@ This operator uses `kustomize` for deployment. Please [install kustomize](https:
 
 By default, the defaulting and validation webhooks are disabled, so `make deploy` works on any cluster without `cert-manager`. We strongly recommend enabling the webhooks for production use.
 
+The Kustomize manager deployment uses the same hardened defaults as the Helm
+chart: it runs as the image's non-root user, applies the `RuntimeDefault`
+seccomp profile, disables privilege escalation, drops all Linux capabilities,
+and uses a read-only root filesystem.
+
 First clone the repository:
 
 ```bash

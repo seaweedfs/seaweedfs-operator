@@ -77,11 +77,13 @@ func (v *SeaweedCustomValidator) ValidateCreate(_ context.Context, obj *Seaweed)
 		errs = append(errs, errors.New("missing master spec"))
 	}
 
-	if obj.Spec.Volume == nil {
+	if obj.Spec.Volume == nil && len(obj.Spec.VolumeTopology) == 0 {
 		errs = append(errs, errors.New("missing volume spec"))
-	} else if err := obj.validateVolume(); err != nil {
+	}
+	if err := obj.validateVolume(); err != nil {
 		errs = append(errs, err)
 	}
+	errs = append(errs, obj.validateVolumeTopology()...)
 
 	errs = append(errs, obj.validateWorker()...)
 
@@ -104,11 +106,13 @@ func (v *SeaweedCustomValidator) ValidateUpdate(_ context.Context, _, obj *Seawe
 	seaweedlog.Info("validate update", "name", obj.Name)
 	errs := []error{}
 
-	if obj.Spec.Volume == nil {
+	if obj.Spec.Volume == nil && len(obj.Spec.VolumeTopology) == 0 {
 		errs = append(errs, errors.New("missing volume spec"))
-	} else if err := obj.validateVolume(); err != nil {
+	}
+	if err := obj.validateVolume(); err != nil {
 		errs = append(errs, err)
 	}
+	errs = append(errs, obj.validateVolumeTopology()...)
 	errs = append(errs, obj.validateWorker()...)
 	if err := obj.validateMasterPersistence(); err != nil {
 		errs = append(errs, err)
@@ -158,6 +162,23 @@ func (r *Seaweed) validateVolume() error {
 	}
 
 	return utilerrors.NewAggregate(errs)
+}
+
+// validateVolumeTopology checks each volume topology group; topology groups
+// always provision PVCs, so a positive storage request is required when the
+// group schedules replicas.
+func (r *Seaweed) validateVolumeTopology() []error {
+	errs := []error{}
+	for name, spec := range r.Spec.VolumeTopology {
+		if spec == nil {
+			errs = append(errs, fmt.Errorf("spec.volumeTopology[%s] must not be empty", name))
+			continue
+		}
+		if spec.Replicas > 0 && spec.Requests[corev1.ResourceStorage].Equal(resource.MustParse("0")) {
+			errs = append(errs, fmt.Errorf("spec.volumeTopology[%s] volume storage request cannot be zero", name))
+		}
+	}
+	return errs
 }
 
 // validateS3Exclusivity forbids setting both the standalone S3 gateway

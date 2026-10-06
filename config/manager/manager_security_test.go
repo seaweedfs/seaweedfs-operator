@@ -17,6 +17,7 @@ package manager
 import (
 	"bytes"
 	"io"
+	"slices"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -26,8 +27,7 @@ import (
 	"sigs.k8s.io/kustomize/kyaml/filesys"
 )
 
-// TestManagerDeploymentSecurityContext verifies the Deployment produced by the
-// default Kustomize overlay, which is the manifest installed by make deploy.
+// Checks the Deployment rendered by the default overlay applied by make deploy.
 func TestManagerDeploymentSecurityContext(t *testing.T) {
 	kustomizer := krusty.MakeKustomizer(krusty.MakeDefaultOptions())
 	resources, err := kustomizer.Run(filesys.MakeFsOnDisk(), "../default")
@@ -40,7 +40,6 @@ func TestManagerDeploymentSecurityContext(t *testing.T) {
 	}
 
 	var deployment appsv1.Deployment
-	found := false
 	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(data), 4096)
 	for {
 		var candidate appsv1.Deployment
@@ -54,23 +53,21 @@ func TestManagerDeploymentSecurityContext(t *testing.T) {
 			continue
 		}
 		deployment = candidate
-		found = true
 		break
 	}
-	if !found {
+	if deployment.Name == "" {
 		t.Fatal("manager manifest has no Deployment")
 	}
 
 	pod := deployment.Spec.Template.Spec
-	assertManagerPodSecurityContext(t, pod.SecurityContext)
+	assertPodSecurityContext(t, pod.SecurityContext)
 	if len(pod.Containers) != 1 {
 		t.Fatalf("manager Deployment has %d containers, want 1", len(pod.Containers))
 	}
-	assertManagerContainerSecurityContext(t, pod.Containers[0].SecurityContext)
+	assertContainerSecurityContext(t, pod.Containers[0].SecurityContext)
 }
 
-// assertManagerPodSecurityContext checks the hardened pod-level defaults.
-func assertManagerPodSecurityContext(t *testing.T, securityContext *corev1.PodSecurityContext) {
+func assertPodSecurityContext(t *testing.T, securityContext *corev1.PodSecurityContext) {
 	t.Helper()
 	if securityContext == nil {
 		t.Fatal("manager pod securityContext is nil")
@@ -90,44 +87,22 @@ func assertManagerPodSecurityContext(t *testing.T, securityContext *corev1.PodSe
 	}
 }
 
-// assertManagerContainerSecurityContext checks the hardened manager-container defaults.
-func assertManagerContainerSecurityContext(t *testing.T, securityContext *corev1.SecurityContext) {
+func assertContainerSecurityContext(t *testing.T, securityContext *corev1.SecurityContext) {
 	t.Helper()
 	if securityContext == nil {
 		t.Fatal("manager container securityContext is nil")
 	}
 	if securityContext.AllowPrivilegeEscalation == nil || *securityContext.AllowPrivilegeEscalation {
-		t.Errorf(
-			"manager container allowPrivilegeEscalation = %v, want false",
-			securityContext.AllowPrivilegeEscalation,
-		)
+		t.Errorf("manager container allowPrivilegeEscalation = %v, want false", securityContext.AllowPrivilegeEscalation)
 	}
 	if securityContext.ReadOnlyRootFilesystem == nil || !*securityContext.ReadOnlyRootFilesystem {
-		t.Errorf(
-			"manager container readOnlyRootFilesystem = %v, want true",
-			securityContext.ReadOnlyRootFilesystem,
-		)
+		t.Errorf("manager container readOnlyRootFilesystem = %v, want true", securityContext.ReadOnlyRootFilesystem)
 	}
 	if securityContext.RunAsNonRoot == nil || !*securityContext.RunAsNonRoot {
 		t.Errorf("manager container runAsNonRoot = %v, want true", securityContext.RunAsNonRoot)
 	}
-	if !containsCapability(securityContext.Capabilities, corev1.Capability("ALL")) {
-		t.Errorf(
-			"manager container capabilities.drop = %v, want ALL",
-			securityContext.Capabilities,
-		)
+	if securityContext.Capabilities == nil ||
+		!slices.Contains(securityContext.Capabilities.Drop, corev1.Capability("ALL")) {
+		t.Errorf("manager container capabilities.drop = %v, want ALL", securityContext.Capabilities)
 	}
-}
-
-// containsCapability reports whether the capability drop list contains want.
-func containsCapability(capabilities *corev1.Capabilities, want corev1.Capability) bool {
-	if capabilities == nil {
-		return false
-	}
-	for _, capability := range capabilities.Drop {
-		if capability == want {
-			return true
-		}
-	}
-	return false
 }

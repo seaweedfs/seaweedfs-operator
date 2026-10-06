@@ -121,10 +121,7 @@ By default, the defaulting and validation webhooks are disabled, so `make deploy
 The Kustomize manager deployment uses the same hardened defaults as the Helm
 chart: it runs as the image's non-root user, applies the `RuntimeDefault`
 seccomp profile, disables privilege escalation, drops all Linux capabilities,
-and uses a read-only root filesystem. This hardening is tracked in
-[#412](https://github.com/seaweedfs/seaweedfs-operator/issues/412) and
-implemented by
-[#413](https://github.com/seaweedfs/seaweedfs-operator/pull/413).
+and uses a read-only root filesystem.
 
 First clone the repository:
 

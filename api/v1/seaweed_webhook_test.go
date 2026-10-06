@@ -11,6 +11,7 @@ You may obtain a copy of the License at
 package v1
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -194,6 +195,71 @@ func TestValidateVolume(t *testing.T) {
 		sw.Spec.Volume = nil
 		if err := sw.validateVolume(); err != nil {
 			t.Fatalf("unexpected error for nil volume: %v", err)
+		}
+	})
+}
+
+func TestValidateVolumeTopologyOnly(t *testing.T) {
+	validator := &SeaweedCustomValidator{}
+
+	topologyGroup := func(storage string) *VolumeTopologySpec {
+		g := &VolumeTopologySpec{
+			Replicas:   1,
+			Rack:       "r1",
+			DataCenter: "dc1",
+		}
+		if storage != "" {
+			g.ResourceRequirements.Requests = corev1.ResourceList{
+				corev1.ResourceStorage: resource.MustParse(storage),
+			}
+		}
+		return g
+	}
+
+	t.Run("volume can be removed once volumeTopology holds the config", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.VolumeTopology = map[string]*VolumeTopologySpec{"dc1-r1": topologyGroup("1Gi")}
+		sw.Spec.Volume = nil
+		if _, err := validator.ValidateUpdate(context.Background(), sw, sw); err != nil {
+			t.Fatalf("topology-only CR should validate, got: %v", err)
+		}
+	})
+
+	t.Run("create accepts volumeTopology without volume", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume = nil
+		sw.Spec.VolumeTopology = map[string]*VolumeTopologySpec{"dc1-r1": topologyGroup("1Gi")}
+		if _, err := validator.ValidateCreate(context.Background(), sw); err != nil {
+			t.Fatalf("topology-only CR should validate, got: %v", err)
+		}
+	})
+
+	t.Run("neither volume nor volumeTopology is still rejected", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume = nil
+		_, err := validator.ValidateUpdate(context.Background(), sw, sw)
+		if err == nil || !strings.Contains(err.Error(), "missing volume spec") {
+			t.Fatalf("expected 'missing volume spec', got: %v", err)
+		}
+	})
+
+	t.Run("topology group without storage request is rejected", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume = nil
+		sw.Spec.VolumeTopology = map[string]*VolumeTopologySpec{"dc1-r1": topologyGroup("")}
+		_, err := validator.ValidateUpdate(context.Background(), sw, sw)
+		if err == nil || !strings.Contains(err.Error(), "storage request") {
+			t.Fatalf("expected storage request error, got: %v", err)
+		}
+	})
+
+	t.Run("nil topology group is rejected", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume = nil
+		sw.Spec.VolumeTopology = map[string]*VolumeTopologySpec{"dc1-r1": nil}
+		_, err := validator.ValidateUpdate(context.Background(), sw, sw)
+		if err == nil || !strings.Contains(err.Error(), "volumeTopology") {
+			t.Fatalf("expected volumeTopology error, got: %v", err)
 		}
 	})
 }

@@ -1,0 +1,22 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: BucketNotification
+metadata:
+  name: documents-events
+  namespace: media
+spec:
+  bucketRef:
+    name: documents
+  rules:
+    - name: incoming-created
+      prefix: incoming/
+      eventTypes: [create]
+      destination:
+        kafka:
+          brokers: ["kafka.messaging:9092"]
+          topic: documents-created
+    - name: docs-updated
+      eventTypes: [update]
+      destination:
+        kafka:
+          brokers: ["kafka.messaging:9092"]
+          topic: documents-updated

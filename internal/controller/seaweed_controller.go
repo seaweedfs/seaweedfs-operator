@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -187,7 +188,7 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return result, err
 	}
 
-	if done, result, err = r.ensureSeaweedIngress(seaweedCR); done {
+	if done, result, err = r.ensureSeaweedIngress(ctx, seaweedCR); done {
 		return result, err
 	}
 
@@ -516,7 +517,19 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 	totalReadyReplicas := int32(0)
 
 	// Check base volume spec
-	if seaweedCR.Spec.Volume != nil {
+	if len(seaweedCR.Spec.VolumeTopology) > 0 {
+		// Topology groups replace the flat workload entirely, so
+		// spec.volume.replicas is not a desired count anymore — while a
+		// leftover <name>-volume workload drains during migration, report
+		// what is actually still running rather than pinning status on
+		// replicas that will never be recreated.
+		legacyStatus, err := r.legacyFlatVolumeStatus(ctx, seaweedCR)
+		if err != nil {
+			return status, err
+		}
+		totalDesiredReplicas += legacyStatus.Replicas
+		totalReadyReplicas += legacyStatus.ReadyReplicas
+	} else if seaweedCR.Spec.Volume != nil {
 		var baseStatus seaweedv1.ComponentStatus
 		var err error
 		if seaweedCR.Spec.Volume.IsDaemonSet() {
@@ -548,6 +561,36 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 	status.Replicas = totalDesiredReplicas
 	status.ReadyReplicas = totalReadyReplicas
 	return status, nil
+}
+
+// legacyFlatVolumeStatus reports the live state of a flat <name>-volume
+// workload left behind by a move to spec.volumeTopology. Its current replica
+// count stands in for desired so the drain is visible in status and
+// converges to zero once retireFlatVolumeServers finishes.
+func (r *SeaweedReconciler) legacyFlatVolumeStatus(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (seaweedv1.ComponentStatus, error) {
+	name := seaweedCR.Name + "-volume"
+
+	sts := &appsv1.StatefulSet{}
+	err := r.Get(ctx, types.NamespacedName{Namespace: seaweedCR.Namespace, Name: name}, sts)
+	if err == nil && isOwnedBy(sts.OwnerReferences, seaweedCR.UID) {
+		return seaweedv1.ComponentStatus{
+			Replicas:      ptr.Deref(sts.Spec.Replicas, 0),
+			ReadyReplicas: sts.Status.ReadyReplicas,
+		}, nil
+	}
+	if err != nil && !errors.IsNotFound(err) {
+		return seaweedv1.ComponentStatus{}, err
+	}
+
+	ds := &appsv1.DaemonSet{}
+	err = r.Get(ctx, types.NamespacedName{Namespace: seaweedCR.Namespace, Name: name}, ds)
+	if err == nil && isOwnedBy(ds.OwnerReferences, seaweedCR.UID) {
+		return seaweedv1.ComponentStatus{
+			Replicas:      ds.Status.DesiredNumberScheduled,
+			ReadyReplicas: ds.Status.NumberReady,
+		}, nil
+	}
+	return seaweedv1.ComponentStatus{}, client.IgnoreNotFound(err)
 }
 
 func (r *SeaweedReconciler) reconcileVolumeClaimTemplates(ctx context.Context, seaweedCR *seaweedv1.Seaweed, existing, desired *appsv1.StatefulSet) error {

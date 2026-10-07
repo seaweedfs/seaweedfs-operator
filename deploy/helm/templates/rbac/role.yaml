@@ -106,6 +106,7 @@ rules:
   resources:
   - adminscripts
   - bucketlifecyclepolicies
+  - bucketnotifications
   - buckets
   - s3credentials
   - s3identities
@@ -128,6 +129,7 @@ rules:
   resources:
   - adminscripts/finalizers
   - bucketlifecyclepolicies/finalizers
+  - bucketnotifications/finalizers
   - buckets/finalizers
   - s3credentials/finalizers
   - s3identities/finalizers
@@ -144,6 +146,7 @@ rules:
   resources:
   - adminscripts/status
   - bucketlifecyclepolicies/status
+  - bucketnotifications/status
   - buckets/status
   - s3credentials/status
   - s3identities/status

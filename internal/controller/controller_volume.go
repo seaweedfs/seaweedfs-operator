@@ -469,6 +469,12 @@ func (r *SeaweedReconciler) topologyVolumeServersReady(ctx context.Context, m *s
 		if err != nil {
 			return false, err
 		}
+		// Status counts describe the generation the StatefulSet controller
+		// last processed — after a spec change they can still report the
+		// old revision until the rollout is observed.
+		if sts.Status.ObservedGeneration < sts.Generation {
+			return false, nil
+		}
 		// ReadyReplicas alone can still describe the pre-update revision
 		// while a template change is rolling out; UpdatedReplicas only
 		// reaches the desired count once every pod runs the new spec.

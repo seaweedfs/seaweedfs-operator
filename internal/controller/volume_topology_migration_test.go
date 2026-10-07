@@ -115,6 +115,7 @@ func seedReadyTopologySTS(t *testing.T, ctx context.Context, r *SeaweedReconcile
 	replicas := ptr.Deref(sts.Spec.Replicas, 0)
 	sts.Status.ReadyReplicas = replicas
 	sts.Status.UpdatedReplicas = replicas
+	sts.Status.ObservedGeneration = sts.Generation
 	if err := r.Status().Update(ctx, sts); err != nil {
 		t.Fatalf("mark topology StatefulSet ready: %v", err)
 	}
@@ -429,6 +430,35 @@ func TestEnsureVolumeServersTopologyRetiresFlatWorkload(t *testing.T) {
 		flat := &appsv1.StatefulSet{}
 		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume"}, flat); err != nil {
 			t.Fatalf("flat StatefulSet must be kept while topology rolls out: %v", err)
+		}
+	})
+
+	t.Run("stale-generation status holds flat retirement", func(t *testing.T) {
+		// Full replica counts that predate the last spec update do not
+		// prove the new pods are up.
+		fa := &fakeVolumeAdmin{counts: map[string]int{
+			volumeServerNodeAddress(m, 0): 0,
+		}}
+		r := newEvacTestReconciler(t, fa, m, flatVolumeSTS(m, 1))
+		seedReadyTopologySTS(t, ctx, r, m, "dc1")
+		sts := &appsv1.StatefulSet{}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume-dc1"}, sts); err != nil {
+			t.Fatalf("get topology StatefulSet: %v", err)
+		}
+		sts.Status.ObservedGeneration = sts.Generation - 1
+		if err := r.Status().Update(ctx, sts); err != nil {
+			t.Fatalf("revert observed generation: %v", err)
+		}
+
+		done, _, err := r.ensureVolumeServers(ctx, m)
+		if err != nil {
+			t.Fatalf("ensureVolumeServers: %v", err)
+		}
+		if !done {
+			t.Fatal("expected a hold while status lags the spec generation")
+		}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume"}, &appsv1.StatefulSet{}); err != nil {
+			t.Fatalf("flat StatefulSet must be kept while status is stale: %v", err)
 		}
 	})
 }

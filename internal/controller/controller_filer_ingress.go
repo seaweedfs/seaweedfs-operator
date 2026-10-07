@@ -79,10 +79,13 @@ func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1
 		})
 	}
 
-	// add ingress for volume servers
-	for i := 0; i < int(m.Spec.Volume.Replicas); i++ {
-		dep.Spec.Rules = append(dep.Spec.Rules, networkingv1.IngressRule{
-			Host: fmt.Sprintf("%s-volume-%d.%s", m.Name, i, *m.Spec.HostSuffix),
+	// Add one rule per volume server replica. Flat spec.volume is nil in
+	// topology-only deployments, and each topology group publishes per-replica
+	// Services named <name>-volume-<group>-<i> — the same names the pods
+	// advertise as -publicUrl when HostSuffix is set.
+	volumeRule := func(serviceName string) networkingv1.IngressRule {
+		return networkingv1.IngressRule{
+			Host: serviceName + "." + *m.Spec.HostSuffix,
 			IngressRuleValue: networkingv1.IngressRuleValue{
 				HTTP: &networkingv1.HTTPIngressRuleValue{
 					Paths: []networkingv1.HTTPIngressPath{
@@ -91,7 +94,7 @@ func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1
 							PathType: &pathType,
 							Backend: networkingv1.IngressBackend{
 								Service: &networkingv1.IngressServiceBackend{
-									Name: fmt.Sprintf("%s-volume-%d", m.Name, i),
+									Name: serviceName,
 									Port: networkingv1.ServiceBackendPort{
 										Number: seaweedv1.VolumeHTTPPort,
 									},
@@ -101,7 +104,20 @@ func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1
 					},
 				},
 			},
-		})
+		}
+	}
+	if m.Spec.Volume != nil {
+		for i := 0; i < int(m.Spec.Volume.Replicas); i++ {
+			dep.Spec.Rules = append(dep.Spec.Rules, volumeRule(fmt.Sprintf("%s-volume-%d", m.Name, i)))
+		}
+	}
+	for topologyName, topologySpec := range m.Spec.VolumeTopology {
+		if topologySpec == nil {
+			continue
+		}
+		for i := 0; i < int(topologySpec.Replicas); i++ {
+			dep.Spec.Rules = append(dep.Spec.Rules, volumeRule(fmt.Sprintf("%s-volume-%s-%d", m.Name, topologyName, i)))
+		}
 	}
 
 	// Set master instance as the owner and controller

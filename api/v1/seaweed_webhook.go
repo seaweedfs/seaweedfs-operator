@@ -24,7 +24,6 @@ import (
 	"regexp"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -157,8 +156,9 @@ func (r *Seaweed) validateVolume() error {
 		seen[clean] = true
 	}
 	// Storage request only provisions PVCs; with HostPath, zero is expected.
-	if !usesHostPath && vol.Requests[corev1.ResourceStorage].Equal(resource.MustParse("0")) {
-		errs = append(errs, errors.New("volume storage request cannot be zero"))
+	storage := vol.Requests[corev1.ResourceStorage]
+	if !usesHostPath && storage.Sign() <= 0 {
+		errs = append(errs, errors.New("volume storage request must be positive"))
 	}
 
 	return utilerrors.NewAggregate(errs)
@@ -166,7 +166,9 @@ func (r *Seaweed) validateVolume() error {
 
 // validateVolumeTopology checks each volume topology group; topology groups
 // always provision PVCs, so a positive storage request is required when the
-// group schedules replicas.
+// group schedules replicas. The check follows the controller's precedence
+// (getResourceRequirements): a group's own requests replace the flat
+// spec.volume.requests, and a group without requests inherits them.
 func (r *Seaweed) validateVolumeTopology() []error {
 	errs := []error{}
 	for name, spec := range r.Spec.VolumeTopology {
@@ -174,8 +176,13 @@ func (r *Seaweed) validateVolumeTopology() []error {
 			errs = append(errs, fmt.Errorf("spec.volumeTopology[%s] must not be empty", name))
 			continue
 		}
-		if spec.Replicas > 0 && spec.Requests[corev1.ResourceStorage].Equal(resource.MustParse("0")) {
-			errs = append(errs, fmt.Errorf("spec.volumeTopology[%s] volume storage request cannot be zero", name))
+		requests := spec.Requests
+		if len(requests) == 0 && r.Spec.Volume != nil {
+			requests = r.Spec.Volume.Requests
+		}
+		storage := requests[corev1.ResourceStorage]
+		if spec.Replicas > 0 && storage.Sign() <= 0 {
+			errs = append(errs, fmt.Errorf("spec.volumeTopology[%s] volume storage request must be positive", name))
 		}
 	}
 	return errs

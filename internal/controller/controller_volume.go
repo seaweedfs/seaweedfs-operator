@@ -4,13 +4,20 @@ import (
 	"context"
 	"errors"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 	label "github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
 )
@@ -20,7 +27,13 @@ func (r *SeaweedReconciler) ensureVolumeServers(ctx context.Context, seaweedCR *
 
 	// Check if using topology-aware volume deployment
 	if len(seaweedCR.Spec.VolumeTopology) > 0 {
-		return r.ensureVolumeServersWithTopology(ctx, seaweedCR)
+		if done, result, err = r.ensureVolumeServersWithTopology(ctx, seaweedCR); done {
+			return
+		}
+		// Topology groups take over volume duty entirely; retire a flat
+		// <name>-volume workload left over from before the migration so it
+		// does not keep running untracked.
+		return r.retireFlatVolumeServers(ctx, seaweedCR)
 	}
 
 	// Fallback to single volume server group (legacy behavior).
@@ -222,6 +235,103 @@ func (r *SeaweedReconciler) ensureVolumeServersWithTopology(ctx context.Context,
 	}
 
 	return
+}
+
+// retireFlatVolumeServers drains and removes the legacy <name>-volume
+// workload once spec.volumeTopology has taken over. The flat branch of
+// ensureVolumeServers is skipped whenever topology groups exist, so without
+// this the old StatefulSet and its Services keep running orphaned — and
+// getVolumeStatus no longer counts them once spec.volume is dropped.
+//
+// Scale-down is gated on the master's per-server volume counts, the same
+// mechanism used for ordinary scale-ins: a pod is removed only after its
+// data has drained onto the surviving (topology) servers. The flat Services
+// stay in place until the workload is gone because the pods register their
+// peer-Service DNS names with the master — pulling them mid-drain would
+// strand the evacuation traffic.
+func (r *SeaweedReconciler) retireFlatVolumeServers(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	log := r.Log.WithValues("sw-volume-retire", seaweedCR.Name)
+	name := seaweedCR.Name + "-volume"
+
+	// A DaemonSet-mode flat deployment has no ordinal drain path; remove it
+	// the way the kind-transition cleanup does and let it clear first.
+	// hostPath data stays on the nodes — only the pods are removed.
+	staleDaemonSet := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: seaweedCR.Namespace}}
+	if existed, err := r.deleteIfExists(ctx, staleDaemonSet); err != nil {
+		return ReconcileResult(err)
+	} else if existed {
+		log.Info("waiting for prior volume DaemonSet deletion before retiring flat services")
+		return true, ctrl.Result{Requeue: true}, nil
+	}
+
+	sts := &appsv1.StatefulSet{}
+	err := r.Get(ctx, types.NamespacedName{Namespace: seaweedCR.Namespace, Name: name}, sts)
+	switch {
+	case err == nil:
+		// desired=0 shrinks the set only as servers drain; the gate starts
+		// background evacuations for any still-populated server.
+		allowed, err := r.allowedVolumeServerReplicas(ctx, seaweedCR, name, 0,
+			func(ord int32) string { return volumeServerNodeAddress(seaweedCR, ord) })
+		if err != nil {
+			return ReconcileResult(err)
+		}
+		if allowed > 0 {
+			if ptr.Deref(sts.Spec.Replicas, 0) != allowed {
+				sts.Spec.Replicas = ptr.To(allowed)
+				if err := r.Update(ctx, sts); err != nil {
+					return ReconcileResult(err)
+				}
+			}
+			log.Info("waiting for flat volume StatefulSet to drain before removal", "statefulset", name, "allowed", allowed)
+			return true, ctrl.Result{Requeue: true}, nil
+		}
+		if err := r.Delete(ctx, sts); err != nil {
+			return ReconcileResult(client.IgnoreNotFound(err))
+		}
+		log.Info("deleted flat volume StatefulSet superseded by volumeTopology", "statefulset", name)
+		return true, ctrl.Result{Requeue: true}, nil
+	case !apierrors.IsNotFound(err):
+		return ReconcileResult(err)
+	}
+
+	// The workload is gone: remove its peer and per-replica Services plus the
+	// flat ServiceMonitor. Topology resources carry the seaweedfs/topology
+	// label, so under these volume labels everything without it is stale.
+	services := &corev1.ServiceList{}
+	if err := r.List(ctx, services,
+		client.InNamespace(seaweedCR.Namespace),
+		client.MatchingLabels{
+			label.ManagedByLabelKey: "seaweedfs-operator",
+			label.ComponentLabelKey: "volume",
+			label.InstanceLabelKey:  seaweedCR.Name,
+		},
+	); err != nil {
+		return ReconcileResult(err)
+	}
+	for i := range services.Items {
+		svc := &services.Items[i]
+		if _, isTopology := svc.Labels["seaweedfs/topology"]; isTopology {
+			continue
+		}
+		if !isOwnedBy(svc.OwnerReferences, seaweedCR.UID) {
+			continue
+		}
+		log.Info("deleting flat volume service superseded by volumeTopology", "service", svc.Name)
+		if err := r.Delete(ctx, svc); err != nil && !apierrors.IsNotFound(err) {
+			return ReconcileResult(err)
+		}
+	}
+
+	monitor := &monitorv1.ServiceMonitor{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: seaweedCR.Namespace}}
+	if _, err := r.deleteIfExists(ctx, monitor); err != nil {
+		// Clusters without the Prometheus Operator CRD cannot hold a stale
+		// ServiceMonitor — treat the missing kind like a missing object.
+		if !meta.IsNoMatchError(err) && !runtime.IsNotRegisteredError(err) {
+			return ReconcileResult(err)
+		}
+	}
+
+	return ReconcileResult(nil)
 }
 
 func labelsForVolumeServer(name string) map[string]string {

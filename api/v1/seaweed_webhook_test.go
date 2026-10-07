@@ -104,8 +104,22 @@ func TestValidateVolume(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected rejection for zero storage request, got nil")
 		}
-		if !strings.Contains(err.Error(), "storage request cannot be zero") {
-			t.Fatalf("error does not mention zero storage request: %v", err)
+		if !strings.Contains(err.Error(), "storage request must be positive") {
+			t.Fatalf("error does not mention positive storage request: %v", err)
+		}
+	})
+
+	t.Run("PVC-backed volume with negative storage request is rejected", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume.Requests = corev1.ResourceList{
+			corev1.ResourceStorage: resource.MustParse("-1Gi"),
+		}
+		err := sw.validateVolume()
+		if err == nil {
+			t.Fatal("expected rejection for negative storage request, got nil")
+		}
+		if !strings.Contains(err.Error(), "storage request must be positive") {
+			t.Fatalf("error does not mention positive storage request: %v", err)
 		}
 	})
 
@@ -250,6 +264,48 @@ func TestValidateVolumeTopologyOnly(t *testing.T) {
 		_, err := validator.ValidateUpdate(context.Background(), sw, sw)
 		if err == nil || !strings.Contains(err.Error(), "storage request") {
 			t.Fatalf("expected storage request error, got: %v", err)
+		}
+	})
+
+	t.Run("topology group inherits storage request from spec.volume", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.VolumeTopology = map[string]*VolumeTopologySpec{"dc1-r1": topologyGroup("")}
+		if _, err := validator.ValidateCreate(context.Background(), sw); err != nil {
+			t.Fatalf("group inheriting spec.volume storage should validate, got: %v", err)
+		}
+	})
+
+	t.Run("topology group with non-storage requests does not inherit", func(t *testing.T) {
+		sw := baseValid()
+		g := topologyGroup("")
+		g.ResourceRequirements.Requests = corev1.ResourceList{
+			corev1.ResourceCPU: resource.MustParse("1"),
+		}
+		sw.Spec.VolumeTopology = map[string]*VolumeTopologySpec{"dc1-r1": g}
+		_, err := validator.ValidateCreate(context.Background(), sw)
+		if err == nil || !strings.Contains(err.Error(), "storage request") {
+			t.Fatalf("CPU-only requests replace the base; expected storage request error, got: %v", err)
+		}
+	})
+
+	t.Run("topology group with negative storage request is rejected", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume = nil
+		sw.Spec.VolumeTopology = map[string]*VolumeTopologySpec{"dc1-r1": topologyGroup("-1Gi")}
+		_, err := validator.ValidateUpdate(context.Background(), sw, sw)
+		if err == nil || !strings.Contains(err.Error(), "storage request") {
+			t.Fatalf("expected storage request error, got: %v", err)
+		}
+	})
+
+	t.Run("topology group with zero replicas needs no storage", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Volume = nil
+		g := topologyGroup("")
+		g.Replicas = 0
+		sw.Spec.VolumeTopology = map[string]*VolumeTopologySpec{"dc1-r1": g}
+		if _, err := validator.ValidateCreate(context.Background(), sw); err != nil {
+			t.Fatalf("zero-replica group should validate without storage, got: %v", err)
 		}
 	})
 

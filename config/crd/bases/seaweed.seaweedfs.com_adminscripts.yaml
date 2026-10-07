@@ -497,6 +497,10 @@ spec:
                 format: int32
                 minimum: 0
                 type: integer
+              clusterPodLabels:
+                additionalProperties:
+                  type: string
+                type: object
               clusterRef:
                 properties:
                   name:

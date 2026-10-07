@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -67,6 +69,10 @@ func (r *SeaweedReconciler) ensureVolumeServers(ctx context.Context, seaweedCR *
 		if done, result, err = r.ensureVolumeServerStatefulSet(ctx, seaweedCR); done {
 			return
 		}
+	}
+
+	if done, result, err = r.pruneStaleVolumeServices(ctx, seaweedCR); done {
+		return
 	}
 
 	if vol.MetricsPort != nil {
@@ -235,6 +241,10 @@ func (r *SeaweedReconciler) ensureVolumeServersWithTopology(ctx context.Context,
 		}
 	}
 
+	if done, result, err = r.pruneStaleVolumeServices(ctx, seaweedCR); done {
+		return
+	}
+
 	return
 }
 
@@ -373,6 +383,71 @@ func (r *SeaweedReconciler) retireFlatVolumeServers(ctx context.Context, seaweed
 	return ReconcileResult(nil)
 }
 
+// pruneStaleVolumeServices removes per-replica volume Services whose ordinal
+// no live workload wants anymore — e.g. test-volume-2 after a flat scale-in,
+// or test-volume-dc1-2 after a topology group shrank past index 2. The cutoff
+// is each workload's live StatefulSet spec.replicas, not the CR's desired
+// count: while evacuation holds a scale-down the pod is still up, still
+// registered under its Service DNS name, and still needs the Service.
+// Services whose workload StatefulSet is missing or not owned by this CR are
+// left alone — an orphaned group workload keeps serving on them.
+func (r *SeaweedReconciler) pruneStaleVolumeServices(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	services := &corev1.ServiceList{}
+	if err := r.List(ctx, services,
+		client.InNamespace(m.Namespace),
+		client.MatchingLabels{
+			label.ManagedByLabelKey: "seaweedfs-operator",
+			label.ComponentLabelKey: "volume",
+			label.InstanceLabelKey:  m.Name,
+		},
+	); err != nil {
+		return ReconcileResult(err)
+	}
+
+	prefix := m.Name + "-volume-"
+	for i := range services.Items {
+		svc := &services.Items[i]
+		if !isOwnedBy(svc.OwnerReferences, m.UID) {
+			continue
+		}
+		rest, ok := strings.CutPrefix(svc.Name, prefix)
+		if !ok || strings.HasSuffix(rest, "-peer") {
+			continue
+		}
+		// Per-replica names are <name>-volume-<i> (flat) and
+		// <name>-volume-<topology>-<i>. The ordinal is the last dash
+		// segment; a leading stem, when present, is the topology name —
+		// which may itself contain dashes.
+		workload := m.Name + "-volume"
+		ordStr := rest
+		if cut := strings.LastIndex(rest, "-"); cut >= 0 {
+			workload = fmt.Sprintf("%s-volume-%s", m.Name, rest[:cut])
+			ordStr = rest[cut+1:]
+		}
+		ord, err := strconv.Atoi(ordStr)
+		if err != nil {
+			continue
+		}
+
+		sts := &appsv1.StatefulSet{}
+		err = r.Get(ctx, types.NamespacedName{Namespace: m.Namespace, Name: workload}, sts)
+		if apierrors.IsNotFound(err) || (err == nil && !isOwnedBy(sts.OwnerReferences, m.UID)) {
+			continue
+		}
+		if err != nil {
+			return ReconcileResult(err)
+		}
+		if int32(ord) < ptr.Deref(sts.Spec.Replicas, 0) {
+			continue
+		}
+		r.Log.Info("deleting stale per-replica volume service", "service", svc.Name, "workload", workload, "replicas", ptr.Deref(sts.Spec.Replicas, 0))
+		if err := r.Delete(ctx, svc); err != nil && !apierrors.IsNotFound(err) {
+			return ReconcileResult(err)
+		}
+	}
+	return ReconcileResult(nil)
+}
+
 // topologyVolumeServersReady reports whether every topology group has all of
 // its replicas ready. Retiring the flat workload before the replacements can
 // serve would leave the cluster without volume capacity — the StatefulSets
@@ -394,7 +469,10 @@ func (r *SeaweedReconciler) topologyVolumeServersReady(ctx context.Context, m *s
 		if err != nil {
 			return false, err
 		}
-		if sts.Status.ReadyReplicas < topologySpec.Replicas {
+		// ReadyReplicas alone can still describe the pre-update revision
+		// while a template change is rolling out; UpdatedReplicas only
+		// reaches the desired count once every pod runs the new spec.
+		if sts.Status.UpdatedReplicas < topologySpec.Replicas || sts.Status.ReadyReplicas < topologySpec.Replicas {
 			return false, nil
 		}
 	}
@@ -416,14 +494,26 @@ func (r *SeaweedReconciler) flatDaemonSetDrained(ctx context.Context, m *seaweed
 	}
 
 	var nodes []string
+	unknown := false
 	for i := range pods.Items {
 		pod := &pods.Items[i]
-		if !metav1.IsControlledBy(pod, ds) || pod.Status.PodIP == "" {
+		if !metav1.IsControlledBy(pod, ds) {
+			continue
+		}
+		if pod.Status.PodIP == "" {
+			// A pod without an IP cannot be confirmed empty by the master.
+			// Only one finished for good and not being deleted is safe to
+			// ignore — a live or terminating pod may still hold populated
+			// hostPath data.
+			if pod.DeletionTimestamp != nil ||
+				(pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed) {
+				unknown = true
+			}
 			continue
 		}
 		nodes = append(nodes, fmt.Sprintf("%s:%d", pod.Status.PodIP, seaweedv1.VolumeHTTPPort))
 	}
-	if len(nodes) == 0 {
+	if len(nodes) == 0 && !unknown {
 		return true, nil
 	}
 
@@ -439,7 +529,7 @@ func (r *SeaweedReconciler) flatDaemonSetDrained(ctx context.Context, m *seaweed
 		return false, nil
 	}
 
-	drained := true
+	drained := !unknown
 	for _, node := range nodes {
 		n, known := counts[node]
 		if !known {

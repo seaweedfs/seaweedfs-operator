@@ -112,7 +112,9 @@ func seedReadyTopologySTS(t *testing.T, ctx context.Context, r *SeaweedReconcile
 	if err := r.Create(ctx, sts); err != nil {
 		t.Fatalf("create topology StatefulSet: %v", err)
 	}
-	sts.Status.ReadyReplicas = ptr.Deref(sts.Spec.Replicas, 0)
+	replicas := ptr.Deref(sts.Spec.Replicas, 0)
+	sts.Status.ReadyReplicas = replicas
+	sts.Status.UpdatedReplicas = replicas
 	if err := r.Status().Update(ctx, sts); err != nil {
 		t.Fatalf("mark topology StatefulSet ready: %v", err)
 	}
@@ -360,6 +362,174 @@ func TestEnsureVolumeServersTopologyRetiresFlatWorkload(t *testing.T) {
 		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume"}, &appsv1.DaemonSet{}); !apierrors.IsNotFound(err) {
 			t.Fatalf("flat DaemonSet should be deleted once drained, got err=%v", err)
 		}
+	})
+
+	t.Run("DaemonSet pod without an IP holds removal", func(t *testing.T) {
+		// A live or terminating pod with no PodIP cannot be confirmed empty
+		// by the master — its hostPath may still hold populated volumes.
+		ds, pod := flatDaemonSetWithPod(m, "test-volume-abcde", "")
+		pod.Status.Phase = corev1.PodPending
+		r := newEvacTestReconciler(t, &fakeVolumeAdmin{}, m, ds, pod)
+		seedReadyTopologySTS(t, ctx, r, m, "dc1")
+
+		done, _, err := r.ensureVolumeServers(ctx, m)
+		if err != nil {
+			t.Fatalf("ensureVolumeServers: %v", err)
+		}
+		if !done {
+			t.Fatal("expected the unknown pod state to hold reconciliation")
+		}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume"}, &appsv1.DaemonSet{}); err != nil {
+			t.Fatalf("DaemonSet must be kept while a live pod has no IP: %v", err)
+		}
+	})
+
+	t.Run("finished DaemonSet pod without an IP is ignored", func(t *testing.T) {
+		ds, pod := flatDaemonSetWithPod(m, "test-volume-abcde", "")
+		pod.Status.Phase = corev1.PodSucceeded
+		r := newEvacTestReconciler(t, &fakeVolumeAdmin{}, m, ds, pod)
+		seedReadyTopologySTS(t, ctx, r, m, "dc1")
+
+		done, _, err := r.ensureVolumeServers(ctx, m)
+		if err != nil {
+			t.Fatalf("ensureVolumeServers: %v", err)
+		}
+		if !done {
+			t.Fatal("expected a requeue while the DaemonSet is removed")
+		}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume"}, &appsv1.DaemonSet{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("flat DaemonSet should be deleted once its pod is finished, got err=%v", err)
+		}
+	})
+
+	t.Run("topology mid-rollout holds flat retirement", func(t *testing.T) {
+		// ReadyReplicas can still describe the old revision; a group whose
+		// template is rolling out is not usable replacement capacity.
+		fa := &fakeVolumeAdmin{counts: map[string]int{
+			volumeServerNodeAddress(m, 0): 0,
+		}}
+		r := newEvacTestReconciler(t, fa, m, flatVolumeSTS(m, 1))
+		seedReadyTopologySTS(t, ctx, r, m, "dc1")
+		sts := &appsv1.StatefulSet{}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume-dc1"}, sts); err != nil {
+			t.Fatalf("get topology StatefulSet: %v", err)
+		}
+		sts.Status.UpdatedReplicas = 0 // rolling update in progress
+		if err := r.Status().Update(ctx, sts); err != nil {
+			t.Fatalf("mark topology StatefulSet rolling: %v", err)
+		}
+
+		done, _, err := r.ensureVolumeServers(ctx, m)
+		if err != nil {
+			t.Fatalf("ensureVolumeServers: %v", err)
+		}
+		if !done {
+			t.Fatal("expected a hold while the topology group rolls out")
+		}
+		flat := &appsv1.StatefulSet{}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume"}, flat); err != nil {
+			t.Fatalf("flat StatefulSet must be kept while topology rolls out: %v", err)
+		}
+	})
+}
+
+// Per-replica Services outlive scale-ins because nothing pruned them; with
+// ingress hosts following live Services that meant dead routes. Pruning keys
+// off the workload's live replica count so a replica held for evacuation
+// keeps its Service until its pod is gone.
+func TestPruneStaleVolumeServices(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("topology scale-in prunes the dropped ordinal's service", func(t *testing.T) {
+		m := topologyOnlySeaweed()
+		// Live group is at 1 replica; a service for the already-removed
+		// ordinal 1 is left over from before the scale-in.
+		r := newEvacTestReconciler(t, &fakeVolumeAdmin{}, m)
+		seedReadyTopologySTS(t, ctx, r, m, "dc1")
+		for _, svc := range []*corev1.Service{
+			flatVolumeService("test-volume-dc1-0", "default", m.UID),
+			flatVolumeService("test-volume-dc1-1", "default", m.UID),
+		} {
+			svc.Labels["seaweedfs/topology"] = "dc1"
+			if err := r.Create(ctx, svc); err != nil {
+				t.Fatalf("create service %s: %v", svc.Name, err)
+			}
+		}
+
+		if _, _, err := r.pruneStaleVolumeServices(ctx, m); err != nil {
+			t.Fatalf("pruneStaleVolumeServices: %v", err)
+		}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume-dc1-0"}, &corev1.Service{}); err != nil {
+			t.Fatalf("live ordinal's service must stay: %v", err)
+		}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume-dc1-1"}, &corev1.Service{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("stale ordinal's service should be pruned, got err=%v", err)
+		}
+	})
+
+	t.Run("flat scale-in prunes only beyond the live replica count", func(t *testing.T) {
+		m := topologyOnlySeaweed()
+		m.Spec.Volume = &seaweedv1.VolumeSpec{Replicas: 1}
+		m.Spec.VolumeTopology = nil
+		r := newEvacTestReconciler(t, &fakeVolumeAdmin{}, m)
+		// Seed the workload from the desired object — a hand-rolled fixture
+		// without the claim templates would be deleted for recreation
+		// before pruning runs.
+		sts := r.createVolumeServerStatefulSet(m)
+		sts.OwnerReferences = []metav1.OwnerReference{controllerRef(m, "StatefulSet")}
+		if err := r.Create(ctx, sts); err != nil {
+			t.Fatalf("create flat StatefulSet: %v", err)
+		}
+		for _, name := range []string{"test-volume-0", "test-volume-1", "test-volume-peer"} {
+			if err := r.Create(ctx, flatVolumeService(name, "default", m.UID)); err != nil {
+				t.Fatalf("create service %s: %v", name, err)
+			}
+		}
+
+		if _, _, err := r.ensureVolumeServers(ctx, m); err != nil {
+			t.Fatalf("ensureVolumeServers: %v", err)
+		}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume-0"}, &corev1.Service{}); err != nil {
+			t.Fatalf("live ordinal's service must stay: %v", err)
+		}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume-1"}, &corev1.Service{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("stale ordinal's service should be pruned, got err=%v", err)
+		}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume-peer"}, &corev1.Service{}); err != nil {
+			t.Fatalf("peer service is not per-replica and must stay: %v", err)
+		}
+	})
+
+	t.Run("evacuation-held ordinals keep their services", func(t *testing.T) {
+		m := topologyOnlySeaweed()
+		m.Spec.Volume = &seaweedv1.VolumeSpec{Replicas: 1}
+		m.Spec.VolumeTopology = nil
+		// Mid-drain: desired 1, but the populated ordinal 1 holds the set
+		// at 2 — its pod still serves on test-volume-1.
+		fa := &fakeVolumeAdmin{counts: map[string]int{
+			volumeServerNodeAddress(m, 0): 0,
+			volumeServerNodeAddress(m, 1): 5,
+		}}
+		r := newEvacTestReconciler(t, fa, m)
+		sts := r.createVolumeServerStatefulSet(m)
+		sts.Spec.Replicas = ptr.To(int32(2))
+		sts.OwnerReferences = []metav1.OwnerReference{controllerRef(m, "StatefulSet")}
+		if err := r.Create(ctx, sts); err != nil {
+			t.Fatalf("create flat StatefulSet: %v", err)
+		}
+		for _, name := range []string{"test-volume-0", "test-volume-1"} {
+			if err := r.Create(ctx, flatVolumeService(name, "default", m.UID)); err != nil {
+				t.Fatalf("create service %s: %v", name, err)
+			}
+		}
+
+		if _, _, err := r.ensureVolumeServers(ctx, m); err != nil {
+			t.Fatalf("ensureVolumeServers: %v", err)
+		}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume-1"}, &corev1.Service{}); err != nil {
+			t.Fatalf("evacuation-held ordinal's service must stay: %v", err)
+		}
+		waitForEvacuation(t, fa, volumeServerNodeAddress(m, 1))
 	})
 }
 

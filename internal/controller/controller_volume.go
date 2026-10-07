@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -243,31 +244,65 @@ func (r *SeaweedReconciler) ensureVolumeServersWithTopology(ctx context.Context,
 // this the old StatefulSet and its Services keep running orphaned — and
 // getVolumeStatus no longer counts them once spec.volume is dropped.
 //
-// Scale-down is gated on the master's per-server volume counts, the same
-// mechanism used for ordinary scale-ins: a pod is removed only after its
-// data has drained onto the surviving (topology) servers. The flat Services
-// stay in place until the workload is gone because the pods register their
-// peer-Service DNS names with the master — pulling them mid-drain would
-// strand the evacuation traffic.
+// Removal is gated twice. First on replacement capacity: the topology groups
+// must have all their replicas ready, or an already-empty flat set would be
+// deleted into a window with no volume server serving. Then on data: the
+// StatefulSet scales down through the same evacuation gate used for ordinary
+// scale-ins, and a DaemonSet is held until every one of its pods registers
+// zero volumes — DaemonSet pods have no ordinals, so each is evacuated
+// individually. The flat Services stay in place until the workload is gone
+// because the pods register their Service names with the master — pulling
+// them mid-drain would strand the evacuation traffic.
+//
+// Objects sharing the generated name but not owned by this CR are left
+// alone throughout.
 func (r *SeaweedReconciler) retireFlatVolumeServers(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	log := r.Log.WithValues("sw-volume-retire", seaweedCR.Name)
 	name := seaweedCR.Name + "-volume"
+	key := types.NamespacedName{Namespace: seaweedCR.Namespace, Name: name}
 
-	// A DaemonSet-mode flat deployment has no ordinal drain path; remove it
-	// the way the kind-transition cleanup does and let it clear first.
-	// hostPath data stays on the nodes — only the pods are removed.
-	staleDaemonSet := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: seaweedCR.Namespace}}
-	if existed, err := r.deleteIfExists(ctx, staleDaemonSet); err != nil {
-		return ReconcileResult(err)
-	} else if existed {
-		log.Info("waiting for prior volume DaemonSet deletion before retiring flat services")
+	ds := &appsv1.DaemonSet{}
+	dsErr := r.Get(ctx, key, ds)
+	if dsErr != nil && !apierrors.IsNotFound(dsErr) {
+		return ReconcileResult(dsErr)
+	}
+	dsOwned := dsErr == nil && isOwnedBy(ds.OwnerReferences, seaweedCR.UID)
+
+	sts := &appsv1.StatefulSet{}
+	stsErr := r.Get(ctx, key, sts)
+	if stsErr != nil && !apierrors.IsNotFound(stsErr) {
+		return ReconcileResult(stsErr)
+	}
+	stsOwned := stsErr == nil && isOwnedBy(sts.OwnerReferences, seaweedCR.UID)
+
+	if dsOwned || stsOwned {
+		ready, err := r.topologyVolumeServersReady(ctx, seaweedCR)
+		if err != nil {
+			return ReconcileResult(err)
+		}
+		if !ready {
+			log.Info("waiting for topology volume servers to serve before retiring flat workload")
+			return true, ctrl.Result{Requeue: true}, nil
+		}
+	}
+
+	if dsOwned {
+		drained, err := r.flatDaemonSetDrained(ctx, seaweedCR, ds)
+		if err != nil {
+			return ReconcileResult(err)
+		}
+		if !drained {
+			log.Info("waiting for flat volume DaemonSet servers to drain", "daemonset", name)
+			return true, ctrl.Result{Requeue: true}, nil
+		}
+		if err := r.Delete(ctx, ds); err != nil {
+			return ReconcileResult(client.IgnoreNotFound(err))
+		}
+		log.Info("deleted flat volume DaemonSet superseded by volumeTopology", "daemonset", name)
 		return true, ctrl.Result{Requeue: true}, nil
 	}
 
-	sts := &appsv1.StatefulSet{}
-	err := r.Get(ctx, types.NamespacedName{Namespace: seaweedCR.Namespace, Name: name}, sts)
-	switch {
-	case err == nil:
+	if stsOwned {
 		// desired=0 shrinks the set only as servers drain; the gate starts
 		// background evacuations for any still-populated server.
 		allowed, err := r.allowedVolumeServerReplicas(ctx, seaweedCR, name, 0,
@@ -290,8 +325,6 @@ func (r *SeaweedReconciler) retireFlatVolumeServers(ctx context.Context, seaweed
 		}
 		log.Info("deleted flat volume StatefulSet superseded by volumeTopology", "statefulset", name)
 		return true, ctrl.Result{Requeue: true}, nil
-	case !apierrors.IsNotFound(err):
-		return ReconcileResult(err)
 	}
 
 	// The workload is gone: remove its peer and per-replica Services plus the
@@ -322,8 +355,14 @@ func (r *SeaweedReconciler) retireFlatVolumeServers(ctx context.Context, seaweed
 		}
 	}
 
-	monitor := &monitorv1.ServiceMonitor{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: seaweedCR.Namespace}}
-	if _, err := r.deleteIfExists(ctx, monitor); err != nil {
+	monitor := &monitorv1.ServiceMonitor{}
+	if err := r.Get(ctx, key, monitor); err == nil {
+		if isOwnedBy(monitor.OwnerReferences, seaweedCR.UID) {
+			if err := r.Delete(ctx, monitor); err != nil && !apierrors.IsNotFound(err) {
+				return ReconcileResult(err)
+			}
+		}
+	} else if !apierrors.IsNotFound(err) {
 		// Clusters without the Prometheus Operator CRD cannot hold a stale
 		// ServiceMonitor — treat the missing kind like a missing object.
 		if !meta.IsNoMatchError(err) && !runtime.IsNotRegisteredError(err) {
@@ -332,6 +371,88 @@ func (r *SeaweedReconciler) retireFlatVolumeServers(ctx context.Context, seaweed
 	}
 
 	return ReconcileResult(nil)
+}
+
+// topologyVolumeServersReady reports whether every topology group has all of
+// its replicas ready. Retiring the flat workload before the replacements can
+// serve would leave the cluster without volume capacity — the StatefulSets
+// being created does not establish readiness, since pods can still be
+// Pending on PVC binding or scheduling.
+func (r *SeaweedReconciler) topologyVolumeServersReady(ctx context.Context, m *seaweedv1.Seaweed) (bool, error) {
+	for topologyName, topologySpec := range m.Spec.VolumeTopology {
+		if topologySpec == nil || topologySpec.Replicas == 0 {
+			continue
+		}
+		sts := &appsv1.StatefulSet{}
+		err := r.Get(ctx, types.NamespacedName{
+			Namespace: m.Namespace,
+			Name:      fmt.Sprintf("%s-volume-%s", m.Name, topologyName),
+		}, sts)
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if sts.Status.ReadyReplicas < topologySpec.Replicas {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// flatDaemonSetDrained reports whether every pod the flat volume DaemonSet
+// still runs registers zero volumes with the master. DaemonSet pods register
+// as <podIP>:<volumePort> (they start with -ip=$(POD_IP)), so each is checked
+// individually; populated servers are evacuated in the background while a
+// server missing from the master's view is held rather than assumed empty.
+func (r *SeaweedReconciler) flatDaemonSetDrained(ctx context.Context, m *seaweedv1.Seaweed, ds *appsv1.DaemonSet) (bool, error) {
+	pods := &corev1.PodList{}
+	if err := r.List(ctx, pods,
+		client.InNamespace(m.Namespace),
+		client.MatchingLabels(labelsForVolumeServer(m.Name)),
+	); err != nil {
+		return false, err
+	}
+
+	var nodes []string
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if !metav1.IsControlledBy(pod, ds) || pod.Status.PodIP == "" {
+			continue
+		}
+		nodes = append(nodes, fmt.Sprintf("%s:%d", pod.Status.PodIP, seaweedv1.VolumeHTTPPort))
+	}
+	if len(nodes) == 0 {
+		return true, nil
+	}
+
+	// Without the master admin there is no drain signal to read; proceed the
+	// way the StatefulSet gate does when it is unwired.
+	if r.VolumeAdminFactory == nil || r.evac == nil {
+		return true, nil
+	}
+
+	counts, err := r.volumeServerVolumeCounts(ctx, m)
+	if err != nil {
+		r.Log.Error(err, "cannot read volume topology; holding flat DaemonSet removal", "daemonset", ds.Name)
+		return false, nil
+	}
+
+	drained := true
+	for _, node := range nodes {
+		n, known := counts[node]
+		if !known {
+			// Not registered with the master — cannot confirm it is empty.
+			drained = false
+			continue
+		}
+		if n > 0 {
+			drained = false
+			r.startVolumeServerEvacuation(ctx, m, node)
+		}
+	}
+	return drained, nil
 }
 
 func labelsForVolumeServer(name string) map[string]string {

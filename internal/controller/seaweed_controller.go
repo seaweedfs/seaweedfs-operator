@@ -188,7 +188,7 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return result, err
 	}
 
-	if done, result, err = r.ensureSeaweedIngress(seaweedCR); done {
+	if done, result, err = r.ensureSeaweedIngress(ctx, seaweedCR); done {
 		return result, err
 	}
 
@@ -572,19 +572,19 @@ func (r *SeaweedReconciler) legacyFlatVolumeStatus(ctx context.Context, seaweedC
 
 	sts := &appsv1.StatefulSet{}
 	err := r.Get(ctx, types.NamespacedName{Namespace: seaweedCR.Namespace, Name: name}, sts)
-	if err == nil {
+	if err == nil && isOwnedBy(sts.OwnerReferences, seaweedCR.UID) {
 		return seaweedv1.ComponentStatus{
 			Replicas:      ptr.Deref(sts.Spec.Replicas, 0),
 			ReadyReplicas: sts.Status.ReadyReplicas,
 		}, nil
 	}
-	if !errors.IsNotFound(err) {
+	if err != nil && !errors.IsNotFound(err) {
 		return seaweedv1.ComponentStatus{}, err
 	}
 
 	ds := &appsv1.DaemonSet{}
 	err = r.Get(ctx, types.NamespacedName{Namespace: seaweedCR.Namespace, Name: name}, ds)
-	if err == nil {
+	if err == nil && isOwnedBy(ds.OwnerReferences, seaweedCR.UID) {
 		return seaweedv1.ComponentStatus{
 			Replicas:      ds.Status.DesiredNumberScheduled,
 			ReadyReplicas: ds.Status.NumberReady,

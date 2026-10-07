@@ -1,16 +1,22 @@
 package controller
 
 import (
+	"context"
 	"fmt"
+	"sort"
+	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+	"github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
 )
 
-func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1.Ingress {
+func (r *SeaweedReconciler) createAllIngress(ctx context.Context, m *seaweedv1.Seaweed) (*networkingv1.Ingress, error) {
 	log := r.Log.WithValues("sw-create-ingress", m.Name)
 	labels := labelsForIngress(m.Name)
 	pathType := networkingv1.PathTypePrefix
@@ -79,10 +85,13 @@ func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1
 		})
 	}
 
-	// Add one rule per volume server replica. Flat spec.volume is nil in
-	// topology-only deployments, and each topology group publishes per-replica
-	// Services named <name>-volume-<group>-<i> — the same names the pods
-	// advertise as -publicUrl when HostSuffix is set.
+	// Add one rule per live per-replica volume Service: flat servers publish
+	// <name>-volume-<i>, topology groups <name>-volume-<group>-<i> — the same
+	// names the pods advertise as -publicUrl under HostSuffix. Rules follow
+	// the Services rather than the spec's replica counts so a pod held for
+	// evacuation keeps its host while it serves and a removed replica loses
+	// it as soon as its Service is gone. A list failure surfaces as an error
+	// instead of silently dropping the hosts for one pass.
 	volumeRule := func(serviceName string) networkingv1.IngressRule {
 		return networkingv1.IngressRule{
 			Host: serviceName + "." + *m.Spec.HostSuffix,
@@ -106,25 +115,39 @@ func (r *SeaweedReconciler) createAllIngress(m *seaweedv1.Seaweed) *networkingv1
 			},
 		}
 	}
-	if m.Spec.Volume != nil {
-		for i := 0; i < int(m.Spec.Volume.Replicas); i++ {
-			dep.Spec.Rules = append(dep.Spec.Rules, volumeRule(fmt.Sprintf("%s-volume-%d", m.Name, i)))
-		}
+	volumeServices := &corev1.ServiceList{}
+	if err := r.List(ctx, volumeServices,
+		client.InNamespace(m.Namespace),
+		client.MatchingLabels{
+			label.ManagedByLabelKey: "seaweedfs-operator",
+			label.ComponentLabelKey: "volume",
+			label.InstanceLabelKey:  m.Name,
+		},
+	); err != nil {
+		return nil, fmt.Errorf("list volume services for ingress rules: %w", err)
 	}
-	for topologyName, topologySpec := range m.Spec.VolumeTopology {
-		if topologySpec == nil {
+	var serviceNames []string
+	for i := range volumeServices.Items {
+		svc := &volumeServices.Items[i]
+		if !isOwnedBy(svc.OwnerReferences, m.UID) {
 			continue
 		}
-		for i := 0; i < int(topologySpec.Replicas); i++ {
-			dep.Spec.Rules = append(dep.Spec.Rules, volumeRule(fmt.Sprintf("%s-volume-%s-%d", m.Name, topologyName, i)))
+		if !strings.HasPrefix(svc.Name, m.Name+"-volume-") || strings.HasSuffix(svc.Name, "-peer") {
+			continue
 		}
+		serviceNames = append(serviceNames, svc.Name)
+	}
+	// Deterministic rule order so IngressEqual does not see a spurious diff.
+	sort.Strings(serviceNames)
+	for _, serviceName := range serviceNames {
+		dep.Spec.Rules = append(dep.Spec.Rules, volumeRule(serviceName))
 	}
 
 	// Set master instance as the owner and controller
 	if err := ctrl.SetControllerReference(m, dep, r.Scheme); err != nil {
 		log.Error(err, "set controller reference for Ingress failed")
 	}
-	return dep
+	return dep, nil
 }
 
 // s3IngressBackend returns the Service name and port the all-in-one

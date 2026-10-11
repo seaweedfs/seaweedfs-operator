@@ -70,6 +70,12 @@ type IngressSpec struct {
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 
+	// Labels to apply to the generated Ingress resource. Useful for
+	// controller selection, e.g. OpenShift route sharding via an
+	// IngressController routeSelector. Operator-managed labels take precedence.
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+
 	// TLS is a pass-through of Ingress TLS config (hostnames + secret).
 	// +optional
 	TLS []IngressTLS `json:"tls,omitempty"`

@@ -4361,6 +4361,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -6642,6 +6646,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -6695,6 +6703,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -6997,6 +7009,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -8587,6 +8603,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -10405,6 +10425,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -12134,6 +12158,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -13917,6 +13945,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string

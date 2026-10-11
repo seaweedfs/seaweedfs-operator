@@ -125,3 +125,91 @@ func TestEnsureComponentIngressesFilerGRPCDisabledAndPruned(t *testing.T) {
 		t.Fatalf("gRPC ingress should be pruned after opt-out, get err = %v", err)
 	}
 }
+
+func TestBuildComponentIngressLabels(t *testing.T) {
+	m := &seaweedv1.Seaweed{ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"}}
+	userLabels := map[string]string{
+		"type": "sharded",
+		// Reserved keys must not override operator values.
+		"app.kubernetes.io/managed-by": "someone-else",
+		"app.kubernetes.io/instance":   "other",
+	}
+	spec := &seaweedv1.IngressSpec{Enabled: true, Host: "h.example.com", Labels: userLabels}
+
+	ing := buildComponentIngress(m, "filer", "sw-filer", seaweedv1.FilerHTTPPort, spec)
+
+	want := map[string]string{
+		"type":                         "sharded",
+		"app.kubernetes.io/managed-by": componentIngressManagedByLabel,
+		"app.kubernetes.io/name":       "seaweedfs",
+		"app.kubernetes.io/instance":   "sw",
+		"app.kubernetes.io/component":  "filer",
+	}
+	if len(ing.Labels) != len(want) {
+		t.Fatalf("labels = %v, want %v", ing.Labels, want)
+	}
+	for k, v := range want {
+		if ing.Labels[k] != v {
+			t.Errorf("label %q = %q, want %q", k, ing.Labels[k], v)
+		}
+	}
+	if userLabels["app.kubernetes.io/managed-by"] != "someone-else" || len(userLabels) != 3 {
+		t.Errorf("spec labels were mutated: %v", userLabels)
+	}
+}
+
+func TestBuildComponentIngressNoUserLabels(t *testing.T) {
+	m := &seaweedv1.Seaweed{ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"}}
+	ing := buildComponentIngress(m, "master", "sw-master", seaweedv1.MasterHTTPPort,
+		&seaweedv1.IngressSpec{Enabled: true})
+	if len(ing.Labels) != 4 {
+		t.Errorf("labels = %v, want only the 4 operator labels", ing.Labels)
+	}
+}
+
+// Label edits must reach an existing Ingress, and dropped labels must be removed.
+func TestEnsureComponentIngressesLabelsUpdateAndRemove(t *testing.T) {
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns", UID: "test-uid"},
+		Spec: seaweedv1.SeaweedSpec{
+			Master: &seaweedv1.MasterSpec{
+				Replicas: 1,
+				Ingress: &seaweedv1.IngressSpec{
+					Enabled: true,
+					Host:    "master.example.com",
+					Labels:  map[string]string{"type": "sharded", "team": "a"},
+				},
+			},
+		},
+	}
+	r, _ := componentIngressTestReconciler(t, m)
+	key := types.NamespacedName{Name: "sw-master-ingress", Namespace: "ns"}
+
+	if _, _, err := r.ensureComponentIngresses(context.Background(), m); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ing := &networkingv1.Ingress{}
+	if err := r.Get(context.Background(), key, ing); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if ing.Labels["type"] != "sharded" || ing.Labels["team"] != "a" {
+		t.Fatalf("labels after create = %v", ing.Labels)
+	}
+
+	m.Spec.Master.Ingress.Labels = map[string]string{"type": "internal"}
+	if _, _, err := r.ensureComponentIngresses(context.Background(), m); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if err := r.Get(context.Background(), key, ing); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if ing.Labels["type"] != "internal" {
+		t.Errorf("type = %q, want internal", ing.Labels["type"])
+	}
+	if _, ok := ing.Labels["team"]; ok {
+		t.Errorf("stale label team still present: %v", ing.Labels)
+	}
+	if ing.Labels["app.kubernetes.io/managed-by"] != componentIngressManagedByLabel {
+		t.Errorf("operator labels lost: %v", ing.Labels)
+	}
+}

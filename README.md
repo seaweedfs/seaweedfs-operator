@@ -391,7 +391,7 @@ The `ingress:` block is available on `master`, `volume`, `filer`,
 | `className` | `IngressClassName`, e.g. `nginx`. |
 | `path` | Path prefix to serve. Defaults to `/`. |
 | `annotations` | Controller-specific annotations (cert-manager issuer, nginx body size, …). |
-| `labels` | Extra labels on the Ingress, e.g. `type: sharded` for an OpenShift `IngressController` `routeSelector`. Operator-managed `app.kubernetes.io/*` labels take precedence. |
+| `labels` | Extra labels on the Ingress, e.g. `type: sharded` for an OpenShift `IngressController` `routeSelector`. The operator's own `app.kubernetes.io/name`, `/instance`, `/component`, and `/managed-by` values take precedence. |
 | `tls` | List of `{hosts, secretName}` — terminates TLS using a `kubernetes.io/tls` Secret. |
 
 To reach the S3 API over an `https://` URL, enable the S3 API and give it a

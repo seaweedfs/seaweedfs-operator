@@ -1039,6 +1039,209 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.19.0
     helm.sh/resource-policy: keep
+  name: bucketnotifications.seaweed.seaweedfs.com
+spec:
+  group: seaweed.seaweedfs.com
+  names:
+    categories:
+      - seaweedfs
+    kind: BucketNotification
+    listKind: BucketNotificationList
+    plural: bucketnotifications
+    shortNames:
+      - swbn
+    singular: bucketnotification
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .spec.bucketRef.name
+          name: Bucket
+          type: string
+        - jsonPath: .status.phase
+          name: Phase
+          type: string
+        - jsonPath: .status.appliedRules
+          name: Rules
+          type: integer
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1
+      schema:
+        openAPIV3Schema:
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                bucketRef:
+                  properties:
+                    name:
+                      minLength: 1
+                      type: string
+                  required:
+                    - name
+                  type: object
+                  x-kubernetes-validations:
+                    - message: bucketRef is immutable
+                      rule: self == oldSelf
+                rules:
+                  items:
+                    properties:
+                      destination:
+                        properties:
+                          kafka:
+                            properties:
+                              brokers:
+                                items:
+                                  type: string
+                                minItems: 1
+                                type: array
+                              credentialsSecretRef:
+                                properties:
+                                  name:
+                                    default: ""
+                                    type: string
+                                type: object
+                                x-kubernetes-map-type: atomic
+                              topic:
+                                minLength: 1
+                                type: string
+                            required:
+                              - brokers
+                              - topic
+                            type: object
+                          webhook:
+                            properties:
+                              bearerTokenSecretRef:
+                                properties:
+                                  key:
+                                    type: string
+                                  name:
+                                    default: ""
+                                    type: string
+                                  optional:
+                                    type: boolean
+                                required:
+                                  - key
+                                type: object
+                                x-kubernetes-map-type: atomic
+                              endpoint:
+                                minLength: 1
+                                type: string
+                            required:
+                              - endpoint
+                            type: object
+                        type: object
+                        x-kubernetes-validations:
+                          - message: exactly one of kafka or webhook must be set
+                            rule: '(has(self.kafka) ? 1 : 0) + (has(self.webhook) ? 1 : 0) == 1'
+                      eventTypes:
+                        items:
+                          enum:
+                            - create
+                            - update
+                            - delete
+                            - rename
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: set
+                      name:
+                        maxLength: 63
+                        minLength: 1
+                        type: string
+                      prefix:
+                        type: string
+                    required:
+                      - destination
+                      - name
+                    type: object
+                  minItems: 1
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - name
+                  x-kubernetes-list-type: map
+              required:
+                - bucketRef
+                - rules
+              type: object
+            status:
+              properties:
+                appliedRules:
+                  format: int32
+                  type: integer
+                bucketName:
+                  type: string
+                clusterName:
+                  type: string
+                clusterNamespace:
+                  type: string
+                conditions:
+                  items:
+                    properties:
+                      lastTransitionTime:
+                        format: date-time
+                        type: string
+                      message:
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                        type: string
+                      type:
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
+                observedGeneration:
+                  format: int64
+                  type: integer
+                phase:
+                  enum:
+                    - Pending
+                    - Ready
+                    - Failed
+                    - Terminating
+                  type: string
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+    helm.sh/resource-policy: keep
   name: buckets.seaweed.seaweedfs.com
 spec:
   group: seaweed.seaweedfs.com

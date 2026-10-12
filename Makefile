@@ -31,7 +31,8 @@ endif
 # "./..." because on Windows controller-gen resolves a filesystem root through
 # filepath.Abs, which strips the trailing "..." and loads only the module root
 # (https://github.com/kubernetes-sigs/controller-tools/issues/1484).
-CONTROLLER_GEN_PATHS = $(shell go list -m)/...
+# GOWORK=off keeps a go.work that lists other modules from adding their paths.
+CONTROLLER_GEN_PATHS = $(shell GOWORK=off go list -m)/...
 
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is

@@ -66,15 +66,16 @@ test-helm-install: kind-prepare kind-load
 
 # Build manager binary
 manager: generate fmt vet
-	go build -ldflags="-s -w" -o bin/manager main.go
+	go build -ldflags="-s -w" -o bin/manager cmd/main.go
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run: generate fmt vet manifests
-	go run ./main.go
+	go run ./cmd/main.go
 
+# Build without optimizations or stripping so delve can map the binary back to source
 debug: generate fmt vet manifests
-	go build -ldflags="-s -w" -gcflags="all=-N -l" ./main.go
-	ENABLE_WEBHOOKS=false dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec main
+	go build -gcflags="all=-N -l" -o bin/manager-debug cmd/main.go
+	ENABLE_WEBHOOKS=false dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec bin/manager-debug
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen

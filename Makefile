@@ -27,6 +27,12 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+# Package pattern handed to controller-gen. It is an import path rather than
+# "./..." because on Windows controller-gen resolves a filesystem root through
+# filepath.Abs, which strips the trailing "..." and loads only the module root
+# (https://github.com/kubernetes-sigs/controller-tools/issues/1484).
+CONTROLLER_GEN_PATHS = $(shell go list -m)/...
+
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
@@ -78,7 +84,7 @@ debug: generate fmt vet manifests
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:maxDescLen=0 webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:maxDescLen=0 webhook paths="$(CONTROLLER_GEN_PATHS)" output:crd:artifacts:config=config/crd/bases
 	@# Fix invalid OpenAPI format fields (int32/int64 are not valid in OpenAPI v3)
 	@perl -i -pe 's/\s+format: int32\n//g; s/\s+format: int64\n//g' config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml
 
@@ -114,7 +120,7 @@ nilaway-lint: nilaway
 
 # Generate code
 generate: controller-gen
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="$(CONTROLLER_GEN_PATHS)"
 
 # Build the docker image
 .PHONY: docker-build

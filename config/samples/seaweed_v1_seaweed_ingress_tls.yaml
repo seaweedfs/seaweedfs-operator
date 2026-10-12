@@ -79,4 +79,4 @@ spec:
 #
 # For a standalone S3 gateway (scales independently of the filer) use the
 # top-level `s3:` block with its own `ingress:` instead of filer.s3Ingress —
-# the IngressSpec fields (host, className, annotations, tls) are identical.
+# the IngressSpec fields (host, className, annotations, labels, tls) are identical.

@@ -161,17 +161,20 @@ func buildComponentIngress(m *seaweedv1.Seaweed, component, serviceName string, 
 	if path == "" {
 		path = "/"
 	}
-	// The managed-by value is intentionally component-specific
+	labels := make(map[string]string, len(spec.Labels)+4)
+	for k, v := range spec.Labels {
+		labels[k] = v
+	}
+	// Set last so user labels cannot break the prune selector.
+	labels["app.kubernetes.io/managed-by"] = componentIngressManagedByLabel
+	labels["app.kubernetes.io/name"] = "seaweedfs"
+	labels["app.kubernetes.io/instance"] = m.Name
+	labels["app.kubernetes.io/component"] = component
+	// ^ The managed-by value is intentionally component-specific
 	// (seaweedfs-operator-component) rather than the generic
 	// "seaweedfs-operator" used elsewhere. This lets ensureComponentIngresses
 	// scope its prune List to Ingresses this code path owns without
 	// accidentally picking up the legacy HostSuffix all-in-one Ingress.
-	labels := map[string]string{
-		"app.kubernetes.io/managed-by": componentIngressManagedByLabel,
-		"app.kubernetes.io/name":       "seaweedfs",
-		"app.kubernetes.io/instance":   m.Name,
-		"app.kubernetes.io/component":  component,
-	}
 	rule := networkingv1.IngressRule{
 		Host: spec.Host,
 		IngressRuleValue: networkingv1.IngressRuleValue{

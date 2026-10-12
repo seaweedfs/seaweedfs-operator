@@ -82,6 +82,7 @@ var _ = Describe("Per-component Ingress", Ordered, func() {
 						Annotations: map[string]string{
 							"nginx.ingress.kubernetes.io/backend-protocol": "HTTP",
 						},
+						Labels: map[string]string{"type": "sharded"},
 					},
 				},
 				Volume: &seaweedv1.VolumeSpec{
@@ -181,6 +182,9 @@ var _ = Describe("Per-component Ingress", Ordered, func() {
 		Expect(*master.Spec.IngressClassName).To(Equal("nginx"))
 		Expect(master.Annotations).To(HaveKeyWithValue(
 			"nginx.ingress.kubernetes.io/backend-protocol", "HTTP"))
+		Expect(master.Labels).To(HaveKeyWithValue("type", "sharded"))
+		Expect(master.Labels).To(HaveKeyWithValue(
+			"app.kubernetes.io/managed-by", "seaweedfs-operator-component"))
 
 		By("pruning per-component Ingresses when they are removed from spec")
 		// Re-fetch so we edit the latest resourceVersion.

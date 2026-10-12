@@ -358,19 +358,19 @@ const componentConfigDir = "/etc/seaweedfs"
 // the same "no config, use the built-in defaults" state as an unset field.
 func configSecretVolumeAndMount(volumeName, fileName string, sel *corev1.SecretKeySelector) (corev1.Volume, corev1.VolumeMount) {
 	return corev1.Volume{
-			Name: volumeName,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: sel.Name,
-					Items:      []corev1.KeyToPath{{Key: sel.Key, Path: fileName}},
-					Optional:   sel.Optional,
-				},
+		Name: volumeName,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: sel.Name,
+				Items:      []corev1.KeyToPath{{Key: sel.Key, Path: fileName}},
+				Optional:   sel.Optional,
 			},
-		}, corev1.VolumeMount{
-			Name:      volumeName,
-			ReadOnly:  true,
-			MountPath: componentConfigDir,
-		}
+		},
+	}, corev1.VolumeMount{
+		Name:      volumeName,
+		ReadOnly:  true,
+		MountPath: componentConfigDir,
+	}
 }
 
 // tlsVolumesAndMounts returns the set of pod volumes and container mounts

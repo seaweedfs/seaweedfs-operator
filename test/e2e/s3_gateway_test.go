@@ -262,7 +262,11 @@ var _ = Describe("Standalone S3 gateway native HTTPS", Ordered, Label("integrati
 		defer close(stopCh)
 		Expect(utils.RunPortForward(restCfg, testNamespace, pod,
 			[]string{fmt.Sprintf("%d:%d", local, port)}, stopCh, readyCh)).To(Succeed())
-		<-readyCh
+		select {
+		case <-readyCh:
+		case <-time.After(30 * time.Second):
+			Fail("port-forward to pod " + pod + " was not ready in 30s")
+		}
 		resp, err := httpClient.Get(fmt.Sprintf("%s://127.0.0.1:%d/status", scheme, local))
 		if err != nil {
 			return 0, err

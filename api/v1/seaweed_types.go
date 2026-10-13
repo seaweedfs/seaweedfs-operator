@@ -179,6 +179,7 @@ type JWTExpiresAfterSecondsSpec struct {
 }
 
 // SeaweedSpec defines the desired state of Seaweed
+// +kubebuilder:validation:XValidation:rule="!(has(self.hostSuffix) && size(self.hostSuffix) > 0 && has(self.s3) && has(self.s3.httpsOnly) && self.s3.httpsOnly)",message="spec.s3.httpsOnly is not supported with spec.hostSuffix, which publishes S3 over HTTP"
 type SeaweedSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
@@ -579,6 +580,11 @@ type S3Config struct {
 // independently of the filer StatefulSet. This is the preferred way to
 // expose S3 — it can scale separately, use its own resources, and live
 // behind its own Ingress.
+// +kubebuilder:validation:XValidation:rule="has(self.httpsPort) == (has(self.tlsSecret) && has(self.tlsSecret.name) && size(self.tlsSecret.name) > 0)",message="httpsPort and tlsSecret.name must be set together"
+// +kubebuilder:validation:XValidation:rule="!has(self.httpsPort) || self.httpsPort != (has(self.port) ? self.port : 8333)",message="httpsPort must differ from port"
+// +kubebuilder:validation:XValidation:rule="!has(self.httpsPort) || !(self.httpsPort in [(has(self.port) ? self.port : 8333) + 10000, 8181, 9101] || (has(self.metricsPort) && self.httpsPort == self.metricsPort))",message="httpsPort must not collide with the gRPC port (port+10000), the Iceberg (8181) or Lance (9101) ports, or metricsPort"
+// +kubebuilder:validation:XValidation:rule="!(has(self.httpsOnly) && self.httpsOnly) || has(self.httpsPort)",message="httpsOnly requires httpsPort and tlsSecret"
+// +kubebuilder:validation:XValidation:rule="!(has(self.httpsOnly) && self.httpsOnly && has(self.ingress) && has(self.ingress.enabled) && self.ingress.enabled)",message="httpsOnly is not supported with ingress, which routes to the HTTP port"
 type S3GatewaySpec struct {
 	ComponentSpec               `json:",inline"`
 	corev1.ResourceRequirements `json:",inline"`
@@ -607,6 +613,33 @@ type S3GatewaySpec struct {
 	// Port overrides the default S3 HTTP port (8333).
 	// +optional
 	Port *int32 `json:"port,omitempty"`
+
+	// HTTPSPort adds an HTTPS listener on this port, exposed on the Service
+	// as "s3-https". Unless HTTPSOnly is set, the plain HTTP listener on
+	// Port keeps serving alongside it, including through a LoadBalancer
+	// Service. Requires TLSSecret.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	HTTPSPort *int32 `json:"httpsPort,omitempty"`
+
+	// HTTPSOnly turns off the plain HTTP listener: the gateway serves only
+	// HTTPS on HTTPSPort, the Service drops the "s3-http" port, and the
+	// probes switch to HTTPS. Requires HTTPSPort and TLSSecret. Not
+	// supported with Ingress or spec.hostSuffix, which route to the HTTP port.
+	// +optional
+	HTTPSOnly bool `json:"httpsOnly,omitempty"`
+
+	// TLSSecret names a Secret in the CR's namespace holding the server
+	// certificate (tls.crt) and private key (tls.key) the HTTPS listener
+	// presents, e.g. a kubernetes.io/tls Secret issued by cert-manager.
+	// Only those two keys are mounted, read-only at /etc/sw-s3-tls; the pod
+	// does not start if either is missing. weed re-reads them every 5 hours
+	// by default (WEED_TLS_CERT_REFRESH_INTERVAL in env overrides this).
+	// Independent of spec.tls, so it can come from a public CA that S3
+	// clients already trust. Requires HTTPSPort.
+	// +optional
+	TLSSecret *corev1.LocalObjectReference `json:"tlsSecret,omitempty"`
 
 	// DomainName is the suffix used for virtual-hosted-style buckets
 	// (`{bucket}.{domainName}`). Passed through to the weed s3 -domainName

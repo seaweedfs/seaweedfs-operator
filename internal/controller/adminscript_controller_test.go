@@ -230,3 +230,85 @@ func TestCreateOrUpdateCronJobUpdatesSecurityContexts(t *testing.T) {
 	}
 	assertSecurityContexts(t, stored.Spec.JobTemplate.Spec.Template.Spec, "weed-shell")
 }
+
+func clusterPod(name, clusterName string, labels map[string]string) *corev1.Pod {
+	base := labelsForMaster(clusterName)
+	for k, v := range labels {
+		base[k] = v
+	}
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default", Labels: base},
+	}
+}
+
+func TestSyncClusterPodLabelsLifecycle(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+
+	podA := clusterPod("master-0", "seaweed-sample", nil)
+	podB := clusterPod("volume-0", "seaweed-sample", map[string]string{"reboot-block": "other-owner"})
+	foreign := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "other-pod", Namespace: "default",
+			Labels: map[string]string{label.NameLabelKey: "seaweedfs", label.InstanceLabelKey: "other-cluster"}},
+	}
+
+	r := &AdminScriptReconciler{
+		Client:   fake.NewClientBuilder().WithScheme(scheme).WithObjects(podA, podB, foreign).Build(),
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(2),
+	}
+	ctx := context.Background()
+
+	script := testAdminScript()
+	script.Spec.ClusterPodLabels = map[string]string{"reboot-block": "adminscript"}
+	cluster := testCluster()
+
+	// Active run: labels applied, previous values recorded.
+	if err := r.syncClusterPodLabels(ctx, script, cluster, true); err != nil {
+		t.Fatalf("apply labels: %v", err)
+	}
+	got := &corev1.Pod{}
+	if err := r.Get(ctx, types.NamespacedName{Name: "master-0", Namespace: "default"}, got); err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	if got.Labels["reboot-block"] != "adminscript" {
+		t.Fatalf("expected label applied, got %v", got.Labels)
+	}
+	if err := r.Get(ctx, types.NamespacedName{Name: "volume-0", Namespace: "default"}, got); err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	if got.Labels["reboot-block"] != "adminscript" {
+		t.Fatalf("expected label overwritten, got %v", got.Labels)
+	}
+	if !strings.Contains(got.Annotations[adminScriptLabelBackupAnnotation], "other-owner") {
+		t.Fatalf("expected backup of previous value, got %v", got.Annotations)
+	}
+	if err := r.Get(ctx, types.NamespacedName{Name: "other-pod", Namespace: "default"}, got); err != nil {
+		t.Fatalf("get foreign pod: %v", err)
+	}
+	if _, ok := got.Labels["reboot-block"]; ok {
+		t.Fatalf("foreign cluster pod must not be labeled")
+	}
+
+	// Run finished: labels removed, prior values restored, annotation gone.
+	if err := r.syncClusterPodLabels(ctx, script, cluster, false); err != nil {
+		t.Fatalf("restore labels: %v", err)
+	}
+	if err := r.Get(ctx, types.NamespacedName{Name: "master-0", Namespace: "default"}, got); err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	if _, ok := got.Labels["reboot-block"]; ok {
+		t.Fatalf("expected label removed, got %v", got.Labels)
+	}
+	if _, ok := got.Annotations[adminScriptLabelBackupAnnotation]; ok {
+		t.Fatalf("expected backup annotation removed, got %v", got.Annotations)
+	}
+	if err := r.Get(ctx, types.NamespacedName{Name: "volume-0", Namespace: "default"}, got); err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	if got.Labels["reboot-block"] != "other-owner" {
+		t.Fatalf("expected previous value restored, got %v", got.Labels)
+	}
+}

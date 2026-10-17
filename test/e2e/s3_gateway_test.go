@@ -360,9 +360,13 @@ var _ = Describe("Standalone S3 gateway native HTTPS", Ordered, Label("integrati
 		// pod -> Service DNS name -> Service port -> endpoint, exercising the
 		// s3-https Service wiring rather than a pod port-forward. Polled for
 		// endpoint propagation after the rollout.
+		// Bound each attempt: Eventually runs callbacks synchronously, so a
+		// stuck exec or a hung TLS handshake would otherwise outlast the poll.
 		Eventually(func() error {
-			out, err := utils.Run(exec.Command("kubectl", "exec", "-n", testNamespace, pod, "-c", "s3", "--",
-				"curl", "-sf", "--cacert", "/etc/sw-s3-tls/tls.crt", fmt.Sprintf("https://%s:%d/status", serverName, httpsPort)))
+			attemptCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			defer cancel()
+			out, err := utils.Run(exec.CommandContext(attemptCtx, "kubectl", "exec", "-n", testNamespace, pod, "-c", "s3", "--",
+				"curl", "-sf", "--max-time", "10", "--cacert", "/etc/sw-s3-tls/tls.crt", fmt.Sprintf("https://%s:%d/status", serverName, httpsPort)))
 			if err != nil {
 				return fmt.Errorf("%v: %s", err, out)
 			}

@@ -358,10 +358,16 @@ var _ = Describe("Standalone S3 gateway native HTTPS", Ordered, Label("integrati
 
 		// The mounted cert doubles as the CA for curl, so this request goes
 		// pod -> Service DNS name -> Service port -> endpoint, exercising the
-		// s3-https Service wiring rather than a pod port-forward.
-		out, err := utils.Run(exec.Command("kubectl", "exec", "-n", testNamespace, pod, "-c", "s3", "--",
-			"curl", "-sf", "--cacert", "/etc/sw-s3-tls/tls.crt", fmt.Sprintf("https://%s:%d/status", serverName, httpsPort)))
-		Expect(err).NotTo(HaveOccurred(), "HTTPS via the Service failed: %s", out)
+		// s3-https Service wiring rather than a pod port-forward. Polled for
+		// endpoint propagation after the rollout.
+		Eventually(func() error {
+			out, err := utils.Run(exec.Command("kubectl", "exec", "-n", testNamespace, pod, "-c", "s3", "--",
+				"curl", "-sf", "--cacert", "/etc/sw-s3-tls/tls.crt", fmt.Sprintf("https://%s:%d/status", serverName, httpsPort)))
+			if err != nil {
+				return fmt.Errorf("%v: %s", err, out)
+			}
+			return nil
+		}, time.Minute, 5*time.Second).Should(Succeed())
 
 		// One forward carrying both ports: the HTTPS request proves the
 		// forward itself is healthy, so an error on the HTTP port means the

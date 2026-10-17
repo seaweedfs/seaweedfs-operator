@@ -269,17 +269,22 @@ var _ = Describe("Standalone S3 gateway native HTTPS", Ordered, Label("integrati
 		return func() { close(stopCh) }
 	}
 
-	// get calls /status on a pod port through a port-forward.
-	get := func(httpClient *http.Client, scheme, pod string, port int) (int, error) {
-		local, err := utils.GetFreePort()
-		Expect(err).NotTo(HaveOccurred())
-		defer forward(pod, fmt.Sprintf("%d:%d", local, port))()
+	// request calls /status on an already-forwarded local port.
+	request := func(httpClient *http.Client, scheme string, local int) (int, error) {
 		resp, err := httpClient.Get(fmt.Sprintf("%s://127.0.0.1:%d/status", scheme, local))
 		if err != nil {
 			return 0, err
 		}
 		_ = resp.Body.Close()
 		return resp.StatusCode, nil
+	}
+
+	// get calls /status on a pod port through a fresh port-forward.
+	get := func(httpClient *http.Client, scheme, pod string, port int) (int, error) {
+		local, err := utils.GetFreePort()
+		Expect(err).NotTo(HaveOccurred())
+		defer forward(pod, fmt.Sprintf("%d:%d", local, port))()
+		return request(httpClient, scheme, local)
 	}
 
 	It("serves HTTPS with and without HTTP and becomes ready", func() {
@@ -368,11 +373,8 @@ var _ = Describe("Standalone S3 gateway native HTTPS", Ordered, Label("integrati
 		defer forward(pod,
 			fmt.Sprintf("%d:%d", httpsLocal, httpsPort),
 			fmt.Sprintf("%d:8333", httpLocal))()
-		resp, err := httpsClient.Get(fmt.Sprintf("https://127.0.0.1:%d/status", httpsLocal))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
-		_ = resp.Body.Close()
-		_, err = httpClient.Get(fmt.Sprintf("http://127.0.0.1:%d/status", httpLocal))
+		Expect(request(httpsClient, "https", httpsLocal)).To(Equal(http.StatusOK))
+		_, err = request(httpClient, "http", httpLocal)
 		Expect(err).To(HaveOccurred(), "plain HTTP should be off with httpsOnly")
 	})
 })

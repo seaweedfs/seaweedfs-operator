@@ -10399,6 +10399,12 @@ spec:
                       x-kubernetes-list-type: atomic
                     hostNetwork:
                       type: boolean
+                    httpsOnly:
+                      type: boolean
+                    httpsPort:
+                      maximum: 65535
+                      minimum: 1
+                      type: integer
                     iam:
                       default: true
                       type: boolean
@@ -10616,6 +10622,13 @@ spec:
                       type: string
                     terminationGracePeriodSeconds:
                       type: integer
+                    tlsSecret:
+                      properties:
+                        name:
+                          default: ""
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
                     tolerations:
                       items:
                         properties:
@@ -11479,6 +11492,17 @@ spec:
                   required:
                     - replicas
                   type: object
+                  x-kubernetes-validations:
+                    - message: httpsPort and tlsSecret.name must be set together
+                      rule: has(self.httpsPort) == (has(self.tlsSecret) && has(self.tlsSecret.name) && size(self.tlsSecret.name) > 0)
+                    - message: httpsPort must differ from port
+                      rule: '!has(self.httpsPort) || self.httpsPort != (has(self.port) ? self.port : 8333)'
+                    - message: httpsPort must not collide with the gRPC port (port+10000), the Iceberg (8181) or Lance (9101) ports, or metricsPort
+                      rule: '!has(self.httpsPort) || !(self.httpsPort in [(has(self.port) ? self.port : 8333) + 10000, 8181, 9101] || (has(self.metricsPort) && self.httpsPort == self.metricsPort))'
+                    - message: httpsOnly requires httpsPort and tlsSecret
+                      rule: '!(has(self.httpsOnly) && self.httpsOnly) || has(self.httpsPort)'
+                    - message: httpsOnly is not supported with ingress, which routes to the HTTP port
+                      rule: '!(has(self.httpsOnly) && self.httpsOnly && has(self.ingress) && has(self.ingress.enabled) && self.ingress.enabled)'
                 schedulerName:
                   type: string
                 securityConfig:
@@ -18517,6 +18541,9 @@ spec:
                     - replicas
                   type: object
               type: object
+              x-kubernetes-validations:
+                - message: spec.s3.httpsOnly is not supported with spec.hostSuffix, which publishes S3 over HTTP
+                  rule: '!(has(self.hostSuffix) && size(self.hostSuffix) > 0 && has(self.s3) && has(self.s3.httpsOnly) && self.s3.httpsOnly)'
             status:
               properties:
                 admin:

@@ -83,3 +83,4 @@ testbin
 bin
 dist
 .claude/
+.DS_Store

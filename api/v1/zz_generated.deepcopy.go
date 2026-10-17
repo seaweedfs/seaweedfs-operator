@@ -1988,6 +1988,16 @@ func (in *S3GatewaySpec) DeepCopyInto(out *S3GatewaySpec) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.HTTPSPort != nil {
+		in, out := &in.HTTPSPort, &out.HTTPSPort
+		*out = new(int32)
+		**out = **in
+	}
+	if in.TLSSecret != nil {
+		in, out := &in.TLSSecret, &out.TLSSecret
+		*out = new(corev1.LocalObjectReference)
+		**out = **in
+	}
 	if in.DomainName != nil {
 		in, out := &in.DomainName, &out.DomainName
 		*out = new(string)

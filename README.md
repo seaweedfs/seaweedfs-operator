@@ -338,6 +338,10 @@ spec:
   s3:
     replicas: 1          # stateless — scale freely
     # port: 8333         # override the default S3 port
+    # httpsPort: 8334    # add an HTTPS listener (requires tlsSecret, see below)
+    # httpsOnly: true    # drop the plain HTTP listener
+    # tlsSecret:
+    #   name: seaweed-s3-server-tls
     # domainName: s3.example.com   # for virtual-hosted-style buckets
     # metricsPort: 9327  # enable the Prometheus listener + a ServiceMonitor
     configSecret:        # optional: S3 identities (the -s3.config equivalent)
@@ -354,6 +358,74 @@ Reach it in-cluster at `http://<cluster-name>-s3.<namespace>.svc:8333`. To expos
 it externally, set `spec.s3.service.type: LoadBalancer`, add an `spec.s3.ingress`
 block (see **Exposing the cluster via Ingress (TLS)** below), or use the top-level
 `hostSuffix`, which publishes `s3.<hostSuffix>` over HTTP.
+
+**Native HTTPS on the standalone gateway** — set `httpsPort` and `tlsSecret`
+together to have the gateway itself serve HTTPS, without an Ingress:
+
+```yaml
+spec:
+  s3:
+    replicas: 1
+    httpsPort: 8334
+    tlsSecret:
+      name: seaweed-s3-server-tls   # must contain tls.crt and tls.key
+```
+
+The operator mounts the Secret's `tls.crt` and `tls.key` read-only at
+`/etc/sw-s3-tls`, passes `-port.https`, `-cert.file` and `-key.file` to
+`weed s3`, and adds an `s3-https` port to the `<cluster-name>-s3` Service.
+Clients then use `https://<cluster-name>-s3.<namespace>.svc:8334`.
+
+- Plain HTTP keeps serving on `port` (8333) alongside HTTPS, and stays
+  published on the Service — including externally when
+  `spec.s3.service.type: LoadBalancer`. The readiness and liveness probes and
+  any `spec.s3.ingress` stay on it. To turn HTTP off, set `httpsOnly: true`
+  (below).
+- The Secret is any `kubernetes.io/tls`-shaped Secret: one you create with
+  `kubectl create secret tls`, or one cert-manager issues. Its certificate must
+  cover the hostnames clients connect with (for in-cluster use, e.g.
+  `<cluster-name>-s3.<namespace>.svc`). If the Secret lacks `tls.crt` or
+  `tls.key`, the pod stays in `ContainerCreating` with a mount error. A
+  `ca.crt` key, if present, is not mounted.
+- The gateway re-reads the certificate from disk every 5 hours by default, so
+  a rotated certificate can take that long to be served. cert-manager renews
+  well ahead of expiry, which covers this; for short-lived certificates,
+  shorten the interval with `WEED_TLS_CERT_REFRESH_INTERVAL` (any Go duration):
+
+  ```yaml
+  spec:
+    s3:
+      env:
+        - name: WEED_TLS_CERT_REFRESH_INTERVAL
+          value: 10m
+  ```
+- Clients must trust whichever CA issued `tls.crt`. With a public CA (e.g.
+  Let's Encrypt) nothing extra is needed; with a private CA, distribute that CA
+  certificate to clients (e.g. `aws --ca-bundle ca.crt`).
+- This is independent of `spec.tls`. The `spec.tls` mTLS material still secures
+  the gateway's gRPC traffic to the filer, while `tlsSecret` is only presented
+  to S3 clients, so they never have to trust the internal cluster CA.
+- The CRD rejects `httpsPort` without `tlsSecret` (and vice versa), and an
+  `httpsPort` equal to another port `weed s3` listens on: `port`, the gRPC
+  port (`port` + 10000), Iceberg (8181), Lance (9101), or `metricsPort`.
+
+**HTTPS-only** — add `httpsOnly: true` to serve S3 over HTTPS alone:
+
+```yaml
+spec:
+  s3:
+    replicas: 1
+    httpsPort: 8334
+    httpsOnly: true
+    tlsSecret:
+      name: seaweed-s3-server-tls
+```
+
+The gateway then listens only on `httpsPort`, the Service exposes only
+`s3-https`, and the probes call `/status` over HTTPS (kubelet does not verify
+the certificate). The gRPC port stays at `port` + 10000. `httpsOnly` requires
+`httpsPort` and `tlsSecret`, and the CRD rejects it together with
+`spec.s3.ingress` or `spec.hostSuffix`, both of which route to the HTTP port.
 
 **Embedded filer S3 (deprecated)** — the older `spec.filer.s3.enabled: true` runs
 S3 inside every filer pod and exposes it as the `filer-s3` port on the
@@ -437,7 +509,9 @@ putting the same `ingress:` block under the top-level `s3:` instead of
 
 > Note: this Ingress TLS terminates HTTPS at the Ingress controller. It is
 > separate from `spec.tls`, which provisions cert-manager-issued **mTLS**
-> between SeaweedFS components (master/volume/filer gRPC).
+> between SeaweedFS components (master/volume/filer gRPC). To have the
+> standalone gateway serve HTTPS itself, see `spec.s3.httpsPort` under
+> **S3 API** above.
 
 ### TLS Between Components (cert-manager)
 

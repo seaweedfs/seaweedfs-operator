@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -254,19 +255,25 @@ var _ = Describe("Standalone S3 gateway native HTTPS", Ordered, Label("integrati
 		return name
 	}
 
+	// forward opens a port-forward to pod for each local:remote pair and
+	// returns a teardown func.
+	forward := func(pod string, pairs ...string) func() {
+		stopCh, readyCh := make(chan struct{}), make(chan struct{})
+		Expect(utils.RunPortForward(restCfg, testNamespace, pod, pairs, stopCh, readyCh)).To(Succeed())
+		select {
+		case <-readyCh:
+		case <-time.After(30 * time.Second):
+			close(stopCh)
+			Fail("port-forward to pod " + pod + " was not ready in 30s")
+		}
+		return func() { close(stopCh) }
+	}
+
 	// get calls /status on a pod port through a port-forward.
 	get := func(httpClient *http.Client, scheme, pod string, port int) (int, error) {
 		local, err := utils.GetFreePort()
 		Expect(err).NotTo(HaveOccurred())
-		stopCh, readyCh := make(chan struct{}), make(chan struct{})
-		defer close(stopCh)
-		Expect(utils.RunPortForward(restCfg, testNamespace, pod,
-			[]string{fmt.Sprintf("%d:%d", local, port)}, stopCh, readyCh)).To(Succeed())
-		select {
-		case <-readyCh:
-		case <-time.After(30 * time.Second):
-			Fail("port-forward to pod " + pod + " was not ready in 30s")
-		}
+		defer forward(pod, fmt.Sprintf("%d:%d", local, port))()
 		resp, err := httpClient.Get(fmt.Sprintf("%s://127.0.0.1:%d/status", scheme, local))
 		if err != nil {
 			return 0, err
@@ -317,7 +324,7 @@ var _ = Describe("Standalone S3 gateway native HTTPS", Ordered, Label("integrati
 		httpsClient := &http.Client{
 			Timeout: 10 * time.Second,
 			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: serverName},
+				TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: serverName, MinVersion: tls.VersionTLS12},
 			},
 		}
 		httpClient := &http.Client{Timeout: 10 * time.Second}
@@ -343,7 +350,29 @@ var _ = Describe("Standalone S3 gateway native HTTPS", Ordered, Label("integrati
 		// against the httpsOnly listener.
 		pod = readyS3Pod("-port.grpc=")
 		Expect(get(httpsClient, "https", pod, 8334)).To(Equal(http.StatusOK))
-		_, err := get(httpClient, "http", pod, 8333)
+
+		// The mounted cert doubles as the CA for curl, so this request goes
+		// pod -> Service DNS name -> Service port -> endpoint, exercising the
+		// s3-https Service wiring rather than a pod port-forward.
+		out, err := utils.Run(exec.Command("kubectl", "exec", "-n", testNamespace, pod, "-c", "s3", "--",
+			"curl", "-sf", "--cacert", "/etc/sw-s3-tls/tls.crt", fmt.Sprintf("https://%s:%d/status", serverName, httpsPort)))
+		Expect(err).NotTo(HaveOccurred(), "HTTPS via the Service failed: %s", out)
+
+		// One forward carrying both ports: the HTTPS request proves the
+		// forward itself is healthy, so an error on the HTTP port means the
+		// gateway is really not listening there.
+		httpsLocal, err := utils.GetFreePort()
+		Expect(err).NotTo(HaveOccurred())
+		httpLocal, err := utils.GetFreePort()
+		Expect(err).NotTo(HaveOccurred())
+		defer forward(pod,
+			fmt.Sprintf("%d:%d", httpsLocal, httpsPort),
+			fmt.Sprintf("%d:8333", httpLocal))()
+		resp, err := httpsClient.Get(fmt.Sprintf("https://127.0.0.1:%d/status", httpsLocal))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		_ = resp.Body.Close()
+		_, err = httpClient.Get(fmt.Sprintf("http://127.0.0.1:%d/status", httpLocal))
 		Expect(err).To(HaveOccurred(), "plain HTTP should be off with httpsOnly")
 	})
 })

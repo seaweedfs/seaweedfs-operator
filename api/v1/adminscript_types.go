@@ -180,6 +180,16 @@ type AdminScriptSpec struct {
 	// Affinity applied to the run's pod.
 	// +optional
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+
+	// ClusterPodLabels are applied to every Pod belonging to the referenced
+	// cluster while one of this AdminScript's Jobs is running, and removed
+	// again — restoring any previously present value — when no run remains
+	// active. Use this to drive external automation for the duration of a
+	// run, e.g. blocking node reboots on every node holding Seaweed pods
+	// while ec.encode or ec.balance executes. The labels are also added to
+	// the script's own Job pod.
+	// +optional
+	ClusterPodLabels map[string]string `json:"clusterPodLabels,omitempty"`
 }
 
 // AdminScriptPhase summarises the AdminScript's lifecycle.

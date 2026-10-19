@@ -33,6 +33,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -43,6 +44,19 @@ import (
 // adminScriptRequeueAfter is the backoff used while the referenced Seaweed
 // cluster does not yet exist; the CronJob cannot be rendered until it does.
 const adminScriptRequeueAfter = 30 * time.Second
+
+// adminScriptLabelRequeue is the interval at which cluster pod labels are
+// re-checked while a run is active, so pods created mid-run are labeled too.
+const adminScriptLabelRequeue = 30 * time.Second
+
+// adminScriptLabelBackupAnnotation records, per AdminScript name, the labels
+// the controller overwrote on a pod so they can be restored when the run
+// ends. Value is JSON: {"<script name>": {"<label key>": "<old value>"|null}}.
+const adminScriptLabelBackupAnnotation = "seaweed.seaweedfs.com/adminscript-labels-backup"
+
+// adminScriptLabelsFinalizer restores cluster pod labels an AdminScript set
+// before the object is allowed to disappear.
+const adminScriptLabelsFinalizer = "seaweed.seaweedfs.com/adminscript-pod-labels"
 
 // AdminScriptReconciler reconciles an AdminScript into a native batch/v1
 // CronJob whose pod runs `weed shell` against the referenced cluster's
@@ -58,6 +72,7 @@ type AdminScriptReconciler struct {
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=adminscripts/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=adminscripts/finalizers,verbs=update
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;patch
 
 // Reconcile renders the CronJob for an AdminScript and mirrors the CronJob's
 // schedule status back onto the AdminScript.
@@ -71,11 +86,34 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Resolve the referenced cluster in the AdminScript's own namespace. The
 	// owned CronJob is garbage-collected automatically when the AdminScript
-	// is deleted, so no finalizer is needed.
+	// is deleted; only pod-label cleanup needs a finalizer.
 	var cluster seaweedv1.Seaweed
 	clusterKey := client.ObjectKey{Namespace: script.Namespace, Name: script.Spec.ClusterRef.Name}
-	if err := r.Get(ctx, clusterKey, &cluster); err != nil {
-		if apierrors.IsNotFound(err) {
+	clusterErr := r.Get(ctx, clusterKey, &cluster)
+
+	if !script.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(&script, adminScriptLabelsFinalizer) {
+			// The cluster may already be gone; the label selector only needs its name.
+			if clusterErr == nil {
+				if err := r.syncClusterPodLabels(ctx, &script, &cluster, false); err != nil {
+					return ctrl.Result{}, err
+				}
+			}
+			controllerutil.RemoveFinalizer(&script, adminScriptLabelsFinalizer)
+			return ctrl.Result{}, r.Update(ctx, &script)
+		}
+		return ctrl.Result{}, nil
+	}
+
+	if len(script.Spec.ClusterPodLabels) > 0 && !controllerutil.ContainsFinalizer(&script, adminScriptLabelsFinalizer) {
+		controllerutil.AddFinalizer(&script, adminScriptLabelsFinalizer)
+		if err := r.Update(ctx, &script); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	if clusterErr != nil {
+		if apierrors.IsNotFound(clusterErr) {
 			log.Info("referenced Seaweed cluster not found; waiting", "cluster", clusterKey)
 			msg := fmt.Sprintf("Seaweed cluster %q not found in namespace %q", clusterKey.Name, clusterKey.Namespace)
 			if err := r.patchStatus(ctx, &script, seaweedv1.AdminScriptPhasePending, metav1.ConditionFalse, "ClusterNotFound", msg); err != nil {
@@ -83,7 +121,7 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			}
 			return ctrl.Result{RequeueAfter: adminScriptRequeueAfter}, nil
 		}
-		return ctrl.Result{}, err
+		return ctrl.Result{}, clusterErr
 	}
 
 	desired := r.buildCronJob(&script, &cluster)
@@ -93,6 +131,10 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if statusErr := r.patchStatus(ctx, &script, seaweedv1.AdminScriptPhasePending, metav1.ConditionFalse, "CronJobReconcileFailed", err.Error()); statusErr != nil {
 			log.Error(statusErr, "failed to update status after CronJob reconcile error")
 		}
+		return ctrl.Result{}, err
+	}
+
+	if err := r.syncClusterPodLabels(ctx, &script, &cluster, len(cronJob.Status.Active) > 0); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -107,6 +149,11 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.patchStatus(ctx, &script, phase, metav1.ConditionTrue, reason, message); err != nil {
 		return ctrl.Result{}, err
 	}
+	if len(cronJob.Status.Active) > 0 && len(script.Spec.ClusterPodLabels) > 0 {
+		// Requeue so pods created mid-run get labeled too and a missed
+		// CronJob status event cannot leave the labels stuck on.
+		return ctrl.Result{RequeueAfter: adminScriptLabelRequeue}, nil
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -116,6 +163,13 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // `weed shell` can authenticate to the masters over gRPC.
 func (r *AdminScriptReconciler) buildCronJob(script *seaweedv1.AdminScript, cluster *seaweedv1.Seaweed) *batchv1.CronJob {
 	labels := labelsForAdminScript(script.Name)
+	podLabels := make(map[string]string, len(labels)+len(script.Spec.ClusterPodLabels))
+	for k, v := range labels {
+		podLabels[k] = v
+	}
+	for k, v := range script.Spec.ClusterPodLabels {
+		podLabels[k] = v
+	}
 
 	image := cluster.ClusterImage()
 	if script.Spec.Image != nil && *script.Spec.Image != "" {
@@ -183,7 +237,7 @@ func (r *AdminScriptReconciler) buildCronJob(script *seaweedv1.AdminScript, clus
 		BackoffLimit:          script.Spec.BackoffLimit,
 		ActiveDeadlineSeconds: script.Spec.ActiveDeadlineSeconds,
 		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{Labels: labels},
+			ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 			Spec:       podSpec,
 		},
 	}
@@ -259,6 +313,86 @@ func (r *AdminScriptReconciler) createOrUpdateCronJob(ctx context.Context, owner
 	}
 	r.Recorder.Eventf(owner, corev1.EventTypeNormal, "CronJobUpdated", "updated CronJob %q", existing.Name)
 	return existing, nil
+}
+
+// syncClusterPodLabels applies spec.clusterPodLabels to every pod of the
+// referenced cluster while a run is active, and restores the previously
+// recorded label state once no run remains. Backups per AdminScript are kept
+// in adminScriptLabelBackupAnnotation so multiple scripts can label the same
+// pods and a spec edit mid-run never loses the original values.
+func (r *AdminScriptReconciler) syncClusterPodLabels(ctx context.Context, script *seaweedv1.AdminScript, cluster *seaweedv1.Seaweed, active bool) error {
+	var pods corev1.PodList
+	if err := r.List(ctx, &pods, client.InNamespace(script.Namespace), client.MatchingLabels{
+		label.NameLabelKey:     "seaweedfs",
+		label.InstanceLabelKey: cluster.Name,
+	}); err != nil {
+		return err
+	}
+
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		backups := map[string]map[string]*string{}
+		if raw := pod.Annotations[adminScriptLabelBackupAnnotation]; raw != "" {
+			if err := json.Unmarshal([]byte(raw), &backups); err != nil {
+				backups = map[string]map[string]*string{}
+			}
+		}
+		base := pod.DeepCopy()
+		if active && len(script.Spec.ClusterPodLabels) > 0 {
+			backup := backups[script.Name]
+			if backup == nil {
+				backup = map[string]*string{}
+				backups[script.Name] = backup
+			}
+			if pod.Labels == nil {
+				pod.Labels = map[string]string{}
+			}
+			for k, v := range script.Spec.ClusterPodLabels {
+				if _, recorded := backup[k]; !recorded {
+					if old, ok := pod.Labels[k]; ok {
+						backup[k] = &old
+					} else {
+						backup[k] = nil
+					}
+				}
+				pod.Labels[k] = v
+			}
+			raw, err := json.Marshal(backups)
+			if err != nil {
+				return err
+			}
+			if pod.Annotations == nil {
+				pod.Annotations = map[string]string{}
+			}
+			pod.Annotations[adminScriptLabelBackupAnnotation] = string(raw)
+		} else if backup, ok := backups[script.Name]; ok {
+			for k, old := range backup {
+				if old == nil {
+					delete(pod.Labels, k)
+				} else {
+					pod.Labels[k] = *old
+				}
+			}
+			delete(backups, script.Name)
+			if len(backups) == 0 {
+				delete(pod.Annotations, adminScriptLabelBackupAnnotation)
+			} else {
+				raw, err := json.Marshal(backups)
+				if err != nil {
+					return err
+				}
+				pod.Annotations[adminScriptLabelBackupAnnotation] = string(raw)
+			}
+		}
+		if apiequality.Semantic.DeepEqual(base.Labels, pod.Labels) &&
+			apiequality.Semantic.DeepEqual(base.Annotations, pod.Annotations) {
+			continue
+		}
+		if err := r.Patch(ctx, pod, client.MergeFrom(base)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // applyCronJobStatus mirrors the CronJob's schedule status onto the AdminScript.

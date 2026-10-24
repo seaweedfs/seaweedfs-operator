@@ -14873,12 +14873,16 @@ spec:
             properties:
               admin:
                 properties:
+                  endpoint:
+                    type: string
                   readyReplicas:
                     minimum: 0
                     type: integer
                   replicas:
                     minimum: 0
                     type: integer
+                  service:
+                    type: string
                 type: object
               backupMirrors:
                 items:
@@ -14936,59 +14940,83 @@ spec:
                 x-kubernetes-list-type: map
               filer:
                 properties:
+                  endpoint:
+                    type: string
                   readyReplicas:
                     minimum: 0
                     type: integer
                   replicas:
                     minimum: 0
                     type: integer
+                  service:
+                    type: string
                 type: object
               master:
                 properties:
+                  endpoint:
+                    type: string
                   readyReplicas:
                     minimum: 0
                     type: integer
                   replicas:
                     minimum: 0
                     type: integer
+                  service:
+                    type: string
                 type: object
               observedGeneration:
                 type: integer
               s3:
                 properties:
+                  endpoint:
+                    type: string
                   readyReplicas:
                     minimum: 0
                     type: integer
                   replicas:
                     minimum: 0
                     type: integer
+                  service:
+                    type: string
                 type: object
               sftp:
                 properties:
+                  endpoint:
+                    type: string
                   readyReplicas:
                     minimum: 0
                     type: integer
                   replicas:
                     minimum: 0
                     type: integer
+                  service:
+                    type: string
                 type: object
               volume:
                 properties:
+                  endpoint:
+                    type: string
                   readyReplicas:
                     minimum: 0
                     type: integer
                   replicas:
                     minimum: 0
                     type: integer
+                  service:
+                    type: string
                 type: object
               worker:
                 properties:
+                  endpoint:
+                    type: string
                   readyReplicas:
                     minimum: 0
                     type: integer
                   replicas:
                     minimum: 0
                     type: integer
+                  service:
+                    type: string
                 type: object
             type: object
         type: object

@@ -60,7 +60,12 @@ func (r *SeaweedBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Terminal: nothing more to do once the status is complete. The owned Job
 	// is retained for log access and GC'd with the CR.
 	terminal := backup.Status.Phase == seaweedv1.BackupPhaseCompleted || backup.Status.Phase == seaweedv1.BackupPhaseFailed
-	if terminal && backup.Status.JobName != "" {
+	complete := backup.Status.JobName != "" &&
+		backup.Status.Destination != "" &&
+		backup.Status.StartTime != nil &&
+		backup.Status.CompletionTime != nil &&
+		backup.Status.ObservedGeneration == backup.Generation
+	if terminal && complete {
 		return ctrl.Result{}, nil
 	}
 

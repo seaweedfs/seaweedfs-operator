@@ -57,9 +57,10 @@ func (r *SeaweedBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Terminal: nothing more to do. The owned Job is retained for log access
-	// and GC'd with the CR.
-	if backup.Status.Phase == seaweedv1.BackupPhaseCompleted || backup.Status.Phase == seaweedv1.BackupPhaseFailed {
+	// Terminal: nothing more to do once the status is complete. The owned Job
+	// is retained for log access and GC'd with the CR.
+	terminal := backup.Status.Phase == seaweedv1.BackupPhaseCompleted || backup.Status.Phase == seaweedv1.BackupPhaseFailed
+	if terminal && backup.Status.JobName != "" {
 		return ctrl.Result{}, nil
 	}
 
@@ -82,6 +83,11 @@ func (r *SeaweedBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	err = r.Get(ctx, types.NamespacedName{Namespace: backup.Namespace, Name: jobName}, &job)
 	switch {
 	case apierrors.IsNotFound(err):
+		if terminal {
+			// The Job is gone, so there is nothing left to recover into the
+			// status; do not run another snapshot for a finished backup.
+			return ctrl.Result{}, nil
+		}
 		built, dest := buildSnapshotJob(&cluster, jobName, &backup, st)
 		if err := controllerutil.SetControllerReference(&backup, built, r.Scheme); err != nil {
 			return ctrl.Result{}, err
@@ -163,9 +169,12 @@ func markRunning(backup *seaweedv1.SeaweedBackup, jobName, destination string, s
 	return changed
 }
 
-// pending records a transient blocker and requeues.
+// pending records a transient blocker and requeues. A backup that already
+// reached a terminal phase keeps it; only the blocker condition is updated.
 func (r *SeaweedBackupReconciler) pending(ctx context.Context, backup *seaweedv1.SeaweedBackup, reason, msg string) (ctrl.Result, error) {
-	backup.Status.Phase = seaweedv1.BackupPhasePending
+	if backup.Status.Phase != seaweedv1.BackupPhaseCompleted && backup.Status.Phase != seaweedv1.BackupPhaseFailed {
+		backup.Status.Phase = seaweedv1.BackupPhasePending
+	}
 	meta.SetStatusCondition(&backup.Status.Conditions, metav1.Condition{
 		Type: seaweedv1.BackupConditionClusterReachable, Status: metav1.ConditionFalse,
 		ObservedGeneration: backup.Generation, Reason: reason, Message: msg,

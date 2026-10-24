@@ -112,7 +112,11 @@ func (r *SeaweedBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if dest == "" {
 		_, dest = snapshotScript(&cluster, st, backup.Spec.ClusterName, backup.Name, backup.Spec.FilerPath)
 	}
-	changed := markRunning(&backup, jobName, dest, job.CreationTimestamp)
+	startTime := job.CreationTimestamp
+	if job.Status.StartTime != nil {
+		startTime = *job.Status.StartTime
+	}
+	changed := markRunning(&backup, jobName, dest, startTime)
 
 	done, success := jobFinished(&job)
 	if !done {

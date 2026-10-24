@@ -21,9 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// BucketNotificationEventType classifies a filer metadata event, matching
-// the create/update/delete/rename taxonomy the filer's notification queues
-// use (see detectEventType in weed/notification/webhook).
+// BucketNotificationEventType classifies a filer metadata event.
 // +kubebuilder:validation:Enum=create;update;delete;rename
 type BucketNotificationEventType string
 
@@ -44,10 +42,8 @@ type BucketNotificationBucketRef struct {
 }
 
 // BucketNotificationKafkaDestination publishes matched events to a Kafka
-// topic. Each rule may target a different topic — and, once the
-// notification bridge supports it, a different broker list — which is what
-// distinguishes this from the single global [notification.kafka] block in
-// notification.toml.
+// topic. Each rule may target a different topic, unlike the single global
+// [notification.kafka] block in notification.toml.
 type BucketNotificationKafkaDestination struct {
 	// Brokers is the list of host:port bootstrap servers.
 	// +kubebuilder:validation:MinItems=1
@@ -60,9 +56,9 @@ type BucketNotificationKafkaDestination struct {
 	// CredentialsSecretRef references a Secret in the BucketNotification's
 	// namespace carrying SASL/TLS material for the broker connection.
 	// Recognized keys: sasl_username, sasl_password, sasl_mechanism,
-	// tls_ca_cert, tls_client_cert, tls_client_key. Omit for a plaintext,
-	// unauthenticated broker.
+	// tls_ca_cert, tls_client_cert, tls_client_key.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="self.name != ''",message="name must not be empty"
 	CredentialsSecretRef *corev1.LocalObjectReference `json:"credentialsSecretRef,omitempty"`
 }
 
@@ -74,8 +70,9 @@ type BucketNotificationWebhookDestination struct {
 	Endpoint string `json:"endpoint"`
 
 	// BearerTokenSecretRef references a Secret key holding the bearer token
-	// sent in the Authorization header. Omit for an unauthenticated endpoint.
+	// sent in the Authorization header.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="self.name != ''",message="name must not be empty"
 	BearerTokenSecretRef *corev1.SecretKeySelector `json:"bearerTokenSecretRef,omitempty"`
 }
 
@@ -96,9 +93,9 @@ type BucketNotificationDestination struct {
 // in the bucket matching the prefix and event-type filters are published to
 // the destination.
 type BucketNotificationRule struct {
-	// Name uniquely identifies the rule within this notification set. Rules
-	// on the same bucket must have unique names across all BucketNotification
-	// resources targeting it — the owning CR aggregates by name.
+	// Name uniquely identifies the rule within this notification set. Rule
+	// names must be unique across all BucketNotification resources targeting
+	// the same bucket — the earliest claim wins, the rest report a conflict.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	Name string `json:"name"`
@@ -139,7 +136,7 @@ type BucketNotificationSpec struct {
 // Condition types emitted by the bucket notification controller.
 const (
 	// BucketNotificationConditionReady summarises whether the rules are
-	// active for the bucket.
+	// delivered for the bucket.
 	BucketNotificationConditionReady = "Ready"
 	// BucketNotificationConditionBucketResolved reports whether bucketRef
 	// resolves to a provisioned Bucket.
@@ -180,7 +177,7 @@ type BucketNotificationStatus struct {
 	// +optional
 	ClusterNamespace string `json:"clusterNamespace,omitempty"`
 
-	// AppliedRules is the number of rules currently active on the bucket.
+	// AppliedRules is the number of rules delivered to the enforcement layer.
 	// +optional
 	AppliedRules int32 `json:"appliedRules,omitempty"`
 }
@@ -197,10 +194,8 @@ type BucketNotificationStatus struct {
 // notification rules on a SeaweedFS bucket — for example, publishing objects
 // created under one prefix to a Kafka topic while updates go to another.
 //
-// The controller resolves the referenced Bucket and validates the rules; the
-// events themselves are delivered by the operator-managed notification
-// bridge, which subscribes to the filer's metadata stream and fans out
-// per rule.
+// The controller resolves the referenced Bucket and validates the rules;
+// delivery is handled by the operator-managed notification bridge.
 type BucketNotification struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

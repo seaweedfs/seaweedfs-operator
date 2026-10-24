@@ -40,27 +40,19 @@ import (
 )
 
 // BucketNotificationReconciler resolves and validates BucketNotification
-// resources. Event delivery itself is performed by the notification bridge
-// (see https://github.com/seaweedfs/seaweedfs-operator/issues/410): this
-// reconciler establishes which rules apply to which bucket on which cluster
-// and surfaces conflicts; the bridge consumes the resulting resources and
-// fans matching filer events out to each rule's destination.
-//
-// TODO(#410): enforcement. Options under discussion are a bridge Deployment
-// per Seaweed cluster subscribing via the filer's SubscribeMetadata stream
-// (per-rule Kafka topics/webhooks work today), or rendering the aggregated
-// rules into a managed notification.toml once core supports multiple sinks.
-// When enforcement lands, this reconciler gains a finalizer plus whatever
-// cluster-side cleanup the chosen mechanism requires.
+// resources: it establishes which rules apply to which bucket on which
+// cluster and surfaces conflicts. Event delivery is performed by the
+// notification bridge, which consumes the resolved resources and fans
+// matching filer events out to each rule's destination.
 type BucketNotificationReconciler struct {
 	client.Client
 	Log      logr.Logger
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
 
-	// ResyncInterval is the steady-state cadence at which a Ready resource
-	// re-enters Reconcile. Zero disables the requeue. main.go defaults it to
-	// DefaultBucketResyncInterval.
+	// ResyncInterval is the steady-state cadence at which a resolved
+	// resource re-enters Reconcile. Zero disables the requeue. main.go
+	// defaults it to DefaultBucketResyncInterval.
 	ResyncInterval time.Duration
 }
 
@@ -71,21 +63,17 @@ type BucketNotificationReconciler struct {
 
 // Reconcile implements the notification reconciliation logic.
 func (r *BucketNotificationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
-	log := r.Log.WithValues("bucketnotification", req.NamespacedName)
-	_ = log
-
 	var notification seaweedv1.BucketNotification
 	if err := r.Get(ctx, req.NamespacedName, &notification); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !notification.DeletionTimestamp.IsZero() {
-		// Nothing external is owned yet; when enforcement lands this is where
-		// cluster-side cleanup happens under a finalizer.
 		return ctrl.Result{}, nil
 	}
 
 	// Persist status once, and only when it actually changed, so a no-op
-	// reconcile doesn't emit an update event.
+	// reconcile doesn't emit an update event (which would re-trigger this
+	// controller).
 	base := notification.Status.DeepCopy()
 	defer func() {
 		if err != nil || reflect.DeepEqual(*base, notification.Status) {
@@ -107,10 +95,12 @@ func (r *BucketNotificationReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	// A provisioned Bucket that later regresses keeps status.bucketName, so
+	// the name alone is not proof of readiness.
 	bucketName := bucket.Status.BucketName
-	if bucketName == "" {
+	if bucketName == "" || bucket.Status.Phase != seaweedv1.BucketPhaseReady || !bucket.DeletionTimestamp.IsZero() {
 		return r.pending(&notification, "BucketNotReady",
-			fmt.Sprintf("Bucket %q is not provisioned yet", notification.Spec.BucketRef.Name)), nil
+			fmt.Sprintf("Bucket %q is not provisioned and Ready (phase %q)", notification.Spec.BucketRef.Name, bucket.Status.Phase)), nil
 	}
 	r.setCondition(&notification, seaweedv1.BucketNotificationConditionBucketResolved, metav1.ConditionTrue, "Resolved", "")
 
@@ -140,22 +130,25 @@ func (r *BucketNotificationReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	r.clearCondition(&notification, seaweedv1.BucketNotificationConditionRuleConflict)
 
-	// TODO(#410): publish the resolved rule set to the enforcement layer
-	// (bridge config or rendered notification.toml).
-
+	// TODO: publish the resolved rule set to the enforcement layer (bridge
+	// config or rendered notification.toml). Until then nothing delivers the
+	// rules, so status reports resolution only — never Ready/active.
 	notification.Status.BucketName = bucketName
 	notification.Status.ClusterName = seaweed.Name
 	notification.Status.ClusterNamespace = seaweedNS
 	notification.Status.ObservedGeneration = notification.Generation
-	notification.Status.AppliedRules = int32(len(notification.Spec.Rules))
-	notification.Status.Phase = seaweedv1.BucketPhaseReady
-	r.setCondition(&notification, seaweedv1.BucketNotificationConditionReady, metav1.ConditionTrue, "Reconciled", "")
+	notification.Status.AppliedRules = 0
+	notification.Status.Phase = seaweedv1.BucketPhasePending
+	r.setCondition(&notification, seaweedv1.BucketNotificationConditionReady, metav1.ConditionFalse, "EnforcementUnavailable",
+		"bucket resolved, but rule delivery is not wired yet")
 	return ctrl.Result{RequeueAfter: r.ResyncInterval}, nil
 }
 
 // ruleConflict returns a message describing the first rule name on this
-// resource that another BucketNotification already claims for the same
-// bucket, or "" when there is no collision.
+// resource that an earlier BucketNotification already claims for the same
+// bucket, or "" when there is no collision. Only predecessors count, so a
+// colliding pair resolves deterministically: the earliest claim wins and
+// the later resource reports the conflict.
 func (r *BucketNotificationReconciler) ruleConflict(ctx context.Context, notification *seaweedv1.BucketNotification) (string, error) {
 	var peers seaweedv1.BucketNotificationList
 	if err := r.List(ctx, &peers, client.InNamespace(notification.Namespace)); err != nil {
@@ -164,6 +157,9 @@ func (r *BucketNotificationReconciler) ruleConflict(ctx context.Context, notific
 	for i := range peers.Items {
 		p := &peers.Items[i]
 		if p.Name == notification.Name || p.Spec.BucketRef.Name != notification.Spec.BucketRef.Name || !p.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if !notificationPrecedes(p, notification) {
 			continue
 		}
 		for _, mine := range notification.Spec.Rules {
@@ -177,12 +173,21 @@ func (r *BucketNotificationReconciler) ruleConflict(ctx context.Context, notific
 	return "", nil
 }
 
+// notificationPrecedes orders notifications by creation time, breaking ties
+// by name.
+func notificationPrecedes(a, b *seaweedv1.BucketNotification) bool {
+	if !a.CreationTimestamp.Equal(&b.CreationTimestamp) {
+		return a.CreationTimestamp.Before(&b.CreationTimestamp)
+	}
+	return a.Name < b.Name
+}
+
 // pending records a Pending phase with the dependency that is missing,
-// clearing readiness so a previously-Ready resource doesn't report stale
-// readiness once it can no longer reconcile. It requeues on the transient
-// cadence.
+// clearing readiness so a previously resolved resource doesn't report stale
+// state. It requeues on the transient cadence.
 func (r *BucketNotificationReconciler) pending(notification *seaweedv1.BucketNotification, reason, message string) ctrl.Result {
 	notification.Status.Phase = seaweedv1.BucketPhasePending
+	notification.Status.AppliedRules = 0
 	r.setCondition(notification, seaweedv1.BucketNotificationConditionBucketResolved, metav1.ConditionFalse, reason, message)
 	r.setCondition(notification, seaweedv1.BucketNotificationConditionReady, metav1.ConditionFalse, reason, message)
 	return ctrl.Result{RequeueAfter: requeueAfterTransient}
@@ -191,6 +196,7 @@ func (r *BucketNotificationReconciler) pending(notification *seaweedv1.BucketNot
 func (r *BucketNotificationReconciler) failPhase(notification *seaweedv1.BucketNotification, reason, message string) ctrl.Result {
 	r.Log.Info("reconcile failed", "reason", reason, "message", message)
 	notification.Status.Phase = seaweedv1.BucketPhaseFailed
+	notification.Status.AppliedRules = 0
 	r.setCondition(notification, seaweedv1.BucketNotificationConditionReady, metav1.ConditionFalse, reason, message)
 	return ctrl.Result{RequeueAfter: requeueAfterTransient}
 }
@@ -231,8 +237,8 @@ func (r *BucketNotificationReconciler) mapBucketToNotifications(ctx context.Cont
 }
 
 // mapNotificationToPeers enqueues the other notifications targeting the same
-// bucket so a conflict loser clears (or takes the name) promptly when a peer
-// changes or is deleted.
+// bucket so a conflict loser clears or claims a freed name promptly when a
+// peer changes or is deleted.
 func (r *BucketNotificationReconciler) mapNotificationToPeers(ctx context.Context, obj client.Object) []reconcile.Request {
 	changed, ok := obj.(*seaweedv1.BucketNotification)
 	if !ok {

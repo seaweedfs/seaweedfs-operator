@@ -73,6 +73,9 @@ spec:
                                   type: string
                               type: object
                               x-kubernetes-map-type: atomic
+                              x-kubernetes-validations:
+                              - message: name must not be empty
+                                rule: self.name != ''
                             topic:
                               minLength: 1
                               type: string
@@ -95,6 +98,9 @@ spec:
                               - key
                               type: object
                               x-kubernetes-map-type: atomic
+                              x-kubernetes-validations:
+                              - message: name must not be empty
+                                rule: self.name != ''
                             endpoint:
                               minLength: 1
                               type: string

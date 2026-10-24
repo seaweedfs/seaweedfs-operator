@@ -90,26 +90,20 @@ func (r *SeaweedBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, err
 		}
 		log.Info("created snapshot job", "job", jobName, "storage", backup.Spec.StorageName)
-		now := metav1.Now()
-		backup.Status.Phase = seaweedv1.BackupPhaseRunning
-		backup.Status.JobName = jobName
-		backup.Status.Destination = dest
-		backup.Status.StartTime = &now
-		backup.Status.ObservedGeneration = backup.Generation
-		meta.SetStatusCondition(&backup.Status.Conditions, metav1.Condition{
-			Type: seaweedv1.BackupConditionClusterReachable, Status: metav1.ConditionTrue,
-			ObservedGeneration: backup.Generation, Reason: "Reachable", Message: "snapshot job created",
-		})
+		markRunning(&backup, jobName, dest, metav1.Now())
 		return ctrl.Result{}, r.Status().Update(ctx, &backup)
 	case err != nil:
 		return ctrl.Result{}, err
 	}
 
-	// Job exists: reflect its state.
+	// Job exists: reflect its state, restoring status fields lost when the
+	// create-time status update failed or the controller restarted.
+	_, dest := snapshotScript(&cluster, st, backup.Spec.ClusterName, backup.Name, backup.Spec.FilerPath)
+	changed := markRunning(&backup, jobName, dest, job.CreationTimestamp)
+
 	done, success := jobFinished(&job)
 	if !done {
-		if backup.Status.Phase != seaweedv1.BackupPhaseRunning {
-			backup.Status.Phase = seaweedv1.BackupPhaseRunning
+		if changed {
 			if err := r.Status().Update(ctx, &backup); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -117,8 +111,11 @@ func (r *SeaweedBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{RequeueAfter: backupRequeue}, nil
 	}
 
-	now := metav1.Now()
-	backup.Status.CompletionTime = &now
+	backup.Status.CompletionTime = job.Status.CompletionTime
+	if backup.Status.CompletionTime == nil {
+		now := metav1.Now()
+		backup.Status.CompletionTime = &now
+	}
 	if success {
 		backup.Status.Phase = seaweedv1.BackupPhaseCompleted
 		meta.SetStatusCondition(&backup.Status.Conditions, metav1.Condition{
@@ -135,6 +132,35 @@ func (r *SeaweedBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		r.Recorder.Event(&backup, "Warning", "BackupFailed", "snapshot job failed")
 	}
 	return ctrl.Result{}, r.Status().Update(ctx, &backup)
+}
+
+// markRunning fills the status fields derivable from the spec and the
+// snapshot Job, so a status lost to a failed create-time update or a
+// controller restart is restored. Returns whether the status changed.
+func markRunning(backup *seaweedv1.SeaweedBackup, jobName, destination string, startTime metav1.Time) bool {
+	if startTime.IsZero() {
+		startTime = metav1.Now()
+	}
+	status := &backup.Status
+	changed := status.Phase != seaweedv1.BackupPhaseRunning ||
+		status.JobName != jobName ||
+		status.Destination != destination ||
+		status.ObservedGeneration != backup.Generation ||
+		status.StartTime == nil ||
+		!meta.IsStatusConditionTrue(status.Conditions, seaweedv1.BackupConditionClusterReachable)
+
+	status.Phase = seaweedv1.BackupPhaseRunning
+	status.JobName = jobName
+	status.Destination = destination
+	if status.StartTime == nil {
+		status.StartTime = &startTime
+	}
+	status.ObservedGeneration = backup.Generation
+	meta.SetStatusCondition(&status.Conditions, metav1.Condition{
+		Type: seaweedv1.BackupConditionClusterReachable, Status: metav1.ConditionTrue,
+		ObservedGeneration: backup.Generation, Reason: "Reachable", Message: "snapshot job created",
+	})
+	return changed
 }
 
 // pending records a transient blocker and requeues.

@@ -102,9 +102,16 @@ func (r *SeaweedBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	// Job exists: reflect its state, restoring status fields lost when the
-	// create-time status update failed or the controller restarted.
-	_, dest := snapshotScript(&cluster, st, backup.Spec.ClusterName, backup.Name, backup.Spec.FilerPath)
+	// Job exists: restore status lost to a failed create-time update. The
+	// Job's own record wins over the live storage config, which may have
+	// changed since the Job was created.
+	dest := backup.Status.Destination
+	if d := job.Annotations[seaweedv1.AnnotationBackupDestination]; d != "" {
+		dest = d
+	}
+	if dest == "" {
+		_, dest = snapshotScript(&cluster, st, backup.Spec.ClusterName, backup.Name, backup.Spec.FilerPath)
+	}
 	changed := markRunning(&backup, jobName, dest, job.CreationTimestamp)
 
 	done, success := jobFinished(&job)

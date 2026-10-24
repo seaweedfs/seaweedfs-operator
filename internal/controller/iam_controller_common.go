@@ -46,6 +46,7 @@ const (
 	s3PolicyFinalizer        = "seaweed.seaweedfs.com/s3policy-protection"
 	s3PolicyBindingFinalizer = "seaweed.seaweedfs.com/s3policybinding-protection"
 	s3OIDCProviderFinalizer  = "seaweed.seaweedfs.com/s3oidcprovider-protection"
+	s3RoleFinalizer          = "seaweed.seaweedfs.com/s3role-protection"
 )
 
 // iamResyncInterval re-runs a Ready IAM resource periodically so state lost when

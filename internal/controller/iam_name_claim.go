@@ -194,3 +194,52 @@ func resolvePolicyIAMName(ctx context.Context, c client.Client, namespace, ref, 
 		return "", err
 	}
 }
+
+func roleIAMName(r *seaweedv1.S3Role) string {
+	if r.Spec.Name != "" {
+		return r.Spec.Name
+	}
+	return r.Name
+}
+
+// roleClaimants is policyClaimants for S3Role.
+func roleClaimants(ctx context.Context, c client.Client, self *seaweedv1.S3Role, name string) ([]*seaweedv1.S3Role, error) {
+	var list seaweedv1.S3RoleList
+	if err := c.List(ctx, &list); err != nil {
+		return nil, err
+	}
+	cluster := seaweedRefKey(self.Spec.SeaweedRef, self.Namespace)
+	var out []*seaweedv1.S3Role
+	for i := range list.Items {
+		peer := &list.Items[i]
+		if peer.Namespace == self.Namespace && peer.Name == self.Name {
+			continue
+		}
+		if !peer.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if roleIAMName(peer) != name || seaweedRefKey(peer.Spec.SeaweedRef, peer.Namespace) != cluster {
+			continue
+		}
+		out = append(out, peer)
+	}
+	return out, nil
+}
+
+// roleConflict is policyConflict for S3Role.
+func roleConflict(ctx context.Context, c client.Client, self *seaweedv1.S3Role, name string) (*seaweedv1.S3Role, error) {
+	peers, err := roleClaimants(ctx, c, self, name)
+	if err != nil {
+		return nil, err
+	}
+	var winner *seaweedv1.S3Role
+	for _, peer := range peers {
+		if winner == nil || claimPrecedes(peer, winner) {
+			winner = peer
+		}
+	}
+	if winner == nil || claimPrecedes(self, winner) {
+		return nil, nil
+	}
+	return winner, nil
+}

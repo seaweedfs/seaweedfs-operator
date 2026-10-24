@@ -209,7 +209,9 @@ func buildSnapshotJob(m *seaweedv1.Seaweed, jobName string, backup *seaweedv1.Se
 	if sched := backup.Labels[seaweedv1.LabelBackupSchedule]; sched != "" {
 		labels[seaweedv1.LabelBackupSchedule] = sched
 	}
-	return newJob(backup.Namespace, jobName, labels, pod), dest
+	job := newJob(backup.Namespace, jobName, labels, pod)
+	job.Annotations = map[string]string{seaweedv1.AnnotationBackupDestination: dest}
+	return job, dest
 }
 
 // buildRestoreJob returns the restore Job for a SeaweedRestore. Exactly one of

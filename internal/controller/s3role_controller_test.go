@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/seaweedfs/seaweedfs/weed/iam/policy"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -283,44 +284,158 @@ func TestS3Role_StatusWriteFailureAfterPutStillDeletesTheRole(t *testing.T) {
 	}
 }
 
-// Changing a provisioned role's subjects while a newly referenced policy does
-// not exist yet still revokes the removed subject; the role carries the
-// policies that exist until the missing one appears.
-func TestS3Role_RevokesARemovedSubjectWhileANewPolicyIsMissing(t *testing.T) {
-	const bob = "spiffe://example.org/ns/app/sa/bob"
+const (
+	bob   = "spiffe://example.org/ns/app/sa/bob"
+	carol = "spiffe://example.org/ns/app/sa/carol"
+)
+
+// provisionThenRespec provisions a role trusting subjects with policy "base",
+// then changes its subjects and adds a policy that does not exist yet.
+func provisionThenRespec(t *testing.T, subjects, respec []string) (*fakeIAMAdmin, *S3RoleReconciler, client.Client, types.NamespacedName) {
+	t.Helper()
 	fa := newFakeIAMAdmin()
 	fa.policies["base"] = `{}`
-	role := testRole("app", func(r *seaweedv1.S3Role) { r.Spec.PolicyRefs = []seaweedv1.S3PolicyRef{{Name: "base"}} })
+	role := testRole("app", func(r *seaweedv1.S3Role) {
+		r.Spec.WebIdentity.Subjects = subjects
+		r.Spec.PolicyRefs = []seaweedv1.S3PolicyRef{{Name: "base"}}
+		r.Spec.MaxSessionDuration = 3600
+	})
 	r, cli := newRoleReconciler(t, fa, readyTestProvider("spire", iamSeaweedRef()), role)
 	key := types.NamespacedName{Namespace: "media", Name: "app"}
 	reconcileStable(t, r, key, 5)
 
 	got := getRole(t, cli, "app")
-	got.Spec.WebIdentity.Subjects = []string{bob}
+	got.Spec.WebIdentity.Subjects = respec
 	got.Spec.PolicyRefs = []seaweedv1.S3PolicyRef{{Name: "base"}, {Name: "not-yet"}}
+	got.Spec.MaxSessionDuration = 43200
 	if err := cli.Update(context.Background(), got); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	reconcileOnce(t, r, key)
+	return fa, r, cli, key
+}
 
-	put := fa.roles["app"]
-	if strings.Contains(put.TrustPolicy, testSVID) || !strings.Contains(put.TrustPolicy, bob) {
-		t.Errorf("trust policy still admits the removed subject or lacks the new one: %s", put.TrustPolicy)
-	}
-	if strings.Join(put.AttachedPolicies, ",") != "base" {
-		t.Errorf("attached = %v, want only the existing policy", put.AttachedPolicies)
-	}
+func wantPolicyMissing(t *testing.T, cli client.Client) {
+	t.Helper()
 	if got := getRole(t, cli, "app"); got.Status.Phase != seaweedv1.S3PhasePending || readyReason(got) != "PolicyMissing" {
 		t.Errorf("phase=%s reason=%s, want Pending/PolicyMissing", got.Status.Phase, readyReason(got))
 	}
+}
+
+// While a newly referenced policy does not exist yet, a removed subject is
+// revoked at once, but nothing is added: a new subject, the new policy (which
+// may deny) and the longer session all wait, so the live role never admits
+// more than it did.
+func TestS3Role_RevokesARemovedSubjectButGrantsNothingWhileAPolicyIsMissing(t *testing.T) {
+	fa, r, cli, key := provisionThenRespec(t, []string{testSVID, carol}, []string{carol, bob})
+	reconcileOnce(t, r, key)
+
+	live := fa.roles["app"]
+	issuer, trusted, ok := parseWebIdentityTrustPolicy(live.TrustPolicy)
+	if !ok || issuer != testIssuer || strings.Join(trusted, ",") != carol {
+		t.Errorf("trust = %s, want only %s (the removed subject revoked, the new one not added)", live.TrustPolicy, carol)
+	}
+	if strings.Join(live.AttachedPolicies, ",") != "base" || live.MaxSessionDuration != 3600 {
+		t.Errorf("attached=%v maxSession=%d, want the live role's base/3600 unchanged", live.AttachedPolicies, live.MaxSessionDuration)
+	}
+	wantPolicyMissing(t, cli)
 
 	fa.policies["not-yet"] = `{}`
 	reconcileStable(t, r, key, 5)
-	if strings.Join(fa.roles["app"].AttachedPolicies, ",") != "base,not-yet" {
-		t.Errorf("attached = %v once the policy exists, want base,not-yet", fa.roles["app"].AttachedPolicies)
+	live = fa.roles["app"]
+	if _, trusted, _ := parseWebIdentityTrustPolicy(live.TrustPolicy); strings.Join(trusted, ",") != bob+","+carol {
+		t.Errorf("trust = %s once the policy exists, want bob and carol", live.TrustPolicy)
+	}
+	if strings.Join(live.AttachedPolicies, ",") != "base,not-yet" || live.MaxSessionDuration != 43200 {
+		t.Errorf("attached=%v maxSession=%d once the policy exists, want base,not-yet/43200", live.AttachedPolicies, live.MaxSessionDuration)
 	}
 	if got := getRole(t, cli, "app"); got.Status.Phase != seaweedv1.S3PhaseReady {
 		t.Errorf("phase = %s once every policy exists, want Ready", got.Status.Phase)
+	}
+}
+
+// With no subject removed there is nothing to revoke, so the live role is not
+// written at all until the missing policy exists.
+func TestS3Role_LeavesTheRoleAloneWhenNothingIsRevokedAndAPolicyIsMissing(t *testing.T) {
+	fa, r, cli, key := provisionThenRespec(t, []string{testSVID}, []string{testSVID, bob})
+	puts := strings.Count(strings.Join(fa.calls, " "), "PutRole:")
+	reconcileOnce(t, r, key)
+
+	if got := strings.Count(strings.Join(fa.calls, " "), "PutRole:"); got != puts {
+		t.Errorf("PutRole called %d more time(s) with nothing to revoke", got-puts)
+	}
+	wantPolicyMissing(t, cli)
+}
+
+// When every subject the role trusts is removed, no trust policy can express
+// the narrowed role, so it is deleted until the missing policy exists, then
+// recreated from the spec.
+func TestS3Role_DeletesTheRoleWhileAPolicyIsMissingIfEverySubjectIsRemoved(t *testing.T) {
+	fa, r, cli, key := provisionThenRespec(t, []string{testSVID}, []string{bob})
+	reconcileOnce(t, r, key)
+
+	if _, exists := fa.roles["app"]; exists {
+		t.Error("the role still trusts its only, removed, subject")
+	}
+	wantPolicyMissing(t, cli)
+
+	fa.policies["not-yet"] = `{}`
+	reconcileStable(t, r, key, 5)
+	live, exists := fa.roles["app"]
+	if !exists {
+		t.Fatal("the role was not recreated once its policies existed")
+	}
+	if _, trusted, _ := parseWebIdentityTrustPolicy(live.TrustPolicy); strings.Join(trusted, ",") != bob {
+		t.Errorf("recreated trust = %s, want only bob", live.TrustPolicy)
+	}
+}
+
+// The filer stores a role's trust policy as a policy.PolicyDocument and
+// GetRole re-encodes that, so what the operator reads back is not the string
+// it wrote. Round-trip through SeaweedFS's own type and parse the result.
+func TestParseWebIdentityTrustPolicy_AsSeaweedFSReturnsIt(t *testing.T) {
+	for _, subjects := range [][]string{{bob}, {bob, carol}} {
+		written, err := buildWebIdentityTrustPolicy(testIssuer, subjects)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var stored policy.PolicyDocument
+		if err := json.Unmarshal([]byte(written), &stored); err != nil {
+			t.Fatalf("SeaweedFS cannot decode the trust policy the operator writes: %v", err)
+		}
+		returned, err := json.Marshal(&stored)
+		if err != nil {
+			t.Fatal(err)
+		}
+		issuer, got, ok := parseWebIdentityTrustPolicy(string(returned))
+		if !ok || issuer != testIssuer || strings.Join(got, ",") != strings.Join(subjects, ",") {
+			t.Errorf("parse(%s) = %q %v %v, want %q %v", returned, issuer, got, ok, testIssuer, subjects)
+		}
+	}
+}
+
+func TestParseWebIdentityTrustPolicy(t *testing.T) {
+	written, err := buildWebIdentityTrustPolicy(testIssuer, []string{bob, carol})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		doc  string
+		want bool
+	}{
+		"as written": {written, true},
+		// SeaweedFS re-encodes the stored document: Resource null, one-item lists as bare strings.
+		"as stored":        {`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"` + testIssuer + `"},"Action":"sts:AssumeRoleWithWebIdentity","Resource":null,"Condition":{"StringEquals":{"oidc:sub":"` + bob + `"}}}]}`, true},
+		"deny":             {strings.Replace(written, `"Allow"`, `"Deny"`, 1), false},
+		"second statement": {strings.Replace(written, `}],"Version"`, `},{"Effect":"Allow","Principal":{"Federated":"x"},"Action":["sts:AssumeRoleWithWebIdentity"]}],"Version"`, 1), false},
+		"extra condition":  {strings.Replace(written, `"StringEquals":`, `"StringLike":{"oidc:aud":"*"},"StringEquals":`, 1), false},
+		"other action":     {strings.Replace(written, `sts:AssumeRoleWithWebIdentity`, `sts:AssumeRole`, 1), false},
+		"not json":         {`{`, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, ok := parseWebIdentityTrustPolicy(tc.doc); ok != tc.want {
+				t.Errorf("ok = %v, want %v for %s", ok, tc.want, tc.doc)
+			}
+		})
 	}
 }
 

@@ -152,11 +152,12 @@ func (r *S3RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		policies = append(policies, policyName)
 	}
 	// A role that does not exist yet waits for all of its policies. One that
-	// does is still written, so a removed subject or policy is revoked now,
-	// not once a newly referenced policy appears; it carries the policies that
-	// exist, a subset of what the spec grants.
-	if len(missing) > 0 && role.Status.RoleName == "" {
-		return r.pending(ctx, &role, "PolicyMissing", fmt.Sprintf("policy %q does not exist yet", missing[0]))
+	// does has its removed subjects revoked now; the rest of the change waits.
+	if len(missing) > 0 {
+		if role.Status.RoleName == "" {
+			return r.pending(ctx, &role, "PolicyMissing", fmt.Sprintf("policy %q does not exist yet", missing[0]))
+		}
+		return r.revokeWhileWaiting(ctx, &role, admin, name, missing)
 	}
 
 	trust, err := buildWebIdentityTrustPolicy(issuer, role.Spec.WebIdentity.Subjects)
@@ -187,16 +188,119 @@ func (r *S3RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	role.Status.RoleArn = arn
 	role.Status.AttachedPolicies = policies
 	role.Status.ObservedGeneration = role.Generation
-	if len(missing) > 0 {
-		return r.pending(ctx, &role, "PolicyMissing",
-			fmt.Sprintf("policies %q do not exist yet; the role is applied without them", missing))
-	}
 	role.Status.Phase = seaweedv1.S3PhaseReady
 	setIAMCondition(&role.Status.Conditions, role.Generation, seaweedv1.S3ConditionReady, metav1.ConditionTrue, "Reconciled", "")
 	if err := r.Status().Update(ctx, &role); err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{RequeueAfter: iamResyncInterval}, nil
+}
+
+// revokeWhileWaiting narrows a provisioned role while a policy its spec now
+// references does not exist yet. The rest of the change could widen access (a
+// new subject, or a missing policy that denies), so it waits; a removed
+// subject is revoked now. The live role is written back with only those
+// subjects dropped from its trust policy, so it never admits more than it did.
+func (r *S3RoleReconciler) revokeWhileWaiting(ctx context.Context, role *seaweedv1.S3Role, admin IAMAdmin, name string, missing []string) (ctrl.Result, error) {
+	waiting := fmt.Sprintf("policies %q do not exist yet", missing)
+	live, err := admin.GetRole(ctx, name)
+	if errors.Is(err, ErrIAMNotFound) {
+		return r.pending(ctx, role, "PolicyMissing", waiting)
+	}
+	if err != nil {
+		return r.fail(ctx, role, "RoleLookupFailed", err.Error())
+	}
+	issuer, trusted, ok := parseWebIdentityTrustPolicy(live.TrustPolicy)
+	if !ok {
+		return r.pending(ctx, role, "PolicyMissing", waiting+"; the live trust policy is not one this operator writes, so its subjects are not narrowed")
+	}
+	kept := make([]string, 0, len(trusted))
+	for _, s := range trusted {
+		if slices.Contains(role.Spec.WebIdentity.Subjects, s) {
+			kept = append(kept, s)
+		}
+	}
+	switch {
+	case len(kept) == len(trusted):
+		return r.pending(ctx, role, "PolicyMissing", waiting)
+	case len(kept) == 0:
+		// No subject the role trusts remains, and a trust policy needs one.
+		if err := admin.DeleteRole(ctx, name); err != nil {
+			return r.fail(ctx, role, "DeleteFailed", err.Error())
+		}
+		r.Log.Info("deleted IAM role until its policies exist: every subject it trusted was removed", "name", name)
+		role.Status.RoleArn = ""
+		role.Status.AttachedPolicies = nil
+		return r.pending(ctx, role, "PolicyMissing", waiting+"; every subject the role trusted was removed, so it is deleted until they exist")
+	}
+	live.Name = name
+	if live.TrustPolicy, err = buildWebIdentityTrustPolicy(issuer, kept); err != nil {
+		return r.fail(ctx, role, "InvalidTrustPolicy", err.Error())
+	}
+	if _, err := admin.PutRole(ctx, live); err != nil {
+		return r.fail(ctx, role, "PutFailed", err.Error())
+	}
+	r.Log.Info("revoked removed subjects while policies are missing", "name", name, "trusted", kept)
+	return r.pending(ctx, role, "PolicyMissing", waiting+"; removed subjects are revoked, the rest of the change waits for them")
+}
+
+// parseWebIdentityTrustPolicy reads back a trust policy of the shape
+// buildWebIdentityTrustPolicy writes, as SeaweedFS stores it (re-encoded, so a
+// one-item list may be a bare string). Anything else is not ok.
+func parseWebIdentityTrustPolicy(doc string) (issuer string, subjects []string, ok bool) {
+	var p struct {
+		Statement []struct {
+			Effect       string
+			Principal    map[string]any
+			NotPrincipal any
+			Action       any
+			NotAction    any
+			Resource     any
+			NotResource  any
+			Condition    map[string]map[string]any
+		}
+	}
+	if json.Unmarshal([]byte(doc), &p) != nil || len(p.Statement) != 1 {
+		return "", nil, false
+	}
+	st := p.Statement[0]
+	if st.Effect != "Allow" || st.NotPrincipal != nil || st.NotAction != nil || st.NotResource != nil || !emptyList(st.Resource) {
+		return "", nil, false
+	}
+	if len(st.Principal) != 1 || len(st.Condition) != 1 || len(st.Condition["StringEquals"]) != 1 {
+		return "", nil, false
+	}
+	issuer, _ = st.Principal["Federated"].(string)
+	actions, okA := stringList(st.Action)
+	subjects, okS := stringList(st.Condition["StringEquals"]["oidc:sub"])
+	if issuer == "" || !okA || !slices.Equal(actions, []string{"sts:AssumeRoleWithWebIdentity"}) || !okS || len(subjects) == 0 {
+		return "", nil, false
+	}
+	return issuer, subjects, true
+}
+
+// stringList reads a JSON value that is a string or a list of strings.
+func stringList(v any) ([]string, bool) {
+	switch t := v.(type) {
+	case string:
+		return []string{t}, true
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, e := range t {
+			s, ok := e.(string)
+			if !ok {
+				return nil, false
+			}
+			out = append(out, s)
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+func emptyList(v any) bool {
+	l, ok := v.([]any)
+	return v == nil || (ok && len(l) == 0)
 }
 
 // resolveIssuer returns the issuer URL of the role's S3OIDCProvider once that

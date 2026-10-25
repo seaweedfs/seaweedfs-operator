@@ -9,7 +9,7 @@ require (
 	github.com/onsi/gomega v1.44.0
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.94.1
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/seaweedfs/seaweedfs v0.0.0-20261025030942-ec8f9793502c
+	github.com/seaweedfs/seaweedfs v0.0.0-20261025193907-153ab668c997
 	github.com/stretchr/testify v1.12.1
 	google.golang.org/grpc v1.86.0-dev
 	k8s.io/api v0.37.1

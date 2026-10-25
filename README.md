@@ -359,6 +359,14 @@ it externally, set `spec.s3.service.type: LoadBalancer`, add an `spec.s3.ingress
 block (see **Exposing the cluster via Ingress (TLS)** below), or use the top-level
 `hostSuffix`, which publishes `s3.<hostSuffix>` over HTTP.
 
+The operator also publishes the in-cluster endpoints it creates into status:
+`status.master.endpoint`, `status.filer.endpoint`, `status.admin.endpoint`,
+`status.s3.endpoint` and `status.sftp.endpoint`, each alongside a `service`
+field naming the Service (e.g. `status.s3.endpoint` is
+`http://<cluster-name>-s3.<namespace>.svc:8333`, or `https://` when the gateway
+serves HTTPS). Volume servers and workers front no single client Service, so
+their status carries only replica counts.
+
 **Native HTTPS on the standalone gateway** — set `httpsPort` and `tlsSecret`
 together to have the gateway itself serve HTTPS, without an Ingress:
 

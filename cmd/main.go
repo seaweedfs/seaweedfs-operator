@@ -179,6 +179,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controller.BucketNotificationReconciler{
+		Client:         mgr.GetClient(),
+		Log:            ctrl.Log.WithName("controller").WithName("BucketNotification"),
+		Scheme:         mgr.GetScheme(),
+		Recorder:       mgr.GetEventRecorderFor("bucketnotification-controller"),
+		ResyncInterval: bucketResyncInterval,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "BucketNotification")
+		os.Exit(1)
+	}
+
 	if err = (&controller.S3IdentityReconciler{
 		Client:   mgr.GetClient(),
 		Log:      ctrl.Log.WithName("controller").WithName("S3Identity"),

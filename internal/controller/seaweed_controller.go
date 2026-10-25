@@ -266,6 +266,7 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		log.Error(err, "Failed to get master status")
 		return false, err
 	}
+	masterStatus.Service, masterStatus.Endpoint = componentEndpoint(seaweedCR, ComponentMaster)
 
 	// Get volume statefulset status
 	volumeStatus, err := r.getComponentStatus(ctx, seaweedCR, ComponentVolume)
@@ -282,6 +283,7 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 			log.Error(err, "Failed to get filer status")
 			return false, err
 		}
+		filerStatus.Service, filerStatus.Endpoint = componentEndpoint(seaweedCR, ComponentFiler)
 	}
 
 	// Get admin statefulset status (if enabled)
@@ -292,6 +294,7 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 			log.Error(err, "Failed to get admin status")
 			return false, err
 		}
+		adminStatus.Service, adminStatus.Endpoint = componentEndpoint(seaweedCR, ComponentAdmin)
 	}
 
 	// Get worker statefulset status (if enabled)
@@ -310,6 +313,7 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		log.Error(err, "Failed to get S3 gateway status")
 		return false, err
 	}
+	s3Status.Service, s3Status.Endpoint = componentEndpoint(seaweedCR, s3Component)
 
 	// Get standalone SFTP gateway status (if enabled)
 	sftpStatus, err := r.getSFTPStatus(ctx, seaweedCR)
@@ -317,6 +321,7 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		log.Error(err, "Failed to get SFTP gateway status")
 		return false, err
 	}
+	sftpStatus.Service, sftpStatus.Endpoint = componentEndpoint(seaweedCR, sftpComponent)
 
 	// Determine if cluster is ready
 	// Master must have replicas and all must be ready
@@ -429,6 +434,42 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 
 	log.Info("Updated Seaweed status", "ready", isReady)
 	return isReady, nil
+}
+
+// componentEndpoint returns the in-cluster Service name and primary client
+// URL for a component that fronts a single Service, ("","") when the spec
+// disables it or it has no client endpoint. Volume servers (per-pod and
+// per-topology Services) and the worker (metrics-only Service) report none.
+func componentEndpoint(m *seaweedv1.Seaweed, component string) (service, endpoint string) {
+	url := func(scheme, name string, port int32) string {
+		return fmt.Sprintf("%s://%s.%s.svc:%d", scheme, name, m.Namespace, port)
+	}
+	switch component {
+	case ComponentMaster:
+		if m.Spec.Master != nil {
+			return m.Name + "-master", url("http", m.Name+"-master", seaweedv1.MasterHTTPPort)
+		}
+	case ComponentFiler:
+		if m.Spec.Filer != nil {
+			return m.Name + "-filer", url("http", m.Name+"-filer", seaweedv1.FilerHTTPPort)
+		}
+	case ComponentAdmin:
+		if m.Spec.Admin != nil {
+			return m.Name + "-admin", url("http", m.Name+"-admin", seaweedv1.AdminHTTPPort)
+		}
+	case s3Component:
+		if m.Spec.S3 != nil && m.Spec.Filer != nil {
+			if httpsPort := s3HTTPSPort(m); httpsPort != 0 {
+				return m.Name + "-s3", url("https", m.Name+"-s3", httpsPort)
+			}
+			return m.Name + "-s3", url("http", m.Name+"-s3", s3EffectivePort(m))
+		}
+	case sftpComponent:
+		if m.Spec.SFTP != nil && m.Spec.Filer != nil {
+			return m.Name + "-sftp", url("sftp", m.Name+"-sftp", sftpEffectivePort(m))
+		}
+	}
+	return "", ""
 }
 
 func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *seaweedv1.Seaweed, component string) (seaweedv1.ComponentStatus, error) {

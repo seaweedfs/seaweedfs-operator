@@ -381,6 +381,15 @@ type ComponentStatus struct {
 	// Total number of ready replicas
 	// +kubebuilder:validation:Minimum=0
 	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
+
+	// Service is the name of the Service fronting this component, when it has one.
+	// +optional
+	Service string `json:"service,omitempty"`
+
+	// Endpoint is the component's primary client-facing in-cluster URL
+	// (scheme://service.namespace.svc:port).
+	// +optional
+	Endpoint string `json:"endpoint,omitempty"`
 }
 
 // MasterSpec is the spec for masters

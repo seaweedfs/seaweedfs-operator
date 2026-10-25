@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/seaweedfs/seaweedfs/weed/pb/iam_pb"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // stsRecordingIAM records the OIDC provider and role requests it receives.
@@ -39,15 +37,6 @@ func (s *stsRecordingIAM) PutRole(_ context.Context, req *iam_pb.PutRoleRequest)
 	defer s.mu.Unlock()
 	s.putRole = req
 	return &iam_pb.PutRoleResponse{RoleArn: "arn:aws:iam::role/" + req.GetRole().GetRoleName()}, nil
-}
-
-func (s *stsRecordingIAM) GetRole(_ context.Context, req *iam_pb.GetRoleRequest) (*iam_pb.GetRoleResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.putRole == nil || s.putRole.GetRole().GetRoleName() != req.GetRoleName() {
-		return nil, status.Errorf(codes.NotFound, "role %s not found", req.GetRoleName())
-	}
-	return &iam_pb.GetRoleResponse{Role: s.putRole.GetRole()}, nil
 }
 
 func (s *stsRecordingIAM) DeleteRole(_ context.Context, req *iam_pb.DeleteRoleRequest) (*iam_pb.DeleteRoleResponse, error) {
@@ -101,18 +90,6 @@ func TestIAMClient_PutAndDeleteRole(t *testing.T) {
 	if got.GetRoleName() != "app" || got.GetTrustPolicy() != `{"Version":"2012-10-17"}` || len(got.GetAttachedPolicies()) != 1 ||
 		got.GetDescription() != "app runtime" || got.GetMaxSessionDuration() != 3600 {
 		t.Errorf("PutRole sent %v", got)
-	}
-
-	read, err := c.GetRole(context.Background(), "app")
-	if err != nil {
-		t.Fatalf("GetRole: %v", err)
-	}
-	if read.Name != "app" || read.TrustPolicy != `{"Version":"2012-10-17"}` || len(read.AttachedPolicies) != 1 ||
-		read.Description != "app runtime" || read.MaxSessionDuration != 3600 {
-		t.Errorf("GetRole read %+v", read)
-	}
-	if _, err := c.GetRole(context.Background(), "other"); status.Code(err) != codes.NotFound {
-		t.Errorf("GetRole of a missing role: %v, want NotFound", err)
 	}
 
 	if err := c.DeleteRole(context.Background(), "app"); err != nil {

@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seaweedfs/seaweedfs/weed/iam/policy"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -284,158 +283,262 @@ func TestS3Role_StatusWriteFailureAfterPutStillDeletesTheRole(t *testing.T) {
 	}
 }
 
-const (
-	bob   = "spiffe://example.org/ns/app/sa/bob"
-	carol = "spiffe://example.org/ns/app/sa/carol"
-)
+const bob = "spiffe://example.org/ns/app/sa/bob"
 
-// provisionThenRespec provisions a role trusting subjects with policy "base",
-// then changes its subjects and adds a policy that does not exist yet.
-func provisionThenRespec(t *testing.T, subjects, respec []string) (*fakeIAMAdmin, *S3RoleReconciler, client.Client, types.NamespacedName) {
+// provisionedRole provisions a role trusting testSVID with policy "base" and
+// returns it ready to be re-specced.
+func provisionedRole(t *testing.T, objs ...client.Object) (*fakeIAMAdmin, *S3RoleReconciler, client.Client, types.NamespacedName) {
 	t.Helper()
 	fa := newFakeIAMAdmin()
 	fa.policies["base"] = `{}`
-	role := testRole("app", func(r *seaweedv1.S3Role) {
-		r.Spec.WebIdentity.Subjects = subjects
-		r.Spec.PolicyRefs = []seaweedv1.S3PolicyRef{{Name: "base"}}
-		r.Spec.MaxSessionDuration = 3600
-	})
-	r, cli := newRoleReconciler(t, fa, readyTestProvider("spire", iamSeaweedRef()), role)
+	role := testRole("app", func(r *seaweedv1.S3Role) { r.Spec.PolicyRefs = []seaweedv1.S3PolicyRef{{Name: "base"}} })
+	r, cli := newRoleReconciler(t, fa, append([]client.Object{readyTestProvider("spire", iamSeaweedRef()), role}, objs...)...)
 	key := types.NamespacedName{Namespace: "media", Name: "app"}
 	reconcileStable(t, r, key, 5)
-
-	got := getRole(t, cli, "app")
-	got.Spec.WebIdentity.Subjects = respec
-	got.Spec.PolicyRefs = []seaweedv1.S3PolicyRef{{Name: "base"}, {Name: "not-yet"}}
-	got.Spec.MaxSessionDuration = 43200
-	if err := cli.Update(context.Background(), got); err != nil {
-		t.Fatalf("update: %v", err)
+	if _, exists := fa.roles["app"]; !exists {
+		t.Fatal("setup: role not provisioned")
 	}
 	return fa, r, cli, key
 }
 
-func wantPolicyMissing(t *testing.T, cli client.Client) {
+func respec(t *testing.T, cli client.Client, mutate func(*seaweedv1.S3Role)) {
 	t.Helper()
-	if got := getRole(t, cli, "app"); got.Status.Phase != seaweedv1.S3PhasePending || readyReason(got) != "PolicyMissing" {
-		t.Errorf("phase=%s reason=%s, want Pending/PolicyMissing", got.Status.Phase, readyReason(got))
+	got := getRole(t, cli, "app")
+	mutate(got)
+	got.Generation++ // the API server bumps it on a spec change; the fake client does not
+	if err := cli.Update(context.Background(), got); err != nil {
+		t.Fatalf("update: %v", err)
 	}
 }
 
-// While a newly referenced policy does not exist yet, a removed subject is
-// revoked at once, but nothing is added: a new subject, the new policy (which
-// may deny) and the longer session all wait, so the live role never admits
-// more than it did.
-func TestS3Role_RevokesARemovedSubjectButGrantsNothingWhileAPolicyIsMissing(t *testing.T) {
-	fa, r, cli, key := provisionThenRespec(t, []string{testSVID, carol}, []string{carol, bob})
-	reconcileOnce(t, r, key)
-
-	live := fa.roles["app"]
-	issuer, trusted, ok := parseWebIdentityTrustPolicy(live.TrustPolicy)
-	if !ok || issuer != testIssuer || strings.Join(trusted, ",") != carol {
-		t.Errorf("trust = %s, want only %s (the removed subject revoked, the new one not added)", live.TrustPolicy, carol)
-	}
-	if strings.Join(live.AttachedPolicies, ",") != "base" || live.MaxSessionDuration != 3600 {
-		t.Errorf("attached=%v maxSession=%d, want the live role's base/3600 unchanged", live.AttachedPolicies, live.MaxSessionDuration)
-	}
-	wantPolicyMissing(t, cli)
-
-	fa.policies["not-yet"] = `{}`
-	reconcileStable(t, r, key, 5)
-	live = fa.roles["app"]
-	if _, trusted, _ := parseWebIdentityTrustPolicy(live.TrustPolicy); strings.Join(trusted, ",") != bob+","+carol {
-		t.Errorf("trust = %s once the policy exists, want bob and carol", live.TrustPolicy)
-	}
-	if strings.Join(live.AttachedPolicies, ",") != "base,not-yet" || live.MaxSessionDuration != 43200 {
-		t.Errorf("attached=%v maxSession=%d once the policy exists, want base,not-yet/43200", live.AttachedPolicies, live.MaxSessionDuration)
-	}
-	if got := getRole(t, cli, "app"); got.Status.Phase != seaweedv1.S3PhaseReady {
-		t.Errorf("phase = %s once every policy exists, want Ready", got.Status.Phase)
+func wantPending(t *testing.T, cli client.Client, reason string) {
+	t.Helper()
+	if got := getRole(t, cli, "app"); got.Status.Phase != seaweedv1.S3PhasePending || readyReason(got) != reason {
+		t.Errorf("phase=%s reason=%s, want Pending/%s", got.Status.Phase, readyReason(got), reason)
 	}
 }
 
-// With no subject removed there is nothing to revoke, so the live role is not
-// written at all until the missing policy exists.
-func TestS3Role_LeavesTheRoleAloneWhenNothingIsRevokedAndAPolicyIsMissing(t *testing.T) {
-	fa, r, cli, key := provisionThenRespec(t, []string{testSVID}, []string{testSVID, bob})
-	puts := strings.Count(strings.Join(fa.calls, " "), "PutRole:")
-	reconcileOnce(t, r, key)
+// A spec change that cannot be applied in full withdraws the role until it
+// can: applying part of it could widen access (a new subject without a policy
+// that denies) or keep a removed grant (a dropped subject or policy). Once the
+// missing policy exists the role is recreated from the whole spec.
+func TestS3Role_AChangedSpecWithAMissingPolicyWithdrawsTheRole(t *testing.T) {
+	for name, mutate := range map[string]func(*seaweedv1.S3Role){
+		"subject swapped": func(r *seaweedv1.S3Role) {
+			r.Spec.WebIdentity.Subjects = []string{bob}
+			r.Spec.PolicyRefs = append(r.Spec.PolicyRefs, seaweedv1.S3PolicyRef{Name: "not-yet"})
+		},
+		"policy replaced": func(r *seaweedv1.S3Role) {
+			r.Spec.PolicyRefs = []seaweedv1.S3PolicyRef{{Name: "not-yet"}}
+		},
+		"provider switched": func(r *seaweedv1.S3Role) {
+			r.Spec.WebIdentity.ProviderRef.Name = "other"
+			r.Spec.PolicyRefs = append(r.Spec.PolicyRefs, seaweedv1.S3PolicyRef{Name: "not-yet"})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			other := readyTestProvider("other", iamSeaweedRef())
+			other.Spec.IssuerURL = "https://other.example.org"
+			fa, r, cli, key := provisionedRole(t, other)
+			respec(t, cli, mutate)
+			reconcileOnce(t, r, key)
 
-	if got := strings.Count(strings.Join(fa.calls, " "), "PutRole:"); got != puts {
-		t.Errorf("PutRole called %d more time(s) with nothing to revoke", got-puts)
+			if _, exists := fa.roles["app"]; exists {
+				t.Errorf("the role stayed live with a spec that could not be applied: %+v", fa.roles["app"])
+			}
+			wantPending(t, cli, "PolicyMissing")
+
+			fa.policies["not-yet"] = `{}`
+			reconcileStable(t, r, key, 5)
+			want := getRole(t, cli, "app")
+			live, exists := fa.roles["app"]
+			if !exists {
+				t.Fatal("the role was not recreated once its policies existed")
+			}
+			issuer := testIssuer
+			if want.Spec.WebIdentity.ProviderRef.Name == "other" {
+				issuer = other.Spec.IssuerURL
+			}
+			wantTrust, _ := buildWebIdentityTrustPolicy(issuer, want.Spec.WebIdentity.Subjects)
+			if live.TrustPolicy != wantTrust || strings.Join(live.AttachedPolicies, ",") != strings.Join(want.Status.AttachedPolicies, ",") {
+				t.Errorf("recreated role = %+v, want the whole new spec", live)
+			}
+			if want.Status.Phase != seaweedv1.S3PhaseReady {
+				t.Errorf("phase = %s once every policy exists, want Ready", want.Status.Phase)
+			}
+		})
 	}
-	wantPolicyMissing(t, cli)
 }
 
-// When every subject the role trusts is removed, no trust policy can express
-// the narrowed role, so it is deleted until the missing policy exists, then
-// recreated from the spec.
-func TestS3Role_DeletesTheRoleWhileAPolicyIsMissingIfEverySubjectIsRemoved(t *testing.T) {
-	fa, r, cli, key := provisionThenRespec(t, []string{testSVID}, []string{bob})
+// Switching to a provider that is not Ready yet must not leave the old issuer
+// trusted: the role is withdrawn until the new provider is registered.
+func TestS3Role_SwitchingToAProviderThatIsNotReadyWithdrawsTheRole(t *testing.T) {
+	pending := readyTestProvider("other", iamSeaweedRef())
+	pending.Spec.IssuerURL = "https://other.example.org"
+	pending.Status = seaweedv1.S3OIDCProviderStatus{}
+	fa, r, cli, key := provisionedRole(t, pending)
+	respec(t, cli, func(r *seaweedv1.S3Role) { r.Spec.WebIdentity.ProviderRef.Name = "other" })
 	reconcileOnce(t, r, key)
 
 	if _, exists := fa.roles["app"]; exists {
-		t.Error("the role still trusts its only, removed, subject")
+		t.Errorf("the role still trusts the removed issuer: %+v", fa.roles["app"])
 	}
-	wantPolicyMissing(t, cli)
-
-	fa.policies["not-yet"] = `{}`
-	reconcileStable(t, r, key, 5)
-	live, exists := fa.roles["app"]
-	if !exists {
-		t.Fatal("the role was not recreated once its policies existed")
-	}
-	if _, trusted, _ := parseWebIdentityTrustPolicy(live.TrustPolicy); strings.Join(trusted, ",") != bob {
-		t.Errorf("recreated trust = %s, want only bob", live.TrustPolicy)
-	}
+	wantPending(t, cli, "ProviderNotReady")
 }
 
-// The filer stores a role's trust policy as a policy.PolicyDocument and
-// GetRole re-encodes that, so what the operator reads back is not the string
-// it wrote. Round-trip through SeaweedFS's own type and parse the result.
-func TestParseWebIdentityTrustPolicy_AsSeaweedFSReturnsIt(t *testing.T) {
-	for _, subjects := range [][]string{{bob}, {bob, carol}} {
-		written, err := buildWebIdentityTrustPolicy(testIssuer, subjects)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var stored policy.PolicyDocument
-		if err := json.Unmarshal([]byte(written), &stored); err != nil {
-			t.Fatalf("SeaweedFS cannot decode the trust policy the operator writes: %v", err)
-		}
-		returned, err := json.Marshal(&stored)
-		if err != nil {
-			t.Fatal(err)
-		}
-		issuer, got, ok := parseWebIdentityTrustPolicy(string(returned))
-		if !ok || issuer != testIssuer || strings.Join(got, ",") != strings.Join(subjects, ",") {
-			t.Errorf("parse(%s) = %q %v %v, want %q %v", returned, issuer, got, ok, testIssuer, subjects)
-		}
-	}
-}
-
-func TestParseWebIdentityTrustPolicy(t *testing.T) {
-	written, err := buildWebIdentityTrustPolicy(testIssuer, []string{bob, carol})
-	if err != nil {
+// A dependency lost without a spec change leaves the role alone: it still
+// matches its spec, and a provider or policy flapping must not delete it.
+func TestS3Role_ADependencyLostWithoutASpecChangeLeavesTheRole(t *testing.T) {
+	fa, r, cli, key := provisionedRole(t)
+	var provider seaweedv1.S3OIDCProvider
+	if err := cli.Get(context.Background(), types.NamespacedName{Namespace: "media", Name: "spire"}, &provider); err != nil {
 		t.Fatal(err)
 	}
+	provider.Status.Phase = seaweedv1.S3PhaseFailed
+	if err := cli.Status().Update(context.Background(), &provider); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r, key)
+
+	if _, exists := fa.roles["app"]; !exists {
+		t.Error("a provider going NotReady with no spec change deleted the role")
+	}
+	wantPending(t, cli, "ProviderNotReady")
+}
+
+// Deleting the owner deletes the role even when another S3Role claims its
+// name: handing it over live would keep the owner's subjects and policies
+// granted until the claimant applies its own spec, and forever if it never
+// can. A claimant that can apply its spec recreates the role from it.
+func TestS3Role_DeletingTheOwnerDeletesTheRoleEvenWithAClaimant(t *testing.T) {
 	for name, tc := range map[string]struct {
-		doc  string
-		want bool
+		claimantPolicy string
+		wantRecreated  bool
 	}{
-		"as written": {written, true},
-		// SeaweedFS re-encodes the stored document: Resource null, one-item lists as bare strings.
-		"as stored":        {`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"` + testIssuer + `"},"Action":"sts:AssumeRoleWithWebIdentity","Resource":null,"Condition":{"StringEquals":{"oidc:sub":"` + bob + `"}}}]}`, true},
-		"deny":             {strings.Replace(written, `"Allow"`, `"Deny"`, 1), false},
-		"second statement": {strings.Replace(written, `}],"Version"`, `},{"Effect":"Allow","Principal":{"Federated":"x"},"Action":["sts:AssumeRoleWithWebIdentity"]}],"Version"`, 1), false},
-		"extra condition":  {strings.Replace(written, `"StringEquals":`, `"StringLike":{"oidc:aud":"*"},"StringEquals":`, 1), false},
-		"other action":     {strings.Replace(written, `sts:AssumeRoleWithWebIdentity`, `sts:AssumeRole`, 1), false},
-		"not json":         {`{`, false},
+		"claimant cannot apply its spec": {"not-yet", false},
+		"claimant can apply its spec":    {"base", true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, _, ok := parseWebIdentityTrustPolicy(tc.doc); ok != tc.want {
-				t.Errorf("ok = %v, want %v for %s", ok, tc.want, tc.doc)
+			fa := newFakeIAMAdmin()
+			fa.policies["base"] = `{}`
+			owner := testRole("owner", func(r *seaweedv1.S3Role) {
+				r.Spec.Name = "shared"
+				r.Spec.PolicyRefs = []seaweedv1.S3PolicyRef{{Name: "base"}}
+				r.CreationTimestamp = metav1.NewTime(time.Now().Add(-time.Hour))
+			})
+			claimant := testRole("claimant", func(r *seaweedv1.S3Role) {
+				r.Spec.Name = "shared"
+				r.Spec.WebIdentity.Subjects = []string{bob}
+				r.Spec.PolicyRefs = []seaweedv1.S3PolicyRef{{Name: tc.claimantPolicy}}
+				r.CreationTimestamp = metav1.NewTime(time.Now())
+			})
+			r, cli := newRoleReconciler(t, fa, readyTestProvider("spire", iamSeaweedRef()), owner, claimant)
+			ownerKey := types.NamespacedName{Namespace: "media", Name: "owner"}
+			claimantKey := types.NamespacedName{Namespace: "media", Name: "claimant"}
+			reconcileStable(t, r, ownerKey, 5)
+			reconcileOnce(t, r, claimantKey)
+			reconcileOnce(t, r, claimantKey)
+			if _, exists := fa.roles["shared"]; !exists {
+				t.Fatal("setup: the owner's role was not provisioned")
+			}
+
+			if err := cli.Delete(context.Background(), getRole(t, cli, "owner")); err != nil {
+				t.Fatalf("delete: %v", err)
+			}
+			reconcileOnce(t, r, ownerKey)
+			if live, exists := fa.roles["shared"]; exists && strings.Contains(live.TrustPolicy, testSVID) {
+				t.Fatalf("the deleted owner's subject is still trusted: %s", live.TrustPolicy)
+			}
+
+			reconcileOnce(t, r, claimantKey)
+			reconcileOnce(t, r, claimantKey)
+			live, exists := fa.roles["shared"]
+			if exists != tc.wantRecreated {
+				t.Fatalf("role exists after the claimant reconciled = %v, want %v", exists, tc.wantRecreated)
+			}
+			if exists && (strings.Contains(live.TrustPolicy, testSVID) || !strings.Contains(live.TrustPolicy, bob)) {
+				t.Errorf("recreated trust = %s, want the claimant's subject only", live.TrustPolicy)
 			}
 		})
+	}
+}
+
+// An older S3Role setting spec.name onto a provisioned role's name conflicts
+// instead of displacing the owner, so the owner can still narrow its role.
+func TestS3Role_AnOlderClaimantCannotDisplaceTheProvisionedOwner(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	owner := testRole("owner", func(r *seaweedv1.S3Role) {
+		r.Spec.Name = "shared"
+		r.Spec.WebIdentity.Subjects = []string{testSVID, bob}
+		r.CreationTimestamp = metav1.NewTime(time.Now())
+	})
+	older := testRole("older", func(r *seaweedv1.S3Role) { r.CreationTimestamp = metav1.NewTime(time.Now().Add(-time.Hour)) })
+	r, cli := newRoleReconciler(t, fa, readyTestProvider("spire", iamSeaweedRef()), owner, older)
+	ownerKey := types.NamespacedName{Namespace: "media", Name: "owner"}
+	olderKey := types.NamespacedName{Namespace: "media", Name: "older"}
+	reconcileStable(t, r, ownerKey, 5)
+
+	got := getRole(t, cli, "older")
+	got.Spec.Name = "shared"
+	if err := cli.Update(context.Background(), got); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	reconcileOnce(t, r, olderKey)
+	reconcileOnce(t, r, olderKey)
+	if got := getRole(t, cli, "older"); readyReason(got) != "Conflict" {
+		t.Errorf("older claimant reason = %s, want Conflict", readyReason(got))
+	}
+
+	got = getRole(t, cli, "owner")
+	got.Spec.WebIdentity.Subjects = []string{testSVID}
+	got.Generation++
+	if err := cli.Update(context.Background(), got); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	reconcileStable(t, r, ownerKey, 5)
+	if strings.Contains(fa.roles["shared"].TrustPolicy, bob) {
+		t.Errorf("the owner could not revoke a subject after an older CR claimed its name: %s", fa.roles["shared"].TrustPolicy)
+	}
+}
+
+// A refused rename is a spec change that cannot be applied, so the role it
+// provisioned is withdrawn: a subject removed in the same edit must not stay
+// live.
+func TestS3Role_ARefusedRenameWithdrawsTheRole(t *testing.T) {
+	fa, r, cli, key := provisionedRole(t)
+	respec(t, cli, func(r *seaweedv1.S3Role) {
+		r.Spec.Name = "renamed"
+		r.Spec.WebIdentity.Subjects = []string{bob}
+	})
+	reconcileOnce(t, r, key)
+
+	if _, exists := fa.roles["app"]; exists {
+		t.Errorf("the role stayed live with a refused rename: %+v", fa.roles["app"])
+	}
+	if _, exists := fa.roles["renamed"]; exists {
+		t.Error("a refused rename created a role under the new name")
+	}
+	if got := getRole(t, cli, "app"); got.Status.Phase != seaweedv1.S3PhaseFailed || readyReason(got) != "RoleRenameNotSupported" {
+		t.Errorf("phase=%s reason=%s, want Failed/RoleRenameNotSupported", got.Status.Phase, readyReason(got))
+	}
+}
+
+// A spec change while the cross-namespace grant is missing cannot be applied,
+// so the role is withdrawn rather than left trusting a removed subject.
+func TestS3Role_AChangedSpecWithoutItsReferenceGrantWithdrawsTheRole(t *testing.T) {
+	fa, r, cli, key := provisionedRole(t)
+	var grant seaweedv1.ResourceReferenceGrant
+	if err := cli.Get(context.Background(), types.NamespacedName{Namespace: "seaweedfs", Name: "test-allow-media"}, &grant); err != nil {
+		t.Fatal(err)
+	}
+	if err := cli.Delete(context.Background(), &grant); err != nil {
+		t.Fatal(err)
+	}
+	respec(t, cli, func(r *seaweedv1.S3Role) { r.Spec.WebIdentity.Subjects = []string{bob} })
+	reconcileOnce(t, r, key)
+
+	if _, exists := fa.roles["app"]; exists {
+		t.Errorf("the role stayed live with a spec that could not be applied: %+v", fa.roles["app"])
 	}
 }
 

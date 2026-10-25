@@ -39,27 +39,6 @@ func (c *IAMClient) PutRole(ctx context.Context, role IAMRole) (string, error) {
 	return arn, err
 }
 
-// GetRole returns the role as stored. A missing role is a NotFound status.
-func (c *IAMClient) GetRole(ctx context.Context, name string) (IAMRole, error) {
-	var role IAMRole
-	err := c.withClient(ctx, func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error {
-		resp, err := client.GetRole(ctx, &iam_pb.GetRoleRequest{RoleName: name})
-		if err != nil {
-			return err
-		}
-		r := resp.GetRole()
-		role = IAMRole{
-			Name:               r.GetRoleName(),
-			TrustPolicy:        r.GetTrustPolicy(),
-			AttachedPolicies:   r.GetAttachedPolicies(),
-			Description:        r.GetDescription(),
-			MaxSessionDuration: r.GetMaxSessionDuration(),
-		}
-		return nil
-	})
-	return role, err
-}
-
 // DeleteRole removes a role. The service treats a missing role as deleted.
 func (c *IAMClient) DeleteRole(ctx context.Context, name string) error {
 	return c.withClient(ctx, func(ctx context.Context, client iam_pb.SeaweedIdentityAccessManagementClient) error {

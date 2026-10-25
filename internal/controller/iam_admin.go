@@ -83,8 +83,6 @@ type IAMAdmin interface {
 	// PutRole creates or replaces an STS role (trust policy + attached
 	// policies) and returns its ARN.
 	PutRole(ctx context.Context, role swadmin.IAMRole) (string, error)
-	// GetRole returns the role as stored, or ErrIAMNotFound.
-	GetRole(ctx context.Context, name string) (swadmin.IAMRole, error)
 	// DeleteRole removes a role. Idempotent.
 	DeleteRole(ctx context.Context, name string) error
 }
@@ -223,14 +221,6 @@ func (a *swadminIAMAdmin) PutRole(ctx context.Context, role swadmin.IAMRole) (st
 		return "", mapIAMError(err)
 	}
 	return arn, nil
-}
-
-func (a *swadminIAMAdmin) GetRole(ctx context.Context, name string) (swadmin.IAMRole, error) {
-	role, err := a.c.GetRole(ctx, name)
-	if err != nil {
-		return swadmin.IAMRole{}, mapIAMError(err)
-	}
-	return role, nil
 }
 
 func (a *swadminIAMAdmin) DeleteRole(ctx context.Context, name string) error {

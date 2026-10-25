@@ -226,14 +226,23 @@ func roleClaimants(ctx context.Context, c client.Client, self *seaweedv1.S3Role,
 	return out, nil
 }
 
-// roleConflict is policyConflict for S3Role.
+// roleConflict is policyConflict for S3Role, except that the CR which
+// provisioned the role owns it whatever its age. A role grants STS access, so
+// an older CR setting spec.name onto a live role must not displace its owner
+// and freeze its grants where the owner can no longer narrow them.
 func roleConflict(ctx context.Context, c client.Client, self *seaweedv1.S3Role, name string) (*seaweedv1.S3Role, error) {
+	if self.Status.RoleName == name {
+		return nil, nil
+	}
 	peers, err := roleClaimants(ctx, c, self, name)
 	if err != nil {
 		return nil, err
 	}
 	var winner *seaweedv1.S3Role
 	for _, peer := range peers {
+		if peer.Status.RoleName == name {
+			return peer, nil
+		}
 		if winner == nil || claimPrecedes(peer, winner) {
 			winner = peer
 		}

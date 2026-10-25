@@ -350,17 +350,6 @@ func (f *fakeIAMAdmin) PutRole(_ context.Context, role swadmin.IAMRole) (string,
 	return "arn:aws:iam::role/" + role.Name, nil
 }
 
-func (f *fakeIAMAdmin) GetRole(_ context.Context, name string) (swadmin.IAMRole, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.record("GetRole:" + name)
-	role, ok := f.roles[name]
-	if !ok {
-		return swadmin.IAMRole{}, ErrIAMNotFound
-	}
-	return *role, nil
-}
-
 func (f *fakeIAMAdmin) DeleteRole(_ context.Context, name string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

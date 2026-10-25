@@ -74,6 +74,9 @@ func (r *S3RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			return ctrl.Result{}, err
 		}
 		if !permitted {
+			if err := r.withdrawIfChanged(ctx, &role, log); err != nil {
+				return ctrl.Result{}, err
+			}
 			return r.refForbidden(ctx, &role, seaweedRefDeniedMessage(role.Spec.SeaweedRef, kindS3Role, role.Namespace))
 		}
 		clearIAMCondition(&role.Status.Conditions, seaweedv1.S3ConditionReferenceGranted)
@@ -104,14 +107,20 @@ func (r *S3RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	// Refuse renames once provisioned, after missing-cluster cleanup so an
 	// invalid rename cannot trap the finalizer.
-	if role.DeletionTimestamp.IsZero() && role.Status.RoleName != "" && role.Status.RoleName != name {
-		return r.fail(ctx, &role, "RoleRenameNotSupported",
-			fmt.Sprintf("role name change from %q to %q is not supported; restore the original name or recreate the resource", role.Status.RoleName, name))
-	}
-
 	admin, err := r.getIAMAdmin(target, log)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+
+	if role.DeletionTimestamp.IsZero() && role.Status.RoleName != "" && role.Status.RoleName != name {
+		// The rest of the edit may narrow the role; it cannot be applied.
+		message := fmt.Sprintf("role name change from %q to %q is not supported; restore the original name or recreate the resource", role.Status.RoleName, name)
+		if withdrawn, err := r.withdraw(ctx, &role, admin, role.Status.RoleName); err != nil {
+			return r.fail(ctx, &role, "DeleteFailed", err.Error())
+		} else if withdrawn {
+			message += "; the role is withdrawn until it can be applied in full"
+		}
+		return r.fail(ctx, &role, "RoleRenameNotSupported", message)
 	}
 
 	if !role.DeletionTimestamp.IsZero() {
@@ -132,11 +141,10 @@ func (r *S3RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, err
 	}
 	if issuer == "" {
-		return r.pending(ctx, &role, reason, message)
+		return r.waitFor(ctx, &role, admin, name, reason, message)
 	}
 
 	policies := make([]string, 0, len(role.Spec.PolicyRefs))
-	var missing []string
 	for _, ref := range role.Spec.PolicyRefs {
 		policyName, err := resolvePolicyIAMName(ctx, r.Client, role.Namespace, ref.Name, clusterKey)
 		if err != nil {
@@ -144,20 +152,11 @@ func (r *S3RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 		if _, err := admin.GetPolicy(ctx, policyName); err != nil {
 			if errors.Is(err, ErrIAMNotFound) {
-				missing = append(missing, policyName)
-				continue
+				return r.waitFor(ctx, &role, admin, name, "PolicyMissing", fmt.Sprintf("policy %q does not exist yet", policyName))
 			}
 			return r.fail(ctx, &role, "PolicyLookupFailed", err.Error())
 		}
 		policies = append(policies, policyName)
-	}
-	// A role that does not exist yet waits for all of its policies. One that
-	// does has its removed subjects revoked now; the rest of the change waits.
-	if len(missing) > 0 {
-		if role.Status.RoleName == "" {
-			return r.pending(ctx, &role, "PolicyMissing", fmt.Sprintf("policy %q does not exist yet", missing[0]))
-		}
-		return r.revokeWhileWaiting(ctx, &role, admin, name, missing)
 	}
 
 	trust, err := buildWebIdentityTrustPolicy(issuer, role.Spec.WebIdentity.Subjects)
@@ -196,111 +195,58 @@ func (r *S3RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	return ctrl.Result{RequeueAfter: iamResyncInterval}, nil
 }
 
-// revokeWhileWaiting narrows a provisioned role while a policy its spec now
-// references does not exist yet. The rest of the change could widen access (a
-// new subject, or a missing policy that denies), so it waits; a removed
-// subject is revoked now. The live role is written back with only those
-// subjects dropped from its trust policy, so it never admits more than it did.
-func (r *S3RoleReconciler) revokeWhileWaiting(ctx context.Context, role *seaweedv1.S3Role, admin IAMAdmin, name string, missing []string) (ctrl.Result, error) {
-	waiting := fmt.Sprintf("policies %q do not exist yet", missing)
-	live, err := admin.GetRole(ctx, name)
-	if errors.Is(err, ErrIAMNotFound) {
-		return r.pending(ctx, role, "PolicyMissing", waiting)
-	}
+// waitFor holds a role whose spec cannot be applied yet because its provider
+// or a policy is not ready. A role never provisioned just waits. A provisioned
+// role whose spec changed since it was last applied is deleted until the new
+// spec can be applied in full: applying part of it could widen access (a new
+// subject or issuer without a policy that denies) or keep a removed grant (a
+// dropped subject, issuer or policy), so a spec that cannot be applied admits
+// no one. A dependency lost without a spec change leaves the role alone; it
+// still matches its spec.
+func (r *S3RoleReconciler) waitFor(ctx context.Context, role *seaweedv1.S3Role, admin IAMAdmin, name, reason, message string) (ctrl.Result, error) {
+	withdrawn, err := r.withdraw(ctx, role, admin, name)
 	if err != nil {
-		return r.fail(ctx, role, "RoleLookupFailed", err.Error())
+		return r.fail(ctx, role, "DeleteFailed", err.Error())
 	}
-	issuer, trusted, ok := parseWebIdentityTrustPolicy(live.TrustPolicy)
-	if !ok {
-		return r.pending(ctx, role, "PolicyMissing", waiting+"; the live trust policy is not one this operator writes, so its subjects are not narrowed")
+	if withdrawn {
+		message += "; the role is withdrawn until its changed spec can be applied in full"
 	}
-	kept := make([]string, 0, len(trusted))
-	for _, s := range trusted {
-		if slices.Contains(role.Spec.WebIdentity.Subjects, s) {
-			kept = append(kept, s)
-		}
-	}
-	switch {
-	case len(kept) == len(trusted):
-		return r.pending(ctx, role, "PolicyMissing", waiting)
-	case len(kept) == 0:
-		// No subject the role trusts remains, and a trust policy needs one.
-		if err := admin.DeleteRole(ctx, name); err != nil {
-			return r.fail(ctx, role, "DeleteFailed", err.Error())
-		}
-		r.Log.Info("deleted IAM role until its policies exist: every subject it trusted was removed", "name", name)
-		role.Status.RoleArn = ""
-		role.Status.AttachedPolicies = nil
-		return r.pending(ctx, role, "PolicyMissing", waiting+"; every subject the role trusted was removed, so it is deleted until they exist")
-	}
-	live.Name = name
-	if live.TrustPolicy, err = buildWebIdentityTrustPolicy(issuer, kept); err != nil {
-		return r.fail(ctx, role, "InvalidTrustPolicy", err.Error())
-	}
-	if _, err := admin.PutRole(ctx, live); err != nil {
-		return r.fail(ctx, role, "PutFailed", err.Error())
-	}
-	r.Log.Info("revoked removed subjects while policies are missing", "name", name, "trusted", kept)
-	return r.pending(ctx, role, "PolicyMissing", waiting+"; removed subjects are revoked, the rest of the change waits for them")
+	return r.pending(ctx, role, reason, message)
 }
 
-// parseWebIdentityTrustPolicy reads back a trust policy of the shape
-// buildWebIdentityTrustPolicy writes, as SeaweedFS stores it (re-encoded, so a
-// one-item list may be a bare string). Anything else is not ok.
-func parseWebIdentityTrustPolicy(doc string) (issuer string, subjects []string, ok bool) {
-	var p struct {
-		Statement []struct {
-			Effect       string
-			Principal    map[string]any
-			NotPrincipal any
-			Action       any
-			NotAction    any
-			Resource     any
-			NotResource  any
-			Condition    map[string]map[string]any
-		}
+// withdraw deletes the role this CR provisioned, under name, when its spec has
+// changed since it was last applied (see waitFor). It reports whether it did.
+func (r *S3RoleReconciler) withdraw(ctx context.Context, role *seaweedv1.S3Role, admin IAMAdmin, name string) (bool, error) {
+	if role.Status.RoleName == "" || role.Status.ObservedGeneration == role.Generation {
+		return false, nil
 	}
-	if json.Unmarshal([]byte(doc), &p) != nil || len(p.Statement) != 1 {
-		return "", nil, false
+	if err := admin.DeleteRole(ctx, name); err != nil {
+		return false, err
 	}
-	st := p.Statement[0]
-	if st.Effect != "Allow" || st.NotPrincipal != nil || st.NotAction != nil || st.NotResource != nil || !emptyList(st.Resource) {
-		return "", nil, false
+	if role.Status.RoleArn != "" {
+		r.Log.Info("withdrew IAM role until its changed spec can be applied", "name", name)
 	}
-	if len(st.Principal) != 1 || len(st.Condition) != 1 || len(st.Condition["StringEquals"]) != 1 {
-		return "", nil, false
-	}
-	issuer, _ = st.Principal["Federated"].(string)
-	actions, okA := stringList(st.Action)
-	subjects, okS := stringList(st.Condition["StringEquals"]["oidc:sub"])
-	if issuer == "" || !okA || !slices.Equal(actions, []string{"sts:AssumeRoleWithWebIdentity"}) || !okS || len(subjects) == 0 {
-		return "", nil, false
-	}
-	return issuer, subjects, true
+	role.Status.RoleArn = ""
+	role.Status.AttachedPolicies = nil
+	return true, nil
 }
 
-// stringList reads a JSON value that is a string or a list of strings.
-func stringList(v any) ([]string, bool) {
-	switch t := v.(type) {
-	case string:
-		return []string{t}, true
-	case []any:
-		out := make([]string, 0, len(t))
-		for _, e := range t {
-			s, ok := e.(string)
-			if !ok {
-				return nil, false
-			}
-			out = append(out, s)
-		}
-		return out, true
+// withdrawIfChanged is withdraw for the paths that return before an IAM
+// client exists. A cluster that cannot be resolved has no role to withdraw.
+func (r *S3RoleReconciler) withdrawIfChanged(ctx context.Context, role *seaweedv1.S3Role, log logr.Logger) error {
+	if role.Status.RoleName == "" || role.Status.ObservedGeneration == role.Generation {
+		return nil
 	}
-	return nil, false
-}
-
-func emptyList(v any) bool {
-	l, ok := v.([]any)
-	return v == nil || (ok && len(l) == 0)
+	target, found, err := resolveSeaweedFiler(ctx, r.Client, role.Spec.SeaweedRef, role.Namespace)
+	if err != nil || !found {
+		return err
+	}
+	admin, err := r.getIAMAdmin(target, log)
+	if err != nil {
+		return err
+	}
+	_, err = r.withdraw(ctx, role, admin, role.Status.RoleName)
+	return err
 }
 
 // resolveIssuer returns the issuer URL of the role's S3OIDCProvider once that
@@ -360,13 +306,12 @@ func (r *S3RoleReconciler) handleDeletion(ctx context.Context, role *seaweedv1.S
 	}
 	role.Status.Phase = seaweedv1.S3PhaseTerminating
 
-	// A surviving claimant takes the role over instead of having it deleted
-	// out from under it.
-	claimants, err := roleClaimants(ctx, r.Client, role, name)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if role.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain && len(claimants) == 0 && role.Status.RoleName != "" {
+	// The role is deleted even when another S3Role claims its name. Handing it
+	// over live would keep this CR's subjects and policies granted until the
+	// claimant applies its own spec, and forever if the claimant never can; the
+	// claimant recreates the role from its own spec instead (mapToNameClaimants
+	// requeues it).
+	if role.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain && role.Status.RoleName != "" {
 		if err := admin.DeleteRole(ctx, name); err != nil && !errors.Is(err, ErrIAMNotFound) {
 			setIAMCondition(&role.Status.Conditions, role.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DeleteFailed", err.Error())
 			if updateErr := r.Status().Update(ctx, role); updateErr != nil {

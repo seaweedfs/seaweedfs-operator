@@ -542,6 +542,170 @@ func TestS3Role_AChangedSpecWithoutItsReferenceGrantWithdrawsTheRole(t *testing.
 	}
 }
 
+// The owner keeps its name until its cleanup ends. If DeleteRole fails, a
+// claimant must not create its role in the meantime, or the owner's retry
+// would delete that replacement.
+func TestS3Role_AnOwnerBeingDeletedHoldsItsNameUntilItsCleanupEnds(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	owner := testRole("owner", func(r *seaweedv1.S3Role) {
+		r.Spec.Name = "shared"
+		r.CreationTimestamp = metav1.NewTime(time.Now().Add(-time.Hour))
+	})
+	claimant := testRole("claimant", func(r *seaweedv1.S3Role) {
+		r.Spec.Name = "shared"
+		r.Spec.WebIdentity.Subjects = []string{bob}
+		r.CreationTimestamp = metav1.NewTime(time.Now())
+	})
+	r, cli := newRoleReconciler(t, fa, readyTestProvider("spire", iamSeaweedRef()), owner, claimant)
+	ownerKey := types.NamespacedName{Namespace: "media", Name: "owner"}
+	claimantKey := types.NamespacedName{Namespace: "media", Name: "claimant"}
+	reconcileStable(t, r, ownerKey, 5)
+
+	fa.deleteRoleErr = errors.New("filer unavailable")
+	if err := cli.Delete(context.Background(), getRole(t, cli, "owner")); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: ownerKey}); err == nil {
+		t.Fatal("setup: expected the owner's DeleteRole to fail")
+	}
+	reconcileOnce(t, r, claimantKey)
+	reconcileOnce(t, r, claimantKey)
+	if readyReason(getRole(t, cli, "claimant")) != "Conflict" {
+		t.Errorf("claimant reason = %s while the owner's cleanup is pending, want Conflict", readyReason(getRole(t, cli, "claimant")))
+	}
+	if live := fa.roles["shared"]; live != nil && strings.Contains(live.TrustPolicy, bob) {
+		t.Fatal("the claimant created its role while the owner's cleanup was pending")
+	}
+
+	fa.deleteRoleErr = nil
+	reconcileOnce(t, r, ownerKey)
+	reconcileStable(t, r, claimantKey, 5)
+	live, exists := fa.roles["shared"]
+	if !exists || !strings.Contains(live.TrustPolicy, bob) || strings.Contains(live.TrustPolicy, testSVID) {
+		t.Errorf("after the owner's cleanup, role = %+v, want the claimant's", live)
+	}
+}
+
+// A CR whose rename was refused still owns the role it provisioned, so a
+// claimant of that name conflicts instead of creating a role both would write.
+func TestS3Role_AnOwnerWithARefusedRenameStillHoldsItsName(t *testing.T) {
+	fa, r, cli, key := provisionedRole(t)
+	respec(t, cli, func(r *seaweedv1.S3Role) { r.Spec.Name = "renamed" })
+	reconcileOnce(t, r, key)
+
+	claimant := testRole("claimant", func(r *seaweedv1.S3Role) {
+		r.Spec.Name = "app"
+		r.Spec.WebIdentity.Subjects = []string{bob}
+	})
+	if err := cli.Create(context.Background(), claimant); err != nil {
+		t.Fatal(err)
+	}
+	claimantKey := types.NamespacedName{Namespace: "media", Name: "claimant"}
+	reconcileOnce(t, r, claimantKey)
+	reconcileOnce(t, r, claimantKey)
+	if readyReason(getRole(t, cli, "claimant")) != "Conflict" {
+		t.Errorf("claimant reason = %s, want Conflict with the owner of the refused rename", readyReason(getRole(t, cli, "claimant")))
+	}
+	if _, exists := fa.roles["app"]; exists {
+		t.Error("the claimant created the role the owner still holds")
+	}
+}
+
+// A rename onto a name another CR holds conflicts, and is still a change that
+// cannot be applied: the role this CR provisioned is withdrawn, not left with
+// a subject the same edit removed.
+func TestS3Role_ARenameOntoAHeldNameWithdrawsTheRole(t *testing.T) {
+	other := testRole("other", func(r *seaweedv1.S3Role) { r.Spec.WebIdentity.Subjects = []string{bob} })
+	fa, r, cli, key := provisionedRole(t, other)
+	otherKey := types.NamespacedName{Namespace: "media", Name: "other"}
+	reconcileStable(t, r, otherKey, 5)
+
+	respec(t, cli, func(r *seaweedv1.S3Role) {
+		r.Spec.Name = "other"
+		r.Spec.WebIdentity.Subjects = []string{bob}
+	})
+	reconcileOnce(t, r, key)
+
+	if readyReason(getRole(t, cli, "app")) != "Conflict" {
+		t.Errorf("reason = %s, want Conflict", readyReason(getRole(t, cli, "app")))
+	}
+	if _, exists := fa.roles["app"]; exists {
+		t.Errorf("the role kept its removed subject while the rename conflicted: %+v", fa.roles["app"])
+	}
+	if _, exists := fa.roles["other"]; !exists {
+		t.Error("the conflicting rename touched the other CR's role")
+	}
+}
+
+// A CR not permitted to reference the cluster can never provision, so it does
+// not hold the name against a CR that is.
+func TestS3Role_AForbiddenCRDoesNotHoldTheName(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	rogue := testRole("rogue", func(r *seaweedv1.S3Role) {
+		r.Namespace = "rogue" // no ResourceReferenceGrant admits this namespace
+		r.Spec.Name = "shared"
+		r.CreationTimestamp = metav1.NewTime(time.Now().Add(-time.Hour))
+	})
+	granted := testRole("granted", func(r *seaweedv1.S3Role) {
+		r.Spec.Name = "shared"
+		r.CreationTimestamp = metav1.NewTime(time.Now())
+	})
+	r, cli := newRoleReconciler(t, fa, readyTestProvider("spire", iamSeaweedRef()), rogue, granted)
+	reconcileStable(t, r, types.NamespacedName{Namespace: "media", Name: "granted"}, 5)
+
+	if got := getRole(t, cli, "granted"); got.Status.Phase != seaweedv1.S3PhaseReady {
+		t.Errorf("granted CR phase=%s reason=%s, want Ready despite an older forbidden claimant", got.Status.Phase, readyReason(got))
+	}
+	if _, exists := fa.roles["shared"]; !exists {
+		t.Error("the granted CR did not provision the name")
+	}
+}
+
+// Two CRs that both recorded the name (a race on informer lag) are settled by
+// age: the younger gives the name up without deleting the role, so deleting
+// it later cannot remove the role the elder writes.
+func TestS3Role_TwoHoldersOfANameSettleByAge(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.roles["shared"] = &swadmin.IAMRole{Name: "shared"}
+	held := seaweedv1.S3RoleStatus{RoleName: "shared", RoleArn: "arn:aws:iam::role/shared", ObservedGeneration: 1}
+	elder := testRole("elder", func(r *seaweedv1.S3Role) {
+		r.Spec.Name = "shared"
+		r.Generation = 1
+		r.Status = held
+		r.CreationTimestamp = metav1.NewTime(time.Now().Add(-time.Hour))
+	})
+	younger := testRole("younger", func(r *seaweedv1.S3Role) {
+		r.Spec.Name = "shared"
+		r.Spec.WebIdentity.Subjects = []string{bob}
+		r.Generation = 1
+		r.Status = held
+		r.Finalizers = []string{s3RoleFinalizer}
+		r.CreationTimestamp = metav1.NewTime(time.Now())
+	})
+	r, cli := newRoleReconciler(t, fa, readyTestProvider("spire", iamSeaweedRef()), elder, younger)
+	youngerKey := types.NamespacedName{Namespace: "media", Name: "younger"}
+	reconcileOnce(t, r, youngerKey)
+
+	got := getRole(t, cli, "younger")
+	if readyReason(got) != "Conflict" || got.Status.RoleName != "" {
+		t.Fatalf("younger: reason=%s roleName=%q, want Conflict with the name given up", readyReason(got), got.Status.RoleName)
+	}
+	if _, exists := fa.roles["shared"]; !exists {
+		t.Fatal("giving up the name deleted the role")
+	}
+	if strings.Contains(strings.Join(fa.calls, " "), "PutRole:shared") {
+		t.Error("the younger holder wrote the role after losing the tie")
+	}
+
+	if err := cli.Delete(context.Background(), got); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reconcileOnce(t, r, youngerKey)
+	if _, exists := fa.roles["shared"]; !exists {
+		t.Error("deleting the younger holder removed the elder's role")
+	}
+}
+
 func TestS3Role_NameConflictFailsTheLaterClaimant(t *testing.T) {
 	fa := newFakeIAMAdmin()
 	older := testRole("first", func(r *seaweedv1.S3Role) {

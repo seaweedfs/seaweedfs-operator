@@ -79,6 +79,7 @@ type fakeIAMAdmin struct {
 	attachPolicyErr error
 	putOIDCErr      error
 	putRoleErr      error
+	deleteRoleErr   error
 }
 
 func newFakeIAMAdmin() *fakeIAMAdmin {
@@ -354,6 +355,9 @@ func (f *fakeIAMAdmin) DeleteRole(_ context.Context, name string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.record("DeleteRole:" + name)
+	if f.deleteRoleErr != nil {
+		return f.deleteRoleErr
+	}
 	delete(f.roles, name) // idempotent
 	return nil
 }

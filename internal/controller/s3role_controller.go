@@ -88,6 +88,14 @@ func (r *S3RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			return ctrl.Result{}, err
 		}
 		if owner != nil {
+			if role.Status.RoleName == name {
+				// Lost a tie with another CR that also recorded the name: give
+				// it up without deleting the role the winner now writes.
+				role.Status.RoleName, role.Status.RoleArn, role.Status.AttachedPolicies = "", "", nil
+			} else if err := r.withdrawIfChanged(ctx, &role, log); err != nil {
+				// A rename onto a held name is a change that cannot be applied.
+				return ctrl.Result{}, err
+			}
 			return r.fail(ctx, &role, "Conflict",
 				fmt.Sprintf("IAM role %q on Seaweed %s is already managed by S3Role %s/%s", name, clusterKey, owner.Namespace, owner.Name))
 		}
@@ -376,13 +384,21 @@ func (r *S3RoleReconciler) mapToNameClaimants(ctx context.Context, obj client.Ob
 	if !ok {
 		return nil
 	}
-	peers, err := roleClaimants(ctx, r.Client, role, roleIAMName(role))
-	if err != nil {
-		return nil
+	// The name it records may differ from its spec's after a refused rename;
+	// waiters on either are promoted when it changes or goes away.
+	names := []string{roleIAMName(role)}
+	if role.Status.RoleName != "" && role.Status.RoleName != names[0] {
+		names = append(names, role.Status.RoleName)
 	}
-	reqs := make([]reconcile.Request, 0, len(peers))
-	for _, peer := range peers {
-		reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(peer)})
+	var reqs []reconcile.Request
+	for _, name := range names {
+		peers, err := roleClaimants(ctx, r.Client, role, name)
+		if err != nil {
+			return nil
+		}
+		for _, peer := range peers {
+			reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(peer)})
+		}
 	}
 	return reqs
 }

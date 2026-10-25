@@ -136,6 +136,7 @@ func (r *S3RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	policies := make([]string, 0, len(role.Spec.PolicyRefs))
+	var missing []string
 	for _, ref := range role.Spec.PolicyRefs {
 		policyName, err := resolvePolicyIAMName(ctx, r.Client, role.Namespace, ref.Name, clusterKey)
 		if err != nil {
@@ -143,16 +144,33 @@ func (r *S3RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 		if _, err := admin.GetPolicy(ctx, policyName); err != nil {
 			if errors.Is(err, ErrIAMNotFound) {
-				return r.pending(ctx, &role, "PolicyMissing", fmt.Sprintf("policy %q does not exist yet", policyName))
+				missing = append(missing, policyName)
+				continue
 			}
 			return r.fail(ctx, &role, "PolicyLookupFailed", err.Error())
 		}
 		policies = append(policies, policyName)
 	}
+	// A role that does not exist yet waits for all of its policies. One that
+	// does is still written, so a removed subject or policy is revoked now,
+	// not once a newly referenced policy appears; it carries the policies that
+	// exist, a subset of what the spec grants.
+	if len(missing) > 0 && role.Status.RoleName == "" {
+		return r.pending(ctx, &role, "PolicyMissing", fmt.Sprintf("policy %q does not exist yet", missing[0]))
+	}
 
 	trust, err := buildWebIdentityTrustPolicy(issuer, role.Spec.WebIdentity.Subjects)
 	if err != nil {
 		return r.fail(ctx, &role, "InvalidTrustPolicy", err.Error())
+	}
+	// Record the name before PutRole: if the status write after it failed and
+	// the CR were deleted, an empty status.roleName would skip DeleteRole and
+	// leave the role behind. DeleteRole tolerates a role PutRole never made.
+	if role.Status.RoleName == "" {
+		role.Status.RoleName = name
+		if err := r.Status().Update(ctx, &role); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	arn, err := admin.PutRole(ctx, swadmin.IAMRole{
 		Name:               name,
@@ -166,10 +184,13 @@ func (r *S3RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 	log.Info("applied IAM role", "name", name, "arn", arn)
 
-	role.Status.RoleName = name
 	role.Status.RoleArn = arn
 	role.Status.AttachedPolicies = policies
 	role.Status.ObservedGeneration = role.Generation
+	if len(missing) > 0 {
+		return r.pending(ctx, &role, "PolicyMissing",
+			fmt.Sprintf("policies %q do not exist yet; the role is applied without them", missing))
+	}
 	role.Status.Phase = seaweedv1.S3PhaseReady
 	setIAMCondition(&role.Status.Conditions, role.Generation, seaweedv1.S3ConditionReady, metav1.ConditionTrue, "Reconciled", "")
 	if err := r.Status().Update(ctx, &role); err != nil {

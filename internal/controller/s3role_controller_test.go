@@ -30,7 +30,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 	"github.com/seaweedfs/seaweedfs-operator/internal/controller/swadmin"
@@ -236,6 +239,88 @@ func TestS3Role_DeleteBeforeProvisioningLeavesTheNameAlone(t *testing.T) {
 	reconcileOnce(t, r, key)
 	if _, exists := fa.roles["app"]; !exists {
 		t.Error("deleting an unprovisioned S3Role deleted a role it never created")
+	}
+}
+
+// A status write that fails after PutRole must not leave the role orphaned:
+// deleting the CR before a successful retry still deletes the role.
+func TestS3Role_StatusWriteFailureAfterPutStillDeletesTheRole(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	scheme := iamTestScheme(t)
+	failed := false
+	cli := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(append(defaultTestRefGrants(), newTestSeaweed(), readyTestProvider("spire", iamSeaweedRef()), testRole("app"))...).
+		WithStatusSubresource(&seaweedv1.S3OIDCProvider{}, &seaweedv1.S3Role{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourceUpdate: func(ctx context.Context, c client.Client, sub string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+				if _, put := fa.roles["app"]; put && !failed {
+					failed = true
+					return errors.New("injected status write failure")
+				}
+				return c.SubResource(sub).Update(ctx, obj, opts...)
+			},
+		}).
+		Build()
+	r := &S3RoleReconciler{Client: cli, Log: logf.FromContext(context.Background()), Scheme: scheme}
+	r.AdminFactory = fakeIAMFactory(fa)
+	key := types.NamespacedName{Namespace: "media", Name: "app"}
+
+	reconcileOnce(t, r, key) // finalizer
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: key}); err == nil {
+		t.Fatal("expected the injected status write failure")
+	}
+	if _, put := fa.roles["app"]; !put || !failed {
+		t.Fatalf("setup: PutRole called=%v, failure injected=%v", put, failed)
+	}
+
+	if err := cli.Delete(context.Background(), getRole(t, cli, "app")); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reconcileOnce(t, r, key)
+	if _, exists := fa.roles["app"]; exists {
+		t.Error("the role outlived its S3Role: deletion skipped DeleteRole after a failed status write")
+	}
+}
+
+// Changing a provisioned role's subjects while a newly referenced policy does
+// not exist yet still revokes the removed subject; the role carries the
+// policies that exist until the missing one appears.
+func TestS3Role_RevokesARemovedSubjectWhileANewPolicyIsMissing(t *testing.T) {
+	const bob = "spiffe://example.org/ns/app/sa/bob"
+	fa := newFakeIAMAdmin()
+	fa.policies["base"] = `{}`
+	role := testRole("app", func(r *seaweedv1.S3Role) { r.Spec.PolicyRefs = []seaweedv1.S3PolicyRef{{Name: "base"}} })
+	r, cli := newRoleReconciler(t, fa, readyTestProvider("spire", iamSeaweedRef()), role)
+	key := types.NamespacedName{Namespace: "media", Name: "app"}
+	reconcileStable(t, r, key, 5)
+
+	got := getRole(t, cli, "app")
+	got.Spec.WebIdentity.Subjects = []string{bob}
+	got.Spec.PolicyRefs = []seaweedv1.S3PolicyRef{{Name: "base"}, {Name: "not-yet"}}
+	if err := cli.Update(context.Background(), got); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	reconcileOnce(t, r, key)
+
+	put := fa.roles["app"]
+	if strings.Contains(put.TrustPolicy, testSVID) || !strings.Contains(put.TrustPolicy, bob) {
+		t.Errorf("trust policy still admits the removed subject or lacks the new one: %s", put.TrustPolicy)
+	}
+	if strings.Join(put.AttachedPolicies, ",") != "base" {
+		t.Errorf("attached = %v, want only the existing policy", put.AttachedPolicies)
+	}
+	if got := getRole(t, cli, "app"); got.Status.Phase != seaweedv1.S3PhasePending || readyReason(got) != "PolicyMissing" {
+		t.Errorf("phase=%s reason=%s, want Pending/PolicyMissing", got.Status.Phase, readyReason(got))
+	}
+
+	fa.policies["not-yet"] = `{}`
+	reconcileStable(t, r, key, 5)
+	if strings.Join(fa.roles["app"].AttachedPolicies, ",") != "base,not-yet" {
+		t.Errorf("attached = %v once the policy exists, want base,not-yet", fa.roles["app"].AttachedPolicies)
+	}
+	if got := getRole(t, cli, "app"); got.Status.Phase != seaweedv1.S3PhaseReady {
+		t.Errorf("phase = %s once every policy exists, want Ready", got.Status.Phase)
 	}
 }
 

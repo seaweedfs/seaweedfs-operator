@@ -241,36 +241,27 @@ func roleClaimants(ctx context.Context, c client.Client, self *seaweedv1.S3Role,
 	return out, nil
 }
 
-// roleConflict is policyConflict for S3Role, except that the CR which
-// provisioned the role owns it whatever its age. A role grants STS access, so
+// roleConflict is policyConflict for S3Role, except that a CR which has
+// provisioned the name holds it whatever its age: a role grants STS access, so
 // an older CR setting spec.name onto a live role must not displace its owner
-// and freeze its grants where the owner can no longer narrow them. Two CRs
-// that both recorded the name (a race on informer lag) are settled by age, so
-// exactly one keeps writing it.
+// and freeze its grants. When self and a peer have both provisioned the name
+// (a race on informer lag), each gets the other back; the caller treats that
+// as a dispute.
 func roleConflict(ctx context.Context, c client.Client, self *seaweedv1.S3Role, name string) (*seaweedv1.S3Role, error) {
 	peers, err := roleClaimants(ctx, c, self, name)
 	if err != nil {
 		return nil, err
 	}
-	var holder, winner *seaweedv1.S3Role
+	var winner *seaweedv1.S3Role
 	for _, peer := range peers {
-		if peer.Status.RoleName == name && (holder == nil || claimPrecedes(peer, holder)) {
-			holder = peer
+		if peer.Status.RoleName == name {
+			return peer, nil
 		}
 		if winner == nil || claimPrecedes(peer, winner) {
 			winner = peer
 		}
 	}
-	if self.Status.RoleName == name {
-		if holder == nil || claimPrecedes(self, holder) {
-			return nil, nil
-		}
-		return holder, nil
-	}
-	if holder != nil {
-		return holder, nil
-	}
-	if winner == nil || claimPrecedes(self, winner) {
+	if self.Status.RoleName == name || winner == nil || claimPrecedes(self, winner) {
 		return nil, nil
 	}
 	return winner, nil

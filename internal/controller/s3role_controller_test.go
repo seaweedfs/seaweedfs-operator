@@ -661,17 +661,20 @@ func TestS3Role_AForbiddenCRDoesNotHoldTheName(t *testing.T) {
 	}
 }
 
-// Two CRs that both recorded the name (a race on informer lag) are settled by
-// age: the younger gives the name up without deleting the role, so deleting
-// it later cannot remove the role the elder writes.
-func TestS3Role_TwoHoldersOfANameSettleByAge(t *testing.T) {
+// twoHolders returns an elder and a younger S3Role that both recorded the
+// role name "shared" (a race on informer lag), with the live role carrying the
+// younger's subject, as if it wrote last.
+func twoHolders(t *testing.T) (*fakeIAMAdmin, *S3RoleReconciler, client.Client) {
+	t.Helper()
 	fa := newFakeIAMAdmin()
-	fa.roles["shared"] = &swadmin.IAMRole{Name: "shared"}
+	youngerTrust, _ := buildWebIdentityTrustPolicy(testIssuer, []string{bob})
+	fa.roles["shared"] = &swadmin.IAMRole{Name: "shared", TrustPolicy: youngerTrust}
 	held := seaweedv1.S3RoleStatus{RoleName: "shared", RoleArn: "arn:aws:iam::role/shared", ObservedGeneration: 1}
 	elder := testRole("elder", func(r *seaweedv1.S3Role) {
 		r.Spec.Name = "shared"
 		r.Generation = 1
 		r.Status = held
+		r.Finalizers = []string{s3RoleFinalizer}
 		r.CreationTimestamp = metav1.NewTime(time.Now().Add(-time.Hour))
 	})
 	younger := testRole("younger", func(r *seaweedv1.S3Role) {
@@ -683,26 +686,44 @@ func TestS3Role_TwoHoldersOfANameSettleByAge(t *testing.T) {
 		r.CreationTimestamp = metav1.NewTime(time.Now())
 	})
 	r, cli := newRoleReconciler(t, fa, readyTestProvider("spire", iamSeaweedRef()), elder, younger)
-	youngerKey := types.NamespacedName{Namespace: "media", Name: "younger"}
-	reconcileOnce(t, r, youngerKey)
+	return fa, r, cli
+}
 
-	got := getRole(t, cli, "younger")
-	if readyReason(got) != "Conflict" || got.Status.RoleName != "" {
-		t.Fatalf("younger: reason=%s roleName=%q, want Conflict with the name given up", readyReason(got), got.Status.RoleName)
+// A name two S3Roles both provisioned is disputed: the role is deleted and
+// neither writes it while both exist, so neither CR's subjects stay granted
+// under the other's claim.
+func TestS3Role_ANameTwoCRsProvisionedIsDisputed(t *testing.T) {
+	fa, r, cli := twoHolders(t)
+	for _, n := range []string{"younger", "elder"} {
+		reconcileOnce(t, r, types.NamespacedName{Namespace: "media", Name: n})
+		if got := getRole(t, cli, n); readyReason(got) != "Disputed" {
+			t.Errorf("%s reason = %s, want Disputed", n, readyReason(got))
+		}
 	}
-	if _, exists := fa.roles["shared"]; !exists {
-		t.Fatal("giving up the name deleted the role")
+	if _, exists := fa.roles["shared"]; exists {
+		t.Errorf("a disputed role stayed live: %+v", fa.roles["shared"])
 	}
 	if strings.Contains(strings.Join(fa.calls, " "), "PutRole:shared") {
-		t.Error("the younger holder wrote the role after losing the tie")
+		t.Error("a disputing CR wrote the role")
 	}
+}
 
-	if err := cli.Delete(context.Background(), got); err != nil {
+// Deleting one of two holders deletes the role like any owner's deletion; the
+// other then recreates it from its own spec.
+func TestS3Role_DeletingOneOfTwoHoldersLetsTheOtherRecreateTheRole(t *testing.T) {
+	fa, r, cli := twoHolders(t)
+	if err := cli.Delete(context.Background(), getRole(t, cli, "younger")); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	reconcileOnce(t, r, youngerKey)
-	if _, exists := fa.roles["shared"]; !exists {
-		t.Error("deleting the younger holder removed the elder's role")
+	reconcileOnce(t, r, types.NamespacedName{Namespace: "media", Name: "younger"})
+	if live, exists := fa.roles["shared"]; exists && strings.Contains(live.TrustPolicy, bob) {
+		t.Fatalf("the deleted holder's subject is still trusted: %s", live.TrustPolicy)
+	}
+
+	reconcileStable(t, r, types.NamespacedName{Namespace: "media", Name: "elder"}, 5)
+	live, exists := fa.roles["shared"]
+	if !exists || strings.Contains(live.TrustPolicy, bob) || !strings.Contains(live.TrustPolicy, testSVID) {
+		t.Errorf("after the other holder was deleted, role = %+v, want the elder's spec", live)
 	}
 }
 

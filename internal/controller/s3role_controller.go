@@ -81,19 +81,25 @@ func (r *S3RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 		clearIAMCondition(&role.Status.Conditions, seaweedv1.S3ConditionReferenceGranted)
 
-		// Role names are global per cluster: the oldest CR claiming a name
-		// owns it, later claimants conflict instead of co-managing it.
+		// Role names are global per cluster: the CR holding a name owns it,
+		// later claimants conflict instead of co-managing it.
 		owner, err := roleConflict(ctx, r.Client, &role, name)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
+		if owner != nil && role.Status.RoleName == name {
+			// Both provisioned the name: the role is deleted and neither
+			// writes it until one of them goes away.
+			if err := r.deleteRole(ctx, &role, name, log); err != nil {
+				return ctrl.Result{}, err
+			}
+			role.Status.RoleArn, role.Status.AttachedPolicies = "", nil
+			return r.fail(ctx, &role, "Disputed",
+				fmt.Sprintf("IAM role %q on Seaweed %s is also held by S3Role %s/%s; it is deleted until one of them is removed", name, clusterKey, owner.Namespace, owner.Name))
+		}
 		if owner != nil {
-			if role.Status.RoleName == name {
-				// Lost a tie with another CR that also recorded the name: give
-				// it up without deleting the role the winner now writes.
-				role.Status.RoleName, role.Status.RoleArn, role.Status.AttachedPolicies = "", "", nil
-			} else if err := r.withdrawIfChanged(ctx, &role, log); err != nil {
-				// A rename onto a held name is a change that cannot be applied.
+			// A rename onto a held name is a change that cannot be applied.
+			if err := r.withdrawIfChanged(ctx, &role, log); err != nil {
 				return ctrl.Result{}, err
 			}
 			return r.fail(ctx, &role, "Conflict",
@@ -245,16 +251,32 @@ func (r *S3RoleReconciler) withdrawIfChanged(ctx context.Context, role *seaweedv
 	if role.Status.RoleName == "" || role.Status.ObservedGeneration == role.Generation {
 		return nil
 	}
-	target, found, err := resolveSeaweedFiler(ctx, r.Client, role.Spec.SeaweedRef, role.Namespace)
-	if err != nil || !found {
-		return err
-	}
-	admin, err := r.getIAMAdmin(target, log)
-	if err != nil {
+	admin, err := r.adminFor(ctx, role, log)
+	if admin == nil || err != nil {
 		return err
 	}
 	_, err = r.withdraw(ctx, role, admin, role.Status.RoleName)
 	return err
+}
+
+// deleteRole deletes the named role, for the paths that return before an IAM
+// client exists.
+func (r *S3RoleReconciler) deleteRole(ctx context.Context, role *seaweedv1.S3Role, name string, log logr.Logger) error {
+	admin, err := r.adminFor(ctx, role, log)
+	if admin == nil || err != nil {
+		return err
+	}
+	return admin.DeleteRole(ctx, name)
+}
+
+// adminFor returns an IAM client for the role's cluster, or nil when the
+// cluster cannot be resolved: it has no role to change.
+func (r *S3RoleReconciler) adminFor(ctx context.Context, role *seaweedv1.S3Role, log logr.Logger) (IAMAdmin, error) {
+	target, found, err := resolveSeaweedFiler(ctx, r.Client, role.Spec.SeaweedRef, role.Namespace)
+	if err != nil || !found {
+		return nil, err
+	}
+	return r.getIAMAdmin(target, log)
 }
 
 // resolveIssuer returns the issuer URL of the role's S3OIDCProvider once that

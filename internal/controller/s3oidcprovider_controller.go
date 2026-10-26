@@ -131,7 +131,7 @@ func (r *S3OIDCProviderReconciler) handleDeletion(ctx context.Context, provider 
 	// on the delete call.
 	if provider.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain && provider.Status.ProviderArn != "" {
 		// Idempotent: a provider already gone must not block finalizer removal.
-		if err := admin.DeleteOIDCProvider(ctx, issuer); err != nil && !errors.Is(err, ErrIAMNotFound) {
+		if err := admin.DeleteOIDCProvider(ctx, issuer); err != nil && !errors.Is(err, ErrIAMNotFound) && !errors.Is(err, ErrIAMUnsupported) {
 			setIAMCondition(&provider.Status.Conditions, provider.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DeleteFailed", err.Error())
 			if updateErr := r.Status().Update(ctx, provider); updateErr != nil {
 				r.Log.Error(updateErr, "status update during deletion")

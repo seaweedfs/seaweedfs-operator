@@ -209,7 +209,9 @@ func (a *swadminIAMAdmin) PutOIDCProvider(ctx context.Context, provider swadmin.
 
 func (a *swadminIAMAdmin) DeleteOIDCProvider(ctx context.Context, issuerURL string) error {
 	err := mapIAMError(a.c.DeleteOIDCProvider(ctx, issuerURL))
-	if errors.Is(err, ErrIAMNotFound) {
+	// An unimplemented delete means the matching put was unimplemented too,
+	// so nothing exists server-side.
+	if errors.Is(err, ErrIAMNotFound) || errors.Is(err, ErrIAMUnsupported) {
 		return nil
 	}
 	return err
@@ -225,7 +227,7 @@ func (a *swadminIAMAdmin) PutRole(ctx context.Context, role swadmin.IAMRole) (st
 
 func (a *swadminIAMAdmin) DeleteRole(ctx context.Context, name string) error {
 	err := mapIAMError(a.c.DeleteRole(ctx, name))
-	if errors.Is(err, ErrIAMNotFound) {
+	if errors.Is(err, ErrIAMNotFound) || errors.Is(err, ErrIAMUnsupported) {
 		return nil
 	}
 	return err

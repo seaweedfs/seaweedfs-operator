@@ -26,6 +26,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -280,6 +281,30 @@ func TestS3Role_StatusWriteFailureAfterPutStillDeletesTheRole(t *testing.T) {
 	reconcileOnce(t, r, key)
 	if _, exists := fa.roles["app"]; exists {
 		t.Error("the role outlived its S3Role: deletion skipped DeleteRole after a failed status write")
+	}
+}
+
+// A CR records its name before PutRole, so on a cluster without the role RPCs
+// it holds status.roleName even though nothing was ever created. DeleteRole
+// answering Unimplemented means nothing exists; the finalizer must not stick.
+func TestS3Role_DeleteOnAClusterWithoutTheRoleRPCsIsNotStuck(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.putRoleErr = ErrIAMUnsupported
+	fa.deleteRoleErr = ErrIAMUnsupported
+	r, cli := newRoleReconciler(t, fa, readyTestProvider("spire", iamSeaweedRef()), testRole("app"))
+	key := types.NamespacedName{Namespace: "media", Name: "app"}
+	reconcileOnce(t, r, key) // finalizer
+	reconcileOnce(t, r, key) // records status.roleName, PutRole fails
+	if got := getRole(t, cli, "app"); got.Status.RoleName != "app" {
+		t.Fatalf("setup: status.roleName = %q", got.Status.RoleName)
+	}
+
+	if err := cli.Delete(context.Background(), getRole(t, cli, "app")); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reconcileOnce(t, r, key)
+	if err := cli.Get(context.Background(), key, &seaweedv1.S3Role{}); !apierrors.IsNotFound(err) {
+		t.Errorf("S3Role still present after delete (stuck finalizer): %v", err)
 	}
 }
 

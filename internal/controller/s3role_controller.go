@@ -234,7 +234,7 @@ func (r *S3RoleReconciler) withdraw(ctx context.Context, role *seaweedv1.S3Role,
 	if role.Status.RoleName == "" || role.Status.ObservedGeneration == role.Generation {
 		return false, nil
 	}
-	if err := admin.DeleteRole(ctx, name); err != nil {
+	if err := admin.DeleteRole(ctx, name); err != nil && !errors.Is(err, ErrIAMUnsupported) {
 		return false, err
 	}
 	if role.Status.RoleArn != "" {
@@ -266,7 +266,11 @@ func (r *S3RoleReconciler) deleteRole(ctx context.Context, role *seaweedv1.S3Rol
 	if admin == nil || err != nil {
 		return err
 	}
-	return admin.DeleteRole(ctx, name)
+	err = admin.DeleteRole(ctx, name)
+	if errors.Is(err, ErrIAMUnsupported) {
+		return nil
+	}
+	return err
 }
 
 // adminFor returns an IAM client for the role's cluster, or nil when the
@@ -342,7 +346,7 @@ func (r *S3RoleReconciler) handleDeletion(ctx context.Context, role *seaweedv1.S
 	// claimant recreates the role from its own spec instead (mapToNameClaimants
 	// requeues it).
 	if role.Spec.ReclaimPolicy != seaweedv1.S3ReclaimRetain && role.Status.RoleName != "" {
-		if err := admin.DeleteRole(ctx, name); err != nil && !errors.Is(err, ErrIAMNotFound) {
+		if err := admin.DeleteRole(ctx, name); err != nil && !errors.Is(err, ErrIAMNotFound) && !errors.Is(err, ErrIAMUnsupported) {
 			setIAMCondition(&role.Status.Conditions, role.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DeleteFailed", err.Error())
 			if updateErr := r.Status().Update(ctx, role); updateErr != nil {
 				r.Log.Error(updateErr, "status update during deletion")

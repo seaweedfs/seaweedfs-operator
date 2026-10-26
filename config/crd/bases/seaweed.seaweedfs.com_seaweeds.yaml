@@ -7857,6 +7857,11 @@ spec:
                         type: boolean
                     type: object
                 type: object
+              serviceMonitor:
+                properties:
+                  enabled:
+                    type: boolean
+                type: object
               sftp:
                 properties:
                   affinity:

@@ -621,6 +621,31 @@ Notes worth knowing before turning these on:
 
 See `config/samples/seaweed_v1_seaweed_jwt_signing.yaml` for a full example.
 
+### Prometheus metrics
+
+Set `metricsPort` on a component to serve its metrics at `/metrics` on that port.
+When the Prometheus Operator CRDs are installed, the operator also creates a
+`ServiceMonitor` named `<cluster-name>-<component>` for it. To scrape the metrics
+another way, such as with a `PodMonitor` of your own, keep the ports and turn the
+`ServiceMonitor`s off:
+
+```yaml
+spec:
+  serviceMonitor:
+    enabled: false       # defaults to true
+  master:
+    metricsPort: 9327
+  filer:
+    metricsPort: 9327
+```
+
+The operator then deletes the `ServiceMonitor`s it created earlier. It does the
+same for a component whose `metricsPort` is removed. A `ServiceMonitor` the
+`Seaweed` does not control is never touched.
+
+The operator checks for the `ServiceMonitor` CRD once and caches the answer, so
+restart it after installing the Prometheus Operator.
+
 ### Declarative Buckets
 
 The `Bucket` CRD (`seaweed.seaweedfs.com/v1`) provisions S3 buckets

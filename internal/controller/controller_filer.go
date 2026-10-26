@@ -33,10 +33,8 @@ func (r *SeaweedReconciler) ensureFilerServers(ctx context.Context, seaweedCR *s
 		return
 	}
 
-	if seaweedCR.Spec.Filer.MetricsPort != nil {
-		if done, result, err = r.ensureFilerServiceMonitor(seaweedCR); done {
-			return
-		}
+	if done, result, err = r.ensureFilerServiceMonitor(ctx, seaweedCR); done {
+		return
 	}
 
 	return
@@ -118,17 +116,8 @@ func (r *SeaweedReconciler) ensureFilerConfigMap(ctx context.Context, seaweedCR 
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureFilerServiceMonitor(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-filer-servicemonitor", seaweedCR.Name)
-
-	filerServiceMonitor := r.createFilerServiceMonitor(seaweedCR)
-	if err := controllerutil.SetControllerReference(seaweedCR, filerServiceMonitor, r.Scheme); err != nil {
-		return ReconcileResult(err)
-	}
-	_, err := r.CreateOrUpdateServiceMonitor(filerServiceMonitor)
-
-	log.Info("Get filer service monitor " + filerServiceMonitor.Name)
-	return ReconcileResult(err)
+func (r *SeaweedReconciler) ensureFilerServiceMonitor(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	return r.reconcileServiceMonitor(ctx, seaweedCR, seaweedCR.Spec.Filer.MetricsPort, r.createFilerServiceMonitor(seaweedCR))
 }
 
 func labelsForFiler(name string) map[string]string {

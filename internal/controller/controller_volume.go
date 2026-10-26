@@ -75,10 +75,8 @@ func (r *SeaweedReconciler) ensureVolumeServers(ctx context.Context, seaweedCR *
 		return
 	}
 
-	if vol.MetricsPort != nil {
-		if done, result, err = r.ensureVolumeServerServiceMonitor(seaweedCR); done {
-			return
-		}
+	if done, result, err = r.ensureVolumeServerServiceMonitor(ctx, seaweedCR); done {
+		return
 	}
 
 	return
@@ -203,17 +201,8 @@ func (r *SeaweedReconciler) ensureVolumeServerService(seaweedCR *seaweedv1.Seawe
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureVolumeServerServiceMonitor(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-volume-servicemonitor", seaweedCR.Name)
-
-	volumeServiceMonitor := r.createVolumeServerServiceMonitor(seaweedCR)
-	if err := controllerutil.SetControllerReference(seaweedCR, volumeServiceMonitor, r.Scheme); err != nil {
-		return ReconcileResult(err)
-	}
-	_, err := r.CreateOrUpdateServiceMonitor(volumeServiceMonitor)
-
-	log.Info("Get volume service monitor " + volumeServiceMonitor.Name)
-	return ReconcileResult(err)
+func (r *SeaweedReconciler) ensureVolumeServerServiceMonitor(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	return r.reconcileServiceMonitor(ctx, seaweedCR, seaweedCR.Spec.Volume.MetricsPort, r.createVolumeServerServiceMonitor(seaweedCR))
 }
 
 func (r *SeaweedReconciler) ensureVolumeServersWithTopology(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
@@ -234,10 +223,8 @@ func (r *SeaweedReconciler) ensureVolumeServersWithTopology(ctx context.Context,
 			return
 		}
 
-		if topologySpec.MetricsPort != nil {
-			if done, result, err = r.ensureVolumeServerTopologyServiceMonitor(seaweedCR, topologyName, topologySpec); done {
-				return
-			}
+		if done, result, err = r.ensureVolumeServerTopologyServiceMonitor(ctx, seaweedCR, topologyName, topologySpec); done {
+			return
 		}
 	}
 
@@ -643,15 +630,7 @@ func (r *SeaweedReconciler) ensureVolumeServerTopologyService(seaweedCR *seaweed
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureVolumeServerTopologyServiceMonitor(seaweedCR *seaweedv1.Seaweed, topologyName string, topologySpec *seaweedv1.VolumeTopologySpec) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-volume-topology-servicemonitor", seaweedCR.Name, "topology", topologyName)
-
-	volumeServiceMonitor := r.createVolumeServerTopologyServiceMonitor(seaweedCR, topologyName, topologySpec)
-	if err := controllerutil.SetControllerReference(seaweedCR, volumeServiceMonitor, r.Scheme); err != nil {
-		return ReconcileResult(err)
-	}
-	_, err := r.CreateOrUpdateServiceMonitor(volumeServiceMonitor)
-
-	log.Info("Get volume topology service monitor " + volumeServiceMonitor.Name)
-	return ReconcileResult(err)
+func (r *SeaweedReconciler) ensureVolumeServerTopologyServiceMonitor(ctx context.Context, seaweedCR *seaweedv1.Seaweed, topologyName string, topologySpec *seaweedv1.VolumeTopologySpec) (bool, ctrl.Result, error) {
+	sm := r.createVolumeServerTopologyServiceMonitor(seaweedCR, topologyName, topologySpec)
+	return r.reconcileServiceMonitor(ctx, seaweedCR, topologySpec.MetricsPort, sm)
 }

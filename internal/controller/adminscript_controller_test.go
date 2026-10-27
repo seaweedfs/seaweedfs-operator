@@ -312,3 +312,47 @@ func TestSyncClusterPodLabelsLifecycle(t *testing.T) {
 		t.Fatalf("expected previous value restored, got %v", got.Labels)
 	}
 }
+
+func TestSyncClusterPodLabelsReservedKeys(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+
+	pod := clusterPod("master-0", "seaweed-sample", nil)
+	r := &AdminScriptReconciler{
+		Client:   fake.NewClientBuilder().WithScheme(scheme).WithObjects(pod).Build(),
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(2),
+	}
+	ctx := context.Background()
+
+	script := testAdminScript()
+	script.Spec.ClusterPodLabels = map[string]string{
+		label.InstanceLabelKey: "other-instance",
+		"reboot-block":         "adminscript",
+	}
+	cluster := testCluster()
+
+	if err := r.syncClusterPodLabels(ctx, script, cluster, true); err != nil {
+		t.Fatalf("apply labels: %v", err)
+	}
+	got := &corev1.Pod{}
+	if err := r.Get(ctx, types.NamespacedName{Name: "master-0", Namespace: "default"}, got); err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	if got.Labels[label.InstanceLabelKey] != "seaweed-sample" {
+		t.Fatalf("identity label must not be overwritten, got %v", got.Labels)
+	}
+	if got.Labels["reboot-block"] != "adminscript" {
+		t.Fatalf("expected label applied, got %v", got.Labels)
+	}
+	if strings.Contains(got.Annotations[adminScriptLabelBackupAnnotation], label.InstanceLabelKey) {
+		t.Fatalf("identity label must not be backed up, got %v", got.Annotations)
+	}
+
+	cron := r.buildCronJob(script, cluster)
+	if got := cron.Spec.JobTemplate.Spec.Template.Labels[label.InstanceLabelKey]; got != script.Name {
+		t.Fatalf("job pod instance label = %q, want %q", got, script.Name)
+	}
+}

@@ -58,6 +58,18 @@ const adminScriptLabelBackupAnnotation = "seaweed.seaweedfs.com/adminscript-labe
 // before the object is allowed to disappear.
 const adminScriptLabelsFinalizer = "seaweed.seaweedfs.com/adminscript-pod-labels"
 
+// reservedClusterPodLabel reports whether clusterPodLabels may not override
+// the key: these labels select and identify cluster pods, so overwriting them
+// hides pods from the selector that must restore them later.
+func reservedClusterPodLabel(key string) bool {
+	switch key {
+	case label.ManagedByLabelKey, label.ComponentLabelKey, label.NameLabelKey,
+		label.InstanceLabelKey, label.VersionLabelKey, label.PodName:
+		return true
+	}
+	return false
+}
+
 // AdminScriptReconciler reconciles an AdminScript into a native batch/v1
 // CronJob whose pod runs `weed shell` against the referenced cluster's
 // masters/filer with the spec'd script piped to stdin.
@@ -168,6 +180,9 @@ func (r *AdminScriptReconciler) buildCronJob(script *seaweedv1.AdminScript, clus
 		podLabels[k] = v
 	}
 	for k, v := range script.Spec.ClusterPodLabels {
+		if reservedClusterPodLabel(k) {
+			continue
+		}
 		podLabels[k] = v
 	}
 
@@ -351,6 +366,9 @@ func (r *AdminScriptReconciler) syncClusterPodLabels(ctx context.Context, script
 				pod.Labels = map[string]string{}
 			}
 			for k, v := range script.Spec.ClusterPodLabels {
+				if reservedClusterPodLabel(k) {
+					continue
+				}
 				if _, recorded := backup[k]; !recorded {
 					if old, ok := pod.Labels[k]; ok {
 						backup[k] = &old

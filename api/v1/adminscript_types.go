@@ -189,6 +189,7 @@ type AdminScriptSpec struct {
 	// while ec.encode or ec.balance executes. The labels are also added to
 	// the script's own Job pod.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="!self.exists(k, k in ['app.kubernetes.io/managed-by', 'app.kubernetes.io/component', 'app.kubernetes.io/name', 'app.kubernetes.io/instance', 'app.kubernetes.io/version', 'statefulset.kubernetes.io/pod-name'])",message="clusterPodLabels may not override the pod identity labels used by operator selectors"
 	ClusterPodLabels map[string]string `json:"clusterPodLabels,omitempty"`
 }
 

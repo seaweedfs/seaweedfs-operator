@@ -501,6 +501,12 @@ spec:
                 additionalProperties:
                   type: string
                 type: object
+                x-kubernetes-validations:
+                - message: clusterPodLabels may not override the pod identity labels
+                    used by operator selectors
+                  rule: '!self.exists(k, k in [''app.kubernetes.io/managed-by'', ''app.kubernetes.io/component'',
+                    ''app.kubernetes.io/name'', ''app.kubernetes.io/instance'', ''app.kubernetes.io/version'',
+                    ''statefulset.kubernetes.io/pod-name''])'
               clusterRef:
                 properties:
                   name:

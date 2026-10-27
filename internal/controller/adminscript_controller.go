@@ -115,12 +115,16 @@ func (r *AdminScriptReconciler) setScriptLabelCluster(ctx context.Context, scrip
 }
 
 // isClusterPod reports whether the pod is owned by one of the cluster's
-// StatefulSets, so labels cannot land on unrelated pods that happen to carry
+// workloads — a StatefulSet, the volume DaemonSet, or a Deployment's
+// ReplicaSet — so labels cannot land on unrelated pods that happen to carry
 // matching name/instance labels.
 func isClusterPod(pod *corev1.Pod, clusterName string) bool {
 	for _, ref := range pod.OwnerReferences {
-		if ref.Kind == "StatefulSet" && strings.HasPrefix(ref.Name, clusterName+"-") {
-			return true
+		switch ref.Kind {
+		case "StatefulSet", "DaemonSet", "ReplicaSet":
+			if strings.HasPrefix(ref.Name, clusterName+"-") {
+				return true
+			}
 		}
 	}
 	return false

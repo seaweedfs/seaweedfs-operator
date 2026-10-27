@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
@@ -440,6 +441,66 @@ func TestSyncClusterPodLabelsOverlap(t *testing.T) {
 	}
 	if _, ok := got.Annotations[adminScriptLabelBackupAnnotation]; ok {
 		t.Fatalf("expected backup annotation removed, got %v", got.Annotations)
+	}
+}
+
+// Cluster pods may be owned by any cluster workload kind: StatefulSets,
+// the volume DaemonSet, or a Deployment's ReplicaSet.
+func TestSyncClusterPodLabelsWorkloadKinds(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+
+	owned := func(name, kind, owner string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "default",
+				Labels:    labelsForMaster("seaweed-sample"),
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: "apps/v1",
+					Kind:       kind,
+					Name:       owner,
+				}},
+			},
+		}
+	}
+	pods := []client.Object{
+		owned("master-0", "StatefulSet", "seaweed-sample-master"),
+		owned("volume-x", "DaemonSet", "seaweed-sample-volume"),
+		owned("s3-7c9f4d8b5-abcde", "ReplicaSet", "seaweed-sample-s3-7c9f4d8b5"),
+		owned("stray", "ReplicaSet", "unrelated-rs"),
+	}
+	r := &AdminScriptReconciler{
+		Client:   fake.NewClientBuilder().WithScheme(scheme).WithObjects(pods...).Build(),
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(2),
+	}
+	ctx := context.Background()
+
+	script := testAdminScript()
+	script.Spec.ClusterPodLabels = map[string]string{"reboot-block": "adminscript"}
+	cluster := testCluster()
+
+	if err := r.syncClusterPodLabels(ctx, script, cluster.Name, true); err != nil {
+		t.Fatalf("apply labels: %v", err)
+	}
+	for _, name := range []string{"master-0", "volume-x", "s3-7c9f4d8b5-abcde"} {
+		got := &corev1.Pod{}
+		if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, got); err != nil {
+			t.Fatalf("get pod %s: %v", name, err)
+		}
+		if got.Labels["reboot-block"] != "adminscript" {
+			t.Errorf("pod %s labels = %v, want reboot-block applied", name, got.Labels)
+		}
+	}
+	stray := &corev1.Pod{}
+	if err := r.Get(ctx, types.NamespacedName{Name: "stray", Namespace: "default"}, stray); err != nil {
+		t.Fatalf("get stray pod: %v", err)
+	}
+	if _, ok := stray.Labels["reboot-block"]; ok {
+		t.Error("pod owned by an unrelated ReplicaSet must not be labeled")
 	}
 }
 

@@ -19,7 +19,9 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -32,6 +34,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -83,6 +86,12 @@ func main() {
 		"Steady-state cadence for re-reconciling Ready Bucket and BucketLifecyclePolicy "+
 			"resources so filer state lost out-of-band (cluster rebuild, filer reset, manual "+
 			"delete) is reapplied without an operator restart. Set to 0 to disable. Defaults to 5m.")
+	var watchNamespaces string
+	flag.StringVar(&watchNamespaces, "watch-namespaces", os.Getenv("WATCH_NAMESPACES"),
+		"Comma-separated list of namespaces the operator watches and reconciles namespaced "+
+			"resources in. Empty (the default) watches every namespace cluster-wide. When set, "+
+			"RBAC can be scoped to Roles in these namespaces plus read access to the "+
+			"cluster-scoped types the controllers still consult (namespaces, storageclasses).")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -122,7 +131,7 @@ func main() {
 		metricsServerOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	managerOptions := ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
@@ -140,7 +149,24 @@ func main() {
 		// if you are doing or is intended to do any operation such as perform cleanups
 		// after the manager stops then its usage might be unsafe.
 		// LeaderElectionReleaseOnCancel: true,
-	})
+	}
+
+	if watchNamespaces != "" {
+		namespaces := map[string]cache.Config{}
+		for _, ns := range strings.Split(watchNamespaces, ",") {
+			if ns = strings.TrimSpace(ns); ns != "" {
+				namespaces[ns] = cache.Config{}
+			}
+		}
+		if len(namespaces) == 0 {
+			setupLog.Error(fmt.Errorf("no valid namespace in %q", watchNamespaces), "invalid -watch-namespaces")
+			os.Exit(1)
+		}
+		managerOptions.Cache.DefaultNamespaces = namespaces
+		setupLog.Info("watching only namespaces", "namespaces", watchNamespaces)
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), managerOptions)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
@@ -176,6 +202,17 @@ func main() {
 		ResyncInterval: bucketResyncInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BucketLifecyclePolicy")
+		os.Exit(1)
+	}
+
+	if err = (&controller.BucketNotificationReconciler{
+		Client:         mgr.GetClient(),
+		Log:            ctrl.Log.WithName("controller").WithName("BucketNotification"),
+		Scheme:         mgr.GetScheme(),
+		Recorder:       mgr.GetEventRecorderFor("bucketnotification-controller"),
+		ResyncInterval: bucketResyncInterval,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "BucketNotification")
 		os.Exit(1)
 	}
 
@@ -257,22 +294,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	// The S3OIDCProvider transport is not wired yet (the filer IAM gRPC service
-	// has no OIDC methods), so registering it would fail-loop on every cluster.
-	// Keep it off by default until the server-side RPCs land; opt in with
-	// ENABLE_S3_OIDC_PROVIDER=true for development.
-	if os.Getenv("ENABLE_S3_OIDC_PROVIDER") == "true" {
-		if err = (&controller.S3OIDCProviderReconciler{
-			Client:   mgr.GetClient(),
-			Log:      ctrl.Log.WithName("controller").WithName("S3OIDCProvider"),
-			Scheme:   mgr.GetScheme(),
-			Recorder: mgr.GetEventRecorderFor("s3oidcprovider-controller"),
-		}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "S3OIDCProvider")
-			os.Exit(1)
-		}
-	} else {
-		setupLog.Info("S3OIDCProvider controller disabled (set ENABLE_S3_OIDC_PROVIDER=true to enable; requires filer OIDC gRPC support)")
+	// A cluster whose SeaweedFS predates the OIDC provider and role RPCs
+	// answers Unimplemented; those CRs go Failed with an upgrade message
+	// rather than retrying opaquely.
+	if err = (&controller.S3OIDCProviderReconciler{
+		Client:   mgr.GetClient(),
+		Log:      ctrl.Log.WithName("controller").WithName("S3OIDCProvider"),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("s3oidcprovider-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "S3OIDCProvider")
+		os.Exit(1)
+	}
+	if err = (&controller.S3RoleReconciler{
+		Client:   mgr.GetClient(),
+		Log:      ctrl.Log.WithName("controller").WithName("S3Role"),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("s3role-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "S3Role")
+		os.Exit(1)
 	}
 
 	// The CSI driver deployment is a node-global concern and ships off by

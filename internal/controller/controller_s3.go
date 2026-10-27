@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"strings"
 
-	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -43,6 +42,9 @@ import (
 
 const (
 	s3Component = "s3"
+
+	s3HTTPSVolumeName   = "s3-https-tls"
+	s3HTTPSTLSMountPath = "/etc/sw-s3-tls"
 )
 
 func labelsForS3(name string) map[string]string {
@@ -60,6 +62,30 @@ func s3EffectivePort(m *seaweedv1.Seaweed) int32 {
 		return *m.Spec.S3.Port
 	}
 	return seaweedv1.FilerS3Port // 8333
+}
+
+// s3HTTPSPort returns the HTTPS port the S3 gateway should listen on, or 0
+// when HTTPS is off. HTTPS needs both the port and a certificate Secret.
+func s3HTTPSPort(m *seaweedv1.Seaweed) int32 {
+	s3 := m.Spec.S3
+	if s3 == nil || s3.HTTPSPort == nil || s3.TLSSecret == nil || s3.TLSSecret.Name == "" {
+		return 0
+	}
+	return *s3.HTTPSPort
+}
+
+// s3HTTPSOnly reports whether the gateway serves HTTPS without the plain
+// HTTP listener.
+func s3HTTPSOnly(m *seaweedv1.Seaweed) bool {
+	return s3HTTPSPort(m) != 0 && m.Spec.S3.HTTPSOnly
+}
+
+// s3ProbePort returns the port and scheme the gateway's probes hit.
+func s3ProbePort(m *seaweedv1.Seaweed) (int32, corev1.URIScheme) {
+	if s3HTTPSOnly(m) {
+		return s3HTTPSPort(m), corev1.URISchemeHTTPS
+	}
+	return s3EffectivePort(m), corev1.URISchemeHTTP
 }
 
 func (r *SeaweedReconciler) ensureS3Gateway(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
@@ -88,22 +114,8 @@ func (r *SeaweedReconciler) ensureS3Gateway(ctx context.Context, m *seaweedv1.Se
 	if done, res, err := r.ensureS3Deployment(ctx, m); done {
 		return done, res, err
 	}
-	if m.Spec.S3.MetricsPort != nil {
-		if done, res, err := r.ensureS3ServiceMonitor(m); done {
-			return done, res, err
-		}
-	} else {
-		// MetricsPort toggled off — delete the ServiceMonitor if one
-		// exists. Gate on the CRD so we do not call the API with a
-		// kind it cannot serve.
-		if r.serviceMonitorCRDAvailable() {
-			sm := &monitorv1.ServiceMonitor{
-				ObjectMeta: metav1.ObjectMeta{Name: m.Name + "-s3", Namespace: m.Namespace},
-			}
-			if _, err := r.deleteIfExists(ctx, sm); err != nil {
-				return ReconcileResult(err)
-			}
-		}
+	if done, res, err := r.ensureS3ServiceMonitor(ctx, m); done {
+		return done, res, err
 	}
 	if m.Spec.S3.Ingress != nil && m.Spec.S3.Ingress.Enabled {
 		if done, res, err := r.ensureComponentIngress(m, s3Component, m.Name+"-s3",
@@ -147,13 +159,8 @@ func (r *SeaweedReconciler) deleteS3Gateway(ctx context.Context, m *seaweedv1.Se
 	if _, err := r.deleteIfExists(ctx, ing); err != nil {
 		return err
 	}
-	// ServiceMonitor — gate on the CRD so we do not fail on clusters
-	// without Prometheus Operator installed.
-	if r.serviceMonitorCRDAvailable() {
-		sm := &monitorv1.ServiceMonitor{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: m.Namespace}}
-		if _, err := r.deleteIfExists(ctx, sm); err != nil {
-			return err
-		}
+	if err := r.deleteOwnedServiceMonitor(ctx, m, name); err != nil {
+		return err
 	}
 	return nil
 }
@@ -169,12 +176,23 @@ func (r *SeaweedReconciler) ensureS3Service(m *seaweedv1.Seaweed) (bool, ctrl.Re
 
 func (r *SeaweedReconciler) buildS3Service(m *seaweedv1.Seaweed) *corev1.Service {
 	labels := labelsForS3(m.Name)
-	ports := []corev1.ServicePort{{
-		Name:       "s3-http",
-		Port:       s3EffectivePort(m),
-		TargetPort: intstr.FromInt(int(s3EffectivePort(m))),
-		Protocol:   corev1.ProtocolTCP,
-	}}
+	var ports []corev1.ServicePort
+	if !s3HTTPSOnly(m) {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "s3-http",
+			Port:       s3EffectivePort(m),
+			TargetPort: intstr.FromInt(int(s3EffectivePort(m))),
+			Protocol:   corev1.ProtocolTCP,
+		})
+	}
+	if httpsPort := s3HTTPSPort(m); httpsPort != 0 {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "s3-https",
+			Port:       httpsPort,
+			TargetPort: intstr.FromInt(int(httpsPort)),
+			Protocol:   corev1.ProtocolTCP,
+		})
+	}
 	if m.Spec.S3.MetricsPort != nil {
 		ports = append(ports, corev1.ServicePort{
 			Name:       "s3-metrics",
@@ -247,15 +265,47 @@ func (r *SeaweedReconciler) buildS3Deployment(m *seaweedv1.Seaweed) *appsv1.Depl
 			MountPath: "/etc/sw",
 		})
 	}
+	if s3HTTPSPort(m) != 0 {
+		podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
+			Name: s3HTTPSVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: m.Spec.S3.TLSSecret.Name,
+					// Listing the keys makes kubelet fail the mount when one
+					// is missing; otherwise weed starts, the probes pass, and
+					// every TLS handshake hangs waiting for key material.
+					Items: []corev1.KeyToPath{
+						{Key: corev1.TLSCertKey, Path: corev1.TLSCertKey},
+						{Key: corev1.TLSPrivateKeyKey, Path: corev1.TLSPrivateKeyKey},
+					},
+				},
+			},
+		})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      s3HTTPSVolumeName,
+			ReadOnly:  true,
+			MountPath: s3HTTPSTLSMountPath,
+		})
+	}
 	if tlsVols, tlsMounts := tlsVolumesAndMounts(m); len(tlsVols) > 0 {
 		podSpec.Volumes = append(podSpec.Volumes, tlsVols...)
 		volumeMounts = append(volumeMounts, tlsMounts...)
 	}
 
-	ports := []corev1.ContainerPort{{
-		Name:          "s3-http",
-		ContainerPort: s3EffectivePort(m),
-	}}
+	var ports []corev1.ContainerPort
+	if !s3HTTPSOnly(m) {
+		ports = append(ports, corev1.ContainerPort{
+			Name:          "s3-http",
+			ContainerPort: s3EffectivePort(m),
+		})
+	}
+	probePort, probeScheme := s3ProbePort(m)
+	if httpsPort := s3HTTPSPort(m); httpsPort != 0 {
+		ports = append(ports, corev1.ContainerPort{
+			Name:          "s3-https",
+			ContainerPort: httpsPort,
+		})
+	}
 	if m.Spec.S3.MetricsPort != nil {
 		ports = append(ports, corev1.ContainerPort{
 			Name:          "s3-metrics",
@@ -280,8 +330,9 @@ func (r *SeaweedReconciler) buildS3Deployment(m *seaweedv1.Seaweed) *appsv1.Depl
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path: "/status",
-					Port: intstr.FromInt(int(s3EffectivePort(m))),
+					Path:   "/status",
+					Port:   intstr.FromInt(int(probePort)),
+					Scheme: probeScheme,
 				},
 			},
 			InitialDelaySeconds: 10,
@@ -293,8 +344,9 @@ func (r *SeaweedReconciler) buildS3Deployment(m *seaweedv1.Seaweed) *appsv1.Depl
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path: "/status",
-					Port: intstr.FromInt(int(s3EffectivePort(m))),
+					Path:   "/status",
+					Port:   intstr.FromInt(int(probePort)),
+					Scheme: probeScheme,
 				},
 			},
 			InitialDelaySeconds: 20,
@@ -330,7 +382,32 @@ func (r *SeaweedReconciler) buildS3Deployment(m *seaweedv1.Seaweed) *appsv1.Depl
 
 func buildS3GatewayStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) string {
 	commands := weedPreamble(m, m.BaseS3Spec().LoggingArgs(), "s3")
-	commands = append(commands, fmt.Sprintf("-port=%d", s3EffectivePort(m)))
+	httpsPort := s3HTTPSPort(m)
+	switch {
+	case s3HTTPSOnly(m):
+		// Without -port.https, weed s3 serves TLS on -port and drops HTTP.
+		// weed derives the gRPC port from -port, so pin it to where it would
+		// sit with HTTP on.
+		commands = append(commands,
+			fmt.Sprintf("-port=%d", httpsPort),
+			fmt.Sprintf("-port.grpc=%d", s3EffectivePort(m)+10000),
+		)
+	case httpsPort != 0:
+		// Without -port.https, weed s3 would serve TLS on -port instead and
+		// the HTTP probes would fail.
+		commands = append(commands,
+			fmt.Sprintf("-port=%d", s3EffectivePort(m)),
+			fmt.Sprintf("-port.https=%d", httpsPort),
+		)
+	default:
+		commands = append(commands, fmt.Sprintf("-port=%d", s3EffectivePort(m)))
+	}
+	if httpsPort != 0 {
+		commands = append(commands,
+			"-cert.file="+s3HTTPSTLSMountPath+"/"+corev1.TLSCertKey,
+			"-key.file="+s3HTTPSTLSMountPath+"/"+corev1.TLSPrivateKeyKey,
+		)
+	}
 	commands = append(commands, fmt.Sprintf("-filer=%s-filer:%d", m.Name, seaweedv1.FilerHTTPPort))
 	if m.Spec.S3.ConfigSecret != nil && m.Spec.S3.ConfigSecret.Key != "" {
 		commands = append(commands, "-config=/etc/sw/"+m.Spec.S3.ConfigSecret.Key)
@@ -348,13 +425,8 @@ func buildS3GatewayStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) stri
 	return strings.Join(commands, " ")
 }
 
-func (r *SeaweedReconciler) ensureS3ServiceMonitor(m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	sm := r.createS3ServiceMonitor(m)
-	if err := controllerutil.SetControllerReference(m, sm, r.Scheme); err != nil {
-		return ReconcileResult(err)
-	}
-	_, err := r.CreateOrUpdateServiceMonitor(sm)
-	return ReconcileResult(err)
+func (r *SeaweedReconciler) ensureS3ServiceMonitor(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	return r.reconcileServiceMonitor(ctx, m, m.Spec.S3.MetricsPort, r.createS3ServiceMonitor(m))
 }
 
 // getS3Status retrieves the S3 Deployment status for the top-level

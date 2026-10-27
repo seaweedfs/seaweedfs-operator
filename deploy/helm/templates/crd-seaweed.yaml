@@ -1046,6 +1046,215 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.19.0
     helm.sh/resource-policy: keep
+  name: bucketnotifications.seaweed.seaweedfs.com
+spec:
+  group: seaweed.seaweedfs.com
+  names:
+    categories:
+      - seaweedfs
+    kind: BucketNotification
+    listKind: BucketNotificationList
+    plural: bucketnotifications
+    shortNames:
+      - swbn
+    singular: bucketnotification
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .spec.bucketRef.name
+          name: Bucket
+          type: string
+        - jsonPath: .status.phase
+          name: Phase
+          type: string
+        - jsonPath: .status.appliedRules
+          name: Rules
+          type: integer
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1
+      schema:
+        openAPIV3Schema:
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                bucketRef:
+                  properties:
+                    name:
+                      minLength: 1
+                      type: string
+                  required:
+                    - name
+                  type: object
+                  x-kubernetes-validations:
+                    - message: bucketRef is immutable
+                      rule: self == oldSelf
+                rules:
+                  items:
+                    properties:
+                      destination:
+                        properties:
+                          kafka:
+                            properties:
+                              brokers:
+                                items:
+                                  type: string
+                                minItems: 1
+                                type: array
+                              credentialsSecretRef:
+                                properties:
+                                  name:
+                                    default: ""
+                                    type: string
+                                type: object
+                                x-kubernetes-map-type: atomic
+                                x-kubernetes-validations:
+                                  - message: name must not be empty
+                                    rule: self.name != ''
+                              topic:
+                                minLength: 1
+                                type: string
+                            required:
+                              - brokers
+                              - topic
+                            type: object
+                          webhook:
+                            properties:
+                              bearerTokenSecretRef:
+                                properties:
+                                  key:
+                                    type: string
+                                  name:
+                                    default: ""
+                                    type: string
+                                  optional:
+                                    type: boolean
+                                required:
+                                  - key
+                                type: object
+                                x-kubernetes-map-type: atomic
+                                x-kubernetes-validations:
+                                  - message: name must not be empty
+                                    rule: self.name != ''
+                              endpoint:
+                                minLength: 1
+                                type: string
+                            required:
+                              - endpoint
+                            type: object
+                        type: object
+                        x-kubernetes-validations:
+                          - message: exactly one of kafka or webhook must be set
+                            rule: '(has(self.kafka) ? 1 : 0) + (has(self.webhook) ? 1 : 0) == 1'
+                      eventTypes:
+                        items:
+                          enum:
+                            - create
+                            - update
+                            - delete
+                            - rename
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: set
+                      name:
+                        maxLength: 63
+                        minLength: 1
+                        type: string
+                      prefix:
+                        type: string
+                    required:
+                      - destination
+                      - name
+                    type: object
+                  minItems: 1
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - name
+                  x-kubernetes-list-type: map
+              required:
+                - bucketRef
+                - rules
+              type: object
+            status:
+              properties:
+                appliedRules:
+                  format: int32
+                  type: integer
+                bucketName:
+                  type: string
+                clusterName:
+                  type: string
+                clusterNamespace:
+                  type: string
+                conditions:
+                  items:
+                    properties:
+                      lastTransitionTime:
+                        format: date-time
+                        type: string
+                      message:
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                        type: string
+                      type:
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
+                observedGeneration:
+                  format: int64
+                  type: integer
+                phase:
+                  enum:
+                    - Pending
+                    - Ready
+                    - Failed
+                    - Terminating
+                  type: string
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+    helm.sh/resource-policy: keep
   name: buckets.seaweed.seaweedfs.com
 spec:
   group: seaweed.seaweedfs.com
@@ -1135,9 +1344,6 @@ spec:
                   required:
                     - name
                   type: object
-                  x-kubernetes-validations:
-                    - message: clusterRef is immutable
-                      rule: self == oldSelf
                 name:
                   pattern: ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
                   type: string
@@ -1210,6 +1416,16 @@ spec:
                     - Retain
                     - Delete
                   type: string
+                seaweedRef:
+                  properties:
+                    name:
+                      minLength: 1
+                      type: string
+                    namespace:
+                      type: string
+                  required:
+                    - name
+                  type: object
                 versioning:
                   default: "Off"
                   enum:
@@ -1220,12 +1436,16 @@ spec:
                   x-kubernetes-validations:
                     - message: cannot disable versioning once it has been Enabled or Suspended; use Suspended instead
                       rule: self != 'Off' || oldSelf == 'Off'
-              required:
-                - clusterRef
               type: object
               x-kubernetes-validations:
                 - message: 'objectLock requires versioning: Enabled'
                   rule: '!self.objectLock || self.versioning == ''Enabled'''
+                - message: exactly one of clusterRef or seaweedRef must be set
+                  rule: has(self.clusterRef) != has(self.seaweedRef)
+                - message: clusterRef is immutable
+                  rule: '!has(oldSelf.clusterRef) || (has(self.clusterRef) && self.clusterRef == oldSelf.clusterRef)'
+                - message: seaweedRef is immutable
+                  rule: '!has(oldSelf.seaweedRef) || (has(self.seaweedRef) && self.seaweedRef == oldSelf.seaweedRef)'
             status:
               properties:
                 bucketName:
@@ -2230,6 +2450,201 @@ spec:
                     - Terminating
                   type: string
                 policyName:
+                  type: string
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+    helm.sh/resource-policy: keep
+  name: s3roles.seaweed.seaweedfs.com
+spec:
+  group: seaweed.seaweedfs.com
+  names:
+    categories:
+      - seaweedfs
+    kind: S3Role
+    listKind: S3RoleList
+    plural: s3roles
+    shortNames:
+      - s3role
+    singular: s3role
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .spec.seaweedRef.name
+          name: Cluster
+          type: string
+        - jsonPath: .status.roleName
+          name: Role
+          type: string
+        - jsonPath: .status.roleArn
+          name: ARN
+          priority: 1
+          type: string
+        - jsonPath: .status.phase
+          name: Phase
+          type: string
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1
+      schema:
+        openAPIV3Schema:
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                description:
+                  maxLength: 1000
+                  type: string
+                maxSessionDuration:
+                  format: int64
+                  maximum: 43200
+                  minimum: 3600
+                  type: integer
+                name:
+                  maxLength: 64
+                  minLength: 1
+                  pattern: ^[\w+=,.@-]+$
+                  type: string
+                  x-kubernetes-validations:
+                    - message: role name is immutable once set
+                      rule: oldSelf == '' || self == oldSelf
+                policyRefs:
+                  items:
+                    properties:
+                      name:
+                        maxLength: 128
+                        minLength: 1
+                        type: string
+                    required:
+                      - name
+                    type: object
+                  maxItems: 10
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - name
+                  x-kubernetes-list-type: map
+                reclaimPolicy:
+                  default: Delete
+                  enum:
+                    - Delete
+                    - Retain
+                  type: string
+                seaweedRef:
+                  properties:
+                    name:
+                      minLength: 1
+                      type: string
+                    namespace:
+                      type: string
+                  required:
+                    - name
+                  type: object
+                  x-kubernetes-validations:
+                    - message: seaweedRef is immutable
+                      rule: self == oldSelf
+                webIdentity:
+                  properties:
+                    providerRef:
+                      properties:
+                        name:
+                          minLength: 1
+                          type: string
+                      required:
+                        - name
+                      type: object
+                    subjects:
+                      items:
+                        maxLength: 1024
+                        minLength: 1
+                        type: string
+                      maxItems: 100
+                      minItems: 1
+                      type: array
+                      x-kubernetes-list-type: set
+                      x-kubernetes-validations:
+                        - message: 'a subject must not contain a variable reference (a dollar sign followed by an opening brace): the policy engine expands it'
+                          rule: self.all(s, !s.contains('$' + '{'))
+                  required:
+                    - providerRef
+                    - subjects
+                  type: object
+              required:
+                - seaweedRef
+                - webIdentity
+              type: object
+            status:
+              properties:
+                attachedPolicies:
+                  items:
+                    type: string
+                  type: array
+                conditions:
+                  items:
+                    properties:
+                      lastTransitionTime:
+                        format: date-time
+                        type: string
+                      message:
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                        type: string
+                      type:
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
+                observedGeneration:
+                  format: int64
+                  type: integer
+                phase:
+                  enum:
+                    - Pending
+                    - Ready
+                    - Failed
+                    - Terminating
+                  type: string
+                roleArn:
+                  type: string
+                roleName:
                   type: string
               type: object
           type: object
@@ -4368,6 +4783,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -6649,6 +7068,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -6702,6 +7125,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -7004,6 +7431,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -8594,6 +9025,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -10386,6 +10821,12 @@ spec:
                       x-kubernetes-list-type: atomic
                     hostNetwork:
                       type: boolean
+                    httpsOnly:
+                      type: boolean
+                    httpsPort:
+                      maximum: 65535
+                      minimum: 1
+                      type: integer
                     iam:
                       default: true
                       type: boolean
@@ -10412,6 +10853,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -10599,6 +11044,13 @@ spec:
                       type: string
                     terminationGracePeriodSeconds:
                       type: integer
+                    tlsSecret:
+                      properties:
+                        name:
+                          default: ""
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
                     tolerations:
                       items:
                         properties:
@@ -11462,6 +11914,17 @@ spec:
                   required:
                     - replicas
                   type: object
+                  x-kubernetes-validations:
+                    - message: httpsPort and tlsSecret.name must be set together
+                      rule: has(self.httpsPort) == (has(self.tlsSecret) && has(self.tlsSecret.name) && size(self.tlsSecret.name) > 0)
+                    - message: httpsPort must differ from port
+                      rule: '!has(self.httpsPort) || self.httpsPort != (has(self.port) ? self.port : 8333)'
+                    - message: httpsPort must not collide with the gRPC port (port+10000), the Iceberg (8181) or Lance (9101) ports, or metricsPort
+                      rule: '!has(self.httpsPort) || !(self.httpsPort in [(has(self.port) ? self.port : 8333) + 10000, 8181, 9101] || (has(self.metricsPort) && self.httpsPort == self.metricsPort))'
+                    - message: httpsOnly requires httpsPort and tlsSecret
+                      rule: '!(has(self.httpsOnly) && self.httpsOnly) || has(self.httpsPort)'
+                    - message: httpsOnly is not supported with ingress, which routes to the HTTP port
+                      rule: '!(has(self.httpsOnly) && self.httpsOnly && has(self.ingress) && has(self.ingress.enabled) && self.ingress.enabled)'
                 schedulerName:
                   type: string
                 securityConfig:
@@ -11492,6 +11955,11 @@ spec:
                         volumeWrite:
                           type: boolean
                       type: object
+                  type: object
+                serviceMonitor:
+                  properties:
+                    enabled:
+                      type: boolean
                   type: object
                 sftp:
                   properties:
@@ -12141,6 +12609,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -13924,6 +14396,10 @@ spec:
                           type: boolean
                         host:
                           type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          type: object
                         path:
                           default: /
                           type: string
@@ -18492,16 +18968,23 @@ spec:
                     - replicas
                   type: object
               type: object
+              x-kubernetes-validations:
+                - message: spec.s3.httpsOnly is not supported with spec.hostSuffix, which publishes S3 over HTTP
+                  rule: '!(has(self.hostSuffix) && size(self.hostSuffix) > 0 && has(self.s3) && has(self.s3.httpsOnly) && self.s3.httpsOnly)'
             status:
               properties:
                 admin:
                   properties:
+                    endpoint:
+                      type: string
                     readyReplicas:
                       minimum: 0
                       type: integer
                     replicas:
                       minimum: 0
                       type: integer
+                    service:
+                      type: string
                   type: object
                 backupMirrors:
                   items:
@@ -18559,59 +19042,83 @@ spec:
                   x-kubernetes-list-type: map
                 filer:
                   properties:
+                    endpoint:
+                      type: string
                     readyReplicas:
                       minimum: 0
                       type: integer
                     replicas:
                       minimum: 0
                       type: integer
+                    service:
+                      type: string
                   type: object
                 master:
                   properties:
+                    endpoint:
+                      type: string
                     readyReplicas:
                       minimum: 0
                       type: integer
                     replicas:
                       minimum: 0
                       type: integer
+                    service:
+                      type: string
                   type: object
                 observedGeneration:
                   type: integer
                 s3:
                   properties:
+                    endpoint:
+                      type: string
                     readyReplicas:
                       minimum: 0
                       type: integer
                     replicas:
                       minimum: 0
                       type: integer
+                    service:
+                      type: string
                   type: object
                 sftp:
                   properties:
+                    endpoint:
+                      type: string
                     readyReplicas:
                       minimum: 0
                       type: integer
                     replicas:
                       minimum: 0
                       type: integer
+                    service:
+                      type: string
                   type: object
                 volume:
                   properties:
+                    endpoint:
+                      type: string
                     readyReplicas:
                       minimum: 0
                       type: integer
                     replicas:
                       minimum: 0
                       type: integer
+                    service:
+                      type: string
                   type: object
                 worker:
                   properties:
+                    endpoint:
+                      type: string
                     readyReplicas:
                       minimum: 0
                       type: integer
                     replicas:
                       minimum: 0
                       type: integer
+                    service:
+                      type: string
                   type: object
               type: object
           type: object

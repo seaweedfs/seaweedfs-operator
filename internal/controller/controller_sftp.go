@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"strings"
 
-	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -85,22 +84,8 @@ func (r *SeaweedReconciler) ensureSFTPGateway(ctx context.Context, m *seaweedv1.
 	if done, res, err := r.ensureSFTPDeployment(ctx, m); done {
 		return done, res, err
 	}
-	if m.Spec.SFTP.MetricsPort != nil {
-		if done, res, err := r.ensureSFTPServiceMonitor(m); done {
-			return done, res, err
-		}
-	} else {
-		// MetricsPort toggled off — delete any ServiceMonitor we left
-		// behind. Gate on the CRD so we do not call an API the cluster
-		// cannot serve.
-		if r.serviceMonitorCRDAvailable() {
-			sm := &monitorv1.ServiceMonitor{
-				ObjectMeta: metav1.ObjectMeta{Name: m.Name + "-sftp", Namespace: m.Namespace},
-			}
-			if _, err := r.deleteIfExists(ctx, sm); err != nil {
-				return ReconcileResult(err)
-			}
-		}
+	if done, res, err := r.ensureSFTPServiceMonitor(ctx, m); done {
+		return done, res, err
 	}
 	if m.Spec.SFTP.Ingress != nil && m.Spec.SFTP.Ingress.Enabled {
 		if done, res, err := r.ensureComponentIngress(m, sftpComponent, m.Name+"-sftp",
@@ -136,11 +121,8 @@ func (r *SeaweedReconciler) deleteSFTPGateway(ctx context.Context, m *seaweedv1.
 	if _, err := r.deleteIfExists(ctx, ing); err != nil {
 		return err
 	}
-	if r.serviceMonitorCRDAvailable() {
-		sm := &monitorv1.ServiceMonitor{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: m.Namespace}}
-		if _, err := r.deleteIfExists(ctx, sm); err != nil {
-			return err
-		}
+	if err := r.deleteOwnedServiceMonitor(ctx, m, name); err != nil {
+		return err
 	}
 	return nil
 }
@@ -361,13 +343,8 @@ func buildSFTPGatewayStartupScript(m *seaweedv1.Seaweed, extraArgs ...string) st
 	return strings.Join(commands, " ")
 }
 
-func (r *SeaweedReconciler) ensureSFTPServiceMonitor(m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	sm := r.createSFTPServiceMonitor(m)
-	if err := controllerutil.SetControllerReference(m, sm, r.Scheme); err != nil {
-		return ReconcileResult(err)
-	}
-	_, err := r.CreateOrUpdateServiceMonitor(sm)
-	return ReconcileResult(err)
+func (r *SeaweedReconciler) ensureSFTPServiceMonitor(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	return r.reconcileServiceMonitor(ctx, m, m.Spec.SFTP.MetricsPort, r.createSFTPServiceMonitor(m))
 }
 
 // getSFTPStatus retrieves the SFTP Deployment status for the top-level

@@ -17,6 +17,18 @@ package e2e
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"fmt"
+	"math/big"
+	"net/http"
+	"os/exec"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -182,3 +194,227 @@ var _ = Describe("Standalone S3 gateway", Ordered, func() {
 	// ENABLE_WEBHOOKS=false, the assertion lives in a Go unit test
 	// (api/v1/seaweed_webhook_test.go) rather than here.
 })
+
+// Runs a real `weed s3` with native HTTPS, first alongside HTTP and then
+// with httpsOnly, and checks what actually answers on each port.
+var _ = Describe("Standalone S3 gateway native HTTPS", Ordered, Label("integration"), func() {
+	var (
+		ctx           context.Context
+		k8sClient     client.Client
+		restCfg       *rest.Config
+		testNamespace = "test-s3-https"
+		seaweedName   = "test-sw-s3-https"
+	)
+
+	BeforeAll(func() {
+		ctx = context.Background()
+		k8sClient, restCfg = utils.NewE2EClient()
+		utils.EnsureNamespace(ctx, k8sClient, testNamespace)
+	})
+
+	BeforeEach(func() {
+		DeferCleanup(func() {
+			utils.CollectDiagnostics(ctx, k8sClient, restCfg, testNamespace)
+		})
+	})
+
+	AfterAll(func() {
+		sw := &seaweedv1.Seaweed{}
+		_ = k8sClient.Get(ctx, types.NamespacedName{Name: seaweedName, Namespace: testNamespace}, sw)
+		_ = k8sClient.Delete(ctx, sw)
+		utils.DeleteNamespace(ctx, k8sClient, testNamespace)
+	})
+
+	// readyS3Pod waits for a single Ready S3 pod whose startup script
+	// contains want. That filters out the previous replica after a
+	// rollout, instead of racing the still-Ready old pod.
+	readyS3Pod := func(want string) string {
+		var name string
+		Eventually(func(g Gomega) {
+			pods := &corev1.PodList{}
+			g.Expect(k8sClient.List(ctx, pods, client.InNamespace(testNamespace),
+				client.MatchingLabels{"app.kubernetes.io/component": "s3"})).To(Succeed())
+			var live []corev1.Pod
+			for _, p := range pods.Items {
+				if p.DeletionTimestamp == nil {
+					live = append(live, p)
+				}
+			}
+			g.Expect(live).To(HaveLen(1))
+			p := live[0]
+			g.Expect(strings.Join(p.Spec.Containers[0].Command, " ")).To(ContainSubstring(want))
+			ready := false
+			for _, c := range p.Status.Conditions {
+				if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
+					ready = true
+				}
+			}
+			g.Expect(ready).To(BeTrue(), "pod %s is not Ready", p.Name)
+			name = p.Name
+		}, 5*time.Minute, 5*time.Second).Should(Succeed())
+		return name
+	}
+
+	// forward opens a port-forward to pod for each local:remote pair and
+	// returns a teardown func.
+	forward := func(pod string, pairs ...string) func() {
+		stopCh, readyCh := make(chan struct{}), make(chan struct{})
+		Expect(utils.RunPortForward(restCfg, testNamespace, pod, pairs, stopCh, readyCh)).To(Succeed())
+		select {
+		case <-readyCh:
+		case <-time.After(30 * time.Second):
+			close(stopCh)
+			Fail("port-forward to pod " + pod + " was not ready in 30s")
+		}
+		return func() { close(stopCh) }
+	}
+
+	// request calls /status on an already-forwarded local port.
+	request := func(httpClient *http.Client, scheme string, local int) (int, error) {
+		resp, err := httpClient.Get(fmt.Sprintf("%s://127.0.0.1:%d/status", scheme, local))
+		if err != nil {
+			return 0, err
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode, nil
+	}
+
+	// get calls /status on a pod port through a fresh port-forward.
+	get := func(httpClient *http.Client, scheme, pod string, port int) (int, error) {
+		local, err := utils.GetFreePort()
+		Expect(err).NotTo(HaveOccurred())
+		defer forward(pod, fmt.Sprintf("%d:%d", local, port))()
+		return request(httpClient, scheme, local)
+	}
+
+	It("serves HTTPS with and without HTTP and becomes ready", func() {
+		serverName := fmt.Sprintf("%s-s3.%s.svc", seaweedName, testNamespace)
+		certPEM, keyPEM, roots := selfSignedCert(serverName)
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "s3-tls", Namespace: testNamespace},
+			Type:       corev1.SecretTypeTLS,
+			Data:       map[string][]byte{corev1.TLSCertKey: certPEM, corev1.TLSPrivateKeyKey: keyPEM},
+		})).To(Succeed())
+
+		concurrentStart := true
+		diskCount := int32(1)
+		httpsPort := int32(8334)
+		Expect(k8sClient.Create(ctx, &seaweedv1.Seaweed{
+			ObjectMeta: metav1.ObjectMeta{Name: seaweedName, Namespace: testNamespace},
+			Spec: seaweedv1.SeaweedSpec{
+				// Pinned: this checks weed's own flag handling, so a new
+				// release should be a deliberate bump.
+				Image:                 "chrislusf/seaweedfs:4.48",
+				VolumeServerDiskCount: &diskCount,
+				Master:                &seaweedv1.MasterSpec{Replicas: 1, ConcurrentStart: &concurrentStart},
+				Volume: &seaweedv1.VolumeSpec{
+					Replicas: 1,
+					VolumeServerConfig: seaweedv1.VolumeServerConfig{
+						ResourceRequirements: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("2Gi")},
+						},
+					},
+				},
+				Filer: &seaweedv1.FilerSpec{Replicas: 1},
+				S3: &seaweedv1.S3GatewaySpec{
+					Replicas:  1,
+					HTTPSPort: &httpsPort,
+					TLSSecret: &corev1.LocalObjectReference{Name: "s3-tls"},
+				},
+			},
+		})).To(Succeed())
+
+		// Verifies the chain against the test certificate and the hostname
+		// against the Service DNS name.
+		httpsClient := &http.Client{
+			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: serverName, MinVersion: tls.VersionTLS12},
+			},
+		}
+		httpClient := &http.Client{Timeout: 10 * time.Second}
+
+		By("serving HTTPS alongside HTTP")
+		utils.WaitForSeaweedReady(ctx, k8sClient,
+			types.NamespacedName{Name: seaweedName, Namespace: testNamespace}, 7*time.Minute)
+		pod := readyS3Pod("-port.https=8334")
+		Expect(get(httpsClient, "https", pod, 8334)).To(Equal(http.StatusOK))
+		Expect(get(httpClient, "http", pod, 8333)).To(Equal(http.StatusOK))
+
+		By("switching to httpsOnly")
+		Eventually(func() error {
+			sw := &seaweedv1.Seaweed{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: seaweedName, Namespace: testNamespace}, sw); err != nil {
+				return err
+			}
+			sw.Spec.S3.HTTPSOnly = true
+			return k8sClient.Update(ctx, sw)
+		}, time.Minute, 2*time.Second).Should(Succeed())
+
+		// A Ready pod with -port.grpc means kubelet's HTTPS probe passed
+		// against the httpsOnly listener.
+		pod = readyS3Pod("-port.grpc=")
+		Expect(get(httpsClient, "https", pod, 8334)).To(Equal(http.StatusOK))
+
+		// The mounted cert doubles as the CA for curl, so this request goes
+		// pod -> Service DNS name -> Service port -> endpoint, exercising the
+		// s3-https Service wiring rather than a pod port-forward. Polled for
+		// endpoint propagation after the rollout.
+		// Bound each attempt: Eventually runs callbacks synchronously, so a
+		// stuck exec or a hung TLS handshake would otherwise outlast the poll.
+		Eventually(func() error {
+			attemptCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			defer cancel()
+			out, err := utils.Run(exec.CommandContext(attemptCtx, "kubectl", "exec", "-n", testNamespace, pod, "-c", "s3", "--",
+				"curl", "-sf", "--max-time", "10", "--cacert", "/etc/sw-s3-tls/tls.crt", fmt.Sprintf("https://%s:%d/status", serverName, httpsPort)))
+			if err != nil {
+				return fmt.Errorf("%v: %s", err, out)
+			}
+			return nil
+		}, time.Minute, 5*time.Second).Should(Succeed())
+
+		// One forward carrying both ports: the HTTPS request proves the
+		// forward itself is healthy, so an error on the HTTP port means the
+		// gateway is really not listening there.
+		httpsLocal, err := utils.GetFreePort()
+		Expect(err).NotTo(HaveOccurred())
+		httpLocal, err := utils.GetFreePort()
+		Expect(err).NotTo(HaveOccurred())
+		defer forward(pod,
+			fmt.Sprintf("%d:%d", httpsLocal, httpsPort),
+			fmt.Sprintf("%d:8333", httpLocal))()
+		Expect(request(httpsClient, "https", httpsLocal)).To(Equal(http.StatusOK))
+		_, err = request(httpClient, "http", httpLocal)
+		Expect(err).To(HaveOccurred(), "plain HTTP should be off with httpsOnly")
+	})
+})
+
+// selfSignedCert returns a PEM certificate and key for host, plus a pool
+// that trusts it.
+func selfSignedCert(host string) (certPEM, keyPEM []byte, roots *x509.CertPool) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	Expect(err).NotTo(HaveOccurred())
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: host},
+		DNSNames:              []string{host},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	Expect(err).NotTo(HaveOccurred())
+	cert, err := x509.ParseCertificate(der)
+	Expect(err).NotTo(HaveOccurred())
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	Expect(err).NotTo(HaveOccurred())
+
+	roots = x509.NewCertPool()
+	roots.AddCert(cert)
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
+		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}),
+		roots
+}

@@ -194,3 +194,75 @@ func resolvePolicyIAMName(ctx context.Context, c client.Client, namespace, ref, 
 		return "", err
 	}
 }
+
+func roleIAMName(r *seaweedv1.S3Role) string {
+	if r.Spec.Name != "" {
+		return r.Spec.Name
+	}
+	return r.Name
+}
+
+// roleClaimants is policyClaimants for S3Role, except that a peer also holds
+// the name its status.roleName records: one whose rename was refused still
+// owns its provisioned role, and one being deleted holds the name until its
+// cleanup ends, so a claimant cannot create a role that cleanup then deletes.
+func roleClaimants(ctx context.Context, c client.Client, self *seaweedv1.S3Role, name string) ([]*seaweedv1.S3Role, error) {
+	var list seaweedv1.S3RoleList
+	if err := c.List(ctx, &list); err != nil {
+		return nil, err
+	}
+	cluster := seaweedRefKey(self.Spec.SeaweedRef, self.Namespace)
+	var out []*seaweedv1.S3Role
+	for i := range list.Items {
+		peer := &list.Items[i]
+		if peer.Namespace == self.Namespace && peer.Name == self.Name {
+			continue
+		}
+		if seaweedRefKey(peer.Spec.SeaweedRef, peer.Namespace) != cluster {
+			continue
+		}
+		holds := peer.Status.RoleName == name
+		if !holds && (!peer.DeletionTimestamp.IsZero() || roleIAMName(peer) != name) {
+			continue
+		}
+		if !holds {
+			// A peer not permitted to reference the cluster can never
+			// provision, so it must not squat a name others could use.
+			permitted, err := seaweedRefPermitted(ctx, c, peer.Spec.SeaweedRef, kindS3Role, peer.Namespace)
+			if err != nil {
+				return nil, err
+			}
+			if !permitted {
+				continue
+			}
+		}
+		out = append(out, peer)
+	}
+	return out, nil
+}
+
+// roleConflict is policyConflict for S3Role, except that a CR which has
+// provisioned the name holds it whatever its age: a role grants STS access, so
+// an older CR setting spec.name onto a live role must not displace its owner
+// and freeze its grants. When self and a peer have both provisioned the name
+// (a race on informer lag), each gets the other back; the caller treats that
+// as a dispute.
+func roleConflict(ctx context.Context, c client.Client, self *seaweedv1.S3Role, name string) (*seaweedv1.S3Role, error) {
+	peers, err := roleClaimants(ctx, c, self, name)
+	if err != nil {
+		return nil, err
+	}
+	var winner *seaweedv1.S3Role
+	for _, peer := range peers {
+		if peer.Status.RoleName == name {
+			return peer, nil
+		}
+		if winner == nil || claimPrecedes(peer, winner) {
+			winner = peer
+		}
+	}
+	if self.Status.RoleName == name || winner == nil || claimPrecedes(self, winner) {
+		return nil, nil
+	}
+	return winner, nil
+}

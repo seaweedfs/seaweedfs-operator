@@ -13,6 +13,9 @@ resources:
   kind: BucketLifecyclePolicy
   version: v1
 - group: seaweed
+  kind: BucketNotification
+  version: v1
+- group: seaweed
   kind: S3Identity
   version: v1
 - group: seaweed
@@ -26,6 +29,9 @@ resources:
   version: v1
 - group: seaweed
   kind: S3OIDCProvider
+  version: v1
+- group: seaweed
+  kind: S3Role
   version: v1
 - group: seaweed
   kind: ResourceReferenceGrant

@@ -284,7 +284,7 @@ func TestSyncClusterPodLabelsLifecycle(t *testing.T) {
 	cluster := testCluster()
 
 	// Active run: labels applied, previous values recorded.
-	if err := r.syncClusterPodLabels(ctx, script, cluster, true); err != nil {
+	if err := r.syncClusterPodLabels(ctx, script, cluster.Name, true); err != nil {
 		t.Fatalf("apply labels: %v", err)
 	}
 	got := &corev1.Pod{}
@@ -317,7 +317,7 @@ func TestSyncClusterPodLabelsLifecycle(t *testing.T) {
 	}
 
 	// Run finished: labels removed, prior values restored, annotation gone.
-	if err := r.syncClusterPodLabels(ctx, script, cluster, false); err != nil {
+	if err := r.syncClusterPodLabels(ctx, script, cluster.Name, false); err != nil {
 		t.Fatalf("restore labels: %v", err)
 	}
 	if err := r.Get(ctx, types.NamespacedName{Name: "master-0", Namespace: "default"}, got); err != nil {
@@ -358,7 +358,7 @@ func TestSyncClusterPodLabelsReservedKeys(t *testing.T) {
 	}
 	cluster := testCluster()
 
-	if err := r.syncClusterPodLabels(ctx, script, cluster, true); err != nil {
+	if err := r.syncClusterPodLabels(ctx, script, cluster.Name, true); err != nil {
 		t.Fatalf("apply labels: %v", err)
 	}
 	got := &corev1.Pod{}
@@ -410,17 +410,17 @@ func TestSyncClusterPodLabelsOverlap(t *testing.T) {
 		return got
 	}
 
-	if err := r.syncClusterPodLabels(ctx, scriptA, cluster, true); err != nil {
+	if err := r.syncClusterPodLabels(ctx, scriptA, cluster.Name, true); err != nil {
 		t.Fatalf("apply A: %v", err)
 	}
-	if err := r.syncClusterPodLabels(ctx, scriptB, cluster, true); err != nil {
+	if err := r.syncClusterPodLabels(ctx, scriptB, cluster.Name, true); err != nil {
 		t.Fatalf("apply B: %v", err)
 	}
 	if got := get().Labels["reboot-block"]; got != "b" {
 		t.Fatalf("expected b label, got %q", got)
 	}
 
-	if err := r.syncClusterPodLabels(ctx, scriptA, cluster, false); err != nil {
+	if err := r.syncClusterPodLabels(ctx, scriptA, cluster.Name, false); err != nil {
 		t.Fatalf("release A: %v", err)
 	}
 	got := get()
@@ -431,7 +431,7 @@ func TestSyncClusterPodLabelsOverlap(t *testing.T) {
 		t.Fatalf("B backup must be spliced to original, got %v", got.Annotations)
 	}
 
-	if err := r.syncClusterPodLabels(ctx, scriptB, cluster, false); err != nil {
+	if err := r.syncClusterPodLabels(ctx, scriptB, cluster.Name, false); err != nil {
 		t.Fatalf("release B: %v", err)
 	}
 	got = get()
@@ -469,12 +469,12 @@ func TestSyncClusterPodLabelsDropsRemovedSpecKeys(t *testing.T) {
 		return got
 	}
 
-	if err := r.syncClusterPodLabels(ctx, script, cluster, true); err != nil {
+	if err := r.syncClusterPodLabels(ctx, script, cluster.Name, true); err != nil {
 		t.Fatalf("apply labels: %v", err)
 	}
 
 	script.Spec.ClusterPodLabels = map[string]string{"reboot-block": "a"}
-	if err := r.syncClusterPodLabels(ctx, script, cluster, true); err != nil {
+	if err := r.syncClusterPodLabels(ctx, script, cluster.Name, true); err != nil {
 		t.Fatalf("re-apply labels: %v", err)
 	}
 	got := get()
@@ -486,5 +486,61 @@ func TestSyncClusterPodLabelsDropsRemovedSpecKeys(t *testing.T) {
 	}
 	if strings.Contains(got.Annotations[adminScriptLabelBackupAnnotation], "keep-me") {
 		t.Fatalf("dropped key must leave the backup, got %v", got.Annotations)
+	}
+}
+
+func TestSyncClusterPodLabelsClusterRefMoved(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := seaweedv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add seaweed scheme: %v", err)
+	}
+
+	pod := clusterPod("master-0", "old-cluster", nil)
+	script := testAdminScript()
+	script.Spec.ClusterPodLabels = map[string]string{"reboot-block": "a"}
+
+	r := &AdminScriptReconciler{
+		Client:   fake.NewClientBuilder().WithScheme(scheme).WithObjects(pod, script).Build(),
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(2),
+	}
+	ctx := context.Background()
+
+	// Labels were applied to the cluster the script used to reference.
+	if err := r.syncClusterPodLabels(ctx, script, "old-cluster", true); err != nil {
+		t.Fatalf("apply labels: %v", err)
+	}
+	if err := r.setScriptLabelCluster(ctx, script, "old-cluster"); err != nil {
+		t.Fatalf("record cluster: %v", err)
+	}
+	if got := scriptLabelCluster(script); got != "old-cluster" {
+		t.Fatalf("label cluster = %q, want old-cluster", got)
+	}
+
+	// clusterRef now points at seaweed-sample, but the restore still finds
+	// the pods on the recorded cluster.
+	if err := r.syncClusterPodLabels(ctx, script, scriptLabelCluster(script), false); err != nil {
+		t.Fatalf("restore labels: %v", err)
+	}
+	got := &corev1.Pod{}
+	if err := r.Get(ctx, types.NamespacedName{Name: "master-0", Namespace: "default"}, got); err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	if _, ok := got.Labels["reboot-block"]; ok {
+		t.Fatalf("expected label removed on old cluster, got %v", got.Labels)
+	}
+	if _, ok := got.Annotations[adminScriptLabelBackupAnnotation]; ok {
+		t.Fatalf("expected backup annotation removed, got %v", got.Annotations)
+	}
+
+	script.Spec.ClusterPodLabels = nil
+	if err := r.setScriptLabelCluster(ctx, script, "seaweed-sample"); err != nil {
+		t.Fatalf("clear record: %v", err)
+	}
+	if got := script.Annotations[adminScriptLabelsClusterAnnotation]; got != "" {
+		t.Fatalf("expected record cleared, got %q", got)
 	}
 }

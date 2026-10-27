@@ -67,6 +67,11 @@ type adminScriptLabelBackupEntry struct {
 // before the object is allowed to disappear.
 const adminScriptLabelsFinalizer = "seaweed.seaweedfs.com/adminscript-pod-labels"
 
+// adminScriptLabelsClusterAnnotation records the name of the cluster whose
+// pods currently carry this AdminScript's labels, so a clusterRef edit still
+// restores the pods the labels were applied to.
+const adminScriptLabelsClusterAnnotation = "seaweed.seaweedfs.com/adminscript-labels-cluster"
+
 // reservedClusterPodLabel reports whether clusterPodLabels may not override
 // the key: these labels select and identify cluster pods, so overwriting them
 // hides pods from the selector that must restore them later.
@@ -77,6 +82,36 @@ func reservedClusterPodLabel(key string) bool {
 		return true
 	}
 	return false
+}
+
+// scriptLabelCluster returns the cluster whose pods the script's labels were
+// applied to — the recorded cluster once labels were applied, else the
+// referenced one — so restore still finds them if clusterRef moved.
+func scriptLabelCluster(script *seaweedv1.AdminScript) string {
+	if name := script.Annotations[adminScriptLabelsClusterAnnotation]; name != "" {
+		return name
+	}
+	return script.Spec.ClusterRef.Name
+}
+
+// setScriptLabelCluster records the cluster whose pods carry this script's
+// labels, or clears the record once clusterPodLabels is empty.
+func (r *AdminScriptReconciler) setScriptLabelCluster(ctx context.Context, script *seaweedv1.AdminScript, clusterName string) error {
+	if len(script.Spec.ClusterPodLabels) == 0 {
+		clusterName = ""
+	}
+	if script.Annotations[adminScriptLabelsClusterAnnotation] == clusterName {
+		return nil
+	}
+	if clusterName == "" {
+		delete(script.Annotations, adminScriptLabelsClusterAnnotation)
+	} else {
+		if script.Annotations == nil {
+			script.Annotations = map[string]string{}
+		}
+		script.Annotations[adminScriptLabelsClusterAnnotation] = clusterName
+	}
+	return r.Update(ctx, script)
 }
 
 // isClusterPod reports whether the pod is owned by one of the cluster's
@@ -127,10 +162,8 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if !script.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&script, adminScriptLabelsFinalizer) {
 			// The cluster may already be gone; the label selector only needs its name.
-			if clusterErr == nil {
-				if err := r.syncClusterPodLabels(ctx, &script, &cluster, false); err != nil {
-					return ctrl.Result{}, err
-				}
+			if err := r.syncClusterPodLabels(ctx, &script, scriptLabelCluster(&script), false); err != nil {
+				return ctrl.Result{}, err
 			}
 			controllerutil.RemoveFinalizer(&script, adminScriptLabelsFinalizer)
 			return ctrl.Result{}, r.Update(ctx, &script)
@@ -167,7 +200,16 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	if err := r.syncClusterPodLabels(ctx, &script, &cluster, len(cronJob.Status.Active) > 0); err != nil {
+	if appliedTo := scriptLabelCluster(&script); appliedTo != cluster.Name {
+		// clusterRef moved; restore the labels left on the previous cluster.
+		if err := r.syncClusterPodLabels(ctx, &script, appliedTo, false); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	if err := r.syncClusterPodLabels(ctx, &script, cluster.Name, len(cronJob.Status.Active) > 0); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.setScriptLabelCluster(ctx, &script, cluster.Name); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -356,18 +398,18 @@ func (r *AdminScriptReconciler) createOrUpdateCronJob(ctx context.Context, owner
 // recorded label state once no run remains. Backups per AdminScript are kept
 // in adminScriptLabelBackupAnnotation so multiple scripts can label the same
 // pods and a spec edit mid-run never loses the original values.
-func (r *AdminScriptReconciler) syncClusterPodLabels(ctx context.Context, script *seaweedv1.AdminScript, cluster *seaweedv1.Seaweed, active bool) error {
+func (r *AdminScriptReconciler) syncClusterPodLabels(ctx context.Context, script *seaweedv1.AdminScript, clusterName string, active bool) error {
 	var pods corev1.PodList
 	if err := r.List(ctx, &pods, client.InNamespace(script.Namespace), client.MatchingLabels{
 		label.NameLabelKey:     "seaweedfs",
-		label.InstanceLabelKey: cluster.Name,
+		label.InstanceLabelKey: clusterName,
 	}); err != nil {
 		return err
 	}
 
 	for i := range pods.Items {
 		pod := &pods.Items[i]
-		if !isClusterPod(pod, cluster.Name) {
+		if !isClusterPod(pod, clusterName) {
 			continue
 		}
 		backups := map[string]map[string]adminScriptLabelBackupEntry{}

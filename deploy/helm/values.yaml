@@ -82,6 +82,16 @@ csiDriver:
   # none of those grants.
   enabled: false
 
+# -- Restrict the operator to specific namespaces. When empty (default),
+# the operator watches all namespaces cluster-wide and gets a ClusterRole.
+# When set, the operator only watches and reconciles namespaced resources
+# in these namespaces and gets a per-namespace Role in each, plus a small
+# ClusterRole limited to the cluster-scoped reads the controllers still
+# need (namespaces, storageclasses). Leader-election leases are already
+# covered by the chart's dedicated Role in the release namespace.
+watchNamespaces: []
+#  - seaweedfs
+
 # -- Additional environment variables for the manager container. Takes the usual
 # env list form, so a value can come from a secretKeyRef or fieldRef as well as
 # a literal. ENABLE_CSI_DRIVER is rejected here — set csiDriver.enabled, which

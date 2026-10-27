@@ -141,15 +141,16 @@ func (r *BucketLifecyclePolicyReconciler) Reconcile(ctx context.Context, req ctr
 		return r.conflict(&policy, owner), nil
 	}
 
-	seaweedNS := bucket.Spec.ClusterRef.Namespace
+	clusterRef := bucket.Spec.ClusterReference()
+	seaweedNS := clusterRef.Namespace
 	if seaweedNS == "" {
 		seaweedNS = bucket.Namespace
 	}
 	var seaweed seaweedv1.Seaweed
-	if err := r.Get(ctx, types.NamespacedName{Namespace: seaweedNS, Name: bucket.Spec.ClusterRef.Name}, &seaweed); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Namespace: seaweedNS, Name: clusterRef.Name}, &seaweed); err != nil {
 		if apierrors.IsNotFound(err) {
 			return r.pending(&policy, "ClusterRefNotFound",
-				fmt.Sprintf("Seaweed %q not found in namespace %q", bucket.Spec.ClusterRef.Name, seaweedNS)), nil
+				fmt.Sprintf("Seaweed %q not found in namespace %q", clusterRef.Name, seaweedNS)), nil
 		}
 		return ctrl.Result{}, err
 	}

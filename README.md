@@ -663,10 +663,14 @@ metadata:
   name: photos
   namespace: media
 spec:
-  clusterRef:
+  seaweedRef:
     name: seaweed1
     namespace: default
 ```
+
+The reference may also be written as `clusterRef` (the original field
+name); the two names are interchangeable, exactly one must be set, and
+neither can change after creation.
 
 Supported per-bucket configuration:
 
@@ -696,7 +700,7 @@ Supported per-bucket configuration:
   recovery path when a CR deleted under `Retain` is reapplied — the
   normal GitOps flow after an accidental deletion. Adoption confers
   full ownership, including deletion under `reclaimPolicy: Delete`.
-- Cross-namespace `clusterRef` is **denied by default**: it resolves only
+- Cross-namespace `seaweedRef`/`clusterRef` is **denied by default**: it resolves only
   when a [`ResourceReferenceGrant`](#cross-namespace-references-resourcereferencegrant)
   in the target `Seaweed`'s namespace permits it. The bucket stays
   `Pending` (condition `ClusterRefForbidden=True`) until a grant exists.

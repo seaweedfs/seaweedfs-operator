@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -39,7 +40,7 @@ func TestManagedResourceClusterReferencesAreImmutable(t *testing.T) {
 	bucket := &seaweedv1.Bucket{
 		ObjectMeta: metav1.ObjectMeta{Name: "photos", Namespace: ns},
 		Spec: seaweedv1.BucketSpec{
-			ClusterRef: seaweedv1.BucketClusterRef{Name: "cluster-a"},
+			ClusterRef: &seaweedv1.BucketClusterRef{Name: "cluster-a"},
 		},
 	}
 	identity := &seaweedv1.S3Identity{
@@ -116,6 +117,83 @@ func TestManagedResourceClusterReferencesAreImmutable(t *testing.T) {
 			tc.mutate()
 			if err := cli.Update(ctx, tc.object); err == nil {
 				t.Fatal("expected cluster reference update to be rejected")
+			} else if !apierrors.IsInvalid(err) {
+				t.Fatalf("expected an Invalid error, got %v", err)
+			}
+		})
+	}
+}
+
+// Bucket accepts the reference under either name — clusterRef (the original
+// field) or seaweedRef (the name the IAM CRDs use) — but never both, never
+// neither, and never swapped after creation.
+func TestBucketClusterRefAndSeaweedRefAreExclusive(t *testing.T) {
+	_, cli := mustEnvtest(t)
+	ctx := context.Background()
+	ns := newTestNamespace(t, ctx, cli, "bucket-ref-exclusive")
+
+	newBucket := func(name string, spec seaweedv1.BucketSpec) *seaweedv1.Bucket {
+		return &seaweedv1.Bucket{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+			Spec:       spec,
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		spec seaweedv1.BucketSpec
+	}{
+		{"neither set", seaweedv1.BucketSpec{}},
+		{"both set", seaweedv1.BucketSpec{
+			ClusterRef: &seaweedv1.BucketClusterRef{Name: "cluster-a"},
+			SeaweedRef: &seaweedv1.SeaweedReference{Name: "cluster-a"},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := cli.Create(ctx, newBucket("bad-"+strings.ReplaceAll(tc.name, " ", "-"), tc.spec))
+			if err == nil {
+				t.Fatal("expected create to be rejected")
+			} else if !apierrors.IsInvalid(err) {
+				t.Fatalf("expected an Invalid error, got %v", err)
+			}
+		})
+	}
+
+	viaSeaweedRef := newBucket("via-seaweedref", seaweedv1.BucketSpec{
+		SeaweedRef: &seaweedv1.SeaweedReference{Name: "cluster-a"},
+	})
+	if err := cli.Create(ctx, viaSeaweedRef); err != nil {
+		t.Fatalf("create via seaweedRef: %v", err)
+	}
+	t.Cleanup(func() { _ = cli.Delete(context.Background(), viaSeaweedRef) })
+
+	viaClusterRef := newBucket("via-clusterref", seaweedv1.BucketSpec{
+		ClusterRef: &seaweedv1.BucketClusterRef{Name: "cluster-a"},
+	})
+	if err := cli.Create(ctx, viaClusterRef); err != nil {
+		t.Fatalf("create via clusterRef: %v", err)
+	}
+	t.Cleanup(func() { _ = cli.Delete(context.Background(), viaClusterRef) })
+
+	for _, tc := range []struct {
+		name   string
+		object *seaweedv1.Bucket
+		mutate func()
+	}{
+		{"seaweedRef name", viaSeaweedRef, func() { viaSeaweedRef.Spec.SeaweedRef.Name = "cluster-b" }},
+		{"seaweedRef dropped", viaSeaweedRef, func() { viaSeaweedRef.Spec.SeaweedRef = nil }},
+		{"clusterRef dropped for seaweedRef", viaClusterRef, func() {
+			viaClusterRef.Spec.ClusterRef = nil
+			viaClusterRef.Spec.SeaweedRef = &seaweedv1.SeaweedReference{Name: "cluster-a"}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			orig := tc.object.DeepCopy()
+			tc.mutate()
+			err := cli.Update(ctx, tc.object)
+			*tc.object = *orig
+			if err == nil {
+				t.Fatal("expected reference update to be rejected")
 			} else if !apierrors.IsInvalid(err) {
 				t.Fatalf("expected an Invalid error, got %v", err)
 			}

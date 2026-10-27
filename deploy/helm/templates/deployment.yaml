@@ -72,6 +72,10 @@ spec:
         - --bucket-usage-refresh-interval={{ .Values.bucketUsage.refreshInterval }}
         {{- end }}
         {{- end }}
+        {{- $watchNamespaces := .Values.watchNamespaces | default (list) | compact | uniq }}
+        {{- if $watchNamespaces }}
+        - --watch-namespaces={{ join "," $watchNamespaces }}
+        {{- end }}
         env:
         {{- if eq .Values.webhook.enabled false }}
         - name: ENABLE_WEBHOOKS

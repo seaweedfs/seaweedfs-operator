@@ -192,3 +192,327 @@ cert-manager resource names
 {{- define "seaweedfs-operator.webhookCertificateSecretName" -}}
 {{- printf "%s-webhook-server-cert" (include "seaweedfs-operator.fullname" .) -}}
 {{- end -}}
+
+{{/*
+Namespaced rules of the manager role — everything the controllers need
+inside watched namespaces. Rendered into a per-namespace Role when
+watchNamespaces is set, or into the cluster-wide ClusterRole otherwise.
+The
+leader-election lease has its own Role in the release namespace.
+*/}}
+{{- define "seaweedfs-operator.managerNamespacedRules" -}}
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - secrets
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  - deployments
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - cronjobs
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - certificates
+  - issuers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - extensions
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - adminscripts
+  - bucketlifecyclepolicies
+  - bucketnotifications
+  - buckets
+  - s3credentials
+  - s3identities
+  - s3oidcproviders
+  - s3policies
+  - s3policybindings
+  - s3roles
+  - seaweedbackups
+  - seaweedrestores
+  - seaweeds
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - adminscripts/finalizers
+  - bucketlifecyclepolicies/finalizers
+  - bucketnotifications/finalizers
+  - buckets/finalizers
+  - s3credentials/finalizers
+  - s3identities/finalizers
+  - s3oidcproviders/finalizers
+  - s3policies/finalizers
+  - s3policybindings/finalizers
+  - s3roles/finalizers
+  - seaweedbackups/finalizers
+  - seaweedrestores/finalizers
+  - seaweeds/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - adminscripts/status
+  - bucketlifecyclepolicies/status
+  - bucketnotifications/status
+  - buckets/status
+  - s3credentials/status
+  - s3identities/status
+  - s3oidcproviders/status
+  - s3policies/status
+  - s3policybindings/status
+  - s3roles/status
+  - seaweedbackups/status
+  - seaweedrestores/status
+  - seaweeds/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - resourcereferencegrants
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+{{- end }}
+
+{{/*
+Cluster-scoped rules of the manager role — the only grants that must be
+cluster-wide when the operator is restricted to watchNamespaces, plus
+the rules only the SeaweedCSIDriver controller needs (the driver deploys
+cluster-global objects, so enabling it keeps its grants cluster-wide).
+*/}}
+{{- define "seaweedfs-operator.managerClusterRules" -}}
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - get
+  - list
+  - watch
+{{- if .Values.csiDriver }}
+{{- if .Values.csiDriver.enabled }}
+# Rules only the SeaweedCSIDriver controller needs, from the kubebuilder
+# markers in internal/controller/seaweedcsidriver_controller.go. The manager
+# registers that controller only when csiDriver.enabled sets
+# ENABLE_CSI_DRIVER=true, so the same value gates the grants: a default
+# install cannot manage CSIDrivers, cluster-wide RBAC (bind/escalate), nodes,
+# or PersistentVolumes. test/helm/rbac_drift_test.go checks both renders
+# against the markers.
+- apiGroups:
+  - ""
+  resources:
+  - events
+  - nodes
+  - persistentvolumeclaims
+  - persistentvolumes
+  - pods
+  - serviceaccounts
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterrolebindings
+  - clusterroles
+  - rolebindings
+  - roles
+  verbs:
+  - bind
+  - create
+  - delete
+  - escalate
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - seaweedcsidrivers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - seaweedcsidrivers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - seaweedcsidrivers/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumesnapshotcontents
+  - volumesnapshots
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - csidrivers
+  - storageclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - csinodes
+  - volumeattachments
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+{{- end }}
+{{- end }}
+{{- end }}

@@ -1337,6 +1337,29 @@ spec:
                   required:
                     - name
                   type: object
+                defaultRetention:
+                  properties:
+                    days:
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    mode:
+                      enum:
+                        - GOVERNANCE
+                        - COMPLIANCE
+                        - Governance
+                        - Compliance
+                      type: string
+                    years:
+                      format: int32
+                      minimum: 1
+                      type: integer
+                  required:
+                    - mode
+                  type: object
+                  x-kubernetes-validations:
+                    - message: exactly one of days or years must be set
+                      rule: has(self.days) != has(self.years)
                 name:
                   pattern: ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
                   type: string
@@ -1439,6 +1462,8 @@ spec:
                   rule: '!has(oldSelf.clusterRef) || (has(self.clusterRef) && self.clusterRef == oldSelf.clusterRef)'
                 - message: seaweedRef is immutable
                   rule: '!has(oldSelf.seaweedRef) || (has(self.seaweedRef) && self.seaweedRef == oldSelf.seaweedRef)'
+                - message: 'defaultRetention requires objectLock: true'
+                  rule: '!has(self.defaultRetention) || self.objectLock'
             status:
               properties:
                 bucketName:
@@ -1482,6 +1507,29 @@ spec:
                   x-kubernetes-list-map-keys:
                     - type
                   x-kubernetes-list-type: map
+                defaultRetention:
+                  properties:
+                    days:
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    mode:
+                      enum:
+                        - GOVERNANCE
+                        - COMPLIANCE
+                        - Governance
+                        - Compliance
+                      type: string
+                    years:
+                      format: int32
+                      minimum: 1
+                      type: integer
+                  required:
+                    - mode
+                  type: object
+                  x-kubernetes-validations:
+                    - message: exactly one of days or years must be set
+                      rule: has(self.days) != has(self.years)
                 objectLockEnabled:
                   type: boolean
                 observedGeneration:

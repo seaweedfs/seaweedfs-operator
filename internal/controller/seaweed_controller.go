@@ -128,6 +128,12 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return result, err
 	}
 
+	// Runs first so a component reconcile that returns early below cannot
+	// leave a stale ServiceMonitor behind.
+	if done, result, err = r.pruneServiceMonitors(ctx, seaweedCR); done {
+		return result, err
+	}
+
 	// TLS must be reconciled first: component pod specs reference the
 	// server Secret and security Secret names, and skipping these when
 	// cert-manager is absent is the difference between reconciling cleanly

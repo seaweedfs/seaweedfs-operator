@@ -67,23 +67,80 @@ func serviceMonitorTestSeaweed(port *int32, enabled *bool) *seaweedv1.Seaweed {
 
 func boolPtr(b bool) *bool { return &b }
 
+func ownedServiceMonitor(t *testing.T, m *seaweedv1.Seaweed, name string, owned bool) *monitorv1.ServiceMonitor {
+	t.Helper()
+	sm := &monitorv1.ServiceMonitor{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: m.Namespace}}
+	if owned {
+		scheme := runtime.NewScheme()
+		_ = seaweedv1.AddToScheme(scheme)
+		if err := controllerutil.SetControllerReference(m, sm, scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return sm
+}
+
+func serviceMonitorExists(t *testing.T, r *SeaweedReconciler, name string) bool {
+	t.Helper()
+	err := r.Get(context.Background(), client.ObjectKey{Namespace: "test", Name: name}, &monitorv1.ServiceMonitor{})
+	if err == nil {
+		return true
+	}
+	if apierrors.IsNotFound(err) {
+		return false
+	}
+	t.Fatalf("get ServiceMonitor %s: %v", name, err)
+	return false
+}
+
+func TestPruneServiceMonitors(t *testing.T) {
+	ctx := context.Background()
+	port := metricsPort(9327)
+
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "test", UID: "sw-uid"},
+		Spec: seaweedv1.SeaweedSpec{
+			Master: &seaweedv1.MasterSpec{Replicas: 1, MetricsPort: port},
+			VolumeTopology: map[string]*seaweedv1.VolumeTopologySpec{
+				"dc1": {VolumeServerConfig: seaweedv1.VolumeServerConfig{MetricsPort: port}},
+			},
+			Filer: &seaweedv1.FilerSpec{Replicas: 1, MetricsPort: port},
+		},
+	}
+	objs := []client.Object{
+		ownedServiceMonitor(t, m, "sw-master", true),
+		ownedServiceMonitor(t, m, "sw-filer", true),
+		ownedServiceMonitor(t, m, "sw-volume", true),
+		ownedServiceMonitor(t, m, "sw-volume-dc1", true),
+		ownedServiceMonitor(t, m, "sw-volume-dc2", true),
+		ownedServiceMonitor(t, m, "sw-admin", true),
+		ownedServiceMonitor(t, m, "sw-user", false),
+	}
+
+	for _, enabled := range []bool{true, false} {
+		m.Spec.ServiceMonitor = &seaweedv1.ServiceMonitorSpec{Enabled: boolPtr(enabled)}
+		r := serviceMonitorTestReconciler(t, true, objs...)
+		if done, _, err := r.pruneServiceMonitors(ctx, m); err != nil || done {
+			t.Fatalf("enabled=%v pruneServiceMonitors: done=%v err=%v", enabled, done, err)
+		}
+
+		want := map[string]bool{
+			"sw-master":     enabled,
+			"sw-filer":      enabled,
+			"sw-volume-dc1": enabled,
+			"sw-user":       true,
+		}
+		for _, sm := range objs {
+			if got := serviceMonitorExists(t, r, sm.GetName()); got != want[sm.GetName()] {
+				t.Errorf("enabled=%v %s: exists=%v, want %v", enabled, sm.GetName(), got, want[sm.GetName()])
+			}
+		}
+	}
+}
+
 func TestReconcileServiceMonitor(t *testing.T) {
 	ctx := context.Background()
 	key := client.ObjectKey{Namespace: "test", Name: "sw-master"}
-
-	// existingMonitor is a ServiceMonitor left by an earlier reconcile; owned
-	// sets whether this Seaweed controls it.
-	existingMonitor := func(t *testing.T, m *seaweedv1.Seaweed, owned bool) *monitorv1.ServiceMonitor {
-		sm := &monitorv1.ServiceMonitor{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace}}
-		if owned {
-			scheme := runtime.NewScheme()
-			_ = seaweedv1.AddToScheme(scheme)
-			if err := controllerutil.SetControllerReference(m, sm, scheme); err != nil {
-				t.Fatal(err)
-			}
-		}
-		return sm
-	}
 
 	tests := []struct {
 		name       string
@@ -106,7 +163,7 @@ func TestReconcileServiceMonitor(t *testing.T) {
 			m := serviceMonitorTestSeaweed(tt.port, tt.enabled)
 			var objs []client.Object
 			if tt.existing {
-				objs = append(objs, existingMonitor(t, m, tt.owned))
+				objs = append(objs, ownedServiceMonitor(t, m, key.Name, tt.owned))
 			}
 			r := serviceMonitorTestReconciler(t, true, objs...)
 

@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"context"
+
 	"k8s.io/apimachinery/pkg/runtime"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -11,7 +13,7 @@ import (
 	label "github.com/seaweedfs/seaweedfs-operator/internal/controller/label"
 )
 
-func (r *SeaweedReconciler) ensureAdminServers(seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
+func (r *SeaweedReconciler) ensureAdminServers(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (done bool, result ctrl.Result, err error) {
 	_ = r.Log.WithValues("seaweed", seaweedCR.Name)
 
 	if done, result, err = r.ensureAdminPeerService(seaweedCR); done {
@@ -26,10 +28,8 @@ func (r *SeaweedReconciler) ensureAdminServers(seaweedCR *seaweedv1.Seaweed) (do
 		return
 	}
 
-	if seaweedCR.Spec.Admin.MetricsPort != nil {
-		if done, result, err = r.ensureAdminServiceMonitor(seaweedCR); done {
-			return
-		}
+	if done, result, err = r.ensureAdminServiceMonitor(ctx, seaweedCR); done {
+		return
 	}
 
 	return
@@ -84,17 +84,8 @@ func (r *SeaweedReconciler) ensureAdminService(seaweedCR *seaweedv1.Seaweed) (bo
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureAdminServiceMonitor(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-admin-servicemonitor", seaweedCR.Name)
-
-	adminServiceMonitor := r.createAdminServiceMonitor(seaweedCR)
-	if err := controllerutil.SetControllerReference(seaweedCR, adminServiceMonitor, r.Scheme); err != nil {
-		return ReconcileResult(err)
-	}
-	_, err := r.CreateOrUpdateServiceMonitor(adminServiceMonitor)
-
-	log.Info("Get admin service monitor " + adminServiceMonitor.Name)
-	return ReconcileResult(err)
+func (r *SeaweedReconciler) ensureAdminServiceMonitor(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	return r.reconcileServiceMonitor(ctx, seaweedCR, seaweedCR.Spec.Admin.MetricsPort, r.createAdminServiceMonitor(seaweedCR))
 }
 
 func labelsForAdmin(name string) map[string]string {

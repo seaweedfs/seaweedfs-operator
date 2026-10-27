@@ -34,10 +34,10 @@ func (r *SeaweedReconciler) ensureWorkers(ctx context.Context, seaweedCR *seawee
 		if done, result, err = r.ensureWorkerService(seaweedCR); done {
 			return
 		}
+	}
 
-		if done, result, err = r.ensureWorkerServiceMonitor(seaweedCR); done {
-			return
-		}
+	if done, result, err = r.ensureWorkerServiceMonitor(ctx, seaweedCR); done {
+		return
 	}
 
 	return
@@ -102,17 +102,8 @@ func (r *SeaweedReconciler) ensureWorkerService(seaweedCR *seaweedv1.Seaweed) (b
 	return ReconcileResult(err)
 }
 
-func (r *SeaweedReconciler) ensureWorkerServiceMonitor(seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
-	log := r.Log.WithValues("sw-worker-servicemonitor", seaweedCR.Name)
-
-	workerServiceMonitor := r.createWorkerServiceMonitor(seaweedCR)
-	if err := controllerutil.SetControllerReference(seaweedCR, workerServiceMonitor, r.Scheme); err != nil {
-		return ReconcileResult(err)
-	}
-	_, err := r.CreateOrUpdateServiceMonitor(workerServiceMonitor)
-
-	log.Info("Get worker service monitor " + workerServiceMonitor.Name)
-	return ReconcileResult(err)
+func (r *SeaweedReconciler) ensureWorkerServiceMonitor(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
+	return r.reconcileServiceMonitor(ctx, seaweedCR, seaweedCR.Spec.Worker.MetricsPort, r.createWorkerServiceMonitor(seaweedCR))
 }
 
 func labelsForWorker(name string) map[string]string {

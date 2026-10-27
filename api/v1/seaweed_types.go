@@ -199,6 +199,11 @@ type SeaweedSpec struct {
 	// which exposes a scrape endpoint instead.
 	MetricsAddress string `json:"metricsAddress,omitempty"`
 
+	// ServiceMonitor controls the Prometheus Operator ServiceMonitors the
+	// operator creates for the components that set metricsPort.
+	// +optional
+	ServiceMonitor *ServiceMonitorSpec `json:"serviceMonitor,omitempty"`
+
 	// Image
 	Image string `json:"image,omitempty"`
 
@@ -872,6 +877,23 @@ type AdminSpec struct {
 	// Ingress configuration for the admin UI HTTP port.
 	// +optional
 	Ingress *IngressSpec `json:"ingress,omitempty"`
+}
+
+// ServiceMonitorSpec controls the ServiceMonitors created for the components'
+// metrics ports.
+type ServiceMonitorSpec struct {
+	// Enabled creates a ServiceMonitor for every component that sets
+	// metricsPort, when the Prometheus Operator CRDs are installed. Defaults
+	// to true. Set false to leave scraping to something else, such as a
+	// PodMonitor of your own; ServiceMonitors created earlier are removed.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// ServiceMonitorsEnabled reports whether the operator creates ServiceMonitors
+// for the components that set metricsPort.
+func (s *SeaweedSpec) ServiceMonitorsEnabled() bool {
+	return s.ServiceMonitor == nil || s.ServiceMonitor.Enabled == nil || *s.ServiceMonitor.Enabled
 }
 
 // WorkerLanceMetricsPort is the fixed port the worker-lance sidecar serves

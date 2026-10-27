@@ -600,6 +600,9 @@ func TestS3PolicyBinding_FailedAttachKeepsBucketRecords(t *testing.T) {
 	reconcileOnce(t, r, key)
 
 	got := getBinding(t, cli, "rw-bind")
+	if len(got.Status.AttachedSubjects) != 1 || got.Status.AttachedSubjects[0] != "alice" {
+		t.Errorf("attachedSubjects = %v, want [alice] preserved for cleanup", got.Status.AttachedSubjects)
+	}
 	if len(got.Status.AttachedBuckets) != 1 || got.Status.AttachedBuckets[0] != "data" {
 		t.Errorf("attachedBuckets = %v, want [data] preserved for cleanup", got.Status.AttachedBuckets)
 	}

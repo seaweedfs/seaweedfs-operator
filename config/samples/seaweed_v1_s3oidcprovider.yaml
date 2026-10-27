@@ -1,0 +1,18 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3OIDCProvider
+metadata:
+  name: spire
+  namespace: default
+spec:
+  # The Seaweed cluster whose embedded IAM service trusts this issuer.
+  seaweedRef:
+    name: seaweed-sample
+  # The OIDC issuer URL; the provider's stable identity.
+  issuerURL: https://oidc.example.org
+  # Audiences (OIDC "aud" / client IDs) accepted from this issuer.
+  clientIDs:
+    - seaweedfs-s3
+  # thumbprints: ["<40-hex-char CA thumbprint>"]  # optional; needed when the
+  #                          # issuer's TLS chain cannot be verified another way
+  # reclaimPolicy: Retain  # default Delete: removing this CR deregisters the
+  #                        # provider

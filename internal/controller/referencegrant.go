@@ -41,6 +41,7 @@ const (
 	kindS3Policy        = "S3Policy"
 	kindS3PolicyBinding = "S3PolicyBinding"
 	kindS3OIDCProvider  = "S3OIDCProvider"
+	kindS3Role          = "S3Role"
 	kindBucket          = "Bucket"
 
 	kindSeaweedCSIDriver = "SeaweedCSIDriver"

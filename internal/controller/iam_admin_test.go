@@ -70,6 +70,7 @@ type fakeIAMAdmin struct {
 	users     map[string]*swadmin.IAMUser
 	policies  map[string]string
 	providers map[string]string // issuerURL -> arn
+	roles     map[string]*swadmin.IAMRole
 	calls     []string
 
 	createUserErr   error
@@ -77,6 +78,8 @@ type fakeIAMAdmin struct {
 	putPolicyErr    error
 	attachPolicyErr error
 	putOIDCErr      error
+	putRoleErr      error
+	deleteRoleErr   error
 }
 
 func newFakeIAMAdmin() *fakeIAMAdmin {
@@ -84,6 +87,7 @@ func newFakeIAMAdmin() *fakeIAMAdmin {
 		users:     map[string]*swadmin.IAMUser{},
 		policies:  map[string]string{},
 		providers: map[string]string{},
+		roles:     map[string]*swadmin.IAMRole{},
 	}
 }
 
@@ -333,6 +337,28 @@ func (f *fakeIAMAdmin) DeleteOIDCProvider(_ context.Context, issuerURL string) e
 	defer f.mu.Unlock()
 	f.record("DeleteOIDCProvider:" + issuerURL)
 	delete(f.providers, issuerURL) // idempotent
+	return nil
+}
+
+func (f *fakeIAMAdmin) PutRole(_ context.Context, role swadmin.IAMRole) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("PutRole:" + role.Name)
+	if f.putRoleErr != nil {
+		return "", f.putRoleErr
+	}
+	f.roles[role.Name] = &role
+	return "arn:aws:iam::role/" + role.Name, nil
+}
+
+func (f *fakeIAMAdmin) DeleteRole(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("DeleteRole:" + name)
+	if f.deleteRoleErr != nil {
+		return f.deleteRoleErr
+	}
+	delete(f.roles, name) // idempotent
 	return nil
 }
 

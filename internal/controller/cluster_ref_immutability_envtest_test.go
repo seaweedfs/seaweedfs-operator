@@ -81,6 +81,16 @@ func TestManagedResourceClusterReferencesAreImmutable(t *testing.T) {
 			ClientIDs:  []string{"client-a"},
 		},
 	}
+	role := &seaweedv1.S3Role{
+		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: ns},
+		Spec: seaweedv1.S3RoleSpec{
+			SeaweedRef: seaweedv1.SeaweedReference{Name: "cluster-a"},
+			WebIdentity: seaweedv1.S3RoleWebIdentity{
+				ProviderRef: seaweedv1.S3OIDCProviderRef{Name: "accounts"},
+				Subjects:    []string{"spiffe://example.org/ns/app/sa/app"},
+			},
+		},
+	}
 
 	tests := []struct {
 		name   string
@@ -93,6 +103,7 @@ func TestManagedResourceClusterReferencesAreImmutable(t *testing.T) {
 		{"S3Policy", policy, func() { policy.Spec.SeaweedRef.Name = "cluster-b" }},
 		{"S3PolicyBinding", binding, func() { binding.Spec.SeaweedRef.Name = "cluster-b" }},
 		{"S3OIDCProvider", provider, func() { provider.Spec.SeaweedRef.Name = "cluster-b" }},
+		{"S3Role", role, func() { role.Spec.SeaweedRef.Name = "cluster-b" }},
 	}
 
 	for _, tc := range tests {

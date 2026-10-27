@@ -1,0 +1,25 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Role
+metadata:
+  name: app-runtime
+  namespace: default
+spec:
+  # The Seaweed cluster whose embedded IAM service owns this role.
+  seaweedRef:
+    name: seaweed-sample
+  # name: app-runtime  # optional IAM role name; defaults to metadata.name,
+  #                     # immutable once set
+  # Who may assume the role with AssumeRoleWithWebIdentity: tokens from this
+  # provider whose "sub" claim is listed exactly.
+  webIdentity:
+    providerRef:
+      name: spire
+    subjects:
+      - spiffe://example.org/ns/app/sa/app
+  # IAM policies granted to sessions of this role (S3Policy names or raw IAM
+  # policy names), at most 10.
+  policyRefs:
+    - name: rw-uploads
+  # description: runtime role for the app workload
+  # maxSessionDuration: 3600  # seconds, 3600-43200
+  # reclaimPolicy: Retain  # default Delete: removing this CR deletes the role

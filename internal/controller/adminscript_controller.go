@@ -334,8 +334,11 @@ func (r *AdminScriptReconciler) syncClusterPodLabels(ctx context.Context, script
 		backups := map[string]map[string]*string{}
 		if raw := pod.Annotations[adminScriptLabelBackupAnnotation]; raw != "" {
 			if err := json.Unmarshal([]byte(raw), &backups); err != nil {
-				backups = map[string]map[string]*string{}
+				backups = nil
 			}
+		}
+		if backups == nil {
+			backups = map[string]map[string]*string{}
 		}
 		base := pod.DeepCopy()
 		if active && len(script.Spec.ClusterPodLabels) > 0 {
@@ -388,7 +391,7 @@ func (r *AdminScriptReconciler) syncClusterPodLabels(ctx context.Context, script
 			apiequality.Semantic.DeepEqual(base.Annotations, pod.Annotations) {
 			continue
 		}
-		if err := r.Patch(ctx, pod, client.MergeFrom(base)); err != nil {
+		if err := r.Patch(ctx, pod, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
 			return err
 		}
 	}

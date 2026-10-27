@@ -133,7 +133,15 @@ var _ = Describe("S3 web-identity federation", Ordered, Label("integration"), fu
 
 		By("creating a Seaweed whose filer S3 trusts the cluster CA")
 		concurrentStart := true
-		maxVolumeCounts := int32(20)
+		// With the 30GiB default volume size limit, a small CI disk
+		// auto-sizes (-max=0 => free disk / volume size) to ~1 slot. The
+		// IAM files (/etc/iam/...) claim that slot for the empty
+		// collection first, and the bucket's own collection can never
+		// grow a volume — every PutObject fails with InternalError ("No
+		// writable volumes and no free volumes left"). A 50MiB limit
+		// turns ~2.4GiB of free disk into ~48 slots, enough for both
+		// collections.
+		volumeSizeLimitMB := int32(50)
 		sw := &seaweedv1.Seaweed{
 			ObjectMeta: metav1.ObjectMeta{Name: seaweedName, Namespace: testNamespace},
 			Spec: seaweedv1.SeaweedSpec{
@@ -145,19 +153,14 @@ var _ = Describe("S3 web-identity federation", Ordered, Label("integration"), fu
 					JWTSigning: &seaweedv1.JWTSigningSpec{FilerWrite: true},
 				},
 				VolumeServerDiskCount: func() *int32 { v := int32(1); return &v }(),
-				Master:                &seaweedv1.MasterSpec{Replicas: 1, ConcurrentStart: &concurrentStart},
+				Master: &seaweedv1.MasterSpec{
+					Replicas:          1,
+					ConcurrentStart:   &concurrentStart,
+					VolumeSizeLimitMB: &volumeSizeLimitMB,
+				},
 				Volume: &seaweedv1.VolumeSpec{
 					Replicas: 1,
 					VolumeServerConfig: seaweedv1.VolumeServerConfig{
-						// With the default -max=0 the server derives its cap
-						// from free disk, which a small CI disk computes to ~1
-						// slot. The IAM files (/etc/iam/...) claim that slot
-						// for the empty collection first, and the bucket's own
-						// collection can never grow a volume — every PutObject
-						// fails with InternalError ("No writable volumes and
-						// no free volumes left"). Give the server enough slots
-						// for both collections.
-						MaxVolumeCounts: &maxVolumeCounts,
 						ResourceRequirements: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("2Gi")},
 						},

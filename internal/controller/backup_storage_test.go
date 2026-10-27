@@ -258,3 +258,34 @@ func TestRestoreScript(t *testing.T) {
 		t.Errorf("object-store restore missing load:\n%s", obj)
 	}
 }
+
+func TestCleanupScript(t *testing.T) {
+	m := testSeaweedForBackup()
+	fs := seaweedv1.BackupStorageSpec{
+		Type:       seaweedv1.BackupStorageFilesystem,
+		Filesystem: &seaweedv1.FilesystemBackupStore{ExistingClaim: "pvc", MountPath: "/backup"},
+	}
+	script := cleanupScript(m, fs, "c1", "bk1")
+	for _, want := range []string{
+		"rm -f /backup/c1/bk1/filer.meta.gz",
+		"rmdir /backup/c1/bk1",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("filesystem cleanup script missing %q:\n%s", want, script)
+		}
+	}
+
+	obj := seaweedv1.BackupStorageSpec{
+		Type: seaweedv1.BackupStorageS3,
+		S3:   &seaweedv1.S3BackupStore{Bucket: "b", Directory: "/"},
+	}
+	script = cleanupScript(m, obj, "c1", "bk1")
+	for _, want := range []string{
+		"fs.rm -rf /.seaweedfs-operator/backups/bk1",
+		"fs.ls /.seaweedfs-operator/backups/bk1",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("object-store cleanup script missing %q:\n%s", want, script)
+		}
+	}
+}

@@ -69,7 +69,7 @@ func backupWithSchedule(name, cluster, schedule string, created time.Time, phase
 
 func TestSchedulerFiresWhenDue(t *testing.T) {
 	now := time.Date(2026, 6, 16, 2, 5, 0, 0, time.UTC)
-	sched := seaweedv1.BackupScheduleSpec{Name: "nightly", Schedule: "* * * * *", StorageName: "pvc"}
+	sched := seaweedv1.BackupScheduleSpec{Name: "nightly", Schedule: "* * * * *", StorageName: "pvc", ReclaimPolicy: seaweedv1.BackupReclaimDelete}
 	// A prior backup two minutes ago means the every-minute cron is overdue.
 	prior := backupWithSchedule("c1-nightly-old", "c1", "nightly", now.Add(-2*time.Minute), seaweedv1.BackupPhaseCompleted)
 	cli := newSchedulerClient(t, prior)
@@ -86,6 +86,15 @@ func TestSchedulerFiresWhenDue(t *testing.T) {
 	}
 	if len(list.Items) != 2 {
 		t.Fatalf("expected a new backup to be created, got %d total", len(list.Items))
+	}
+	var created *seaweedv1.SeaweedBackup
+	for i := range list.Items {
+		if list.Items[i].Name != "c1-nightly-old" {
+			created = &list.Items[i]
+		}
+	}
+	if created == nil || created.Spec.ReclaimPolicy != seaweedv1.BackupReclaimDelete {
+		t.Errorf("schedule reclaimPolicy not propagated: %+v", created)
 	}
 }
 

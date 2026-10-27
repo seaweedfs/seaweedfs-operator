@@ -68,6 +68,7 @@ spec:
         storageName: pvc
         keep: 7                    # retain the 7 most recent completed snapshots
         filerPath: /
+        reclaimPolicy: Delete      # stamped onto each SeaweedBackup it creates
 
     # Continuous data mirrors (one `weed filer.backup` Deployment each).
     dataMirror:
@@ -112,6 +113,7 @@ spec:
   clusterName: seaweed-sample
   storageName: pvc
   filerPath: /
+  reclaimPolicy: Delete          # remove the archive when this CR is deleted
 ```
 
 The controller creates a one-shot Job that runs `fs.meta.save` and stores
@@ -135,9 +137,14 @@ fires it creates a `SeaweedBackup` named `<cluster>-<schedule>-<timestamp>`,
 then prunes completed snapshots beyond `keep` (oldest first; running snapshots
 are never pruned). Set `suspend: true` to pause a schedule.
 
-> Retention prunes the `SeaweedBackup` objects (and their Jobs). The snapshot
-> artifacts on the storage are **retained** — manage their lifecycle with the
-> object store's lifecycle policies or by pruning the PVC.
+> Retention prunes the `SeaweedBackup` objects (and their Jobs). Whether the
+> snapshot artifacts on the storage are also removed is controlled by
+> `reclaimPolicy` (default `Retain`): with `Delete`, a finalizer holds the CR
+> while a cleanup Job removes the archive — the file on a `filesystem`
+> storage's claim, or the staged copy under the reserved filer path for
+> object stores. The copy a data mirror already carried to the object store
+> is **not** removed (`filer.backup` does not propagate deletes) — manage its
+> lifecycle with the object store's lifecycle policies.
 
 ## Continuous data mirror
 

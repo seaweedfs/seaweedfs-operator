@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
@@ -398,5 +400,173 @@ func TestBackupReconcileTerminalIncompleteStatus(t *testing.T) {
 	}
 	if meta.IsStatusConditionTrue(got.Status.Conditions, seaweedv1.BackupConditionClusterReachable) {
 		t.Error("ClusterReachable should be false while the cluster is missing")
+	}
+}
+
+func TestBackupDeletionRetainReleasesFinalizer(t *testing.T) {
+	now := metav1.Now()
+	backup := &seaweedv1.SeaweedBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "bk1", Namespace: "ns1",
+			Finalizers:        []string{BackupFinalizer},
+			DeletionTimestamp: &now,
+		},
+		Spec: seaweedv1.SeaweedBackupSpec{ClusterName: "c1", StorageName: "pvc"},
+		Status: seaweedv1.SeaweedBackupStatus{
+			Phase:       seaweedv1.BackupPhaseCompleted,
+			JobName:     "bk1-bkp",
+			Destination: "/backup/c1/bk1/filer.meta.gz",
+		},
+	}
+	r := newBackupReconciler(t, clusterWithFilesystemStorage(), backup)
+	ctx := context.Background()
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "ns1", Name: "bk1"}}
+
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	// Once the last finalizer is dropped the CR is gone.
+	var got seaweedv1.SeaweedBackup
+	if err := r.Get(ctx, req.NamespacedName, &got); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected the backup to be deleted, got %v", err)
+	}
+	var job batchv1.Job
+	err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: boundedName("bk1", "-cln")}, &job)
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("no cleanup job expected for Retain, got %v", err)
+	}
+}
+
+func TestBackupDeletionDeleteCleansArchive(t *testing.T) {
+	now := metav1.Now()
+	backup := &seaweedv1.SeaweedBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "bk1", Namespace: "ns1",
+			Finalizers:        []string{BackupFinalizer},
+			DeletionTimestamp: &now,
+		},
+		Spec: seaweedv1.SeaweedBackupSpec{
+			ClusterName: "c1", StorageName: "pvc",
+			ReclaimPolicy: seaweedv1.BackupReclaimDelete,
+		},
+		Status: seaweedv1.SeaweedBackupStatus{
+			Phase:       seaweedv1.BackupPhaseCompleted,
+			JobName:     "bk1-bkp",
+			Destination: "/backup/c1/bk1/filer.meta.gz",
+		},
+	}
+	r := newBackupReconciler(t, clusterWithFilesystemStorage(), backup)
+	ctx := context.Background()
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "ns1", Name: "bk1"}}
+
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	jobName := boundedName("bk1", "-cln")
+	var job batchv1.Job
+	if err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: jobName}, &job); err != nil {
+		t.Fatalf("expected cleanup job %q: %v", jobName, err)
+	}
+	if len(job.OwnerReferences) == 0 || job.OwnerReferences[0].Name != "bk1" {
+		t.Errorf("cleanup job is not owned by the backup: %+v", job.OwnerReferences)
+	}
+	cmd := job.Spec.Template.Spec.Containers[0].Command
+	if len(cmd) < 3 || !strings.Contains(cmd[2], "rm -f /backup/c1/bk1/filer.meta.gz") {
+		t.Errorf("cleanup job command does not remove the archive: %v", cmd)
+	}
+	var vol *corev1.Volume
+	for i := range job.Spec.Template.Spec.Volumes {
+		if job.Spec.Template.Spec.Volumes[i].PersistentVolumeClaim != nil {
+			vol = &job.Spec.Template.Spec.Volumes[i]
+		}
+	}
+	if vol == nil || vol.PersistentVolumeClaim.ClaimName != "backup-pvc" {
+		t.Errorf("cleanup job does not mount the backup claim")
+	}
+
+	// The CR stays until the cleanup Job completes.
+	var got seaweedv1.SeaweedBackup
+	if err := r.Get(ctx, req.NamespacedName, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Finalizers) == 0 {
+		t.Fatal("finalizer released before cleanup finished")
+	}
+
+	job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}}
+	if err := r.Status().Update(ctx, &job); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Get(ctx, req.NamespacedName, &got); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected the backup to be deleted after cleanup, got %v", err)
+	}
+}
+
+func TestBackupDeletionDeleteStopsRunningSnapshot(t *testing.T) {
+	now := metav1.Now()
+	backup := &seaweedv1.SeaweedBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "bk1", Namespace: "ns1",
+			Finalizers:        []string{BackupFinalizer},
+			DeletionTimestamp: &now,
+		},
+		Spec: seaweedv1.SeaweedBackupSpec{
+			ClusterName: "c1", StorageName: "pvc",
+			ReclaimPolicy: seaweedv1.BackupReclaimDelete,
+		},
+		Status: seaweedv1.SeaweedBackupStatus{
+			Phase:   seaweedv1.BackupPhaseRunning,
+			JobName: "bk1-bkp",
+		},
+	}
+	snap := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "bk1-bkp", Namespace: "ns1"}}
+	r := newBackupReconciler(t, clusterWithFilesystemStorage(), backup, snap)
+	ctx := context.Background()
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "ns1", Name: "bk1"}}
+
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	var gone batchv1.Job
+	if err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: "bk1-bkp"}, &gone); !apierrors.IsNotFound(err) {
+		t.Fatalf("snapshot job not stopped, got %v", err)
+	}
+	var job batchv1.Job
+	if err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: boundedName("bk1", "-cln")}, &job); !apierrors.IsNotFound(err) {
+		t.Fatalf("cleanup must wait for the snapshot job, got %v", err)
+	}
+
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: boundedName("bk1", "-cln")}, &job); err != nil {
+		t.Fatalf("expected cleanup job after the snapshot job is gone: %v", err)
+	}
+}
+
+func TestBackupFinalizerAddedForDeletePolicy(t *testing.T) {
+	backup := &seaweedv1.SeaweedBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "bk1", Namespace: "ns1"},
+		Spec: seaweedv1.SeaweedBackupSpec{
+			ClusterName: "c1", StorageName: "pvc",
+			ReclaimPolicy: seaweedv1.BackupReclaimDelete,
+		},
+	}
+	r := newBackupReconciler(t, clusterWithFilesystemStorage(), backup)
+	ctx := context.Background()
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "ns1", Name: "bk1"}}
+
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	var got seaweedv1.SeaweedBackup
+	if err := r.Get(ctx, req.NamespacedName, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !controllerutil.ContainsFinalizer(&got, BackupFinalizer) {
+		t.Error("finalizer not added for reclaimPolicy Delete")
 	}
 }

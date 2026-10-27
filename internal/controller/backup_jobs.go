@@ -115,6 +115,39 @@ func snapshotScript(m *seaweedv1.Seaweed, st seaweedv1.BackupStorageSpec, cluste
 	return script, staged
 }
 
+// cleanupScript returns the shell program an archive-cleanup Job runs when a
+// backup is deleted under reclaimPolicy=Delete. For filesystem storages it
+// removes the .meta.gz (and the now-empty per-backup directory) off the PVC;
+// for object stores it removes the staged snapshot under the reserved filer
+// path — the copy a data mirror already carried to the sink is untouched.
+func cleanupScript(m *seaweedv1.Seaweed, st seaweedv1.BackupStorageSpec, cluster, backupName string) string {
+	if st.Type == seaweedv1.BackupStorageFilesystem {
+		out := path.Join(filesystemMountPath(st.Filesystem), metaRelPath(cluster, backupName))
+		dir := path.Dir(out)
+		return strings.Join([]string{
+			"set -euo pipefail",
+			fmt.Sprintf("rm -f %s", out),
+			fmt.Sprintf("rmdir %s 2>/dev/null || true", dir),
+			fmt.Sprintf("echo 'archive %s removed'", out),
+			"",
+		}, "\n")
+	}
+
+	shell := weedCmd(m, "shell", "-master="+getMasterPeersString(m), "-filer="+getFilerAddress(m))
+	staged := path.Dir(reservedFilerMetaPath(backupName))
+	lsout := path.Join(backupScratchDir, "cleanup.ls")
+	return strings.Join([]string{
+		"set -euo pipefail",
+		// fs.rm only prints per-entry errors, so verify with fs.ls, which
+		// fails the shell when the filer errors.
+		fmt.Sprintf("echo 'fs.rm -rf %s' | %s", staged, shell),
+		fmt.Sprintf("if ! echo 'fs.ls %s' | %s > %s 2>/dev/null; then echo 'archive delete could not be verified' >&2; exit 1; fi", staged, shell, lsout),
+		fmt.Sprintf("if grep -q . %s; then echo 'archive still present after delete' >&2; exit 1; fi", lsout),
+		fmt.Sprintf("echo 'staged snapshot %s removed'", staged),
+		"",
+	}, "\n")
+}
+
 // restoreScript returns the shell program a restore Job runs. localPath is set
 // for filesystem sources (read straight off the PVC); filerURL is set for
 // object-store sources (read back from the reserved filer path via filer.cat).
@@ -212,6 +245,22 @@ func buildSnapshotJob(m *seaweedv1.Seaweed, jobName string, backup *seaweedv1.Se
 	job := newJob(backup.Namespace, jobName, labels, pod)
 	job.Annotations = map[string]string{seaweedv1.AnnotationBackupDestination: dest}
 	return job, dest
+}
+
+// buildCleanupJob returns the archive-cleanup Job for a deleting backup.
+func buildCleanupJob(m *seaweedv1.Seaweed, jobName string, backup *seaweedv1.SeaweedBackup, st seaweedv1.BackupStorageSpec) *batchv1.Job {
+	script := cleanupScript(m, st, backup.Spec.ClusterName, backup.Name)
+	pod := backupPodSpec(
+		m,
+		"cleanup",
+		script,
+		st,
+		st.Type == seaweedv1.BackupStorageFilesystem,
+		backup.Spec.PodSecurityContext,
+		backup.Spec.ContainerSecurityContext,
+	)
+	labels := map[string]string{seaweedv1.LabelBackupCluster: backup.Spec.ClusterName}
+	return newJob(backup.Namespace, jobName, labels, pod)
 }
 
 // buildRestoreJob returns the restore Job for a SeaweedRestore. Exactly one of

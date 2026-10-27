@@ -204,7 +204,7 @@ func resolveBucketSubjectName(ctx context.Context, c client.Client, namespace, r
 	err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: ref}, &b)
 	switch {
 	case err == nil:
-		if seaweedRefKey(seaweedv1.SeaweedReference(b.Spec.ClusterRef), b.Namespace) == clusterKey {
+		if seaweedRefKey(b.Spec.ClusterReference(), b.Namespace) == clusterKey {
 			return resolvedBucketName(&b), nil
 		}
 		return ref, nil

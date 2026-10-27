@@ -239,7 +239,7 @@ func (r *SeaweedBackupReconciler) handleDeletion(ctx context.Context, backup *se
 		}
 	}
 
-	jobName := boundedName(backup.Name, "-cln")
+	jobName := cleanupJobName(backup)
 	var job batchv1.Job
 	err = r.Get(ctx, types.NamespacedName{Namespace: backup.Namespace, Name: jobName}, &job)
 	switch {
@@ -257,6 +257,13 @@ func (r *SeaweedBackupReconciler) handleDeletion(ctx context.Context, backup *se
 		return ctrl.Result{}, err
 	}
 
+	// A Job at this UID-keyed name without our UID label was not created by
+	// this backup; wait it out rather than adopt its outcome or delete it.
+	if job.Labels[seaweedv1.LabelBackupUID] != string(backup.UID) {
+		log.Info("cleanup job name held by an unrelated job", "job", jobName)
+		return ctrl.Result{RequeueAfter: backupRequeue}, nil
+	}
+
 	done, success := jobFinished(&job)
 	if !done {
 		return ctrl.Result{RequeueAfter: backupRequeue}, nil
@@ -264,7 +271,7 @@ func (r *SeaweedBackupReconciler) handleDeletion(ctx context.Context, backup *se
 	if !success {
 		// Replace a failed Job so the next reconcile retries cleanup instead
 		// of wedging the CR on a terminal JobFailed condition.
-		if err := r.Delete(ctx, &job, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !apierrors.IsNotFound(err) {
+		if err := r.deleteCleanupJob(ctx, backup, &job); err != nil {
 			return ctrl.Result{}, err
 		}
 		r.Recorder.Event(backup, "Warning", "ArchiveCleanupFailed", "archive cleanup job "+jobName+" failed; retrying")
@@ -295,15 +302,42 @@ func recordedFilesystem(backup *seaweedv1.SeaweedBackup, snap *batchv1.Job, st s
 	return st.Filesystem
 }
 
+// cleanupJobName keys the archive-cleanup Job to the backup's UID, so a Job
+// left behind by an earlier generation of a same-named CR is never adopted —
+// or deleted — as this backup's cleanup.
+func cleanupJobName(backup *seaweedv1.SeaweedBackup) string {
+	tag := string(backup.UID)
+	if len(tag) > 8 {
+		tag = tag[:8]
+	}
+	if tag == "" {
+		return boundedName(backup.Name, "-cln")
+	}
+	return boundedName(backup.Name+"-"+tag, "-cln")
+}
+
+// deleteCleanupJob removes a cleanup Job only when it carries this backup's
+// UID label; the Job is deliberately unowned, so the check guards against
+// tearing down an unrelated Job that reused the generated name.
+func (r *SeaweedBackupReconciler) deleteCleanupJob(ctx context.Context, backup *seaweedv1.SeaweedBackup, job *batchv1.Job) error {
+	if job.Labels[seaweedv1.LabelBackupUID] != string(backup.UID) {
+		return nil
+	}
+	if err := r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
 // releaseFinalizer removes any cleanup Job still around (it is deliberately
 // unowned, so nothing else would collect it) and drops BackupFinalizer,
 // letting the CR finish deleting.
 func (r *SeaweedBackupReconciler) releaseFinalizer(ctx context.Context, backup *seaweedv1.SeaweedBackup) (ctrl.Result, error) {
 	var job batchv1.Job
-	err := r.Get(ctx, types.NamespacedName{Namespace: backup.Namespace, Name: boundedName(backup.Name, "-cln")}, &job)
+	err := r.Get(ctx, types.NamespacedName{Namespace: backup.Namespace, Name: cleanupJobName(backup)}, &job)
 	switch {
 	case err == nil:
-		if err := r.Delete(ctx, &job, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !apierrors.IsNotFound(err) {
+		if err := r.deleteCleanupJob(ctx, backup, &job); err != nil {
 			return ctrl.Result{}, err
 		}
 	case !apierrors.IsNotFound(err):

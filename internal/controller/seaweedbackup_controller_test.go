@@ -568,6 +568,84 @@ func TestBackupDeletionDeleteStopsRunningSnapshot(t *testing.T) {
 	}
 }
 
+func TestBackupDeletionRetainLeavesForeignCleanupJob(t *testing.T) {
+	now := metav1.Now()
+	backup := &seaweedv1.SeaweedBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "bk1", Namespace: "ns1", UID: "uid-bk1",
+			Finalizers:        []string{BackupFinalizer},
+			DeletionTimestamp: &now,
+		},
+		Spec: seaweedv1.SeaweedBackupSpec{ClusterName: "c1", StorageName: "pvc"},
+	}
+	foreign := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "bk1-cln", Namespace: "ns1"}}
+	r := newBackupReconciler(t, clusterWithFilesystemStorage(), backup, foreign)
+	ctx := context.Background()
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "ns1", Name: "bk1"}}
+
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	var got seaweedv1.SeaweedBackup
+	if err := r.Get(ctx, req.NamespacedName, &got); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected the backup to be deleted, got %v", err)
+	}
+	var job batchv1.Job
+	if err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: "bk1-cln"}, &job); err != nil {
+		t.Fatalf("unrelated cleanup-named job must not be deleted: %v", err)
+	}
+}
+
+func TestBackupDeletionDeleteIgnoresForeignCleanupJob(t *testing.T) {
+	now := metav1.Now()
+	backup := &seaweedv1.SeaweedBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "bk1", Namespace: "ns1", UID: "uid-bk1",
+			Finalizers:        []string{BackupFinalizer},
+			DeletionTimestamp: &now,
+		},
+		Spec: seaweedv1.SeaweedBackupSpec{
+			ClusterName: "c1", StorageName: "pvc",
+			ReclaimPolicy: seaweedv1.BackupReclaimDelete,
+		},
+		Status: seaweedv1.SeaweedBackupStatus{
+			Phase:       seaweedv1.BackupPhaseCompleted,
+			JobName:     "bk1-bkp",
+			Destination: "/backup/c1/bk1/filer.meta.gz",
+		},
+	}
+	foreign := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "bk1-cln", Namespace: "ns1",
+			Labels: map[string]string{seaweedv1.LabelBackupUID: "uid-other"},
+		},
+	}
+	r := newBackupReconciler(t, clusterWithFilesystemStorage(), backup, foreign)
+	ctx := context.Background()
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "ns1", Name: "bk1"}}
+
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	var job batchv1.Job
+	if err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: cleanupJobName(backup)}, &job); err != nil {
+		t.Fatalf("expected own cleanup job: %v", err)
+	}
+	if got := job.Labels[seaweedv1.LabelBackupUID]; got != "uid-bk1" {
+		t.Fatalf("cleanup job uid label = %q, want uid-bk1", got)
+	}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: "bk1-cln"}, &job); err != nil {
+		t.Fatalf("unrelated cleanup-named job must not be deleted: %v", err)
+	}
+	var got seaweedv1.SeaweedBackup
+	if err := r.Get(ctx, req.NamespacedName, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Finalizers) == 0 {
+		t.Fatal("finalizer released before own cleanup finished")
+	}
+}
+
 func TestBackupFinalizerAddedForDeletePolicy(t *testing.T) {
 	backup := &seaweedv1.SeaweedBackup{
 		ObjectMeta: metav1.ObjectMeta{Name: "bk1", Namespace: "ns1"},

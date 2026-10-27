@@ -72,6 +72,10 @@ const (
 	// LabelBackupSchedule names the schedule that created the backup (absent
 	// for on-demand backups).
 	LabelBackupSchedule = "seaweed.seaweedfs.com/backup-schedule"
+	// LabelBackupUID records the UID of the SeaweedBackup that created an
+	// unowned Job, so the controller never adopts or deletes an unrelated
+	// Job sharing the generated name.
+	LabelBackupUID = "seaweed.seaweedfs.com/backup-uid"
 	// AnnotationBackupDestination records the resolved snapshot destination
 	// on the Job, so status recovery does not depend on the live storage
 	// configuration, which may have changed since the Job was created.

@@ -272,7 +272,10 @@ func buildCleanupJob(m *seaweedv1.Seaweed, jobName string, backup *seaweedv1.Sea
 		backup.Spec.PodSecurityContext,
 		backup.Spec.ContainerSecurityContext,
 	)
-	labels := map[string]string{seaweedv1.LabelBackupCluster: backup.Spec.ClusterName}
+	labels := map[string]string{
+		seaweedv1.LabelBackupCluster: backup.Spec.ClusterName,
+		seaweedv1.LabelBackupUID:     string(backup.UID),
+	}
 	return newJob(backup.Namespace, jobName, labels, pod)
 }
 

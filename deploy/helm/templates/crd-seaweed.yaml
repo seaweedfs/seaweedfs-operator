@@ -2921,6 +2921,19 @@ spec:
                   x-kubernetes-list-type: map
                 destination:
                   type: string
+                filesystemStorage:
+                  properties:
+                    existingClaim:
+                      minLength: 1
+                      type: string
+                    mountPath:
+                      default: /backup
+                      type: string
+                    subPath:
+                      type: string
+                  required:
+                    - existingClaim
+                  type: object
                 jobName:
                   type: string
                 observedGeneration:

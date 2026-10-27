@@ -77,10 +77,10 @@ const (
 	// configuration, which may have changed since the Job was created.
 	AnnotationBackupDestination = "seaweed.seaweedfs.com/backup-destination"
 	// AnnotationBackupClaim, AnnotationBackupMountPath, and
-	// AnnotationBackupSubPath pin the filesystem storage a snapshot wrote to.
-	// They are set on the snapshot Job and copied onto the CR when the Job is
-	// torn down early, so archive cleanup mounts the original claim even if
-	// the storage entry was reconfigured after the snapshot ran.
+	// AnnotationBackupSubPath pin the filesystem storage a snapshot wrote to
+	// on its Job, so archive cleanup can still mount the original claim if
+	// the storage entry was reconfigured after the snapshot ran and the
+	// recorded status is unavailable.
 	AnnotationBackupClaim     = "seaweed.seaweedfs.com/backup-claim"
 	AnnotationBackupMountPath = "seaweed.seaweedfs.com/backup-mount-path"
 	AnnotationBackupSubPath   = "seaweed.seaweedfs.com/backup-sub-path"
@@ -143,6 +143,12 @@ type SeaweedBackupStatus struct {
 	// Destination is the resolved location of the metadata snapshot.
 	// +optional
 	Destination string `json:"destination,omitempty"`
+
+	// FilesystemStorage is the resolved filesystem store the snapshot wrote
+	// to, so reclaimPolicy=Delete cleanup mounts the original claim even if
+	// the storage entry was reconfigured afterwards.
+	// +optional
+	FilesystemStorage *FilesystemBackupStore `json:"filesystemStorage,omitempty"`
 
 	// StartTime is when the snapshot Job started.
 	// +optional

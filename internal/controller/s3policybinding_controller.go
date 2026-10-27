@@ -214,7 +214,7 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// dropping buckets still owned but not yet re-processed — losing those
 	// records would orphan their installed policies.
 	preserve := func() {
-		binding.Status.AttachedSubjects = attached
+		binding.Status.AttachedSubjects = mergeKeptBuckets(binding.Status.AttachedSubjects, attached, desiredSet)
 		binding.Status.AttachedBuckets = mergeKeptBuckets(binding.Status.AttachedBuckets, attachedBuckets, applySet)
 	}
 	for _, user := range desired {

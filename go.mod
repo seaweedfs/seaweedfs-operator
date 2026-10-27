@@ -7,7 +7,7 @@ require (
 	github.com/go-resty/resty/v2 v2.17.2
 	github.com/onsi/ginkgo/v2 v2.33.1
 	github.com/onsi/gomega v1.44.0
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.94.1
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.94.2
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/seaweedfs/seaweedfs v0.0.0-20261025193907-153ab668c997
 	github.com/stretchr/testify v1.12.1

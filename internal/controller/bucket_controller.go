@@ -120,12 +120,12 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	// Resolve the cluster reference. A cross-namespace clusterRef needs a
 	// ResourceReferenceGrant; skip on deletion to not block cleanup.
-	seaweedNS := bucket.Spec.ClusterRef.Namespace
+	clusterRef := bucket.Spec.ClusterReference()
+	seaweedNS := clusterRef.Namespace
 	if seaweedNS == "" {
 		seaweedNS = bucket.Namespace
 	}
 	if bucket.DeletionTimestamp.IsZero() {
-		clusterRef := seaweedv1.SeaweedReference{Name: bucket.Spec.ClusterRef.Name, Namespace: bucket.Spec.ClusterRef.Namespace}
 		permitted, err := seaweedRefPermitted(ctx, r.Client, clusterRef, kindBucket, bucket.Namespace)
 		if err != nil {
 			return ctrl.Result{}, err
@@ -133,7 +133,7 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		if !permitted {
 			r.setCondition(&bucket, seaweedv1.BucketConditionClusterRefForbidden, metav1.ConditionTrue, "ReferenceGrantMissing",
 				fmt.Sprintf("cross-namespace clusterRef to Seaweed %q in namespace %q is not permitted; create a ResourceReferenceGrant in namespace %q with from {group: %q, kind: %q, namespace: %q} to {group: %q, kind: %q}",
-					bucket.Spec.ClusterRef.Name, seaweedNS, seaweedNS, groupSeaweed, kindBucket, bucket.Namespace, groupSeaweed, kindSeaweed))
+					clusterRef.Name, seaweedNS, seaweedNS, groupSeaweed, kindBucket, bucket.Namespace, groupSeaweed, kindSeaweed))
 			bucket.Status.Phase = seaweedv1.BucketPhasePending
 			if updateErr := r.Status().Update(ctx, &bucket); updateErr != nil {
 				return ctrl.Result{}, updateErr
@@ -143,16 +143,16 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		r.clearCondition(&bucket, seaweedv1.BucketConditionClusterRefForbidden)
 	}
 	var seaweed seaweedv1.Seaweed
-	if err := r.Get(ctx, types.NamespacedName{Namespace: seaweedNS, Name: bucket.Spec.ClusterRef.Name}, &seaweed); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Namespace: seaweedNS, Name: clusterRef.Name}, &seaweed); err != nil {
 		if apierrors.IsNotFound(err) {
 			// The bucket lives in the cluster, so with the cluster gone there is
 			// nothing for handleDeletion to do. Release rather than requeue on a
 			// reference that will never resolve.
-			if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, r.Recorder, &bucket, BucketFinalizer, seaweedNS+"/"+bucket.Spec.ClusterRef.Name); handled {
+			if handled, err := releaseFinalizerIfDeleting(ctx, r.Client, r.Recorder, &bucket, BucketFinalizer, seaweedNS+"/"+clusterRef.Name); handled {
 				return ctrl.Result{}, err
 			}
 			r.setCondition(&bucket, seaweedv1.BucketConditionClusterReachable, metav1.ConditionFalse, "ClusterRefNotFound",
-				fmt.Sprintf("Seaweed %q not found in namespace %q", bucket.Spec.ClusterRef.Name, seaweedNS))
+				fmt.Sprintf("Seaweed %q not found in namespace %q", clusterRef.Name, seaweedNS))
 			bucket.Status.Phase = seaweedv1.BucketPhasePending
 			if updateErr := r.Status().Update(ctx, &bucket); updateErr != nil {
 				log.Error(updateErr, "status update")
@@ -235,7 +235,7 @@ func (r *BucketReconciler) reconcileBucket(ctx context.Context, bucket *seaweedv
 		if !bucket.Spec.AdoptExisting {
 			r.setCondition(bucket, seaweedv1.BucketConditionBucketAlreadyExists, metav1.ConditionTrue, "AlreadyExists",
 				fmt.Sprintf("a bucket named %q already exists on cluster %q and was not created by this resource; set spec.adoptExisting: true to adopt it",
-					bucketName, bucket.Spec.ClusterRef.Name))
+					bucketName, bucket.Spec.ClusterReference().Name))
 			return r.failPhase(ctx, bucket, seaweedv1.BucketPhaseFailed, "BucketAlreadyExists",
 				fmt.Sprintf("bucket %q already exists; set spec.adoptExisting: true to adopt it", bucketName))
 		}
@@ -495,7 +495,7 @@ func (r *BucketReconciler) clearCondition(bucket *seaweedv1.Bucket, condType str
 func (r *BucketReconciler) adoptBucket(log logr.Logger, bucket *seaweedv1.Bucket, bucketName string) {
 	log.Info("adopting existing bucket", "name", bucketName)
 	r.recordEvent(bucket, corev1.EventTypeNormal, "BucketAdopted",
-		fmt.Sprintf("adopted existing bucket %q on cluster %q", bucketName, bucket.Spec.ClusterRef.Name))
+		fmt.Sprintf("adopted existing bucket %q on cluster %q", bucketName, bucket.Spec.ClusterReference().Name))
 	bucket.Status.BucketName = bucketName
 }
 

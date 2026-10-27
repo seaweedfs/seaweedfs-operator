@@ -69,7 +69,7 @@ func newLifecycleTestObjects() (*seaweedv1.Seaweed, *seaweedv1.Bucket) {
 	}
 	bucket := &seaweedv1.Bucket{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-bucket", Namespace: "default"},
-		Spec:       seaweedv1.BucketSpec{ClusterRef: seaweedv1.BucketClusterRef{Name: "prod"}},
+		Spec:       seaweedv1.BucketSpec{ClusterRef: &seaweedv1.BucketClusterRef{Name: "prod"}},
 		Status:     seaweedv1.BucketStatus{BucketName: "my-bucket"},
 	}
 	return sw, bucket

@@ -192,7 +192,7 @@ var _ = Describe("S3 web-identity federation", Ordered, Label("integration"), fu
 		By("declaring the bucket, its policy, the provider and the role")
 		Expect(k8sClient.Create(ctx, &seaweedv1.Bucket{
 			ObjectMeta: metav1.ObjectMeta{Name: bucketName, Namespace: testNamespace},
-			Spec:       seaweedv1.BucketSpec{ClusterRef: seaweedv1.BucketClusterRef{Name: seaweedName}},
+			Spec:       seaweedv1.BucketSpec{ClusterRef: &seaweedv1.BucketClusterRef{Name: seaweedName}},
 		})).To(Succeed())
 		Expect(k8sClient.Create(ctx, &seaweedv1.S3Policy{
 			ObjectMeta: metav1.ObjectMeta{Name: "wi-rw", Namespace: testNamespace},

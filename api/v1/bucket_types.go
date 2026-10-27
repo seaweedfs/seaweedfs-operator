@@ -70,15 +70,9 @@ const (
 // target Seaweed's namespace permits it; the Bucket stays Pending
 // (ClusterRefForbidden=True) until then. Same-namespace references are always
 // allowed.
-type BucketClusterRef struct {
-	// Name of the Seaweed CR.
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
-
-	// Namespace of the Seaweed CR. Defaults to the Bucket's own namespace.
-	// +optional
-	Namespace string `json:"namespace,omitempty"`
-}
+//
+// Deprecated alias for SeaweedReference, kept for spec.clusterRef.
+type BucketClusterRef = SeaweedReference
 
 // BucketQuota caps the bucket's total stored size.
 //
@@ -186,6 +180,9 @@ type BucketPlacement struct {
 // rules on the individual fields.
 //
 // +kubebuilder:validation:XValidation:rule="!self.objectLock || self.versioning == 'Enabled'",message="objectLock requires versioning: Enabled"
+// +kubebuilder:validation:XValidation:rule="has(self.clusterRef) != has(self.seaweedRef)",message="exactly one of clusterRef or seaweedRef must be set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.clusterRef) || (has(self.clusterRef) && self.clusterRef == oldSelf.clusterRef)",message="clusterRef is immutable"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.seaweedRef) || (has(self.seaweedRef) && self.seaweedRef == oldSelf.seaweedRef)",message="seaweedRef is immutable"
 type BucketSpec struct {
 	// Name is the S3 bucket name. Defaults to .metadata.name. Must satisfy
 	// the S3 bucket naming rules: 3-63 characters, lowercase alphanumeric,
@@ -209,10 +206,16 @@ type BucketSpec struct {
 	Name string `json:"name,omitempty"`
 
 	// ClusterRef points at the Seaweed CR that owns this bucket. Immutable;
-	// moving a bucket between clusters is not supported.
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterRef is immutable"
-	ClusterRef BucketClusterRef `json:"clusterRef"`
+	// moving a bucket between clusters is not supported. Mutually exclusive
+	// with seaweedRef, which names the same reference.
+	// +optional
+	ClusterRef *BucketClusterRef `json:"clusterRef,omitempty"`
+
+	// SeaweedRef points at the Seaweed CR that owns this bucket. Immutable;
+	// it is the same reference as clusterRef under the name the other CRDs
+	// use. Exactly one of clusterRef or seaweedRef must be set.
+	// +optional
+	SeaweedRef *SeaweedReference `json:"seaweedRef,omitempty"`
 
 	// ReclaimPolicy controls what happens to the underlying bucket when
 	// this CR is deleted. Defaults to Retain.
@@ -289,6 +292,18 @@ type BucketSpec struct {
 	// +optional
 	// +kubebuilder:default:=false
 	AnonymousRead bool `json:"anonymousRead,omitempty"`
+}
+
+// ClusterReference returns the referenced Seaweed cluster, preferring
+// seaweedRef over the clusterRef alias.
+func (s *BucketSpec) ClusterReference() SeaweedReference {
+	if s.SeaweedRef != nil {
+		return *s.SeaweedRef
+	}
+	if s.ClusterRef != nil {
+		return *s.ClusterRef
+	}
+	return SeaweedReference{}
 }
 
 // BucketUsage captures coarse usage stats refreshed periodically by the

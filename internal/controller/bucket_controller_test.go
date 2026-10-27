@@ -298,7 +298,7 @@ func newTestBucket(name string) *seaweedv1.Bucket {
 			Namespace: "media",
 		},
 		Spec: seaweedv1.BucketSpec{
-			ClusterRef: seaweedv1.BucketClusterRef{
+			ClusterRef: &seaweedv1.BucketClusterRef{
 				Name:      "prod",
 				Namespace: "seaweedfs",
 			},
@@ -845,6 +845,18 @@ func TestReconcile_RenameRefused(t *testing.T) {
 	}
 }
 
+func TestClusterReferencePrefersSeaweedRef(t *testing.T) {
+	bucket := newTestBucket("photos")
+	if got := bucket.Spec.ClusterReference().Name; got != "prod" {
+		t.Errorf("clusterRef fallback = %q, want prod", got)
+	}
+	bucket.Spec.ClusterRef = nil
+	bucket.Spec.SeaweedRef = &seaweedv1.SeaweedReference{Name: "sw-alt", Namespace: "other"}
+	if got := bucket.Spec.ClusterReference(); got.Name != "sw-alt" || got.Namespace != "other" {
+		t.Errorf("seaweedRef resolution = %+v", got)
+	}
+}
+
 func TestReconcile_ClusterRefMissingRequeues(t *testing.T) {
 	bucket := newTestBucket("photos")
 	bucket.Spec.ClusterRef.Name = "missing"
@@ -868,6 +880,30 @@ func TestReconcile_ClusterRefMissingRequeues(t *testing.T) {
 	cond := meta.FindStatusCondition(got.Status.Conditions, seaweedv1.BucketConditionClusterReachable)
 	if cond == nil || cond.Status != metav1.ConditionFalse {
 		t.Errorf("expected ClusterReachable=False, got %+v", cond)
+	}
+}
+
+// TestReconcile_SeaweedRefResolvesCluster exercises the seaweedRef alias end
+// to end: a bucket referencing the cluster only via spec.seaweedRef must reach
+// the same reconcile path as spec.clusterRef.
+func TestReconcile_SeaweedRefResolvesCluster(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Spec.ClusterRef = nil
+	bucket.Spec.SeaweedRef = &seaweedv1.SeaweedReference{Name: "prod", Namespace: "seaweedfs"}
+	bucket.Finalizers = []string{BucketFinalizer}
+
+	fa := newFakeAdmin()
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+
+	reconcileUntilStable(t, r, key, 5)
+
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Status.BucketName != "photos" {
+		t.Errorf("expected bucketName recorded via seaweedRef, got %+v", got.Status)
 	}
 }
 

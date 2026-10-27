@@ -1337,9 +1337,6 @@ spec:
                   required:
                     - name
                   type: object
-                  x-kubernetes-validations:
-                    - message: clusterRef is immutable
-                      rule: self == oldSelf
                 name:
                   pattern: ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
                   type: string
@@ -1412,6 +1409,16 @@ spec:
                     - Retain
                     - Delete
                   type: string
+                seaweedRef:
+                  properties:
+                    name:
+                      minLength: 1
+                      type: string
+                    namespace:
+                      type: string
+                  required:
+                    - name
+                  type: object
                 versioning:
                   default: "Off"
                   enum:
@@ -1422,12 +1429,16 @@ spec:
                   x-kubernetes-validations:
                     - message: cannot disable versioning once it has been Enabled or Suspended; use Suspended instead
                       rule: self != 'Off' || oldSelf == 'Off'
-              required:
-                - clusterRef
               type: object
               x-kubernetes-validations:
                 - message: 'objectLock requires versioning: Enabled'
                   rule: '!self.objectLock || self.versioning == ''Enabled'''
+                - message: exactly one of clusterRef or seaweedRef must be set
+                  rule: has(self.clusterRef) != has(self.seaweedRef)
+                - message: clusterRef is immutable
+                  rule: '!has(oldSelf.clusterRef) || (has(self.clusterRef) && self.clusterRef == oldSelf.clusterRef)'
+                - message: seaweedRef is immutable
+                  rule: '!has(oldSelf.seaweedRef) || (has(self.seaweedRef) && self.seaweedRef == oldSelf.seaweedRef)'
             status:
               properties:
                 bucketName:

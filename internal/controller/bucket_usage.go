@@ -87,11 +87,12 @@ func (r *BucketReconciler) refreshAllUsage(ctx context.Context, log logr.Logger)
 			// Not yet successfully reconciled by the main loop.
 			continue
 		}
-		ns := b.Spec.ClusterRef.Namespace
+		clusterRef := b.Spec.ClusterReference()
+		ns := clusterRef.Namespace
 		if ns == "" {
 			ns = b.Namespace
 		}
-		key := clusterKey{ns, b.Spec.ClusterRef.Name}
+		key := clusterKey{ns, clusterRef.Name}
 		groups[key] = append(groups[key], b)
 	}
 

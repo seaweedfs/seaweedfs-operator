@@ -49,23 +49,12 @@ func (c *IAMClient) GetBucketPolicy(ctx context.Context, bucket string) ([]byte,
 // An empty policyJSON removes the attribute.
 func (c *IAMClient) SetBucketPolicy(ctx context.Context, bucket string, policyJSON []byte) error {
 	return c.withFilerClient(ctx, func(ctx context.Context, client filer_pb.SeaweedFilerClient) error {
-		entry, dir, err := lookupBucketEntry(ctx, client, bucket)
+		// PATCH_EXTENDED is a no-op on a missing entry, so the existence
+		// check has to happen here rather than fall out of the write.
+		_, dir, err := lookupBucketEntry(ctx, client, bucket)
 		if err != nil {
 			return err
 		}
-		switch {
-		case len(policyJSON) == 0:
-			if _, ok := entry.Extended[bucketPolicyMetadataKey]; !ok {
-				return nil
-			}
-			delete(entry.Extended, bucketPolicyMetadataKey)
-		default:
-			if entry.Extended == nil {
-				entry.Extended = make(map[string][]byte)
-			}
-			entry.Extended[bucketPolicyMetadataKey] = append([]byte(nil), policyJSON...)
-		}
-		_, err = client.UpdateEntry(ctx, &filer_pb.UpdateEntryRequest{Directory: dir, Entry: entry})
-		return err
+		return patchBucketExtended(ctx, client, dir, bucket, bucketPolicyMetadataKey, policyJSON)
 	})
 }

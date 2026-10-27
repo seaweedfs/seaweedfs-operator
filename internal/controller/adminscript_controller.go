@@ -50,10 +50,18 @@ const adminScriptRequeueAfter = 30 * time.Second
 // re-checked while a run is active, so pods created mid-run are labeled too.
 const adminScriptLabelRequeue = 30 * time.Second
 
-// adminScriptLabelBackupAnnotation records, per AdminScript name, the labels
-// the controller overwrote on a pod so they can be restored when the run
-// ends. Value is JSON: {"<script name>": {"<label key>": "<old value>"|null}}.
+// adminScriptLabelBackupAnnotation records, per AdminScript name, the pod
+// labels the controller overwrote plus the value each write applied, so
+// overlapping scripts unwind in reverse apply order. Value is JSON:
+// {"<script name>": {"<label key>": {"o": "<old value>"|null, "n": "<applied value>"}}}.
 const adminScriptLabelBackupAnnotation = "seaweed.seaweedfs.com/adminscript-labels-backup"
+
+// adminScriptLabelBackupEntry records the value a pod label held before an
+// AdminScript overwrote it (old is null when absent) and the value applied.
+type adminScriptLabelBackupEntry struct {
+	Old *string `json:"o"`
+	New string  `json:"n"`
+}
 
 // adminScriptLabelsFinalizer restores cluster pod labels an AdminScript set
 // before the object is allowed to disappear.
@@ -362,20 +370,20 @@ func (r *AdminScriptReconciler) syncClusterPodLabels(ctx context.Context, script
 		if !isClusterPod(pod, cluster.Name) {
 			continue
 		}
-		backups := map[string]map[string]*string{}
+		backups := map[string]map[string]adminScriptLabelBackupEntry{}
 		if raw := pod.Annotations[adminScriptLabelBackupAnnotation]; raw != "" {
 			if err := json.Unmarshal([]byte(raw), &backups); err != nil {
 				backups = nil
 			}
 		}
 		if backups == nil {
-			backups = map[string]map[string]*string{}
+			backups = map[string]map[string]adminScriptLabelBackupEntry{}
 		}
 		base := pod.DeepCopy()
 		if active && len(script.Spec.ClusterPodLabels) > 0 {
 			backup := backups[script.Name]
 			if backup == nil {
-				backup = map[string]*string{}
+				backup = map[string]adminScriptLabelBackupEntry{}
 				backups[script.Name] = backup
 			}
 			if pod.Labels == nil {
@@ -385,15 +393,34 @@ func (r *AdminScriptReconciler) syncClusterPodLabels(ctx context.Context, script
 				if reservedClusterPodLabel(k) {
 					continue
 				}
-				if _, recorded := backup[k]; !recorded {
+				e, recorded := backup[k]
+				if !recorded {
 					if old, ok := pod.Labels[k]; ok {
-						backup[k] = &old
-					} else {
-						backup[k] = nil
+						e.Old = &old
 					}
 				}
+				e.New = v
+				backup[k] = e
 				pod.Labels[k] = v
 			}
+			for k, e := range backup {
+				if _, ok := script.Spec.ClusterPodLabels[k]; !ok {
+					releasePodLabel(backups, pod, script.Name, k, e)
+					delete(backup, k)
+				}
+			}
+			if len(backup) == 0 {
+				delete(backups, script.Name)
+			}
+		} else if backup, ok := backups[script.Name]; ok {
+			for k, e := range backup {
+				releasePodLabel(backups, pod, script.Name, k, e)
+			}
+			delete(backups, script.Name)
+		}
+		if len(backups) == 0 {
+			delete(pod.Annotations, adminScriptLabelBackupAnnotation)
+		} else {
 			raw, err := json.Marshal(backups)
 			if err != nil {
 				return err
@@ -402,24 +429,6 @@ func (r *AdminScriptReconciler) syncClusterPodLabels(ctx context.Context, script
 				pod.Annotations = map[string]string{}
 			}
 			pod.Annotations[adminScriptLabelBackupAnnotation] = string(raw)
-		} else if backup, ok := backups[script.Name]; ok {
-			for k, old := range backup {
-				if old == nil {
-					delete(pod.Labels, k)
-				} else {
-					pod.Labels[k] = *old
-				}
-			}
-			delete(backups, script.Name)
-			if len(backups) == 0 {
-				delete(pod.Annotations, adminScriptLabelBackupAnnotation)
-			} else {
-				raw, err := json.Marshal(backups)
-				if err != nil {
-					return err
-				}
-				pod.Annotations[adminScriptLabelBackupAnnotation] = string(raw)
-			}
 		}
 		if apiequality.Semantic.DeepEqual(base.Labels, pod.Labels) &&
 			apiequality.Semantic.DeepEqual(base.Annotations, pod.Annotations) {
@@ -430,6 +439,30 @@ func (r *AdminScriptReconciler) syncClusterPodLabels(ctx context.Context, script
 		}
 	}
 	return nil
+}
+
+// releasePodLabel removes one script's write to a pod label. When another
+// script backed up the value this script applied, its backup is spliced to
+// the value this script saw; otherwise the pod label itself is restored,
+// but only while it still carries the applied value.
+func releasePodLabel(backups map[string]map[string]adminScriptLabelBackupEntry, pod *corev1.Pod, scriptName, key string, e adminScriptLabelBackupEntry) {
+	for name, other := range backups {
+		if name == scriptName {
+			continue
+		}
+		if o, ok := other[key]; ok && o.Old != nil && *o.Old == e.New {
+			o.Old = e.Old
+			other[key] = o
+			return
+		}
+	}
+	if pod.Labels[key] == e.New {
+		if e.Old == nil {
+			delete(pod.Labels, key)
+		} else {
+			pod.Labels[key] = *e.Old
+		}
+	}
 }
 
 // applyCronJobStatus mirrors the CronJob's schedule status onto the AdminScript.

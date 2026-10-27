@@ -206,6 +206,12 @@ spec:
                         type: string
                     type: object
                 type: object
+              reclaimPolicy:
+                default: Retain
+                enum:
+                - Retain
+                - Delete
+                type: string
               storageName:
                 minLength: 1
                 type: string

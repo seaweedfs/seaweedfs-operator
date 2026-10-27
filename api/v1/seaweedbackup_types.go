@@ -37,6 +37,24 @@ const (
 	BackupPhaseFailed BackupPhase = "Failed"
 )
 
+// BackupReclaimPolicy controls what happens to the snapshot archive when the
+// SeaweedBackup CR is deleted.
+// +kubebuilder:validation:Enum=Retain;Delete
+type BackupReclaimPolicy string
+
+const (
+	// BackupReclaimRetain leaves the archive in place when the CR is
+	// deleted. This is the default and matches the historical behavior.
+	BackupReclaimRetain BackupReclaimPolicy = "Retain"
+
+	// BackupReclaimDelete removes the archive when the CR is deleted: the
+	// file on a filesystem storage's claim, or — for object-store storages —
+	// the staged copy under the reserved filer path. A copy already carried
+	// to the sink by a data mirror is not removed, because filer.backup does
+	// not propagate deletes.
+	BackupReclaimDelete BackupReclaimPolicy = "Delete"
+)
+
 // Condition types emitted by the SeaweedBackup controller.
 const (
 	// BackupConditionComplete is True once the snapshot Job succeeds.
@@ -81,6 +99,13 @@ type SeaweedBackupSpec struct {
 	// +optional
 	// +kubebuilder:default:="/"
 	FilerPath string `json:"filerPath,omitempty"`
+
+	// ReclaimPolicy controls what happens to the snapshot archive when this
+	// CR is deleted. Defaults to Retain. See BackupReclaimPolicy for what
+	// Delete covers.
+	// +optional
+	// +kubebuilder:default:=Retain
+	ReclaimPolicy BackupReclaimPolicy `json:"reclaimPolicy,omitempty"`
 
 	// PodSecurityContext configures immutable pod-level security attributes for
 	// the snapshot Job. Unset fields retain Kubernetes defaults.

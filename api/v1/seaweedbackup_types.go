@@ -76,6 +76,14 @@ const (
 	// on the Job, so status recovery does not depend on the live storage
 	// configuration, which may have changed since the Job was created.
 	AnnotationBackupDestination = "seaweed.seaweedfs.com/backup-destination"
+	// AnnotationBackupClaim, AnnotationBackupMountPath, and
+	// AnnotationBackupSubPath pin the filesystem storage a snapshot wrote to.
+	// They are set on the snapshot Job and copied onto the CR when the Job is
+	// torn down early, so archive cleanup mounts the original claim even if
+	// the storage entry was reconfigured after the snapshot ran.
+	AnnotationBackupClaim     = "seaweed.seaweedfs.com/backup-claim"
+	AnnotationBackupMountPath = "seaweed.seaweedfs.com/backup-mount-path"
+	AnnotationBackupSubPath   = "seaweed.seaweedfs.com/backup-sub-path"
 )
 
 // SeaweedBackupSpec is a single, on-demand or scheduled, point-in-time filer

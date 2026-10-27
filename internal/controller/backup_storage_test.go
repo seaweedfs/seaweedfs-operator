@@ -216,7 +216,7 @@ func TestSnapshotScriptFilesystem(t *testing.T) {
 		"set -euo pipefail",
 		"fs.meta.save -o /backup/c1/bk1/filer.meta.gz /",
 		"weed", "shell", "-master=", "-filer=",
-		"test -s /backup/c1/bk1/filer.meta.gz",
+		"test -s '/backup/c1/bk1/filer.meta.gz'",
 	} {
 		if !strings.Contains(script, want) {
 			t.Errorf("filesystem snapshot script missing %q:\n%s", want, script)
@@ -267,8 +267,8 @@ func TestCleanupScript(t *testing.T) {
 	}
 	script := cleanupScript(m, fs, "c1", "bk1")
 	for _, want := range []string{
-		"rm -f /backup/c1/bk1/filer.meta.gz",
-		"rmdir /backup/c1/bk1",
+		"rm -f '/backup/c1/bk1/filer.meta.gz'",
+		"rmdir '/backup/c1/bk1'",
 	} {
 		if !strings.Contains(script, want) {
 			t.Errorf("filesystem cleanup script missing %q:\n%s", want, script)

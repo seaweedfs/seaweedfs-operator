@@ -72,6 +72,14 @@ type IAMAdmin interface {
 	// attached).
 	DetachPolicy(ctx context.Context, user, policy string) error
 
+	// GetBucketPolicy returns the bucket policy JSON stored on the bucket,
+	// or nil when none is set.
+	GetBucketPolicy(ctx context.Context, bucket string) ([]byte, error)
+	// SetBucketPolicy stores the bucket policy JSON on the bucket; an empty
+	// policyJSON clears it. swadmin.ErrBucketNotFound when the bucket does
+	// not exist.
+	SetBucketPolicy(ctx context.Context, bucket string, policyJSON []byte) error
+
 	// PutOIDCProvider registers or updates a trusted OIDC identity provider
 	// (issuer URL + client IDs + optional TLS thumbprints) and returns its
 	// ARN. Idempotent on the issuer URL.
@@ -197,6 +205,14 @@ func (a *swadminIAMAdmin) AttachPolicy(ctx context.Context, user, policy string)
 
 func (a *swadminIAMAdmin) DetachPolicy(ctx context.Context, user, policy string) error {
 	return mapIAMError(a.c.DetachPolicy(ctx, user, policy))
+}
+
+func (a *swadminIAMAdmin) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, error) {
+	return a.c.GetBucketPolicy(ctx, bucket)
+}
+
+func (a *swadminIAMAdmin) SetBucketPolicy(ctx context.Context, bucket string, policyJSON []byte) error {
+	return a.c.SetBucketPolicy(ctx, bucket, policyJSON)
 }
 
 func (a *swadminIAMAdmin) PutOIDCProvider(ctx context.Context, provider swadmin.OIDCProvider) (string, error) {

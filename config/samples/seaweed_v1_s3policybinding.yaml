@@ -9,11 +9,14 @@ spec:
   # The IAM policy to attach (equals the resolved name of an S3Policy).
   policyRef:
     name: rw-uploads
-  # The identities the policy is attached to. The controller reconciles to
-  # exactly this set — identities removed here have the policy detached.
-  # Add more subjects (each must reference an existing S3Identity), e.g.:
-  #   - kind: S3Identity
-  #     name: bob
+  # The subjects the policy is attached to. The controller reconciles to
+  # exactly this set — subjects removed here have the policy detached.
+  # kind: S3Identity attaches to an IAM user; kind: Bucket stores the
+  # document as that bucket's bucket policy (which therefore needs a
+  # Principal per statement — use spec.policyDocument on the S3Policy),
+  # e.g.:
+  #   - kind: Bucket
+  #     name: shared-bucket
   subjects:
     - kind: S3Identity
       name: alice

@@ -856,10 +856,18 @@ underlying IAM object. Set `reclaimPolicy: Retain` to opt out.
         resources: [my-bucket/uploads/*]
   ```
 
-- **`S3PolicyBinding`** — attaches a policy to a set of identities. The
-  controller reconciles to exactly the listed `subjects`; identities
-  removed from the list have the policy detached (the identity itself is
-  left intact).
+- **`S3PolicyBinding`** — attaches a policy to a set of subjects. The
+  controller reconciles to exactly the listed `subjects`; subjects
+  removed from the list have the policy detached (the subject itself is
+  left intact). A `kind: S3Identity` subject attaches the policy to an
+  IAM user; a `kind: Bucket` subject stores the policy document as that
+  bucket's bucket policy, so the document must be a *resource* policy —
+  use `policyDocument` (not `statements`) with a `Principal` per
+  statement, and `Resource` entries scoped to the bound buckets. One
+  document may be shared across many buckets, e.g. granting access by
+  `jwt:groups` claim. A bucket carries one policy document, so when two
+  bindings target the same bucket the oldest wins and the other reports
+  `reason: BucketConflict`.
 
   ```yaml
   apiVersion: seaweed.seaweedfs.com/v1
@@ -871,6 +879,7 @@ underlying IAM object. Set `reclaimPolicy: Retain` to opt out.
     subjects:
       - { kind: S3Identity, name: alice }
       - { kind: S3Identity, name: bob }
+      - { kind: Bucket, name: shared-bucket }
   ```
 
 IAM user and policy names are **global to the cluster** while these CRs

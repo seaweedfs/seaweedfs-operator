@@ -33,24 +33,26 @@ type S3PolicyRef struct {
 }
 
 // S3SubjectKind enumerates the kinds of subject a policy can be bound to.
-// Only S3Identity is supported today.
-// +kubebuilder:validation:Enum=S3Identity
+// +kubebuilder:validation:Enum=S3Identity;Bucket
 type S3SubjectKind string
 
 const (
 	S3SubjectKindIdentity S3SubjectKind = "S3Identity"
+	S3SubjectKindBucket   S3SubjectKind = "Bucket"
 )
 
 // S3Subject is a single principal a policy is attached to.
 type S3Subject struct {
-	// Kind is the subject kind. Only S3Identity is supported. Defaults to
-	// S3Identity.
+	// Kind is the subject kind. S3Identity attaches the policy to an IAM
+	// user; Bucket stores it as the named bucket's bucket policy (which
+	// therefore must carry a Principal per statement, as resource policies
+	// require). Defaults to S3Identity.
 	// +optional
 	// +kubebuilder:default:=S3Identity
 	Kind S3SubjectKind `json:"kind,omitempty"`
 
-	// Name of the S3Identity in the same namespace, or the IAM user name
-	// for an identity not managed by an S3Identity resource.
+	// Name of the S3Identity or Bucket in the same namespace, or the IAM
+	// user name / bucket name for a subject not managed by a resource.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256
 	Name string `json:"name"`
@@ -114,6 +116,12 @@ type S3PolicyBindingStatus struct {
 	// +optional
 	// +listType=atomic
 	AttachedSubjects []string `json:"attachedSubjects,omitempty"`
+
+	// AttachedBuckets lists the bucket names the policy is currently
+	// applied to as their bucket policy.
+	// +optional
+	// +listType=atomic
+	AttachedBuckets []string `json:"attachedBuckets,omitempty"`
 
 	// PolicyName is the IAM policy name the policyRef resolved to.
 	// +optional

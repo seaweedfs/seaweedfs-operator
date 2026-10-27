@@ -195,6 +195,89 @@ func resolvePolicyIAMName(ctx context.Context, c client.Client, namespace, ref, 
 	}
 }
 
+// resolveBucketSubjectName is resolveIdentityIAMName for a kind=Bucket
+// subject: a same-namespace Bucket of that resource name targeting the same
+// cluster resolves to its effective bucket name; otherwise the reference is
+// the bucket name itself.
+func resolveBucketSubjectName(ctx context.Context, c client.Client, namespace, ref, clusterKey string) (string, error) {
+	var b seaweedv1.Bucket
+	err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: ref}, &b)
+	switch {
+	case err == nil:
+		if seaweedRefKey(seaweedv1.SeaweedReference(b.Spec.ClusterRef), b.Namespace) == clusterKey {
+			return resolvedBucketName(&b), nil
+		}
+		return ref, nil
+	case apierrors.IsNotFound(err):
+		return ref, nil
+	default:
+		return "", err
+	}
+}
+
+// bindingBucketClaimants returns the other live S3PolicyBindings claiming the
+// same bucket policy slot on the same cluster as self. A binding claims a
+// bucket while a kind=Bucket subject resolves to its name or while its status
+// still records it attached — one being detached mid-reconcile holds the name
+// until cleanup ends, so a claimant cannot repurpose a policy slot that
+// cleanup then clears.
+func bindingBucketClaimants(ctx context.Context, c client.Client, self *seaweedv1.S3PolicyBinding, bucket string) ([]*seaweedv1.S3PolicyBinding, error) {
+	var list seaweedv1.S3PolicyBindingList
+	if err := c.List(ctx, &list); err != nil {
+		return nil, err
+	}
+	cluster := seaweedRefKey(self.Spec.SeaweedRef, self.Namespace)
+	var out []*seaweedv1.S3PolicyBinding
+	for i := range list.Items {
+		peer := &list.Items[i]
+		if peer.Namespace == self.Namespace && peer.Name == self.Name {
+			continue
+		}
+		if seaweedRefKey(peer.Spec.SeaweedRef, peer.Namespace) != cluster {
+			continue
+		}
+		claims := map[string]struct{}{}
+		for _, b := range peer.Status.AttachedBuckets {
+			claims[b] = struct{}{}
+		}
+		if peer.DeletionTimestamp.IsZero() {
+			for _, s := range peer.Spec.Subjects {
+				if s.Kind != seaweedv1.S3SubjectKindBucket {
+					continue
+				}
+				name, err := resolveBucketSubjectName(ctx, c, peer.Namespace, s.Name, cluster)
+				if err != nil {
+					return nil, err
+				}
+				claims[name] = struct{}{}
+			}
+		}
+		if _, ok := claims[bucket]; ok {
+			out = append(out, peer)
+		}
+	}
+	return out, nil
+}
+
+// bindingBucketConflict returns the claimant that outranks self for the
+// contested bucket policy slot, or nil when self owns it.
+func bindingBucketConflict(ctx context.Context, c client.Client, self *seaweedv1.S3PolicyBinding, bucket string) (*seaweedv1.S3PolicyBinding, error) {
+	peers, err := bindingBucketClaimants(ctx, c, self, bucket)
+	if err != nil {
+		return nil, err
+	}
+	var winner *seaweedv1.S3PolicyBinding
+	for _, peer := range peers {
+		if winner == nil || claimPrecedes(peer, winner) {
+			winner = peer
+		}
+	}
+	if winner == nil || claimPrecedes(self, winner) {
+		return nil, nil
+	}
+	return winner, nil
+}
+
 func roleIAMName(r *seaweedv1.S3Role) string {
 	if r.Spec.Name != "" {
 		return r.Spec.Name

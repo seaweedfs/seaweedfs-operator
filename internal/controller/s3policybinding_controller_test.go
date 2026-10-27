@@ -371,3 +371,27 @@ func TestS3PolicyBinding_RemovedBucketSubjectClearsPolicyAfterDocBreaks(t *testi
 		t.Errorf("alice policies = %v, want [rw]", got)
 	}
 }
+
+func TestS3PolicyBinding_RejectsStructurallyInvalidDoc(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedBucket("data")
+	if err := fa.PutPolicy(context.Background(), "rw",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Resource":["arn:aws:s3:::data/*"]}]}`); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	binding := testBinding("rw-bind",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"},
+	)
+	r, cli := newBindingReconciler(t, fa, binding)
+	key := types.NamespacedName{Namespace: "media", Name: "rw-bind"}
+	reconcileOnce(t, r, key) // finalizer
+	reconcileOnce(t, r, key)
+
+	if got := fa.bucketPolicies["data"]; got != nil {
+		t.Errorf("no bucket policy should be written for a statement missing Action, got %q", got)
+	}
+	got := getBinding(t, cli, "rw-bind")
+	if got.Status.Phase != seaweedv1.S3PhaseFailed || bindingReadyReason(got) != "PolicyNotBucketPolicy" {
+		t.Errorf("phase/reason = %q/%q, want Failed/PolicyNotBucketPolicy", got.Status.Phase, bindingReadyReason(got))
+	}
+}

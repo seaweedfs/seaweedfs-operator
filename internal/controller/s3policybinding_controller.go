@@ -19,7 +19,6 @@ package controller
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -370,15 +369,19 @@ func resolveSubjects(ctx context.Context, c client.Client, binding *seaweedv1.S3
 }
 
 // validateBucketPolicyDoc checks that an IAM policy document can serve as a
-// bucket policy for the bound buckets: a Principal (or NotPrincipal) on every
-// statement, s3: actions only, known condition operators, and resources that
-// name at least one bound bucket. Unlike the S3 API's per-bucket check,
-// resources may also name other bound buckets — one document can be shared
-// across a project of buckets, with each statement inert where its resources
-// do not match.
+// bucket policy for the bound buckets: the generic structural and size rules
+// the S3 gateway enforces on PutBucketPolicy, a Principal (or NotPrincipal)
+// on every statement, s3: actions only, known condition operators, and
+// resources that name at least one bound bucket. Unlike the S3 API's
+// per-bucket check, resources may also name other bound buckets — one
+// document can be shared across a project of buckets, with each statement
+// inert where its resources do not match.
 func validateBucketPolicyDoc(policyDoc string, buckets []string) error {
-	var doc s3policyengine.PolicyDocument
-	if err := json.Unmarshal([]byte(policyDoc), &doc); err != nil {
+	if len(policyDoc) > s3policyengine.MaxBucketPolicySize {
+		return fmt.Errorf("policy document exceeds the %d byte bucket policy limit", s3policyengine.MaxBucketPolicySize)
+	}
+	doc, err := s3policyengine.ParsePolicy(policyDoc)
+	if err != nil {
 		return fmt.Errorf("policy document cannot serve as a bucket policy: %v", err)
 	}
 	for i, st := range doc.Statement {

@@ -1,5 +1,5 @@
 {{- if .Values.rbac.create }}
-{{- $watchNamespaces := .Values.watchNamespaces | default (list) }}
+{{- $watchNamespaces := .Values.watchNamespaces | default (list) | compact | uniq }}
 {{- if $watchNamespaces }}
 {{- range $ns := $watchNamespaces }}
 ---

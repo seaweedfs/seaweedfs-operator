@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-logr/logr"
 	monitorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -135,6 +136,47 @@ func TestPruneServiceMonitors(t *testing.T) {
 				t.Errorf("enabled=%v %s: exists=%v, want %v", enabled, sm.GetName(), got, want[sm.GetName()])
 			}
 		}
+	}
+}
+
+func TestPruneServiceMonitorsFlatVolumeMigration(t *testing.T) {
+	ctx := context.Background()
+	port := metricsPort(9327)
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "test", UID: "sw-uid"},
+		Spec: seaweedv1.SeaweedSpec{
+			Master: &seaweedv1.MasterSpec{Replicas: 1, MetricsPort: port},
+			VolumeTopology: map[string]*seaweedv1.VolumeTopologySpec{
+				"dc1": {VolumeServerConfig: seaweedv1.VolumeServerConfig{MetricsPort: port}},
+			},
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	_ = seaweedv1.AddToScheme(scheme)
+	sts := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "sw-volume", Namespace: "test"}}
+	if err := controllerutil.SetControllerReference(m, sts, scheme); err != nil {
+		t.Fatal(err)
+	}
+	monitor := ownedServiceMonitor(t, m, "sw-volume", true)
+
+	// While the flat workload still serves, its monitor stays.
+	r := serviceMonitorTestReconciler(t, true, monitor, sts)
+	if done, _, err := r.pruneServiceMonitors(ctx, m); err != nil || done {
+		t.Fatalf("pruneServiceMonitors: done=%v err=%v", done, err)
+	}
+	if !serviceMonitorExists(t, r, "sw-volume") {
+		t.Error("flat volume monitor pruned while its workload still serves")
+	}
+
+	// Disabling ServiceMonitors removes it even mid-migration.
+	m.Spec.ServiceMonitor = &seaweedv1.ServiceMonitorSpec{Enabled: boolPtr(false)}
+	r = serviceMonitorTestReconciler(t, true, monitor, sts)
+	if done, _, err := r.pruneServiceMonitors(ctx, m); err != nil || done {
+		t.Fatalf("pruneServiceMonitors: done=%v err=%v", done, err)
+	}
+	if serviceMonitorExists(t, r, "sw-volume") {
+		t.Error("disabled monitor kept while its workload still serves")
 	}
 }
 

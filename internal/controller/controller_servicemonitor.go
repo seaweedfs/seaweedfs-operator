@@ -47,6 +47,20 @@ func (r *SeaweedReconciler) pruneServiceMonitors(ctx context.Context, m *seaweed
 		return ReconcileResult(err)
 	}
 	desired := desiredServiceMonitorNames(m)
+
+	// The flat volume monitor follows the flat workload, not the spec:
+	// retireFlatVolumeServers removes it once the workload has drained.
+	flatName := m.Name + "-volume"
+	if m.Spec.ServiceMonitorsEnabled() && len(m.Spec.VolumeTopology) > 0 && !desired[flatName] {
+		exists, err := r.flatVolumeWorkloadOwned(ctx, m)
+		if err != nil {
+			return ReconcileResult(err)
+		}
+		if exists {
+			desired[flatName] = true
+		}
+	}
+
 	for i := range list.Items {
 		sm := &list.Items[i]
 		if desired[sm.Name] || !metav1.IsControlledBy(sm, m) {

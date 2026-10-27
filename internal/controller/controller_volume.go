@@ -370,6 +370,33 @@ func (r *SeaweedReconciler) retireFlatVolumeServers(ctx context.Context, seaweed
 	return ReconcileResult(nil)
 }
 
+// flatVolumeWorkloadOwned reports whether the legacy <name>-volume DaemonSet
+// or StatefulSet still exists and is owned by this Seaweed. During a
+// volumeTopology migration that workload keeps serving until it has drained,
+// so resources tied to it follow its retirement rather than the spec.
+func (r *SeaweedReconciler) flatVolumeWorkloadOwned(ctx context.Context, m *seaweedv1.Seaweed) (bool, error) {
+	key := types.NamespacedName{Namespace: m.Namespace, Name: m.Name + "-volume"}
+
+	ds := &appsv1.DaemonSet{}
+	if err := r.Get(ctx, key, ds); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return false, err
+		}
+	} else if isOwnedBy(ds.OwnerReferences, m.UID) {
+		return true, nil
+	}
+
+	sts := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, key, sts); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return false, err
+		}
+	} else if isOwnedBy(sts.OwnerReferences, m.UID) {
+		return true, nil
+	}
+	return false, nil
+}
+
 // pruneStaleVolumeServices removes per-replica volume Services whose ordinal
 // no live workload wants anymore — e.g. test-volume-2 after a flat scale-in,
 // or test-volume-dc1-2 after a topology group shrank past index 2. The cutoff

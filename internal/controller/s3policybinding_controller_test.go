@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -393,5 +394,213 @@ func TestS3PolicyBinding_RejectsStructurallyInvalidDoc(t *testing.T) {
 	got := getBinding(t, cli, "rw-bind")
 	if got.Status.Phase != seaweedv1.S3PhaseFailed || bindingReadyReason(got) != "PolicyNotBucketPolicy" {
 		t.Errorf("phase/reason = %q/%q, want Failed/PolicyNotBucketPolicy", got.Status.Phase, bindingReadyReason(got))
+	}
+}
+
+func TestS3PolicyBinding_SameNameIdentityAndBucket(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedUser("data")
+	fa.seedBucket("data")
+	doc := testBucketPolicyDoc("arn:aws:s3:::data/*")
+	if err := fa.PutPolicy(context.Background(), "rw", doc); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	binding := testBinding("rw-bind",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindIdentity, Name: "data"},
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"},
+	)
+	r, _ := newBindingReconciler(t, fa, binding)
+	key := types.NamespacedName{Namespace: "media", Name: "rw-bind"}
+	reconcileStable(t, r, key, 5)
+
+	if got := fa.userPolicies("data"); len(got) != 1 || got[0] != "rw" {
+		t.Errorf("identity policies = %v, want [rw]", got)
+	}
+	if got := string(fa.bucketPolicies["data"]); got != doc {
+		t.Errorf("bucket policy = %q, want the document", got)
+	}
+}
+
+// A binding that loses a bucket slot to an older peer releases the bucket
+// without clearing — the winner may already have written its document.
+func TestS3PolicyBinding_ReleaseSkipsClearWhenClaimed(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedBucket("data")
+	docNew := testBucketPolicyDoc("arn:aws:s3:::data/*")
+	docOld := testBucketPolicyDoc("arn:aws:s3:::data")
+	if err := fa.PutPolicy(context.Background(), "rw", docNew); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	if err := fa.PutPolicy(context.Background(), "other", docOld); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	newer := testBinding("zzz-newer",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	newer.CreationTimestamp = metav1.NewTime(time.Unix(2000, 0))
+	older := testBinding("aaa-older",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	older.Spec.PolicyRef.Name = "other"
+	older.CreationTimestamp = metav1.NewTime(time.Unix(1000, 0))
+
+	// The newer binding exists alone at first and applies its document;
+	// the older claimant appears afterwards and takes the slot.
+	r, cli := newBindingReconciler(t, fa, newer)
+	newerKey := types.NamespacedName{Namespace: "media", Name: "zzz-newer"}
+	olderKey := types.NamespacedName{Namespace: "media", Name: "aaa-older"}
+	reconcileStable(t, r, newerKey, 5)
+	if got := string(fa.bucketPolicies["data"]); got != docNew {
+		t.Fatalf("bucket policy = %q, want the newer document applied first", got)
+	}
+	if err := cli.Create(context.Background(), older); err != nil {
+		t.Fatalf("create older: %v", err)
+	}
+	reconcileStable(t, r, olderKey, 5)
+	if got := string(fa.bucketPolicies["data"]); got != docOld {
+		t.Fatalf("bucket policy = %q, want the older winner's document", got)
+	}
+	// The loser resyncs: it releases the slot but must not erase the
+	// winner's document. BucketConflict requeues forever, so drive it
+	// by hand.
+	reconcileOnce(t, r, newerKey)
+	reconcileOnce(t, r, newerKey)
+	if got := string(fa.bucketPolicies["data"]); got != docOld {
+		t.Errorf("released binding erased the winner's document: %q", got)
+	}
+}
+
+// Deleting a former owner mid-handoff must not clear the policy the new
+// owner just wrote.
+func TestS3PolicyBinding_DeleteSkipsClearWhenClaimed(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedBucket("data")
+	docNew := testBucketPolicyDoc("arn:aws:s3:::data/*")
+	docOld := testBucketPolicyDoc("arn:aws:s3:::data")
+	if err := fa.PutPolicy(context.Background(), "rw", docNew); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	if err := fa.PutPolicy(context.Background(), "other", docOld); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	newer := testBinding("zzz-newer",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	newer.CreationTimestamp = metav1.NewTime(time.Unix(2000, 0))
+	older := testBinding("aaa-older",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	older.Spec.PolicyRef.Name = "other"
+	older.CreationTimestamp = metav1.NewTime(time.Unix(1000, 0))
+
+	// The newer binding applies first; the older claimant appears later
+	// and takes the slot.
+	r, cli := newBindingReconciler(t, fa, newer)
+	newerKey := types.NamespacedName{Namespace: "media", Name: "zzz-newer"}
+	olderKey := types.NamespacedName{Namespace: "media", Name: "aaa-older"}
+	reconcileStable(t, r, newerKey, 5)
+	if err := cli.Create(context.Background(), older); err != nil {
+		t.Fatalf("create older: %v", err)
+	}
+	reconcileStable(t, r, olderKey, 5)
+
+	// Delete the loser before its next resync — status still records the
+	// bucket attached, but the older binding now owns the slot.
+	live := getBinding(t, cli, "zzz-newer")
+	if err := cli.Delete(context.Background(), live); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reconcileStable(t, r, newerKey, 5)
+	if got := string(fa.bucketPolicies["data"]); got != docOld {
+		t.Errorf("deleting the former owner erased the active policy: %q", got)
+	}
+}
+
+// A binding denied by ResourceReferenceGrant can never apply, so its spec
+// must not squat a bucket slot a permitted binding could take.
+func TestS3PolicyBinding_DeniedPeerDoesNotSquatBucket(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedBucket("data")
+	doc := testBucketPolicyDoc("arn:aws:s3:::data/*")
+	if err := fa.PutPolicy(context.Background(), "rw", doc); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	denied := testBinding("aaa-denied",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	denied.Namespace = "other" // no grant authorizes "other"
+	denied.CreationTimestamp = metav1.NewTime(time.Unix(1000, 0))
+	permitted := testBinding("zzz-permitted",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	permitted.CreationTimestamp = metav1.NewTime(time.Unix(2000, 0))
+
+	r, cli := newBindingReconciler(t, fa, denied, permitted)
+	key := types.NamespacedName{Namespace: "media", Name: "zzz-permitted"}
+	reconcileStable(t, r, key, 5)
+
+	if got := string(fa.bucketPolicies["data"]); got != doc {
+		t.Errorf("bucket policy = %q, want applied despite the denied older claim", got)
+	}
+	if got := getBinding(t, cli, "zzz-permitted"); got.Status.Phase != seaweedv1.S3PhaseReady {
+		t.Errorf("phase = %q, want Ready", got.Status.Phase)
+	}
+}
+
+// Replacing the document with an identity-style policy while dropping the
+// bucket subjects must still revoke: the clear runs before validation can
+// fail, so a broken replacement cannot wedge old grants in place.
+func TestS3PolicyBinding_InvalidDocStillClearsRemovedBuckets(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedUser("alice")
+	fa.seedBucket("data")
+	doc := testBucketPolicyDoc("arn:aws:s3:::data/*")
+	if err := fa.PutPolicy(context.Background(), "rw", doc); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	binding := testBinding("rw-bind",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	r, cli := newBindingReconciler(t, fa, binding)
+	key := types.NamespacedName{Namespace: "media", Name: "rw-bind"}
+	reconcileStable(t, r, key, 5)
+	if got := fa.bucketPolicies["data"]; got == nil {
+		t.Fatal("expected bucket policy to be applied")
+	}
+
+	if err := fa.PutPolicy(context.Background(), "rw",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`); err != nil {
+		t.Fatalf("swap policy: %v", err)
+	}
+	live := getBinding(t, cli, "rw-bind")
+	live.Spec.Subjects = []seaweedv1.S3Subject{
+		{Kind: seaweedv1.S3SubjectKindIdentity, Name: "alice"},
+	}
+	if err := cli.Update(context.Background(), live); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	reconcileStable(t, r, key, 5)
+
+	if got := fa.bucketPolicies["data"]; got != nil {
+		t.Errorf("bucket policy = %q, want cleared despite the invalid document", got)
+	}
+}
+
+// A mid-apply failure must not drop cleanup records for buckets still
+// owned but not yet re-processed.
+func TestS3PolicyBinding_FailedAttachKeepsBucketRecords(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedUser("alice")
+	fa.seedBucket("data")
+	doc := testBucketPolicyDoc("arn:aws:s3:::data/*")
+	if err := fa.PutPolicy(context.Background(), "rw", doc); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	binding := testBinding("rw-bind",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindIdentity, Name: "alice"},
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	r, cli := newBindingReconciler(t, fa, binding)
+	key := types.NamespacedName{Namespace: "media", Name: "rw-bind"}
+	reconcileStable(t, r, key, 5)
+
+	fa.attachPolicyErr = errors.New("iam unavailable")
+	reconcileOnce(t, r, key)
+
+	got := getBinding(t, cli, "rw-bind")
+	if len(got.Status.AttachedBuckets) != 1 || got.Status.AttachedBuckets[0] != "data" {
+		t.Errorf("attachedBuckets = %v, want [data] preserved for cleanup", got.Status.AttachedBuckets)
 	}
 }

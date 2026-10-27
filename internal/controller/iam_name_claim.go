@@ -241,15 +241,23 @@ func bindingBucketClaimants(ctx context.Context, c client.Client, self *seaweedv
 			claims[b] = struct{}{}
 		}
 		if peer.DeletionTimestamp.IsZero() {
-			for _, s := range peer.Spec.Subjects {
-				if s.Kind != seaweedv1.S3SubjectKindBucket {
-					continue
+			// A peer not permitted to reference the cluster can never
+			// apply, so its spec must not squat a slot others could use.
+			permitted, err := seaweedRefPermitted(ctx, c, peer.Spec.SeaweedRef, kindS3PolicyBinding, peer.Namespace)
+			if err != nil {
+				return nil, err
+			}
+			if permitted {
+				for _, s := range peer.Spec.Subjects {
+					if s.Kind != seaweedv1.S3SubjectKindBucket {
+						continue
+					}
+					name, err := resolveBucketSubjectName(ctx, c, peer.Namespace, s.Name, cluster)
+					if err != nil {
+						return nil, err
+					}
+					claims[name] = struct{}{}
 				}
-				name, err := resolveBucketSubjectName(ctx, c, peer.Namespace, s.Name, cluster)
-				if err != nil {
-					return nil, err
-				}
-				claims[name] = struct{}{}
 			}
 		}
 		if _, ok := claims[bucket]; ok {

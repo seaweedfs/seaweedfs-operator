@@ -146,7 +146,6 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// targeting it would flap on every resync; the older binding owns the
 	// slot and the loser releases it.
 	var conflicted []string
-	conflictedSet := map[string]struct{}{}
 	applyBuckets := make([]string, 0, len(desiredBuckets))
 	for _, b := range desiredBuckets {
 		winner, err := bindingBucketConflict(ctx, r.Client, &binding, b)
@@ -155,28 +154,15 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		if winner != nil {
 			conflicted = append(conflicted, fmt.Sprintf("%s (owned by %s/%s)", b, winner.Namespace, winner.Name))
-			conflictedSet[b] = struct{}{}
 			continue
 		}
 		applyBuckets = append(applyBuckets, b)
 	}
 
-	// Validate the document only when it will be written somewhere: an
-	// invalid document must not block the detach below from clearing
-	// buckets the binding no longer manages. Resources may name the
-	// to-be-applied set plus anything still attached, so a shared document
-	// stays valid while one of its buckets is mid-removal.
-	if len(applyBuckets) > 0 {
-		managed := append(append([]string(nil), applyBuckets...), binding.Status.AttachedBuckets...)
-		if err := validateBucketPolicyDoc(policyDoc, managed); err != nil {
-			return r.fail(ctx, &binding, "PolicyNotBucketPolicy", err.Error())
-		}
-	}
-
 	// Detach subjects no longer listed (compared against the last applied
-	// set). A conflicted bucket is released without clearing: the winning
-	// peer may already have written its own document there, and the slot is
-	// theirs to manage now.
+	// set). A released bucket is cleared only when no other binding claims
+	// it — clearing while a new owner has just written its document would
+	// erase the live policy.
 	desiredSet := map[string]struct{}{}
 	for _, s := range desired {
 		desiredSet[s] = struct{}{}
@@ -197,11 +183,22 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if _, keep := applySet[prev]; keep {
 			continue
 		}
-		if _, released := conflictedSet[prev]; released {
-			continue
-		}
-		if err := admin.SetBucketPolicy(ctx, prev, nil); err != nil && !errors.Is(err, swadmin.ErrBucketNotFound) {
+		if err := r.releaseBucketPolicy(ctx, admin, &binding, prev); err != nil && !errors.Is(err, swadmin.ErrBucketNotFound) {
 			return r.fail(ctx, &binding, "DetachFailed", fmt.Sprintf("clear bucket policy on %q: %s", prev, err.Error()))
+		}
+	}
+
+	// Validate the document only when it will be written somewhere: a
+	// resource policy needs a Principal per statement and resources scoped
+	// to buckets this binding manages — the desired set (whether or not a
+	// conflict took a slot) plus anything still attached, so a shared
+	// document stays valid while a bucket is mid-removal. Revocation above
+	// runs regardless, so a broken replacement document cannot wedge old
+	// grants in place.
+	if len(applyBuckets) > 0 {
+		managed := append(append([]string(nil), desiredBuckets...), binding.Status.AttachedBuckets...)
+		if err := validateBucketPolicyDoc(policyDoc, managed); err != nil {
+			return r.fail(ctx, &binding, "PolicyNotBucketPolicy", err.Error())
 		}
 	}
 
@@ -213,14 +210,20 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	attached := make([]string, 0, len(desired))
 	attachedBuckets := make([]string, 0, len(applyBuckets))
 	var pendingSubjects []string
+	// preserve records the attached set after a mid-apply failure without
+	// dropping buckets still owned but not yet re-processed — losing those
+	// records would orphan their installed policies.
+	preserve := func() {
+		binding.Status.AttachedSubjects = attached
+		binding.Status.AttachedBuckets = mergeKeptBuckets(binding.Status.AttachedBuckets, attachedBuckets, applySet)
+	}
 	for _, user := range desired {
 		if err := admin.AttachPolicy(ctx, user, policyName); err != nil {
 			if errors.Is(err, ErrIAMNotFound) {
 				pendingSubjects = append(pendingSubjects, user)
 				continue
 			}
-			binding.Status.AttachedSubjects = attached
-			binding.Status.AttachedBuckets = attachedBuckets
+			preserve()
 			return r.fail(ctx, &binding, "AttachFailed", fmt.Sprintf("attach %q to %q: %s", policyName, user, err.Error()))
 		}
 		attached = append(attached, user)
@@ -231,8 +234,7 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				pendingSubjects = append(pendingSubjects, b)
 				continue
 			}
-			binding.Status.AttachedSubjects = attached
-			binding.Status.AttachedBuckets = attachedBuckets
+			preserve()
 			return r.fail(ctx, &binding, "AttachFailed", fmt.Sprintf("apply bucket policy on %q: %s", b, err.Error()))
 		}
 		attachedBuckets = append(attachedBuckets, b)
@@ -275,7 +277,7 @@ func (r *S3PolicyBindingReconciler) handleDeletion(ctx context.Context, binding 
 			}
 		}
 		for _, b := range binding.Status.AttachedBuckets {
-			if err := admin.SetBucketPolicy(ctx, b, nil); err != nil && !errors.Is(err, swadmin.ErrBucketNotFound) {
+			if err := r.releaseBucketPolicy(ctx, admin, binding, b); err != nil && !errors.Is(err, swadmin.ErrBucketNotFound) {
 				setIAMCondition(&binding.Status.Conditions, binding.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DetachFailed", err.Error())
 				if updateErr := r.Status().Update(ctx, binding); updateErr != nil {
 					r.Log.Error(updateErr, "status update during deletion")
@@ -419,6 +421,42 @@ func resourceMatchesAnyBucket(resource string, buckets []string) bool {
 		}
 	}
 	return false
+}
+
+// releaseBucketPolicy clears the stored policy on a bucket this binding no
+// longer manages — unless another live binding claims the slot, in which
+// case the new owner may already have written its document and clearing
+// would erase it.
+func (r *S3PolicyBindingReconciler) releaseBucketPolicy(ctx context.Context, admin IAMAdmin, binding *seaweedv1.S3PolicyBinding, bucket string) error {
+	claimants, err := bindingBucketClaimants(ctx, r.Client, binding, bucket)
+	if err != nil {
+		return err
+	}
+	if len(claimants) > 0 {
+		return nil
+	}
+	return admin.SetBucketPolicy(ctx, bucket, nil)
+}
+
+// mergeKeptBuckets unions the buckets attached this pass with the previously
+// attached ones still desired, so a mid-apply failure does not drop cleanup
+// records for policies still installed.
+func mergeKeptBuckets(prev, attached []string, applySet map[string]struct{}) []string {
+	kept := map[string]struct{}{}
+	for _, b := range attached {
+		kept[b] = struct{}{}
+	}
+	for _, b := range prev {
+		if _, ok := applySet[b]; ok {
+			kept[b] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(kept))
+	for b := range kept {
+		out = append(out, b)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // applyBucketPolicy stores the policy document as the bucket's policy,

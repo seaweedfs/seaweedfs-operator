@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -66,6 +67,18 @@ func reservedClusterPodLabel(key string) bool {
 	case label.ManagedByLabelKey, label.ComponentLabelKey, label.NameLabelKey,
 		label.InstanceLabelKey, label.VersionLabelKey, label.PodName:
 		return true
+	}
+	return false
+}
+
+// isClusterPod reports whether the pod is owned by one of the cluster's
+// StatefulSets, so labels cannot land on unrelated pods that happen to carry
+// matching name/instance labels.
+func isClusterPod(pod *corev1.Pod, clusterName string) bool {
+	for _, ref := range pod.OwnerReferences {
+		if ref.Kind == "StatefulSet" && strings.HasPrefix(ref.Name, clusterName+"-") {
+			return true
+		}
 	}
 	return false
 }
@@ -346,6 +359,9 @@ func (r *AdminScriptReconciler) syncClusterPodLabels(ctx context.Context, script
 
 	for i := range pods.Items {
 		pod := &pods.Items[i]
+		if !isClusterPod(pod, cluster.Name) {
+			continue
+		}
 		backups := map[string]map[string]*string{}
 		if raw := pod.Annotations[adminScriptLabelBackupAnnotation]; raw != "" {
 			if err := json.Unmarshal([]byte(raw), &backups); err != nil {

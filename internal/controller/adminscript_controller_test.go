@@ -237,7 +237,16 @@ func clusterPod(name, clusterName string, labels map[string]string) *corev1.Pod 
 		base[k] = v
 	}
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default", Labels: base},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+			Labels:    base,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "apps/v1",
+				Kind:       "StatefulSet",
+				Name:       clusterName + "-" + strings.SplitN(name, "-", 2)[0],
+			}},
+		},
 	}
 }
 
@@ -253,9 +262,18 @@ func TestSyncClusterPodLabelsLifecycle(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "other-pod", Namespace: "default",
 			Labels: map[string]string{label.NameLabelKey: "seaweedfs", label.InstanceLabelKey: "other-cluster"}},
 	}
+	spoofed := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "lookalike-0", Namespace: "default", Labels: labelsForMaster("seaweed-sample"),
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "apps/v1",
+				Kind:       "StatefulSet",
+				Name:       "lookalike",
+			}},
+		},
+	}
 
 	r := &AdminScriptReconciler{
-		Client:   fake.NewClientBuilder().WithScheme(scheme).WithObjects(podA, podB, foreign).Build(),
+		Client:   fake.NewClientBuilder().WithScheme(scheme).WithObjects(podA, podB, foreign, spoofed).Build(),
 		Scheme:   scheme,
 		Recorder: record.NewFakeRecorder(2),
 	}
@@ -290,6 +308,12 @@ func TestSyncClusterPodLabelsLifecycle(t *testing.T) {
 	}
 	if _, ok := got.Labels["reboot-block"]; ok {
 		t.Fatalf("foreign cluster pod must not be labeled")
+	}
+	if err := r.Get(ctx, types.NamespacedName{Name: "lookalike-0", Namespace: "default"}, got); err != nil {
+		t.Fatalf("get lookalike pod: %v", err)
+	}
+	if _, ok := got.Labels["reboot-block"]; ok {
+		t.Fatalf("pod not owned by the cluster must not be labeled")
 	}
 
 	// Run finished: labels removed, prior values restored, annotation gone.

@@ -288,10 +288,17 @@ func (r *BucketReconciler) reconcileBucket(ctx context.Context, bucket *seaweedv
 		if err := admin.SetDefaultRetention(ctx, bucketName, strings.ToUpper(string(dr.Mode)), days, years); err != nil {
 			return r.failPhase(ctx, bucket, seaweedv1.BucketPhaseFailed, "RetentionFailed", err.Error())
 		}
+		// Record the applied rule now, not at the end of the pass: if a
+		// later step fails, failPhase persists this claim, so the next pass
+		// still knows the rule is ours to update or clear.
+		rule := dr.DeepCopy()
+		rule.Mode = seaweedv1.RetentionMode(strings.ToUpper(string(dr.Mode)))
+		bucket.Status.DefaultRetention = rule
 	} else if bucket.Status.DefaultRetention != nil {
 		if err := admin.SetDefaultRetention(ctx, bucketName, "", 0, 0); err != nil {
 			return r.failPhase(ctx, bucket, seaweedv1.BucketPhaseFailed, "RetentionRemoveFailed", err.Error())
 		}
+		bucket.Status.DefaultRetention = nil
 	}
 
 	// Versioning: only push a state when one is requested. "Off" with no
@@ -392,13 +399,6 @@ func (r *BucketReconciler) reconcileBucket(ctx context.Context, bucket *seaweedv
 	bucket.Status.ObservedGeneration = bucket.Generation
 	bucket.Status.Versioning = bucket.Spec.Versioning
 	bucket.Status.ObjectLockEnabled = bucket.Spec.ObjectLock
-	if bucket.Spec.ObjectLock && bucket.Spec.DefaultRetention != nil {
-		dr := bucket.Spec.DefaultRetention.DeepCopy()
-		dr.Mode = seaweedv1.RetentionMode(strings.ToUpper(string(dr.Mode)))
-		bucket.Status.DefaultRetention = dr
-	} else {
-		bucket.Status.DefaultRetention = nil
-	}
 	bucket.Status.OwnerIdentity = bucket.Spec.Owner
 	if bucket.Spec.Quota != nil {
 		sizeMiB, _ := quantityToMiB(bucket.Spec.Quota.Size)

@@ -1171,6 +1171,59 @@ func TestReconcile_DefaultRetentionRemovedWhenOwned(t *testing.T) {
 	}
 }
 
+// A failure after the retention write must not strand the claim: status
+// records ownership so a later pass can still update or clear the rule.
+func TestReconcile_DefaultRetentionClaimedBeforeLaterFailure(t *testing.T) {
+	days := int32(30)
+	bucket := newTestBucket("photos")
+	bucket.Spec.Versioning = seaweedv1.VersioningEnabled
+	bucket.Spec.ObjectLock = true
+	bucket.Spec.DefaultRetention = &seaweedv1.BucketDefaultRetention{
+		Mode: "Governance",
+		Days: &days,
+	}
+	bucket.Spec.Quota = &seaweedv1.BucketQuota{
+		Size:    resource.MustParse("100Gi"),
+		Enforce: true,
+	}
+
+	fa := newFakeAdmin()
+	fa.quotaErr = errors.New("quota backend down")
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+	for i := 0; i < 5; i++ {
+		res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+		if err != nil {
+			t.Fatalf("reconcile step %d: %v", i, err)
+		}
+		if !res.Requeue && res.RequeueAfter == 0 {
+			break
+		}
+	}
+
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.BucketPhaseFailed {
+		t.Fatalf("phase=%q want Failed", got.Status.Phase)
+	}
+	if got.Status.DefaultRetention == nil || got.Status.DefaultRetention.Mode != seaweedv1.RetentionModeGovernance {
+		t.Fatalf("status.defaultRetention=%+v want the applied GOVERNANCE claim", got.Status.DefaultRetention)
+	}
+
+	// Dropping spec.defaultRetention must still clear the stranded rule.
+	got.Spec.DefaultRetention = nil
+	if err := cli.Update(context.Background(), got); err != nil {
+		t.Fatalf("update bucket: %v", err)
+	}
+	fa.quotaErr = nil
+	reconcileUntilStable(t, r, key, 5)
+	if got := callsFor(fa.calls, "Retention:photos::0d:0y"); len(got) == 0 {
+		t.Errorf("missing retention clear call; calls=%v", fa.calls)
+	}
+}
+
 func TestReconcile_DefaultRetentionNotTouchedWhenUnmanaged(t *testing.T) {
 	bucket := newTestBucket("photos")
 	bucket.Spec.Versioning = seaweedv1.VersioningEnabled

@@ -189,15 +189,22 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
+	// Buckets just released still count for document validation — a shared
+	// document stays valid mid-removal — but they must stop claiming their
+	// slot: prune the records before a failure below persists them.
+	managed := append(append([]string(nil), desiredBuckets...), binding.Status.AttachedBuckets...)
+	binding.Status.AttachedBuckets = slices.DeleteFunc(binding.Status.AttachedBuckets, func(b string) bool {
+		_, keep := applySet[b]
+		return !keep
+	})
+
 	// Validate the document only when it will be written somewhere: a
 	// resource policy needs a Principal per statement and resources scoped
 	// to buckets this binding manages — the desired set (whether or not a
-	// conflict took a slot) plus anything still attached, so a shared
-	// document stays valid while a bucket is mid-removal. Revocation above
+	// conflict took a slot) plus anything still attached. Revocation above
 	// runs regardless, so a broken replacement document cannot wedge old
 	// grants in place.
 	if len(applyBuckets) > 0 {
-		managed := append(append([]string(nil), desiredBuckets...), binding.Status.AttachedBuckets...)
 		if err := validateBucketPolicyDoc(policyDoc, managed); err != nil {
 			return r.fail(ctx, &binding, "PolicyNotBucketPolicy", err.Error())
 		}

@@ -615,6 +615,48 @@ func TestS3PolicyBinding_InvalidDocStillClearsRemovedBuckets(t *testing.T) {
 	}
 }
 
+// A bucket released before a validation failure must stop claiming its
+// slot — the persisted status must not keep recording it attached.
+func TestS3PolicyBinding_ReleasedBucketDropsFromStatusOnFailure(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedBucket("data")
+	fa.seedBucket("media")
+	doc := testBucketPolicyDoc("arn:aws:s3:::data/*", "arn:aws:s3:::media/*")
+	if err := fa.PutPolicy(context.Background(), "rw", doc); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	binding := testBinding("rw-bind",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"},
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "media"},
+	)
+	r, cli := newBindingReconciler(t, fa, binding)
+	key := types.NamespacedName{Namespace: "media", Name: "rw-bind"}
+	reconcileStable(t, r, key, 5)
+
+	if err := fa.PutPolicy(context.Background(), "rw",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`); err != nil {
+		t.Fatalf("swap policy: %v", err)
+	}
+	live := getBinding(t, cli, "rw-bind")
+	live.Spec.Subjects = []seaweedv1.S3Subject{
+		{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"},
+	}
+	if err := cli.Update(context.Background(), live); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	reconcileOnce(t, r, key)
+
+	got := getBinding(t, cli, "rw-bind")
+	for _, b := range got.Status.AttachedBuckets {
+		if b == "media" {
+			t.Errorf("released bucket still recorded attached: %v", got.Status.AttachedBuckets)
+		}
+	}
+	if got := fa.bucketPolicies["media"]; got != nil {
+		t.Errorf("media policy = %q, want cleared", got)
+	}
+}
+
 // A mid-apply failure must not drop cleanup records for buckets still
 // owned but not yet re-processed.
 func TestS3PolicyBinding_FailedAttachKeepsBucketRecords(t *testing.T) {

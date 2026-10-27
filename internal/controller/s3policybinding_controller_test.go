@@ -330,3 +330,44 @@ func TestS3PolicyBinding_DeleteClearsBucketPolicy(t *testing.T) {
 		t.Error("binding should be gone after finalizer completes")
 	}
 }
+
+func TestS3PolicyBinding_RemovedBucketSubjectClearsPolicyAfterDocBreaks(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedUser("alice")
+	fa.seedBucket("data")
+	doc := testBucketPolicyDoc("arn:aws:s3:::data/*")
+	if err := fa.PutPolicy(context.Background(), "rw", doc); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	binding := testBinding("rw-bind",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"},
+	)
+	r, cli := newBindingReconciler(t, fa, binding)
+	key := types.NamespacedName{Namespace: "media", Name: "rw-bind"}
+	reconcileStable(t, r, key, 5)
+
+	// Rewriting the policy as an identity-style document must not wedge
+	// the binding: removing the bucket subject still clears the stored
+	// policy.
+	if err := fa.PutPolicy(context.Background(), "rw",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::data/*"]}]}`); err != nil {
+		t.Fatalf("update policy: %v", err)
+	}
+	live := getBinding(t, cli, "rw-bind")
+	live.Spec.Subjects = []seaweedv1.S3Subject{{Kind: seaweedv1.S3SubjectKindIdentity, Name: "alice"}}
+	if err := cli.Update(context.Background(), live); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	reconcileStable(t, r, key, 5)
+
+	if got := fa.bucketPolicies["data"]; got != nil {
+		t.Errorf("data policy after subject removal = %q, want cleared", got)
+	}
+	got := getBinding(t, cli, "rw-bind")
+	if got.Status.Phase != seaweedv1.S3PhaseReady {
+		t.Errorf("phase = %q, want Ready", got.Status.Phase)
+	}
+	if got := fa.userPolicies("alice"); len(got) != 1 || got[0] != "rw" {
+		t.Errorf("alice policies = %v, want [rw]", got)
+	}
+}

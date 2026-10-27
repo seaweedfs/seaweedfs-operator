@@ -162,12 +162,12 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		applyBuckets = append(applyBuckets, b)
 	}
 
-	// Validate the document before writing it anywhere: a resource policy
-	// needs a Principal per statement and resources scoped to buckets this
-	// binding manages — the to-be-applied set plus anything already attached
-	// (a shared document keeps statements for a bucket mid-removal valid so
-	// the detach below can still run).
-	if len(applyBuckets) > 0 || len(binding.Status.AttachedBuckets) > 0 {
+	// Validate the document only when it will be written somewhere: an
+	// invalid document must not block the detach below from clearing
+	// buckets the binding no longer manages. Resources may name the
+	// to-be-applied set plus anything still attached, so a shared document
+	// stays valid while one of its buckets is mid-removal.
+	if len(applyBuckets) > 0 {
 		managed := append(append([]string(nil), applyBuckets...), binding.Status.AttachedBuckets...)
 		if err := validateBucketPolicyDoc(policyDoc, managed); err != nil {
 			return r.fail(ctx, &binding, "PolicyNotBucketPolicy", err.Error())

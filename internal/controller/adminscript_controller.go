@@ -440,7 +440,23 @@ func (r *AdminScriptReconciler) syncClusterPodLabels(ctx context.Context, script
 					continue
 				}
 				e, recorded := backup[k]
+				if recorded && pod.Labels[k] != e.New {
+					// Re-applying while another writer sits on top stacks
+					// this writer again: the writer that backed up its
+					// value now records what this writer had seen.
+					for name, other := range backups {
+						if name == script.Name {
+							continue
+						}
+						if o, ok := other[k]; ok && o.Old != nil && *o.Old == e.New {
+							o.Old = e.Old
+							other[k] = o
+						}
+					}
+					recorded = false
+				}
 				if !recorded {
+					e.Old = nil
 					if old, ok := pod.Labels[k]; ok {
 						e.Old = &old
 					}

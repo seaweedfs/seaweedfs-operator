@@ -444,6 +444,71 @@ func TestSyncClusterPodLabelsOverlap(t *testing.T) {
 	}
 }
 
+// An earlier writer's periodic reconcile re-applies its value while a later
+// writer is on top; that write must re-stack the writer so releasing still
+// unwinds the chain to the original value.
+func TestSyncClusterPodLabelsReapplyRestacksWriter(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+
+	pod := clusterPod("master-0", "seaweed-sample", map[string]string{"reboot-block": "original"})
+	r := &AdminScriptReconciler{
+		Client:   fake.NewClientBuilder().WithScheme(scheme).WithObjects(pod).Build(),
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(2),
+	}
+	ctx := context.Background()
+	cluster := testCluster()
+
+	scriptA := testAdminScript()
+	scriptA.Spec.ClusterPodLabels = map[string]string{"reboot-block": "a"}
+	scriptB := testAdminScript()
+	scriptB.Name = "other-script"
+	scriptB.Spec.ClusterPodLabels = map[string]string{"reboot-block": "b"}
+
+	get := func() *corev1.Pod {
+		got := &corev1.Pod{}
+		if err := r.Get(ctx, types.NamespacedName{Name: "master-0", Namespace: "default"}, got); err != nil {
+			t.Fatalf("get pod: %v", err)
+		}
+		return got
+	}
+
+	if err := r.syncClusterPodLabels(ctx, scriptA, cluster.Name, true); err != nil {
+		t.Fatalf("apply A: %v", err)
+	}
+	if err := r.syncClusterPodLabels(ctx, scriptB, cluster.Name, true); err != nil {
+		t.Fatalf("apply B: %v", err)
+	}
+	// A's run is still active, so its reconcile re-applies its own value.
+	if err := r.syncClusterPodLabels(ctx, scriptA, cluster.Name, true); err != nil {
+		t.Fatalf("re-apply A: %v", err)
+	}
+	if got := get().Labels["reboot-block"]; got != "a" {
+		t.Fatalf("expected a label after re-apply, got %q", got)
+	}
+
+	if err := r.syncClusterPodLabels(ctx, scriptA, cluster.Name, false); err != nil {
+		t.Fatalf("release A: %v", err)
+	}
+	if got := get().Labels["reboot-block"]; got != "b" {
+		t.Fatalf("B label must resurface when A ends, got %q", got)
+	}
+
+	if err := r.syncClusterPodLabels(ctx, scriptB, cluster.Name, false); err != nil {
+		t.Fatalf("release B: %v", err)
+	}
+	got := get()
+	if got.Labels["reboot-block"] != "original" {
+		t.Fatalf("expected original restored, got %v", got.Labels)
+	}
+	if _, ok := got.Annotations[adminScriptLabelBackupAnnotation]; ok {
+		t.Fatalf("expected backup annotation removed, got %v", got.Annotations)
+	}
+}
+
 // Cluster pods may be owned by any cluster workload kind: StatefulSets,
 // the volume DaemonSet, or a Deployment's ReplicaSet.
 func TestSyncClusterPodLabelsWorkloadKinds(t *testing.T) {

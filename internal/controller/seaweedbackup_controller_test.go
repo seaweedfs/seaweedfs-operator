@@ -467,11 +467,13 @@ func TestBackupDeletionDeleteCleansArchive(t *testing.T) {
 	if err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: jobName}, &job); err != nil {
 		t.Fatalf("expected cleanup job %q: %v", jobName, err)
 	}
-	if len(job.OwnerReferences) == 0 || job.OwnerReferences[0].Name != "bk1" {
-		t.Errorf("cleanup job is not owned by the backup: %+v", job.OwnerReferences)
+	// The cleanup Job must not be owned by the deleting CR, or a foreground
+	// deletion would tear it down mid-run.
+	if len(job.OwnerReferences) != 0 {
+		t.Errorf("cleanup job must not be owned by the backup: %+v", job.OwnerReferences)
 	}
 	cmd := job.Spec.Template.Spec.Containers[0].Command
-	if len(cmd) < 3 || !strings.Contains(cmd[2], "rm -f /backup/c1/bk1/filer.meta.gz") {
+	if len(cmd) < 3 || !strings.Contains(cmd[2], "rm -f '/backup/c1/bk1/filer.meta.gz'") {
 		t.Errorf("cleanup job command does not remove the archive: %v", cmd)
 	}
 	var vol *corev1.Volume

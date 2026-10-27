@@ -182,26 +182,32 @@ func (r *SeaweedBackupReconciler) handleDeletion(ctx context.Context, backup *se
 	if !controllerutil.ContainsFinalizer(backup, BackupFinalizer) {
 		return ctrl.Result{}, nil
 	}
-
-	archiveRecorded := backup.Status.JobName != "" || backup.Status.Destination != ""
-	if backup.Spec.ReclaimPolicy != seaweedv1.BackupReclaimDelete || !archiveRecorded {
+	if backup.Spec.ReclaimPolicy != seaweedv1.BackupReclaimDelete {
 		return r.releaseFinalizer(ctx, backup)
 	}
 
-	// A snapshot still in flight could land its archive after the cleanup
-	// ran; stop the owned Job first and wait for it to be gone.
-	if backup.Status.Phase != seaweedv1.BackupPhaseCompleted && backup.Status.Phase != seaweedv1.BackupPhaseFailed {
-		var snap batchv1.Job
-		err := r.Get(ctx, types.NamespacedName{Namespace: backup.Namespace, Name: boundedName(backup.Name, "-bkp")}, &snap)
-		switch {
-		case err == nil:
-			if err := r.Delete(ctx, &snap); err != nil && !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{RequeueAfter: backupRequeue}, nil
-		case !apierrors.IsNotFound(err):
+	// Stop the snapshot Job before cleaning — including one whose status was
+	// never persisted, which is the only evidence the backup ever ran. The
+	// Job is deleted in the foreground so the wait below also covers its
+	// pods; otherwise a still-terminating pod could land the archive after
+	// the cleanup ran.
+	var snap batchv1.Job
+	snapErr := r.Get(ctx, types.NamespacedName{Namespace: backup.Namespace, Name: boundedName(backup.Name, "-bkp")}, &snap)
+	switch {
+	case snapErr == nil:
+		if err := r.recordStorage(ctx, backup, &snap); err != nil {
 			return ctrl.Result{}, err
 		}
+		if backup.Status.Phase != seaweedv1.BackupPhaseCompleted && backup.Status.Phase != seaweedv1.BackupPhaseFailed {
+			if snap.DeletionTimestamp.IsZero() {
+				if err := r.Delete(ctx, &snap, client.PropagationPolicy(metav1.DeletePropagationForeground)); err != nil && !apierrors.IsNotFound(err) {
+					return ctrl.Result{}, err
+				}
+			}
+			return ctrl.Result{RequeueAfter: backupRequeue}, nil
+		}
+	case !apierrors.IsNotFound(snapErr):
+		return ctrl.Result{}, snapErr
 	}
 
 	var cluster seaweedv1.Seaweed
@@ -217,16 +223,21 @@ func (r *SeaweedBackupReconciler) handleDeletion(ctx context.Context, backup *se
 		log.Info("storage unresolvable during delete; releasing finalizer without archive cleanup", "storage", backup.Spec.StorageName)
 		return r.releaseFinalizer(ctx, backup)
 	}
+	// Clean the storage the snapshot wrote to, not whatever the entry was
+	// reconfigured to afterwards.
+	if st.Type == seaweedv1.BackupStorageFilesystem {
+		st.Filesystem = recordedFilesystem(backup, st)
+	}
 
 	jobName := boundedName(backup.Name, "-cln")
 	var job batchv1.Job
 	err = r.Get(ctx, types.NamespacedName{Namespace: backup.Namespace, Name: jobName}, &job)
 	switch {
 	case apierrors.IsNotFound(err):
+		// Intentionally not owner-referenced: a foreground deletion of the
+		// CR would delete the Job mid-run and the reconcile would recreate
+		// it forever. The Job is deleted explicitly once it finishes.
 		built := buildCleanupJob(&cluster, jobName, backup, st)
-		if err := controllerutil.SetControllerReference(backup, built, r.Scheme); err != nil {
-			return ctrl.Result{}, err
-		}
 		if err := r.Create(ctx, built); err != nil && !apierrors.IsAlreadyExists(err) {
 			return ctrl.Result{}, err
 		}
@@ -240,17 +251,48 @@ func (r *SeaweedBackupReconciler) handleDeletion(ctx context.Context, backup *se
 	if !done {
 		return ctrl.Result{RequeueAfter: backupRequeue}, nil
 	}
+	// Replace a failed Job so the next reconcile retries cleanup instead of
+	// wedging the CR on a terminal JobFailed condition.
+	if err := r.Delete(ctx, &job); err != nil && !apierrors.IsNotFound(err) {
+		return ctrl.Result{}, err
+	}
 	if !success {
-		// Replace the failed Job so the next reconcile retries cleanup
-		// instead of wedging the CR on a terminal JobFailed condition.
-		if err := r.Delete(ctx, &job); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, err
-		}
 		r.Recorder.Event(backup, "Warning", "ArchiveCleanupFailed", "archive cleanup job "+jobName+" failed; retrying")
 		return ctrl.Result{RequeueAfter: backupRequeue}, nil
 	}
 	r.Recorder.Event(backup, "Normal", "ArchiveDeleted", "snapshot archive removed")
 	return r.releaseFinalizer(ctx, backup)
+}
+
+// recordStorage pins the filesystem storage recorded on the snapshot Job
+// onto the CR, so archive cleanup still mounts the original claim after the
+// Job is deleted.
+func (r *SeaweedBackupReconciler) recordStorage(ctx context.Context, backup *seaweedv1.SeaweedBackup, snap *batchv1.Job) error {
+	claim := snap.Annotations[seaweedv1.AnnotationBackupClaim]
+	if claim == "" || backup.Annotations[seaweedv1.AnnotationBackupClaim] == claim {
+		return nil
+	}
+	if backup.Annotations == nil {
+		backup.Annotations = map[string]string{}
+	}
+	backup.Annotations[seaweedv1.AnnotationBackupClaim] = claim
+	backup.Annotations[seaweedv1.AnnotationBackupMountPath] = snap.Annotations[seaweedv1.AnnotationBackupMountPath]
+	backup.Annotations[seaweedv1.AnnotationBackupSubPath] = snap.Annotations[seaweedv1.AnnotationBackupSubPath]
+	return r.Update(ctx, backup)
+}
+
+// recordedFilesystem returns the filesystem store a snapshot actually wrote
+// to — pinned on the CR — falling back to the live storage entry for Jobs
+// predating the annotations.
+func recordedFilesystem(backup *seaweedv1.SeaweedBackup, st seaweedv1.BackupStorageSpec) *seaweedv1.FilesystemBackupStore {
+	if claim := backup.Annotations[seaweedv1.AnnotationBackupClaim]; claim != "" {
+		return &seaweedv1.FilesystemBackupStore{
+			ExistingClaim: claim,
+			MountPath:     backup.Annotations[seaweedv1.AnnotationBackupMountPath],
+			SubPath:       backup.Annotations[seaweedv1.AnnotationBackupSubPath],
+		}
+	}
+	return st.Filesystem
 }
 
 // releaseFinalizer drops BackupFinalizer, letting the CR finish deleting.

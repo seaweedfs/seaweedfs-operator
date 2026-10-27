@@ -266,6 +266,48 @@ func TestS3PolicyBinding_RemovedBucketSubjectClearsPolicy(t *testing.T) {
 	}
 }
 
+// Deleting the source policy must not wedge a removed bucket's installed
+// document: revocation runs before the policy lookup fails pending.
+func TestS3PolicyBinding_RemovedBucketClearsPolicyAfterPolicyDeleted(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedBucket("data")
+	fa.seedBucket("media")
+	doc := testBucketPolicyDoc("arn:aws:s3:::data/*", "arn:aws:s3:::media/*")
+	if err := fa.PutPolicy(context.Background(), "rw", doc); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	binding := testBinding("rw-bind",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"},
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "media"},
+	)
+	r, cli := newBindingReconciler(t, fa, binding)
+	key := types.NamespacedName{Namespace: "media", Name: "rw-bind"}
+	reconcileStable(t, r, key, 5)
+
+	if err := fa.DeletePolicy(context.Background(), "rw"); err != nil {
+		t.Fatalf("delete policy: %v", err)
+	}
+	live := getBinding(t, cli, "rw-bind")
+	live.Spec.Subjects = []seaweedv1.S3Subject{{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"}}
+	if err := cli.Update(context.Background(), live); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	res := reconcileOnce(t, r, key)
+	if res.RequeueAfter == 0 {
+		t.Fatal("expected requeue while the policy is missing")
+	}
+
+	if got := fa.bucketPolicies["media"]; got != nil {
+		t.Errorf("media policy after policy deletion = %q, want cleared", got)
+	}
+	got := getBinding(t, cli, "rw-bind")
+	for _, b := range got.Status.AttachedBuckets {
+		if b == "media" {
+			t.Errorf("released bucket still recorded attached: %v", got.Status.AttachedBuckets)
+		}
+	}
+}
+
 func TestS3PolicyBinding_BucketConflictOlderWins(t *testing.T) {
 	fa := newFakeIAMAdmin()
 	fa.seedBucket("data")

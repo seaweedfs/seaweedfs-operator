@@ -125,19 +125,6 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Wait for the policy to exist before attaching it to anyone. The pin is
-	// recorded only past this point, so a binding still waiting on its policy
-	// keeps following resolution changes.
-	policyDoc, err := admin.GetPolicy(ctx, policyName)
-	if err != nil {
-		if errors.Is(err, ErrIAMNotFound) {
-			return r.pending(ctx, &binding, "PolicyMissing",
-				fmt.Sprintf("policy %q does not exist yet", policyName))
-		}
-		return r.fail(ctx, &binding, "PolicyLookupFailed", err.Error())
-	}
-	binding.Status.PolicyName = policyName
-
 	desired, desiredBuckets, err := resolveSubjects(ctx, r.Client, &binding)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -192,11 +179,28 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Buckets just released still count for document validation — a shared
 	// document stays valid mid-removal — but they must stop claiming their
 	// slot: prune the records before a failure below persists them.
+	binding.Status.AttachedSubjects = slices.DeleteFunc(binding.Status.AttachedSubjects, func(s string) bool {
+		_, keep := desiredSet[s]
+		return !keep
+	})
 	managed := append(append([]string(nil), desiredBuckets...), binding.Status.AttachedBuckets...)
 	binding.Status.AttachedBuckets = slices.DeleteFunc(binding.Status.AttachedBuckets, func(b string) bool {
 		_, keep := applySet[b]
 		return !keep
 	})
+
+	// Attaching waits for the policy to exist; the pin is recorded only past
+	// this point. Revocation runs first so a deleted policy cannot keep
+	// removed grants installed.
+	policyDoc, err := admin.GetPolicy(ctx, policyName)
+	if err != nil {
+		if errors.Is(err, ErrIAMNotFound) {
+			return r.pending(ctx, &binding, "PolicyMissing",
+				fmt.Sprintf("policy %q does not exist yet", policyName))
+		}
+		return r.fail(ctx, &binding, "PolicyLookupFailed", err.Error())
+	}
+	binding.Status.PolicyName = policyName
 
 	// Validate the document only when it will be written somewhere: a
 	// resource policy needs a Principal per statement and resources scoped

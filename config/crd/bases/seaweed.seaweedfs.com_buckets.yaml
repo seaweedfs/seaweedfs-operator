@@ -100,12 +100,10 @@ spec:
                     minimum: 1
                     type: integer
                   mode:
-                    enum:
-                    - GOVERNANCE
-                    - COMPLIANCE
-                    - Governance
-                    - Compliance
                     type: string
+                    x-kubernetes-validations:
+                    - message: must be GOVERNANCE or COMPLIANCE (case-insensitive)
+                      rule: self.lowerAscii() in ['governance', 'compliance']
                   years:
                     format: int32
                     minimum: 1
@@ -273,12 +271,10 @@ spec:
                     minimum: 1
                     type: integer
                   mode:
-                    enum:
-                    - GOVERNANCE
-                    - COMPLIANCE
-                    - Governance
-                    - Compliance
                     type: string
+                    x-kubernetes-validations:
+                    - message: must be GOVERNANCE or COMPLIANCE (case-insensitive)
+                      rule: self.lowerAscii() in ['governance', 'compliance']
                   years:
                     format: int32
                     minimum: 1

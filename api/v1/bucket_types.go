@@ -37,7 +37,7 @@ const (
 // RetentionMode is the S3 Object Lock retention mode for a bucket's
 // default retention rule. Accepted case-insensitively; stored on the
 // bucket in the AWS uppercase form.
-// +kubebuilder:validation:Enum=GOVERNANCE;COMPLIANCE;Governance;Compliance
+// +kubebuilder:validation:XValidation:rule="self.lowerAscii() in ['governance', 'compliance']",message="must be GOVERNANCE or COMPLIANCE (case-insensitive)"
 type RetentionMode string
 
 const (

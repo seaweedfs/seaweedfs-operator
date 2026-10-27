@@ -274,6 +274,26 @@ func (r *BucketReconciler) reconcileBucket(ctx context.Context, bucket *seaweedv
 	}
 	r.setCondition(bucket, seaweedv1.BucketConditionObjectLockEnabled, boolToCondStatus(bucket.Spec.ObjectLock), "Reconciled", "")
 
+	// Default retention: desired nil clears the stored rule only when this
+	// controller applied one — recorded in status — so a rule written
+	// out-of-band is left alone until spec.defaultRetention claims it.
+	if dr := bucket.Spec.DefaultRetention; bucket.Spec.ObjectLock && dr != nil {
+		days, years := 0, 0
+		if dr.Days != nil {
+			days = int(*dr.Days)
+		}
+		if dr.Years != nil {
+			years = int(*dr.Years)
+		}
+		if err := admin.SetDefaultRetention(ctx, bucketName, strings.ToUpper(string(dr.Mode)), days, years); err != nil {
+			return r.failPhase(ctx, bucket, seaweedv1.BucketPhaseFailed, "RetentionFailed", err.Error())
+		}
+	} else if bucket.Status.DefaultRetention != nil {
+		if err := admin.SetDefaultRetention(ctx, bucketName, "", 0, 0); err != nil {
+			return r.failPhase(ctx, bucket, seaweedv1.BucketPhaseFailed, "RetentionRemoveFailed", err.Error())
+		}
+	}
+
 	// Versioning: only push a state when one is requested. "Off" with no
 	// prior state is a no-op (we don't try to "disable" — there's no
 	// command for that, and CEL prevents transitioning back to Off).
@@ -372,6 +392,13 @@ func (r *BucketReconciler) reconcileBucket(ctx context.Context, bucket *seaweedv
 	bucket.Status.ObservedGeneration = bucket.Generation
 	bucket.Status.Versioning = bucket.Spec.Versioning
 	bucket.Status.ObjectLockEnabled = bucket.Spec.ObjectLock
+	if bucket.Spec.ObjectLock && bucket.Spec.DefaultRetention != nil {
+		dr := bucket.Spec.DefaultRetention.DeepCopy()
+		dr.Mode = seaweedv1.RetentionMode(strings.ToUpper(string(dr.Mode)))
+		bucket.Status.DefaultRetention = dr
+	} else {
+		bucket.Status.DefaultRetention = nil
+	}
 	bucket.Status.OwnerIdentity = bucket.Spec.Owner
 	if bucket.Spec.Quota != nil {
 		sizeMiB, _ := quantityToMiB(bucket.Spec.Quota.Size)

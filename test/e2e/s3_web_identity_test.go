@@ -133,6 +133,7 @@ var _ = Describe("S3 web-identity federation", Ordered, Label("integration"), fu
 
 		By("creating a Seaweed whose filer S3 trusts the cluster CA")
 		concurrentStart := true
+		maxVolumeCounts := int32(20)
 		sw := &seaweedv1.Seaweed{
 			ObjectMeta: metav1.ObjectMeta{Name: seaweedName, Namespace: testNamespace},
 			Spec: seaweedv1.SeaweedSpec{
@@ -148,6 +149,15 @@ var _ = Describe("S3 web-identity federation", Ordered, Label("integration"), fu
 				Volume: &seaweedv1.VolumeSpec{
 					Replicas: 1,
 					VolumeServerConfig: seaweedv1.VolumeServerConfig{
+						// With the default -max=0 the server derives its cap
+						// from free disk, which a small CI disk computes to ~1
+						// slot. The IAM files (/etc/iam/...) claim that slot
+						// for the empty collection first, and the bucket's own
+						// collection can never grow a volume — every PutObject
+						// fails with InternalError ("No writable volumes and
+						// no free volumes left"). Give the server enough slots
+						// for both collections.
+						MaxVolumeCounts: &maxVolumeCounts,
 						ResourceRequirements: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("2Gi")},
 						},

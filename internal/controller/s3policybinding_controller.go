@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -424,16 +425,20 @@ func resourceMatchesAnyBucket(resource string, buckets []string) bool {
 }
 
 // releaseBucketPolicy clears the stored policy on a bucket this binding no
-// longer manages — unless another live binding claims the slot, in which
-// case the new owner may already have written its document and clearing
-// would erase it.
+// longer manages — unless another binding already installed its own
+// document there, which clearing would erase. A claimant that has not
+// attached the bucket yet does not block the clear: the stored document
+// is still this binding's grant, and skipping it would keep that grant
+// active past deletion if the claimant can never apply.
 func (r *S3PolicyBindingReconciler) releaseBucketPolicy(ctx context.Context, admin IAMAdmin, binding *seaweedv1.S3PolicyBinding, bucket string) error {
 	claimants, err := bindingBucketClaimants(ctx, r.Client, binding, bucket)
 	if err != nil {
 		return err
 	}
-	if len(claimants) > 0 {
-		return nil
+	for _, peer := range claimants {
+		if slices.Contains(peer.Status.AttachedBuckets, bucket) {
+			return nil
+		}
 	}
 	return admin.SetBucketPolicy(ctx, bucket, nil)
 }

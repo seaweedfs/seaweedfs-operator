@@ -512,6 +512,42 @@ func TestS3PolicyBinding_DeleteSkipsClearWhenClaimed(t *testing.T) {
 	}
 }
 
+// A peer that claims the bucket only through its spec has not installed a
+// document, so deleting the owner must still clear its own grant — skipping
+// would leave the deleted binding's policy active when the claimant can
+// never apply.
+func TestS3PolicyBinding_DeleteClearsWhenClaimantNeverApplied(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedBucket("data")
+	doc := testBucketPolicyDoc("arn:aws:s3:::data/*")
+	if err := fa.PutPolicy(context.Background(), "rw", doc); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	owner := testBinding("aaa-owner",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	owner.CreationTimestamp = metav1.NewTime(time.Unix(1000, 0))
+	blocked := testBinding("zzz-blocked",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	blocked.Spec.PolicyRef.Name = "missing"
+	blocked.CreationTimestamp = metav1.NewTime(time.Unix(2000, 0))
+
+	r, cli := newBindingReconciler(t, fa, owner, blocked)
+	ownerKey := types.NamespacedName{Namespace: "media", Name: "aaa-owner"}
+	reconcileStable(t, r, ownerKey, 5)
+	if got := string(fa.bucketPolicies["data"]); got != doc {
+		t.Fatalf("bucket policy = %q, want applied before delete", got)
+	}
+
+	live := getBinding(t, cli, "aaa-owner")
+	if err := cli.Delete(context.Background(), live); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reconcileStable(t, r, ownerKey, 5)
+	if got := fa.bucketPolicies["data"]; got != nil {
+		t.Errorf("bucket policy after delete = %q, want cleared despite the claimant that never applied", got)
+	}
+}
+
 // A binding denied by ResourceReferenceGrant can never apply, so its spec
 // must not squat a bucket slot a permitted binding could take.
 func TestS3PolicyBinding_DeniedPeerDoesNotSquatBucket(t *testing.T) {

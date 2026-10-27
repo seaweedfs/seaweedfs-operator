@@ -22,6 +22,7 @@ package utils
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive
@@ -32,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -160,33 +162,15 @@ func CollectDiagnostics(ctx context.Context, c client.Client, cfg *rest.Config, 
 	w := GinkgoWriter
 	fmt.Fprintf(w, "\n======== e2e diagnostics (spec failed) ========\n")
 
+	clientset, clientsetErr := GetClientset(cfg)
+
 	// Operator logs first — the most likely place the root cause lives.
-	clientset, err := GetClientset(cfg)
-	if err == nil {
+	if clientsetErr == nil {
 		pods := &corev1.PodList{}
 		if err := c.List(ctx, pods, client.InNamespace(OperatorNamespace),
 			client.MatchingLabels{"control-plane": "controller-manager"}); err == nil {
 			for _, p := range pods.Items {
-				fmt.Fprintf(w, "\n--- operator logs: %s ---\n", p.Name)
-				req := clientset.CoreV1().Pods(OperatorNamespace).GetLogs(p.Name, &corev1.PodLogOptions{
-					Container: "manager",
-				})
-				stream, err := req.Stream(ctx)
-				if err != nil {
-					fmt.Fprintf(w, "(failed to stream logs: %v)\n", err)
-					continue
-				}
-				buf := make([]byte, 4096)
-				for {
-					n, err := stream.Read(buf)
-					if n > 0 {
-						w.Write(buf[:n]) //nolint:errcheck
-					}
-					if err != nil {
-						break
-					}
-				}
-				stream.Close() //nolint:errcheck
+				dumpPodLogs(w, clientset, OperatorNamespace, p.Name, "manager", 0)
 			}
 		}
 	}
@@ -221,6 +205,21 @@ func CollectDiagnostics(ctx context.Context, c client.Client, cfg *rest.Config, 
 			}
 		}
 
+		// Pod logs carry the server-side error behind generic client
+		// failures (e.g. an S3 InternalError). Bound the tail so a chatty
+		// component does not drown the rest of the dump.
+		if clientsetErr == nil {
+			var tailLines int64 = 200
+			for _, p := range pods.Items {
+				for _, cs := range p.Status.ContainerStatuses {
+					dumpPodLogs(w, clientset, ns, p.Name, cs.Name, tailLines)
+					if cs.RestartCount > 0 {
+						dumpPodLogsPrevious(w, clientset, ns, p.Name, cs.Name, tailLines)
+					}
+				}
+			}
+		}
+
 		fmt.Fprintf(w, "\n--- namespace %s: recent events ---\n", ns)
 		events := &corev1.EventList{}
 		if err := c.List(ctx, events, client.InNamespace(ns)); err == nil {
@@ -231,6 +230,37 @@ func CollectDiagnostics(ctx context.Context, c client.Client, cfg *rest.Config, 
 		}
 	}
 	fmt.Fprintf(w, "======== end diagnostics ========\n\n")
+}
+
+func dumpPodLogsPrevious(w io.Writer, clientset *kubernetes.Clientset, ns, pod, container string, tail int64) {
+	dumpLogs(w, clientset, ns, pod, container, tail, true)
+}
+
+func dumpPodLogs(w io.Writer, clientset *kubernetes.Clientset, ns, pod, container string, tail int64) {
+	dumpLogs(w, clientset, ns, pod, container, tail, false)
+}
+
+func dumpLogs(w io.Writer, clientset *kubernetes.Clientset, ns, pod, container string, tail int64, previous bool) {
+	if clientset == nil {
+		return
+	}
+	header := fmt.Sprintf("\n--- logs: %s/%s[%s]", ns, pod, container)
+	opts := &corev1.PodLogOptions{Container: container, Previous: previous}
+	if tail > 0 {
+		opts.TailLines = &tail
+	}
+	if previous {
+		header += " (previous)"
+	}
+	fmt.Fprintln(w, header+" ---")
+	req := clientset.CoreV1().Pods(ns).GetLogs(pod, opts)
+	stream, err := req.Stream(context.Background())
+	if err != nil {
+		fmt.Fprintf(w, "(failed to stream logs: %v)\n", err)
+		return
+	}
+	defer stream.Close() //nolint:errcheck
+	_, _ = io.Copy(w, stream)
 }
 
 func isPodReady(p *corev1.Pod) bool {

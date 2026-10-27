@@ -118,7 +118,7 @@ func (r *SeaweedBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, err
 		}
 		log.Info("created snapshot job", "job", jobName, "storage", backup.Spec.StorageName)
-		markRunning(&backup, jobName, dest, metav1.Now())
+		markRunning(&backup, st, jobName, dest, metav1.Now())
 		return ctrl.Result{}, r.Status().Update(ctx, &backup)
 	case err != nil:
 		return ctrl.Result{}, err
@@ -138,7 +138,7 @@ func (r *SeaweedBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if job.Status.StartTime != nil {
 		startTime = *job.Status.StartTime
 	}
-	changed := markRunning(&backup, jobName, dest, startTime)
+	changed := markRunning(&backup, st, jobName, dest, startTime)
 
 	done, success := jobFinished(&job)
 	if !done {
@@ -186,28 +186,30 @@ func (r *SeaweedBackupReconciler) handleDeletion(ctx context.Context, backup *se
 		return r.releaseFinalizer(ctx, backup)
 	}
 
-	// Stop the snapshot Job before cleaning — including one whose status was
-	// never persisted, which is the only evidence the backup ever ran. The
-	// Job is deleted in the foreground so the wait below also covers its
-	// pods; otherwise a still-terminating pod could land the archive after
-	// the cleanup ran.
+	// Suspend the snapshot Job before cleaning — including one whose status
+	// was never persisted, which is the only evidence the backup ever ran.
+	// Suspending makes the Job controller tear down its pods; waiting on
+	// Status.Active covers them, so a still-terminating pod cannot land the
+	// archive after the cleanup ran. The suspended Job is kept (it carries
+	// the recorded storage annotations and is GC'd with the CR).
 	var snap batchv1.Job
 	snapErr := r.Get(ctx, types.NamespacedName{Namespace: backup.Namespace, Name: boundedName(backup.Name, "-bkp")}, &snap)
-	switch {
-	case snapErr == nil:
-		if err := r.recordStorage(ctx, backup, &snap); err != nil {
-			return ctrl.Result{}, err
-		}
-		if backup.Status.Phase != seaweedv1.BackupPhaseCompleted && backup.Status.Phase != seaweedv1.BackupPhaseFailed {
-			if snap.DeletionTimestamp.IsZero() {
-				if err := r.Delete(ctx, &snap, client.PropagationPolicy(metav1.DeletePropagationForeground)); err != nil && !apierrors.IsNotFound(err) {
-					return ctrl.Result{}, err
-				}
+	snapFound := snapErr == nil
+	if !snapFound && !apierrors.IsNotFound(snapErr) {
+		return ctrl.Result{}, snapErr
+	}
+	if snapFound && backup.Status.Phase != seaweedv1.BackupPhaseCompleted && backup.Status.Phase != seaweedv1.BackupPhaseFailed {
+		if snap.Spec.Suspend == nil || !*snap.Spec.Suspend {
+			suspend := true
+			snap.Spec.Suspend = &suspend
+			if err := r.Update(ctx, &snap); err != nil {
+				return ctrl.Result{}, err
 			}
 			return ctrl.Result{RequeueAfter: backupRequeue}, nil
 		}
-	case !apierrors.IsNotFound(snapErr):
-		return ctrl.Result{}, snapErr
+		if snap.Status.Active > 0 {
+			return ctrl.Result{RequeueAfter: backupRequeue}, nil
+		}
 	}
 
 	var cluster seaweedv1.Seaweed
@@ -226,7 +228,15 @@ func (r *SeaweedBackupReconciler) handleDeletion(ctx context.Context, backup *se
 	// Clean the storage the snapshot wrote to, not whatever the entry was
 	// reconfigured to afterwards.
 	if st.Type == seaweedv1.BackupStorageFilesystem {
-		st.Filesystem = recordedFilesystem(backup, st)
+		var snapRef *batchv1.Job
+		if snapFound {
+			snapRef = &snap
+		}
+		st.Filesystem = recordedFilesystem(backup, snapRef, st)
+		if st.Filesystem == nil {
+			log.Info("filesystem store unresolvable during delete; releasing finalizer without archive cleanup")
+			return r.releaseFinalizer(ctx, backup)
+		}
 	}
 
 	jobName := boundedName(backup.Name, "-cln")
@@ -251,12 +261,12 @@ func (r *SeaweedBackupReconciler) handleDeletion(ctx context.Context, backup *se
 	if !done {
 		return ctrl.Result{RequeueAfter: backupRequeue}, nil
 	}
-	// Replace a failed Job so the next reconcile retries cleanup instead of
-	// wedging the CR on a terminal JobFailed condition.
-	if err := r.Delete(ctx, &job); err != nil && !apierrors.IsNotFound(err) {
-		return ctrl.Result{}, err
-	}
 	if !success {
+		// Replace a failed Job so the next reconcile retries cleanup instead
+		// of wedging the CR on a terminal JobFailed condition.
+		if err := r.Delete(ctx, &job, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, err
+		}
 		r.Recorder.Event(backup, "Warning", "ArchiveCleanupFailed", "archive cleanup job "+jobName+" failed; retrying")
 		return ctrl.Result{RequeueAfter: backupRequeue}, nil
 	}
@@ -264,39 +274,41 @@ func (r *SeaweedBackupReconciler) handleDeletion(ctx context.Context, backup *se
 	return r.releaseFinalizer(ctx, backup)
 }
 
-// recordStorage pins the filesystem storage recorded on the snapshot Job
-// onto the CR, so archive cleanup still mounts the original claim after the
-// Job is deleted.
-func (r *SeaweedBackupReconciler) recordStorage(ctx context.Context, backup *seaweedv1.SeaweedBackup, snap *batchv1.Job) error {
-	claim := snap.Annotations[seaweedv1.AnnotationBackupClaim]
-	if claim == "" || backup.Annotations[seaweedv1.AnnotationBackupClaim] == claim {
-		return nil
-	}
-	if backup.Annotations == nil {
-		backup.Annotations = map[string]string{}
-	}
-	backup.Annotations[seaweedv1.AnnotationBackupClaim] = claim
-	backup.Annotations[seaweedv1.AnnotationBackupMountPath] = snap.Annotations[seaweedv1.AnnotationBackupMountPath]
-	backup.Annotations[seaweedv1.AnnotationBackupSubPath] = snap.Annotations[seaweedv1.AnnotationBackupSubPath]
-	return r.Update(ctx, backup)
-}
-
 // recordedFilesystem returns the filesystem store a snapshot actually wrote
-// to — pinned on the CR — falling back to the live storage entry for Jobs
-// predating the annotations.
-func recordedFilesystem(backup *seaweedv1.SeaweedBackup, st seaweedv1.BackupStorageSpec) *seaweedv1.FilesystemBackupStore {
-	if claim := backup.Annotations[seaweedv1.AnnotationBackupClaim]; claim != "" {
-		return &seaweedv1.FilesystemBackupStore{
-			ExistingClaim: claim,
-			MountPath:     backup.Annotations[seaweedv1.AnnotationBackupMountPath],
-			SubPath:       backup.Annotations[seaweedv1.AnnotationBackupSubPath],
+// to — the controller-owned status record first, the snapshot Job's
+// annotations for backups predating the status field, then the live storage
+// entry as a last resort. User-editable annotations on the CR are never
+// consulted.
+func recordedFilesystem(backup *seaweedv1.SeaweedBackup, snap *batchv1.Job, st seaweedv1.BackupStorageSpec) *seaweedv1.FilesystemBackupStore {
+	if backup.Status.FilesystemStorage != nil {
+		return backup.Status.FilesystemStorage
+	}
+	if snap != nil {
+		if claim := snap.Annotations[seaweedv1.AnnotationBackupClaim]; claim != "" {
+			return &seaweedv1.FilesystemBackupStore{
+				ExistingClaim: claim,
+				MountPath:     snap.Annotations[seaweedv1.AnnotationBackupMountPath],
+				SubPath:       snap.Annotations[seaweedv1.AnnotationBackupSubPath],
+			}
 		}
 	}
 	return st.Filesystem
 }
 
-// releaseFinalizer drops BackupFinalizer, letting the CR finish deleting.
+// releaseFinalizer removes any cleanup Job still around (it is deliberately
+// unowned, so nothing else would collect it) and drops BackupFinalizer,
+// letting the CR finish deleting.
 func (r *SeaweedBackupReconciler) releaseFinalizer(ctx context.Context, backup *seaweedv1.SeaweedBackup) (ctrl.Result, error) {
+	var job batchv1.Job
+	err := r.Get(ctx, types.NamespacedName{Namespace: backup.Namespace, Name: boundedName(backup.Name, "-cln")}, &job)
+	switch {
+	case err == nil:
+		if err := r.Delete(ctx, &job, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, err
+		}
+	case !apierrors.IsNotFound(err):
+		return ctrl.Result{}, err
+	}
 	controllerutil.RemoveFinalizer(backup, BackupFinalizer)
 	if err := r.Update(ctx, backup); err != nil {
 		return ctrl.Result{}, err
@@ -307,7 +319,7 @@ func (r *SeaweedBackupReconciler) releaseFinalizer(ctx context.Context, backup *
 // markRunning fills the status fields derivable from the spec and the
 // snapshot Job, so a status lost to a failed create-time update or a
 // controller restart is restored. Returns whether the status changed.
-func markRunning(backup *seaweedv1.SeaweedBackup, jobName, destination string, startTime metav1.Time) bool {
+func markRunning(backup *seaweedv1.SeaweedBackup, st seaweedv1.BackupStorageSpec, jobName, destination string, startTime metav1.Time) bool {
 	if startTime.IsZero() {
 		startTime = metav1.Now()
 	}
@@ -322,6 +334,9 @@ func markRunning(backup *seaweedv1.SeaweedBackup, jobName, destination string, s
 	status.Phase = seaweedv1.BackupPhaseRunning
 	status.JobName = jobName
 	status.Destination = destination
+	if st.Type == seaweedv1.BackupStorageFilesystem && st.Filesystem != nil {
+		status.FilesystemStorage = st.Filesystem.DeepCopy()
+	}
 	if status.StartTime == nil {
 		status.StartTime = &startTime
 	}

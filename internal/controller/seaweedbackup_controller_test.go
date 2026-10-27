@@ -532,20 +532,39 @@ func TestBackupDeletionDeleteStopsRunningSnapshot(t *testing.T) {
 	if _, err := r.Reconcile(ctx, req); err != nil {
 		t.Fatal(err)
 	}
-	var gone batchv1.Job
-	if err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: "bk1-bkp"}, &gone); !apierrors.IsNotFound(err) {
-		t.Fatalf("snapshot job not stopped, got %v", err)
+	var got batchv1.Job
+	if err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: "bk1-bkp"}, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Spec.Suspend == nil || !*got.Spec.Suspend {
+		t.Fatal("snapshot job not suspended")
 	}
 	var job batchv1.Job
 	if err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: boundedName("bk1", "-cln")}, &job); !apierrors.IsNotFound(err) {
-		t.Fatalf("cleanup must wait for the snapshot job, got %v", err)
+		t.Fatalf("cleanup must wait for the snapshot pods, got %v", err)
 	}
 
+	// Cleanup waits while the snapshot still has active pods.
+	got.Status.Active = 1
+	if err := r.Status().Update(ctx, &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: boundedName("bk1", "-cln")}, &job); !apierrors.IsNotFound(err) {
+		t.Fatalf("cleanup must wait for active snapshot pods, got %v", err)
+	}
+
+	got.Status.Active = 0
+	if err := r.Status().Update(ctx, &got); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := r.Reconcile(ctx, req); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: "ns1", Name: boundedName("bk1", "-cln")}, &job); err != nil {
-		t.Fatalf("expected cleanup job after the snapshot job is gone: %v", err)
+		t.Fatalf("expected cleanup job after the snapshot pods stopped: %v", err)
 	}
 }
 

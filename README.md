@@ -879,6 +879,31 @@ underlying IAM object. Set `reclaimPolicy: Retain` to opt out.
     subjects:
       - { kind: S3Identity, name: alice }
       - { kind: S3Identity, name: bob }
+  ```
+
+  A `kind: Bucket` subject needs its own resource policy — `statements`
+  produce an identity-style document and are rejected:
+
+  ```yaml
+  apiVersion: seaweed.seaweedfs.com/v1
+  kind: S3Policy
+  metadata: { name: shared-read, namespace: default }
+  spec:
+    seaweedRef: { name: seaweed1 }
+    policyDocument: |
+      {"Version":"2012-10-17","Statement":[{
+        "Effect":"Allow","Principal":"*",
+        "Action":["s3:GetObject"],
+        "Resource":["arn:aws:s3:::shared-bucket/*"],
+        "Condition":{"ForAnyValue:StringEquals":{"jwt:groups":"team-a"}}}]}
+  ---
+  apiVersion: seaweed.seaweedfs.com/v1
+  kind: S3PolicyBinding
+  metadata: { name: shared-read-bind, namespace: default }
+  spec:
+    seaweedRef: { name: seaweed1 }
+    policyRef: { name: shared-read }
+    subjects:
       - { kind: Bucket, name: shared-bucket }
   ```
 

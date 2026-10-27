@@ -2369,6 +2369,7 @@ spec:
                   minItems: 1
                   type: array
                   x-kubernetes-list-map-keys:
+                    - kind
                     - name
                   x-kubernetes-list-type: map
               required:

@@ -79,10 +79,12 @@ type S3PolicyBindingSpec struct {
 
 	// Subjects is the set of identities the policy is attached to. The
 	// controller reconciles to exactly this set (and deduplicates it during
-	// reconcile); keying the list by name additionally rejects duplicate
-	// subjects at admission. At least one subject is required.
+	// reconcile); keying the list by kind and name rejects duplicate
+	// subjects at admission while allowing an identity and a bucket to
+	// share a name. At least one subject is required.
 	// +kubebuilder:validation:MinItems=1
 	// +listType=map
+	// +listMapKey=kind
 	// +listMapKey=name
 	Subjects []S3Subject `json:"subjects"`
 

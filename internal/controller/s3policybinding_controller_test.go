@@ -458,6 +458,60 @@ func TestS3PolicyBinding_RetainKeepsGrantsInBucketPolicy(t *testing.T) {
 	}
 }
 
+// A claimant whose ResourceReferenceGrant is revoked stops contributing —
+// the next merge drops its statements instead of reapplying them.
+func TestS3PolicyBinding_RevokedPeerStopsContributing(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedBucket("data")
+	docA := testBucketPolicyDoc("arn:aws:s3:::data/*")
+	docZ := testBucketPolicyDoc("arn:aws:s3:::data")
+	if err := fa.PutPolicy(context.Background(), "rw", docA); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	if err := fa.PutPolicy(context.Background(), "other", docZ); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	peerGrant := &seaweedv1.ResourceReferenceGrant{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-allow-other", Namespace: "seaweedfs"},
+		Spec: seaweedv1.ResourceReferenceGrantSpec{
+			From: []seaweedv1.ReferenceGrantFrom{
+				{Group: groupSeaweed, Kind: kindS3PolicyBinding, Namespace: "other"},
+			},
+			To: []seaweedv1.ReferenceGrantTo{{Group: groupSeaweed, Kind: kindSeaweed}},
+		},
+	}
+	peer := testBinding("aaa-peer",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	peer.Namespace = "other"
+	peer.Spec.PolicyRef.Name = "other"
+	survivor := testBinding("zzz-survivor",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+
+	r, cli := newBindingReconciler(t, fa, peerGrant, peer, survivor)
+	survivorKey := types.NamespacedName{Namespace: "media", Name: "zzz-survivor"}
+	peerKey := types.NamespacedName{Namespace: "other", Name: "aaa-peer"}
+	reconcileStable(t, r, survivorKey, 5)
+	reconcileStable(t, r, peerKey, 5)
+
+	var parsed struct {
+		Statement []json.RawMessage `json:"Statement"`
+	}
+	if err := json.Unmarshal(fa.bucketPolicies["data"], &parsed); err != nil {
+		t.Fatalf("stored policy is not JSON: %v", err)
+	}
+	if len(parsed.Statement) != 2 {
+		t.Fatalf("merged statement count = %d, want both contributors", len(parsed.Statement))
+	}
+
+	if err := cli.Delete(context.Background(), peerGrant); err != nil {
+		t.Fatalf("delete grant: %v", err)
+	}
+	reconcileStable(t, r, survivorKey, 5)
+	if got := string(fa.bucketPolicies["data"]); got != docA {
+		t.Errorf("bucket policy after grant revocation = %q, want the survivor's document alone", got)
+	}
+}
+
 // Releasing into a claimant whose document is invalid clears the stored
 // policy instead of installing the unusable survivor document.
 func TestS3PolicyBinding_ReleaseClearsWhenSurvivorPolicyInvalid(t *testing.T) {

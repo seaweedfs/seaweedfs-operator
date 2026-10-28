@@ -881,7 +881,12 @@ underlying IAM object. Set `reclaimPolicy: Retain` to opt out.
   single document — the same attachment-merging model Gateway API uses —
   with contributors ordered by binding name and duplicate statements
   stored once. Removing a subject or deleting a binding rewrites the
-  stored document from the remaining contributors.
+  stored document from the remaining contributors, and deleting with
+  `reclaimPolicy: Retain` restamps the binding's statements so the grant
+  outlives the CR. Because `kind: Bucket` subjects also accept raw bucket
+  names, a binding that may reference the cluster can additively
+  contribute to any bucket on it — gate that reach with
+  `ResourceReferenceGrant`s as with the other IAM kinds.
 
   ```yaml
   apiVersion: seaweed.seaweedfs.com/v1

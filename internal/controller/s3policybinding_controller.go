@@ -31,8 +31,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	s3policyengine "github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
 
@@ -545,6 +549,16 @@ func (r *S3PolicyBindingReconciler) bucketContributors(ctx context.Context, admi
 		if !peer.DeletionTimestamp.IsZero() {
 			continue
 		}
+		// A peer whose cluster reference lost its grant contributes
+		// nothing — its own reconcile is gated the same way, and a
+		// revoked grant must not keep feeding statements into the merge.
+		permitted, err := seaweedRefPermitted(ctx, r.Client, peer.Spec.SeaweedRef, kindS3PolicyBinding, peer.Namespace)
+		if err != nil {
+			return nil, err
+		}
+		if !permitted {
+			continue
+		}
 		policyName := peer.Status.PolicyName
 		if policyName == "" {
 			policyName, err = resolvePolicyIAMName(ctx, r.Client, peer.Namespace, peer.Spec.PolicyRef.Name, cluster)
@@ -662,6 +676,33 @@ func applyBucketPolicy(ctx context.Context, admin IAMAdmin, bucket, policyDoc st
 	return admin.SetBucketPolicy(ctx, bucket, []byte(policyDoc))
 }
 
+// mapBindingToClusterPeers enqueues the other bindings on the same cluster
+// so a contributor joining, leaving, or changing its subjects rebuilds the
+// shared bucket documents promptly instead of leaving a removed grant
+// installed until the periodic resync.
+func (r *S3PolicyBindingReconciler) mapBindingToClusterPeers(ctx context.Context, obj client.Object) []reconcile.Request {
+	changed, ok := obj.(*seaweedv1.S3PolicyBinding)
+	if !ok {
+		return nil
+	}
+	var bindings seaweedv1.S3PolicyBindingList
+	if err := r.List(ctx, &bindings); err != nil {
+		return nil
+	}
+	cluster := seaweedRefKey(changed.Spec.SeaweedRef, changed.Namespace)
+	var reqs []reconcile.Request
+	for i := range bindings.Items {
+		peer := &bindings.Items[i]
+		if peer.Namespace == changed.Namespace && peer.Name == changed.Name {
+			continue
+		}
+		if seaweedRefKey(peer.Spec.SeaweedRef, peer.Namespace) == cluster {
+			reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(peer)})
+		}
+	}
+	return reqs
+}
+
 // SetupWithManager wires the reconciler into the manager.
 func (r *S3PolicyBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.AdminFactory == nil {
@@ -669,5 +710,9 @@ func (r *S3PolicyBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&seaweedv1.S3PolicyBinding{}).
+		// Only spec/create/delete events feed peer merges — status-only
+		// updates would ping-pong contributors off each other's records.
+		Watches(&seaweedv1.S3PolicyBinding{}, handler.EnqueueRequestsFromMapFunc(r.mapBindingToClusterPeers),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Complete(r)
 }

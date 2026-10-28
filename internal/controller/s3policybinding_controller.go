@@ -592,7 +592,10 @@ func (r *S3PolicyBindingReconciler) bucketContributors(ctx context.Context, admi
 
 // assembleBucketPolicy builds the document to store on a bucket from its
 // contributors and the retained statements already present. A lone
-// contributor with nothing retained keeps its document verbatim.
+// contributor with nothing retained keeps its document verbatim. Retained
+// statements are deduplicated the same way contributor ones are — a stored
+// document edited out of band can carry copies, and duplicates only burn
+// the size budget.
 func assembleBucketPolicy(contributors []bucketPolicyContributor, retained []json.RawMessage) (string, error) {
 	if len(contributors) == 1 && len(retained) == 0 {
 		return contributors[0].doc, nil
@@ -605,7 +608,25 @@ func assembleBucketPolicy(contributors []bucketPolicyContributor, retained []jso
 	if err != nil {
 		return "", err
 	}
-	statements = append(statements, retained...)
+	seen := make(map[string]struct{}, len(statements)+len(retained))
+	for _, raw := range statements {
+		canon, _, err := canonStatement(raw)
+		if err != nil {
+			return "", err
+		}
+		seen[canon] = struct{}{}
+	}
+	for _, raw := range retained {
+		canon, _, err := canonStatement(raw)
+		if err != nil {
+			return "", err
+		}
+		if _, dup := seen[canon]; dup {
+			continue
+		}
+		seen[canon] = struct{}{}
+		statements = append(statements, raw)
+	}
 	return assemblePolicyDocument(statements)
 }
 

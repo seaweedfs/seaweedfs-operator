@@ -91,6 +91,51 @@ func buildPolicyDocument(spec *seaweedv1.S3PolicySpec) (string, error) {
 	return string(out), nil
 }
 
+// mergePolicyDocuments concatenates the statements of several policy
+// documents into one, in the order the documents are given and dropping
+// duplicates (compared after JSON canonicalization). Statement JSON passes
+// through verbatim so Principals, conditions, and other clauses survive
+// untouched. A single document is returned as-is — a binding applying alone
+// stores its policy document unchanged.
+func mergePolicyDocuments(docs []string) (string, error) {
+	if len(docs) == 1 {
+		return docs[0], nil
+	}
+	statements := []json.RawMessage{}
+	seen := map[string]struct{}{}
+	for _, doc := range docs {
+		var parsed struct {
+			Statement []json.RawMessage `json:"Statement"`
+		}
+		if err := json.Unmarshal([]byte(doc), &parsed); err != nil {
+			return "", fmt.Errorf("contributor policy is not valid JSON: %w", err)
+		}
+		for _, raw := range parsed.Statement {
+			var canonical any
+			if err := json.Unmarshal(raw, &canonical); err != nil {
+				return "", fmt.Errorf("contributor statement is not valid JSON: %w", err)
+			}
+			key, err := json.Marshal(canonical)
+			if err != nil {
+				return "", err
+			}
+			if _, dup := seen[string(key)]; dup {
+				continue
+			}
+			seen[string(key)] = struct{}{}
+			statements = append(statements, raw)
+		}
+	}
+	out, err := json.Marshal(struct {
+		Version   string            `json:"Version"`
+		Statement []json.RawMessage `json:"Statement"`
+	}{policyDocumentVersion, statements})
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
 // normalizeActions accepts the bare wildcard "*" as a friendly alias for the
 // S3 service wildcard "s3:*"; every other action is passed through unchanged
 // so callers can use any valid S3 action string.

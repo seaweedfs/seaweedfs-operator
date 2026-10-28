@@ -45,6 +45,12 @@ func weedCmd(m *seaweedv1.Seaweed, subcommand string, args ...string) string {
 	return strings.Join(parts, " ")
 }
 
+// shq single-quotes s for /bin/sh, so spec-controlled strings like a
+// storage's mountPath cannot inject commands into a Job's shell script.
+func shq(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // metaLoadStatement builds the `fs.meta.load` shell statement, scoping to a
 // subtree via -dirPrefix when filerPath is not the root.
 func metaLoadStatement(file, filerPath string) string {
@@ -88,9 +94,9 @@ func snapshotScript(m *seaweedv1.Seaweed, st seaweedv1.BackupStorageSpec, cluste
 		out := path.Join(filesystemMountPath(st.Filesystem), metaRelPath(cluster, backupName))
 		script = strings.Join([]string{
 			"set -euo pipefail",
-			fmt.Sprintf("mkdir -p %s", path.Dir(out)),
-			fmt.Sprintf("echo 'fs.meta.save -o %s %s' | %s", out, fp, shell),
-			fmt.Sprintf("test -s %s", out),
+			fmt.Sprintf("mkdir -p %s", shq(path.Dir(out))),
+			fmt.Sprintf("echo %s | %s", shq(fmt.Sprintf("fs.meta.save -o %s %s", out, fp)), shell),
+			fmt.Sprintf("test -s %s", shq(out)),
 			fmt.Sprintf("echo 'metadata snapshot written to %s'", out),
 			"",
 		}, "\n")
@@ -106,13 +112,46 @@ func snapshotScript(m *seaweedv1.Seaweed, st seaweedv1.BackupStorageSpec, cluste
 	staged := reservedFilerMetaPath(backupName)
 	script = strings.Join([]string{
 		"set -euo pipefail",
-		fmt.Sprintf("echo 'fs.meta.save -o %s %s' | %s", scratch, fp, shell),
-		fmt.Sprintf("test -s %s", scratch),
+		fmt.Sprintf("echo %s | %s", shq(fmt.Sprintf("fs.meta.save -o %s %s", scratch, fp)), shell),
+		fmt.Sprintf("test -s %s", shq(scratch)),
 		copyCmd,
 		fmt.Sprintf("echo 'metadata snapshot staged at filer %s; data mirror replicates it to storage %q'", staged, mirrorSinkDirectory("", st, cluster)),
 		"",
 	}, "\n")
 	return script, staged
+}
+
+// cleanupScript returns the shell program an archive-cleanup Job runs when a
+// backup is deleted under reclaimPolicy=Delete. For filesystem storages it
+// removes the .meta.gz (and the now-empty per-backup directory) off the PVC;
+// for object stores it removes the staged snapshot under the reserved filer
+// path — the copy a data mirror already carried to the sink is untouched.
+func cleanupScript(m *seaweedv1.Seaweed, st seaweedv1.BackupStorageSpec, cluster, backupName string) string {
+	if st.Type == seaweedv1.BackupStorageFilesystem {
+		out := path.Join(filesystemMountPath(st.Filesystem), metaRelPath(cluster, backupName))
+		dir := path.Dir(out)
+		return strings.Join([]string{
+			"set -euo pipefail",
+			fmt.Sprintf("rm -f %s", shq(out)),
+			fmt.Sprintf("rmdir %s 2>/dev/null || true", shq(dir)),
+			fmt.Sprintf("echo 'archive %s removed'", out),
+			"",
+		}, "\n")
+	}
+
+	shell := weedCmd(m, "shell", "-master="+getMasterPeersString(m), "-filer="+getFilerAddress(m))
+	staged := path.Dir(reservedFilerMetaPath(backupName))
+	lsout := path.Join(backupScratchDir, "cleanup.ls")
+	return strings.Join([]string{
+		"set -euo pipefail",
+		// fs.rm only prints per-entry errors, so verify with fs.ls, which
+		// fails the shell when the filer errors.
+		fmt.Sprintf("echo 'fs.rm -rf %s' | %s", staged, shell),
+		fmt.Sprintf("if ! echo 'fs.ls %s' | %s > %s 2>/dev/null; then echo 'archive delete could not be verified' >&2; exit 1; fi", staged, shell, lsout),
+		fmt.Sprintf("if grep -q . %s; then echo 'archive still present after delete' >&2; exit 1; fi", lsout),
+		fmt.Sprintf("echo 'staged snapshot %s removed'", staged),
+		"",
+	}, "\n")
 }
 
 // restoreScript returns the shell program a restore Job runs. localPath is set
@@ -126,8 +165,8 @@ func restoreScript(m *seaweedv1.Seaweed, localPath, filerURL, filerPath string) 
 	if localPath != "" {
 		return strings.Join([]string{
 			"set -euo pipefail",
-			fmt.Sprintf("test -s %s", localPath),
-			fmt.Sprintf("echo '%s' | %s", metaLoadStatement(localPath, filerPath), shell),
+			fmt.Sprintf("test -s %s", shq(localPath)),
+			fmt.Sprintf("echo %s | %s", shq(metaLoadStatement(localPath, filerPath)), shell),
 			fmt.Sprintf("echo 'metadata restored from %s'", localPath),
 			"",
 		}, "\n")
@@ -138,8 +177,8 @@ func restoreScript(m *seaweedv1.Seaweed, localPath, filerURL, filerPath string) 
 	return strings.Join([]string{
 		"set -euo pipefail",
 		catCmd,
-		fmt.Sprintf("test -s %s", scratch),
-		fmt.Sprintf("echo '%s' | %s", metaLoadStatement(scratch, filerPath), shell),
+		fmt.Sprintf("test -s %s", shq(scratch)),
+		fmt.Sprintf("echo %s | %s", shq(metaLoadStatement(scratch, filerPath)), shell),
 		fmt.Sprintf("echo 'metadata restored from %s'", filerURL),
 		"",
 	}, "\n")
@@ -211,7 +250,33 @@ func buildSnapshotJob(m *seaweedv1.Seaweed, jobName string, backup *seaweedv1.Se
 	}
 	job := newJob(backup.Namespace, jobName, labels, pod)
 	job.Annotations = map[string]string{seaweedv1.AnnotationBackupDestination: dest}
+	if st.Type == seaweedv1.BackupStorageFilesystem && st.Filesystem != nil {
+		job.Annotations[seaweedv1.AnnotationBackupClaim] = st.Filesystem.ExistingClaim
+		job.Annotations[seaweedv1.AnnotationBackupMountPath] = filesystemMountPath(st.Filesystem)
+		if st.Filesystem.SubPath != "" {
+			job.Annotations[seaweedv1.AnnotationBackupSubPath] = st.Filesystem.SubPath
+		}
+	}
 	return job, dest
+}
+
+// buildCleanupJob returns the archive-cleanup Job for a deleting backup.
+func buildCleanupJob(m *seaweedv1.Seaweed, jobName string, backup *seaweedv1.SeaweedBackup, st seaweedv1.BackupStorageSpec) *batchv1.Job {
+	script := cleanupScript(m, st, backup.Spec.ClusterName, backup.Name)
+	pod := backupPodSpec(
+		m,
+		"cleanup",
+		script,
+		st,
+		st.Type == seaweedv1.BackupStorageFilesystem,
+		backup.Spec.PodSecurityContext,
+		backup.Spec.ContainerSecurityContext,
+	)
+	labels := map[string]string{
+		seaweedv1.LabelBackupCluster: backup.Spec.ClusterName,
+		seaweedv1.LabelBackupUID:     string(backup.UID),
+	}
+	return newJob(backup.Namespace, jobName, labels, pod)
 }
 
 // buildRestoreJob returns the restore Job for a SeaweedRestore. Exactly one of

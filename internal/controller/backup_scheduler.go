@@ -192,9 +192,10 @@ func (s *BackupScheduler) createScheduledBackup(ctx context.Context, m *seaweedv
 			},
 		},
 		Spec: seaweedv1.SeaweedBackupSpec{
-			ClusterName: m.Name,
-			StorageName: sched.StorageName,
-			FilerPath:   sched.FilerPath,
+			ClusterName:   m.Name,
+			StorageName:   sched.StorageName,
+			FilerPath:     sched.FilerPath,
+			ReclaimPolicy: sched.ReclaimPolicy,
 		},
 	}
 	if err := s.Create(ctx, backup); err != nil {

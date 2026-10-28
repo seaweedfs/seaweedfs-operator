@@ -227,6 +227,12 @@ type BackupScheduleSpec struct {
 	// +kubebuilder:default:="/"
 	FilerPath string `json:"filerPath,omitempty"`
 
+	// ReclaimPolicy is stamped onto each SeaweedBackup this schedule creates;
+	// see SeaweedBackupSpec.reclaimPolicy. With Delete, backups pruned by Keep
+	// also have their archives removed. Defaults to Retain.
+	// +optional
+	ReclaimPolicy BackupReclaimPolicy `json:"reclaimPolicy,omitempty"`
+
 	// Suspend pauses this schedule without removing it.
 	// +optional
 	// +kubebuilder:default:=false

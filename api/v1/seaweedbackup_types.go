@@ -37,6 +37,24 @@ const (
 	BackupPhaseFailed BackupPhase = "Failed"
 )
 
+// BackupReclaimPolicy controls what happens to the snapshot archive when the
+// SeaweedBackup CR is deleted.
+// +kubebuilder:validation:Enum=Retain;Delete
+type BackupReclaimPolicy string
+
+const (
+	// BackupReclaimRetain leaves the archive in place when the CR is
+	// deleted. This is the default and matches the historical behavior.
+	BackupReclaimRetain BackupReclaimPolicy = "Retain"
+
+	// BackupReclaimDelete removes the archive when the CR is deleted: the
+	// file on a filesystem storage's claim, or — for object-store storages —
+	// the staged copy under the reserved filer path. A copy already carried
+	// to the sink by a data mirror is not removed, because filer.backup does
+	// not propagate deletes.
+	BackupReclaimDelete BackupReclaimPolicy = "Delete"
+)
+
 // Condition types emitted by the SeaweedBackup controller.
 const (
 	// BackupConditionComplete is True once the snapshot Job succeeds.
@@ -54,10 +72,22 @@ const (
 	// LabelBackupSchedule names the schedule that created the backup (absent
 	// for on-demand backups).
 	LabelBackupSchedule = "seaweed.seaweedfs.com/backup-schedule"
+	// LabelBackupUID records the UID of the SeaweedBackup that created an
+	// unowned Job, so the controller never adopts or deletes an unrelated
+	// Job sharing the generated name.
+	LabelBackupUID = "seaweed.seaweedfs.com/backup-uid"
 	// AnnotationBackupDestination records the resolved snapshot destination
 	// on the Job, so status recovery does not depend on the live storage
 	// configuration, which may have changed since the Job was created.
 	AnnotationBackupDestination = "seaweed.seaweedfs.com/backup-destination"
+	// AnnotationBackupClaim, AnnotationBackupMountPath, and
+	// AnnotationBackupSubPath pin the filesystem storage a snapshot wrote to
+	// on its Job, so archive cleanup can still mount the original claim if
+	// the storage entry was reconfigured after the snapshot ran and the
+	// recorded status is unavailable.
+	AnnotationBackupClaim     = "seaweed.seaweedfs.com/backup-claim"
+	AnnotationBackupMountPath = "seaweed.seaweedfs.com/backup-mount-path"
+	AnnotationBackupSubPath   = "seaweed.seaweedfs.com/backup-sub-path"
 )
 
 // SeaweedBackupSpec is a single, on-demand or scheduled, point-in-time filer
@@ -81,6 +111,13 @@ type SeaweedBackupSpec struct {
 	// +optional
 	// +kubebuilder:default:="/"
 	FilerPath string `json:"filerPath,omitempty"`
+
+	// ReclaimPolicy controls what happens to the snapshot archive when this
+	// CR is deleted. Defaults to Retain. See BackupReclaimPolicy for what
+	// Delete covers.
+	// +optional
+	// +kubebuilder:default:=Retain
+	ReclaimPolicy BackupReclaimPolicy `json:"reclaimPolicy,omitempty"`
 
 	// PodSecurityContext configures immutable pod-level security attributes for
 	// the snapshot Job. Unset fields retain Kubernetes defaults.
@@ -110,6 +147,12 @@ type SeaweedBackupStatus struct {
 	// Destination is the resolved location of the metadata snapshot.
 	// +optional
 	Destination string `json:"destination,omitempty"`
+
+	// FilesystemStorage is the resolved filesystem store the snapshot wrote
+	// to, so reclaimPolicy=Delete cleanup mounts the original claim even if
+	// the storage entry was reconfigured afterwards.
+	// +optional
+	FilesystemStorage *FilesystemBackupStore `json:"filesystemStorage,omitempty"`
 
 	// StartTime is when the snapshot Job started.
 	// +optional

@@ -2912,6 +2912,12 @@ spec:
                           type: string
                       type: object
                   type: object
+                reclaimPolicy:
+                  default: Retain
+                  enum:
+                    - Retain
+                    - Delete
+                  type: string
                 storageName:
                   minLength: 1
                   type: string
@@ -2973,6 +2979,19 @@ spec:
                   x-kubernetes-list-type: map
                 destination:
                   type: string
+                filesystemStorage:
+                  properties:
+                    existingClaim:
+                      minLength: 1
+                      type: string
+                    mountPath:
+                      default: /backup
+                      type: string
+                    subPath:
+                      type: string
+                  required:
+                    - existingClaim
+                  type: object
                 jobName:
                   type: string
                 observedGeneration:
@@ -6354,6 +6373,11 @@ spec:
                           name:
                             maxLength: 50
                             minLength: 1
+                            type: string
+                          reclaimPolicy:
+                            enum:
+                              - Retain
+                              - Delete
                             type: string
                           schedule:
                             maxLength: 120

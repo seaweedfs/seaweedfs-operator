@@ -2193,6 +2193,11 @@ spec:
                           maxLength: 50
                           minLength: 1
                           type: string
+                        reclaimPolicy:
+                          enum:
+                          - Retain
+                          - Delete
+                          type: string
                         schedule:
                           maxLength: 120
                           minLength: 1

@@ -19,6 +19,7 @@ package controller
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -30,8 +31,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	s3policyengine "github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
 
@@ -41,7 +46,7 @@ import (
 
 // S3PolicyBindingReconciler reconciles S3PolicyBinding resources by attaching
 // a policy to the listed subjects — IAM identities via AttachPolicy, and
-// buckets by storing the document as their bucket policy.
+// buckets by merging the document's statements into their bucket policy.
 type S3PolicyBindingReconciler struct {
 	client.Client
 	Log      logr.Logger
@@ -130,27 +135,10 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	// A bucket carries exactly one policy document, so two bindings
-	// targeting it would flap on every resync; the older binding owns the
-	// slot and the loser releases it.
-	var conflicted []string
-	applyBuckets := make([]string, 0, len(desiredBuckets))
-	for _, b := range desiredBuckets {
-		winner, err := bindingBucketConflict(ctx, r.Client, &binding, b)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		if winner != nil {
-			conflicted = append(conflicted, fmt.Sprintf("%s (owned by %s/%s)", b, winner.Namespace, winner.Name))
-			continue
-		}
-		applyBuckets = append(applyBuckets, b)
-	}
-
 	// Detach subjects no longer listed (compared against the last applied
-	// set). A released bucket is cleared only when no other binding claims
-	// it — clearing while a new owner has just written its document would
-	// erase the live policy.
+	// set). A released bucket's document is recomputed from the bindings
+	// still claiming it, so this binding's statements are revoked without
+	// erasing grants others installed.
 	desiredSet := map[string]struct{}{}
 	for _, s := range desired {
 		desiredSet[s] = struct{}{}
@@ -164,7 +152,7 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 	applySet := map[string]struct{}{}
-	for _, b := range applyBuckets {
+	for _, b := range desiredBuckets {
 		applySet[b] = struct{}{}
 	}
 	for _, prev := range binding.Status.AttachedBuckets {
@@ -202,16 +190,39 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	binding.Status.PolicyName = policyName
 
-	// Validate the document only when it will be written somewhere: a
-	// resource policy needs a Principal per statement and resources scoped
-	// to buckets this binding manages — the desired set (whether or not a
-	// conflict took a slot) plus anything still attached. Revocation above
-	// runs regardless, so a broken replacement document cannot wedge old
-	// grants in place.
-	if len(applyBuckets) > 0 {
+	// A bucket stores a single policy document, so every binding claiming it
+	// contributes its statements to a merged document; deterministic
+	// contributor order keeps all bindings computing the same result. Each
+	// contribution is validated against the buckets its own binding manages
+	// — a broken contributor fails only its own reconcile — while the
+	// binding's document must be usable wherever it applies.
+	if len(desiredBuckets) > 0 {
 		if err := validateBucketPolicyDoc(policyDoc, managed); err != nil {
 			return r.fail(ctx, &binding, "PolicyNotBucketPolicy", err.Error())
 		}
+	}
+	mergedDocs := make(map[string]string, len(desiredBuckets))
+	policyDocs := map[string]string{policyName: policyDoc}
+	retainedGrowth := 0
+	if binding.Spec.ReclaimPolicy == seaweedv1.S3ReclaimRetain {
+		var err error
+		if retainedGrowth, err = retainedMarkGrowth(policyDoc); err != nil {
+			return r.fail(ctx, &binding, "PolicyNotBucketPolicy", err.Error())
+		}
+	}
+	for _, b := range desiredBuckets {
+		merged, err := r.mergedBucketPolicy(ctx, admin, &binding, b, policyDoc, policyDocs)
+		if err != nil {
+			return r.fail(ctx, &binding, "PolicyNotBucketPolicy", err.Error())
+		}
+		// A Retain deletion restamps this binding's statements inside the
+		// stored document; the merged document must leave room for the
+		// markers or the finalizer can never complete.
+		if len(merged)+retainedGrowth > s3policyengine.MaxBucketPolicySize {
+			return r.fail(ctx, &binding, "PolicyNotBucketPolicy",
+				fmt.Sprintf("merged policy on %q leaves no room to mark its grants retained on delete", b))
+		}
+		mergedDocs[b] = merged
 	}
 
 	// Attach the policy to each desired subject. A missing identity or
@@ -220,7 +231,7 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// the missing subjects appear. Real (non-NotFound) errors still fail
 	// fast.
 	attached := make([]string, 0, len(desired))
-	attachedBuckets := make([]string, 0, len(applyBuckets))
+	attachedBuckets := make([]string, 0, len(desiredBuckets))
 	var pendingSubjects []string
 	// preserve records the attached set after a mid-apply failure without
 	// dropping buckets still owned but not yet re-processed — losing those
@@ -240,8 +251,8 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		attached = append(attached, user)
 	}
-	for _, b := range applyBuckets {
-		if err := applyBucketPolicy(ctx, admin, b, policyDoc); err != nil {
+	for _, b := range desiredBuckets {
+		if err := applyBucketPolicy(ctx, admin, b, mergedDocs[b]); err != nil {
 			if errors.Is(err, swadmin.ErrBucketNotFound) {
 				pendingSubjects = append(pendingSubjects, b)
 				continue
@@ -254,10 +265,6 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	binding.Status.AttachedSubjects = attached
 	binding.Status.AttachedBuckets = attachedBuckets
-	if len(conflicted) > 0 {
-		return r.fail(ctx, &binding, "BucketConflict",
-			fmt.Sprintf("bucket policy slots claimed by other bindings: %s", strings.Join(conflicted, ", ")))
-	}
 	if len(pendingSubjects) > 0 {
 		return r.pending(ctx, &binding, "SubjectMissing",
 			fmt.Sprintf("subjects do not exist yet: %s", strings.Join(pendingSubjects, ", ")))
@@ -290,6 +297,19 @@ func (r *S3PolicyBindingReconciler) handleDeletion(ctx context.Context, binding 
 		}
 		for _, b := range binding.Status.AttachedBuckets {
 			if err := r.releaseBucketPolicy(ctx, admin, binding, b); err != nil && !errors.Is(err, swadmin.ErrBucketNotFound) {
+				setIAMCondition(&binding.Status.Conditions, binding.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DetachFailed", err.Error())
+				if updateErr := r.Status().Update(ctx, binding); updateErr != nil {
+					r.Log.Error(updateErr, "status update during deletion")
+				}
+				return ctrl.Result{}, err
+			}
+		}
+	} else {
+		// Retained bucket grants are restamped in the stored document so
+		// the next merge — which rebuilds it from live bindings alone —
+		// keeps carrying them.
+		for _, b := range binding.Status.AttachedBuckets {
+			if err := r.retainBucketPolicy(ctx, admin, binding, policyName, b); err != nil && !errors.Is(err, swadmin.ErrBucketNotFound) {
 				setIAMCondition(&binding.Status.Conditions, binding.Generation, seaweedv1.S3ConditionReady, metav1.ConditionFalse, "DetachFailed", err.Error())
 				if updateErr := r.Status().Update(ctx, binding); updateErr != nil {
 					r.Log.Error(updateErr, "status update during deletion")
@@ -399,6 +419,9 @@ func validateBucketPolicyDoc(policyDoc string, buckets []string) error {
 		return fmt.Errorf("policy document cannot serve as a bucket policy: %v", err)
 	}
 	for i, st := range doc.Statement {
+		if strings.HasPrefix(st.Sid, retainedStatementSid) {
+			return fmt.Errorf("statement %d: Sid %q uses the reserved %q prefix", i, st.Sid, retainedStatementSid)
+		}
 		if st.Principal == nil && st.NotPrincipal == nil {
 			return fmt.Errorf("statement %d: bucket policies must specify a Principal", i)
 		}
@@ -435,23 +458,214 @@ func resourceMatchesAnyBucket(resource string, buckets []string) bool {
 	return false
 }
 
-// releaseBucketPolicy clears the stored policy on a bucket this binding no
-// longer manages — unless another binding already installed its own
-// document there, which clearing would erase. A claimant that has not
-// attached the bucket yet does not block the clear: the stored document
-// is still this binding's grant, and skipping it would keep that grant
-// active past deletion if the claimant can never apply.
+// releaseBucketPolicy removes this binding's contribution from a bucket it
+// no longer manages: the stored document is rewritten from the surviving
+// claimants' policies plus any retained statements, or cleared when nothing
+// remains. A remainder that cannot be written leaves the stored document
+// alone — the survivors' own reconciles rebuild it.
 func (r *S3PolicyBindingReconciler) releaseBucketPolicy(ctx context.Context, admin IAMAdmin, binding *seaweedv1.S3PolicyBinding, bucket string) error {
-	claimants, err := bindingBucketClaimants(ctx, r.Client, binding, bucket)
+	contributors, err := r.bucketContributors(ctx, admin, binding, bucket, "", map[string]string{})
 	if err != nil {
 		return err
 	}
-	for _, peer := range claimants {
-		if slices.Contains(peer.Status.AttachedBuckets, bucket) {
+	retained, err := r.storedRetained(ctx, admin, bucket)
+	if err != nil {
+		return err
+	}
+	if len(contributors) == 0 && len(retained) == 0 {
+		return admin.SetBucketPolicy(ctx, bucket, nil)
+	}
+	doc, err := assembleBucketPolicy(contributors, retained)
+	if err != nil {
+		return err
+	}
+	if len(doc) > s3policyengine.MaxBucketPolicySize {
+		return fmt.Errorf("surviving contributors exceed the %d byte bucket policy limit", s3policyengine.MaxBucketPolicySize)
+	}
+	return applyBucketPolicy(ctx, admin, bucket, doc)
+}
+
+// retainBucketPolicy persists this binding's statements in the stored
+// document beyond deletion: they are restamped with the retained marker so
+// later merges keep carrying the grant. The mark replaces the statements in
+// place, so a retried deletion does not add them twice.
+func (r *S3PolicyBindingReconciler) retainBucketPolicy(ctx context.Context, admin IAMAdmin, binding *seaweedv1.S3PolicyBinding, policyName, bucket string) error {
+	own, err := admin.GetPolicy(ctx, policyName)
+	if err != nil {
+		if errors.Is(err, ErrIAMNotFound) {
 			return nil
 		}
+		return err
 	}
-	return admin.SetBucketPolicy(ctx, bucket, nil)
+	stored, err := admin.GetBucketPolicy(ctx, bucket)
+	if err != nil {
+		return err
+	}
+	doc, err := restampRetained(string(stored), own)
+	if err != nil {
+		return err
+	}
+	if len(doc) > s3policyengine.MaxBucketPolicySize {
+		return fmt.Errorf("policy on %q exceeds the %d byte bucket policy limit", bucket, s3policyengine.MaxBucketPolicySize)
+	}
+	return applyBucketPolicy(ctx, admin, bucket, doc)
+}
+
+// storedRetained extracts the retained statements of a bucket's stored
+// policy, treating a missing bucket as empty.
+func (r *S3PolicyBindingReconciler) storedRetained(ctx context.Context, admin IAMAdmin, bucket string) ([]json.RawMessage, error) {
+	stored, err := admin.GetBucketPolicy(ctx, bucket)
+	if err != nil {
+		if errors.Is(err, swadmin.ErrBucketNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return retainedStatements(stored)
+}
+
+// bucketPolicyContributor is one binding adding statements to a bucket's
+// stored policy document, keyed for deterministic contributor ordering.
+type bucketPolicyContributor struct {
+	key string
+	doc string
+}
+
+// bucketContributors collects the live bindings feeding a bucket's stored
+// policy document: self (when selfDoc is given) plus the other claimants.
+// Contributors sort by namespaced name so every binding assembles the same
+// document. A peer whose policy is gone or unusable as a bucket policy —
+// one its own reconcile would reject — contributes nothing and never
+// blocks the others.
+func (r *S3PolicyBindingReconciler) bucketContributors(ctx context.Context, admin IAMAdmin, self *seaweedv1.S3PolicyBinding, bucket, selfDoc string, policyDocs map[string]string) ([]bucketPolicyContributor, error) {
+	cluster := seaweedRefKey(self.Spec.SeaweedRef, self.Namespace)
+	var contributors []bucketPolicyContributor
+	if selfDoc != "" {
+		contributors = append(contributors, bucketPolicyContributor{
+			key: self.Namespace + "/" + self.Name,
+			doc: selfDoc,
+		})
+	}
+	peers, err := bindingBucketClaimants(ctx, r.Client, self, bucket)
+	if err != nil {
+		return nil, err
+	}
+	for _, peer := range peers {
+		if !peer.DeletionTimestamp.IsZero() {
+			continue
+		}
+		// A peer whose cluster reference lost its grant contributes
+		// nothing — its own reconcile is gated the same way, and a
+		// revoked grant must not keep feeding statements into the merge.
+		permitted, err := seaweedRefPermitted(ctx, r.Client, peer.Spec.SeaweedRef, kindS3PolicyBinding, peer.Namespace)
+		if err != nil {
+			return nil, err
+		}
+		if !permitted {
+			continue
+		}
+		policyName := peer.Status.PolicyName
+		if policyName == "" {
+			policyName, err = resolvePolicyIAMName(ctx, r.Client, peer.Namespace, peer.Spec.PolicyRef.Name, cluster)
+			if err != nil {
+				return nil, err
+			}
+		}
+		doc, cached := policyDocs[policyName]
+		if !cached {
+			doc, err = admin.GetPolicy(ctx, policyName)
+			if err != nil {
+				if errors.Is(err, ErrIAMNotFound) {
+					continue
+				}
+				return nil, err
+			}
+			policyDocs[policyName] = doc
+		}
+		claimed, err := bindingClaimedBuckets(ctx, r.Client, peer, cluster)
+		if err != nil {
+			return nil, err
+		}
+		buckets := make([]string, 0, len(claimed))
+		for b := range claimed {
+			buckets = append(buckets, b)
+		}
+		if err := validateBucketPolicyDoc(doc, buckets); err != nil {
+			continue
+		}
+		contributors = append(contributors, bucketPolicyContributor{
+			key: peer.Namespace + "/" + peer.Name,
+			doc: doc,
+		})
+	}
+	slices.SortFunc(contributors, func(a, b bucketPolicyContributor) int {
+		return strings.Compare(a.key, b.key)
+	})
+	return contributors, nil
+}
+
+// assembleBucketPolicy builds the document to store on a bucket from its
+// contributors and the retained statements already present. A lone
+// contributor with nothing retained keeps its document verbatim. Retained
+// statements are deduplicated the same way contributor ones are — a stored
+// document edited out of band can carry copies, and duplicates only burn
+// the size budget.
+func assembleBucketPolicy(contributors []bucketPolicyContributor, retained []json.RawMessage) (string, error) {
+	if len(contributors) == 1 && len(retained) == 0 {
+		return contributors[0].doc, nil
+	}
+	docs := make([]string, 0, len(contributors))
+	for _, c := range contributors {
+		docs = append(docs, c.doc)
+	}
+	statements, err := mergedStatements(docs)
+	if err != nil {
+		return "", err
+	}
+	seen := make(map[string]struct{}, len(statements)+len(retained))
+	for _, raw := range statements {
+		canon, _, err := canonStatement(raw)
+		if err != nil {
+			return "", err
+		}
+		seen[canon] = struct{}{}
+	}
+	for _, raw := range retained {
+		canon, _, err := canonStatement(raw)
+		if err != nil {
+			return "", err
+		}
+		if _, dup := seen[canon]; dup {
+			continue
+		}
+		seen[canon] = struct{}{}
+		statements = append(statements, raw)
+	}
+	return assemblePolicyDocument(statements)
+}
+
+// mergedBucketPolicy assembles the policy document to store on bucket from
+// every binding claiming it plus statements an earlier Retain deletion left
+// marked in the stored document. The result must fit the bucket policy size
+// limit — an oversized combination fails explicitly rather than silently
+// truncating grants.
+func (r *S3PolicyBindingReconciler) mergedBucketPolicy(ctx context.Context, admin IAMAdmin, self *seaweedv1.S3PolicyBinding, bucket, selfDoc string, policyDocs map[string]string) (string, error) {
+	contributors, err := r.bucketContributors(ctx, admin, self, bucket, selfDoc, policyDocs)
+	if err != nil {
+		return "", err
+	}
+	retained, err := r.storedRetained(ctx, admin, bucket)
+	if err != nil {
+		return "", err
+	}
+	merged, err := assembleBucketPolicy(contributors, retained)
+	if err != nil {
+		return "", err
+	}
+	if len(merged) > s3policyengine.MaxBucketPolicySize {
+		return "", fmt.Errorf("merged policy exceeds the %d byte bucket policy limit", s3policyengine.MaxBucketPolicySize)
+	}
+	return merged, nil
 }
 
 // mergeKeptBuckets unions the buckets attached this pass with the previously
@@ -488,6 +702,33 @@ func applyBucketPolicy(ctx context.Context, admin IAMAdmin, bucket, policyDoc st
 	return admin.SetBucketPolicy(ctx, bucket, []byte(policyDoc))
 }
 
+// mapBindingToClusterPeers enqueues the other bindings on the same cluster
+// so a contributor joining, leaving, or changing its subjects rebuilds the
+// shared bucket documents promptly instead of leaving a removed grant
+// installed until the periodic resync.
+func (r *S3PolicyBindingReconciler) mapBindingToClusterPeers(ctx context.Context, obj client.Object) []reconcile.Request {
+	changed, ok := obj.(*seaweedv1.S3PolicyBinding)
+	if !ok {
+		return nil
+	}
+	var bindings seaweedv1.S3PolicyBindingList
+	if err := r.List(ctx, &bindings); err != nil {
+		return nil
+	}
+	cluster := seaweedRefKey(changed.Spec.SeaweedRef, changed.Namespace)
+	var reqs []reconcile.Request
+	for i := range bindings.Items {
+		peer := &bindings.Items[i]
+		if peer.Namespace == changed.Namespace && peer.Name == changed.Name {
+			continue
+		}
+		if seaweedRefKey(peer.Spec.SeaweedRef, peer.Namespace) == cluster {
+			reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(peer)})
+		}
+	}
+	return reqs
+}
+
 // SetupWithManager wires the reconciler into the manager.
 func (r *S3PolicyBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.AdminFactory == nil {
@@ -495,5 +736,9 @@ func (r *S3PolicyBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&seaweedv1.S3PolicyBinding{}).
+		// Only spec/create/delete events feed peer merges — status-only
+		// updates would ping-pong contributors off each other's records.
+		Watches(&seaweedv1.S3PolicyBinding{}, handler.EnqueueRequestsFromMapFunc(r.mapBindingToClusterPeers),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Complete(r)
 }

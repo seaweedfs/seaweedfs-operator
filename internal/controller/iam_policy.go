@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+	s3policyengine "github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
 )
 
 // policyDocumentVersion is the AWS IAM policy language version stamped on
@@ -89,6 +90,249 @@ func buildPolicyDocument(spec *seaweedv1.S3PolicySpec) (string, error) {
 		return "", fmt.Errorf("marshal policy document: %w", err)
 	}
 	return string(out), nil
+}
+
+// retainedStatementSid marks statements a reclaimPolicy=Retain binding left
+// in a bucket policy on deletion. The marker rides inside the stored
+// document so later merges — which rebuild it from live bindings alone —
+// keep carrying the retained grant until it is removed out of band.
+const retainedStatementSid = "seaweedfs:retained:"
+
+// mergedStatements concatenates the raw statements of several policy
+// documents, dropping duplicates (compared after JSON canonicalization).
+func mergedStatements(docs []string) ([]json.RawMessage, error) {
+	var statements []json.RawMessage
+	seen := map[string]struct{}{}
+	for _, doc := range docs {
+		parsed, err := policyStatements(doc)
+		if err != nil {
+			return nil, fmt.Errorf("contributor policy is not valid JSON: %w", err)
+		}
+		for _, raw := range parsed {
+			var canonical any
+			if err := json.Unmarshal(raw, &canonical); err != nil {
+				return nil, fmt.Errorf("contributor statement is not valid JSON: %w", err)
+			}
+			key, err := json.Marshal(canonical)
+			if err != nil {
+				return nil, err
+			}
+			if _, dup := seen[string(key)]; dup {
+				continue
+			}
+			seen[string(key)] = struct{}{}
+			statements = append(statements, raw)
+		}
+	}
+	return statements, nil
+}
+
+// policyStatements extracts the raw statements of a policy document.
+func policyStatements(doc string) ([]json.RawMessage, error) {
+	var parsed struct {
+		Statement []json.RawMessage `json:"Statement"`
+	}
+	if err := json.Unmarshal([]byte(doc), &parsed); err != nil {
+		return nil, err
+	}
+	return parsed.Statement, nil
+}
+
+// assemblePolicyDocument marshals statements into a policy document.
+func assemblePolicyDocument(statements []json.RawMessage) (string, error) {
+	out, err := json.Marshal(struct {
+		Version   string            `json:"Version"`
+		Statement []json.RawMessage `json:"Statement"`
+	}{policyDocumentVersion, statements})
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+// retainedStatements returns the statements an earlier Retain deletion
+// marked in the stored bucket document — anything else stored is ignored,
+// and an unparseable document counts as empty since it gets overwritten
+// anyway. Removing a contributor never reaps retained grants.
+func retainedStatements(stored []byte) ([]json.RawMessage, error) {
+	if len(stored) == 0 {
+		return nil, nil
+	}
+	storedStatements, err := policyStatements(string(stored))
+	if err != nil {
+		return nil, nil
+	}
+	var out []json.RawMessage
+	for _, raw := range storedStatements {
+		var st struct {
+			Sid string `json:"Sid"`
+		}
+		if err := json.Unmarshal(raw, &st); err != nil {
+			return nil, err
+		}
+		if strings.HasPrefix(st.Sid, retainedStatementSid) {
+			out = append(out, raw)
+		}
+	}
+	return out, nil
+}
+
+// canonStatement returns a statement's canonical JSON (sorted keys, no
+// whitespace) and its decoded form.
+func canonStatement(raw json.RawMessage) (string, map[string]any, error) {
+	var st map[string]any
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return "", nil, err
+	}
+	canon, err := json.Marshal(st)
+	return string(canon), st, err
+}
+
+// restampRetained marks doc's statements as retained inside the stored
+// policy: every stored statement matching one of the document's is replaced
+// by a copy carrying the retained Sid marker, marked copies already present
+// are kept, and owned statements missing from the stored document are
+// appended marked — so a retried deletion changes nothing. Markers keep the
+// statement's original Sid unless that would push the document past the
+// bucket policy limit, in which case the bare prefix is used: a mark that
+// cannot fit must not keep a deletion pending forever.
+func restampRetained(stored, doc string) (string, error) {
+	out, err := restampRetainedMarked(stored, doc, func(sid string) string {
+		return retainedStatementSid + sid
+	})
+	if err != nil || len(out) <= s3policyengine.MaxBucketPolicySize {
+		return out, err
+	}
+	return restampRetainedMarked(stored, doc, func(string) string {
+		return retainedStatementSid
+	})
+}
+
+// retainedMarkGrowth returns the most a compact restamp of doc's statements
+// can add to a stored document: a Sid shorter than the marker grows to fit
+// it, and a statement without a Sid grows a whole new field. A Retain
+// binding reserves that room when its policy applies so the deletion-time
+// restamp is guaranteed to fit.
+func retainedMarkGrowth(doc string) (int, error) {
+	stmts, err := policyStatements(doc)
+	if err != nil {
+		return 0, err
+	}
+	growth := 0
+	for _, raw := range stmts {
+		_, st, err := canonStatement(raw)
+		if err != nil {
+			return 0, err
+		}
+		if sid, ok := st["Sid"].(string); ok {
+			if d := len(retainedStatementSid) - len(sid); d > 0 {
+				growth += d
+			}
+		} else {
+			growth += len(`"Sid":"` + retainedStatementSid + `",`)
+		}
+	}
+	return growth, nil
+}
+
+// restampRetainedMarked restamps owned statements with mark applied to
+// their Sid. Statements match on their content minus Sid — the mark rewrites
+// it — so copies already marked by an earlier pass, in either form, are
+// recognized and kept instead of duplicated.
+func restampRetainedMarked(stored, doc string, mark func(string) string) (string, error) {
+	var storedStmts []json.RawMessage
+	if strings.TrimSpace(stored) != "" {
+		var err error
+		if storedStmts, err = policyStatements(stored); err != nil {
+			return "", err
+		}
+	}
+	ownStmts, err := policyStatements(doc)
+	if err != nil {
+		return "", err
+	}
+	sidlessKey := func(raw json.RawMessage) (string, error) {
+		_, st, err := canonStatement(raw)
+		if err != nil {
+			return "", err
+		}
+		delete(st, "Sid")
+		key, err := json.Marshal(st)
+		return string(key), err
+	}
+	marked := map[string]json.RawMessage{} // own statement key -> marked copy
+	var order []string
+	for _, raw := range ownStmts {
+		key, err := sidlessKey(raw)
+		if err != nil {
+			return "", err
+		}
+		_, st, err := canonStatement(raw)
+		if err != nil {
+			return "", err
+		}
+		sid, _ := st["Sid"].(string)
+		st["Sid"] = mark(sid)
+		mraw, err := json.Marshal(st)
+		if err != nil {
+			return "", err
+		}
+		marked[key] = mraw
+		order = append(order, key)
+	}
+	found := map[string]bool{}
+	seen := map[string]struct{}{}
+	var out []json.RawMessage
+	keep := func(raw json.RawMessage) error {
+		canon, _, err := canonStatement(raw)
+		if err != nil {
+			return err
+		}
+		if _, dup := seen[canon]; dup {
+			return nil
+		}
+		seen[canon] = struct{}{}
+		out = append(out, raw)
+		return nil
+	}
+	for _, raw := range storedStmts {
+		key, err := sidlessKey(raw)
+		if err != nil {
+			return "", err
+		}
+		_, st, err := canonStatement(raw)
+		if err != nil {
+			return "", err
+		}
+		sid, _ := st["Sid"].(string)
+		if strings.HasPrefix(sid, retainedStatementSid) {
+			// already marked on an earlier pass
+			if _, own := marked[key]; own {
+				found[key] = true
+			}
+			if err := keep(raw); err != nil {
+				return "", err
+			}
+			continue
+		}
+		if m, own := marked[key]; own {
+			// unmarked owned statement: restamp it
+			if err := keep(m); err != nil {
+				return "", err
+			}
+			found[key] = true
+		} else if err := keep(raw); err != nil {
+			return "", err
+		}
+	}
+	for _, key := range order {
+		if !found[key] {
+			if err := keep(marked[key]); err != nil {
+				return "", err
+			}
+		}
+	}
+	return assemblePolicyDocument(out)
 }
 
 // normalizeActions accepts the bare wildcard "*" as a friendly alias for the

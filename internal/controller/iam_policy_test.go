@@ -18,10 +18,13 @@ package controller
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+	s3policyengine "github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
 )
 
 func TestBuildPolicyDocument_FromStatements(t *testing.T) {
@@ -122,5 +125,58 @@ func TestBuildPolicyDocument_StatementMissingResources(t *testing.T) {
 	}
 	if _, err := buildPolicyDocument(spec); err == nil {
 		t.Fatal("expected error for statement with no resources, got nil")
+	}
+}
+
+// A restamp that would push the stored document past the bucket policy
+// limit falls back to the compact marker so the deletion can finish; when
+// the preserved Sid fits it is kept, and a second restamp changes nothing.
+func TestRestampRetained_CompactFallback(t *testing.T) {
+	pad := strings.Repeat("p", s3policyengine.MaxBucketPolicySize)
+	own := fmt.Sprintf(`{"Version":"2012-10-17","Statement":[{"Sid":"%s","Effect":"Allow","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::data/*"]}]}`, pad)
+	stored := fmt.Sprintf(`{"Version":"2012-10-17","Statement":[{"Sid":"%s","Effect":"Allow","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::data/*"]},{"Sid":"other","Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::data"]}]}`, pad)
+	out, err := restampRetained(stored, own)
+	if err != nil {
+		t.Fatalf("restamp: %v", err)
+	}
+	if len(out) > s3policyengine.MaxBucketPolicySize {
+		t.Fatalf("restamped document still exceeds the limit: %d bytes", len(out))
+	}
+	if !strings.Contains(out, `"Sid":"seaweedfs:retained:"`) || !strings.Contains(out, `"Sid":"other"`) {
+		t.Errorf("restamped document = %s, want a compact retained mark plus the foreign statement", out)
+	}
+	again, err := restampRetained(out, own)
+	if err != nil {
+		t.Fatalf("re-restamp: %v", err)
+	}
+	if again != out {
+		t.Errorf("re-restamp changed the document:\nfirst:  %s\nsecond: %s", out, again)
+	}
+
+	kept, err := restampRetained(
+		`{"Version":"2012-10-17","Statement":[{"Sid":"audit","Effect":"Allow","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::data/*"]}]}`,
+		`{"Version":"2012-10-17","Statement":[{"Sid":"audit","Effect":"Allow","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::data/*"]}]}`,
+	)
+	if err != nil {
+		t.Fatalf("restamp small: %v", err)
+	}
+	if !strings.Contains(kept, `"Sid":"seaweedfs:retained:audit"`) {
+		t.Errorf("restamped document = %s, want the original Sid kept in the marker", kept)
+	}
+}
+
+// The growth reserve is the compact marker's worst case: a statement with
+// a Sid at least as long as the marker adds nothing, a shorter Sid grows by
+// the difference, and one without a Sid grows a whole field.
+func TestRetainedMarkGrowth(t *testing.T) {
+	longSid := strings.Repeat("s", len(retainedStatementSid))
+	doc := fmt.Sprintf(`{"Version":"2012-10-17","Statement":[{"Sid":"%s","Effect":"Allow"},{"Sid":"ab","Effect":"Allow"},{"Effect":"Allow"}]}`, longSid)
+	growth, err := retainedMarkGrowth(doc)
+	if err != nil {
+		t.Fatalf("growth: %v", err)
+	}
+	want := len(retainedStatementSid) - len("ab") + len(`"Sid":"`+retainedStatementSid+`",`)
+	if growth != want {
+		t.Errorf("growth = %d, want %d", growth, want)
 	}
 }

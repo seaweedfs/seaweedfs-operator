@@ -66,12 +66,14 @@ func TestMapIAMError_PassesThroughOther(t *testing.T) {
 // ErrIAMNotFound when absent; DeleteUser/DeleteAccessKey/DeletePolicy are
 // idempotent; AttachPolicy/DetachPolicy require the user to exist.
 type fakeIAMAdmin struct {
-	mu        sync.Mutex
-	users     map[string]*swadmin.IAMUser
-	policies  map[string]string
-	providers map[string]string // issuerURL -> arn
-	roles     map[string]*swadmin.IAMRole
-	calls     []string
+	mu             sync.Mutex
+	users          map[string]*swadmin.IAMUser
+	policies       map[string]string
+	providers      map[string]string // issuerURL -> arn
+	roles          map[string]*swadmin.IAMRole
+	buckets        map[string]bool
+	bucketPolicies map[string][]byte
+	calls          []string
 
 	createUserErr   error
 	createAKErr     error
@@ -84,10 +86,12 @@ type fakeIAMAdmin struct {
 
 func newFakeIAMAdmin() *fakeIAMAdmin {
 	return &fakeIAMAdmin{
-		users:     map[string]*swadmin.IAMUser{},
-		policies:  map[string]string{},
-		providers: map[string]string{},
-		roles:     map[string]*swadmin.IAMRole{},
+		users:          map[string]*swadmin.IAMUser{},
+		policies:       map[string]string{},
+		providers:      map[string]string{},
+		roles:          map[string]*swadmin.IAMRole{},
+		buckets:        map[string]bool{},
+		bucketPolicies: map[string][]byte{},
 	}
 }
 
@@ -95,6 +99,12 @@ func (f *fakeIAMAdmin) seedUser(name string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.users[name] = &swadmin.IAMUser{Name: name}
+}
+
+func (f *fakeIAMAdmin) seedBucket(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.buckets[name] = true
 }
 
 func (f *fakeIAMAdmin) record(c string) { f.calls = append(f.calls, c) }
@@ -266,6 +276,34 @@ func (f *fakeIAMAdmin) DetachPolicy(_ context.Context, user, policy string) erro
 		}
 	}
 	u.PolicyNames = kept
+	return nil
+}
+
+func (f *fakeIAMAdmin) GetBucketPolicy(_ context.Context, bucket string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	doc, ok := f.bucketPolicies[bucket]
+	if !ok {
+		if _, exists := f.buckets[bucket]; !exists {
+			return nil, swadmin.ErrBucketNotFound
+		}
+		return nil, nil
+	}
+	return append([]byte(nil), doc...), nil
+}
+
+func (f *fakeIAMAdmin) SetBucketPolicy(_ context.Context, bucket string, policyJSON []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("SetBucketPolicy:" + bucket)
+	if _, exists := f.buckets[bucket]; !exists {
+		return swadmin.ErrBucketNotFound
+	}
+	if len(policyJSON) == 0 {
+		delete(f.bucketPolicies, bucket)
+		return nil
+	}
+	f.bucketPolicies[bucket] = append([]byte(nil), policyJSON...)
 	return nil
 }
 

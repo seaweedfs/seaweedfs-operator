@@ -2419,6 +2419,7 @@ spec:
                         default: S3Identity
                         enum:
                           - S3Identity
+                          - Bucket
                         type: string
                       name:
                         maxLength: 256
@@ -2430,6 +2431,7 @@ spec:
                   minItems: 1
                   type: array
                   x-kubernetes-list-map-keys:
+                    - kind
                     - name
                   x-kubernetes-list-type: map
               required:
@@ -2439,6 +2441,11 @@ spec:
               type: object
             status:
               properties:
+                attachedBuckets:
+                  items:
+                    type: string
+                  type: array
+                  x-kubernetes-list-type: atomic
                 attachedSubjects:
                   items:
                     type: string

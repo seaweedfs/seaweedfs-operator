@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 )
 
 // bucketLifecycleConfigurationXMLKey is the filer entry extended attribute that
@@ -49,24 +52,13 @@ func (sa *SeaweedAdmin) GetBucketLifecycle(ctx context.Context, bucket string) (
 // filer entry. An empty lifecycleXML removes the configuration.
 func (sa *SeaweedAdmin) SetBucketLifecycle(ctx context.Context, bucket string, lifecycleXML []byte) error {
 	return sa.commandEnv.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-		entry, dir, err := lookupBucketEntry(ctx, client, bucket)
+		// PATCH_EXTENDED is a no-op on a missing entry, so the existence
+		// check has to happen here rather than fall out of the write.
+		_, dir, err := lookupBucketEntry(ctx, client, bucket)
 		if err != nil {
 			return err
 		}
-		switch {
-		case len(lifecycleXML) == 0:
-			if _, ok := entry.Extended[bucketLifecycleConfigurationXMLKey]; !ok {
-				return nil
-			}
-			delete(entry.Extended, bucketLifecycleConfigurationXMLKey)
-		default:
-			if entry.Extended == nil {
-				entry.Extended = make(map[string][]byte)
-			}
-			entry.Extended[bucketLifecycleConfigurationXMLKey] = append([]byte(nil), lifecycleXML...)
-		}
-		_, err = client.UpdateEntry(ctx, &filer_pb.UpdateEntryRequest{Directory: dir, Entry: entry})
-		return err
+		return patchBucketExtended(ctx, client, dir, bucket, bucketLifecycleConfigurationXMLKey, lifecycleXML)
 	})
 }
 
@@ -147,4 +139,37 @@ func lookupBucketEntry(ctx context.Context, client filer_pb.SeaweedFilerClient, 
 		return nil, "", ErrBucketNotFound
 	}
 	return resp.Entry, dir, nil
+}
+
+// patchBucketExtended applies a single extended-attribute write through an
+// ObjectTransaction PATCH_EXTENDED mutation: the filer re-reads and merges
+// under the bucket path lock, so a concurrent attribute update on the same
+// entry is preserved instead of reverted by a stale whole-entry snapshot —
+// the same atomic path the S3 gateway and admin UI write through. An empty
+// value removes the key.
+func patchBucketExtended(ctx context.Context, client filer_pb.SeaweedFilerClient, dir, bucket, key string, value []byte) error {
+	mutation := &filer_pb.ObjectMutation{
+		Type:      filer_pb.ObjectMutation_PATCH_EXTENDED,
+		Directory: dir,
+		Name:      bucket,
+	}
+	if len(value) > 0 {
+		mutation.SetExtended = map[string][]byte{key: append([]byte(nil), value...)}
+	} else {
+		mutation.DeleteExtended = []string{key}
+	}
+	path := dir + "/" + bucket
+	resp, err := client.ObjectTransaction(ctx, &filer_pb.ObjectTransactionRequest{
+		LockKey:   path,
+		RequestId: uuid.NewString(),
+		RouteKey:  s3_constants.ObjectWriteRouteKeyPrefix + path,
+		Mutations: []*filer_pb.ObjectMutation{mutation},
+	})
+	if err != nil {
+		return err
+	}
+	if resp.Error != "" {
+		return errors.New(resp.Error)
+	}
+	return nil
 }

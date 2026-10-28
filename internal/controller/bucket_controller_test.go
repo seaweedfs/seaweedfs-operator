@@ -66,6 +66,9 @@ type fakeBucketAdmin struct {
 	lifecycle    map[string][]byte
 	lifecycleErr error
 	ttlErr       error
+
+	retention    map[string]string
+	retentionErr error
 }
 
 type closingFakeBucketAdmin struct {
@@ -109,6 +112,21 @@ func (f *fakeBucketAdmin) SetVersioning(_ context.Context, name, status string) 
 func (f *fakeBucketAdmin) EnableObjectLock(_ context.Context, name string) error {
 	f.record("Lock:" + name)
 	return f.lockErr
+}
+func (f *fakeBucketAdmin) SetDefaultRetention(_ context.Context, name, mode string, days, years int) error {
+	f.record("Retention:" + name + ":" + mode + ":" + intStr(int64(days)) + "d:" + intStr(int64(years)) + "y")
+	if f.retentionErr != nil {
+		return f.retentionErr
+	}
+	if f.retention == nil {
+		f.retention = map[string]string{}
+	}
+	if mode == "" {
+		delete(f.retention, name)
+	} else {
+		f.retention[name] = mode
+	}
+	return nil
 }
 func (f *fakeBucketAdmin) SetQuota(_ context.Context, name string, sizeMiB int64, enforce bool) error {
 	f.record("Quota:" + name + ":" + intStr(sizeMiB) + ":enforce=" + boolStr(enforce))
@@ -1087,6 +1105,145 @@ func TestReconcile_AccessRevokesRemovedUsers(t *testing.T) {
 	if got.Annotations[AnnotationAppliedAccess] != "alice" {
 		t.Errorf("applied-access annotation = %q want %q",
 			got.Annotations[AnnotationAppliedAccess], "alice")
+	}
+}
+
+func TestReconcile_DefaultRetentionApplied(t *testing.T) {
+	days := int32(30)
+	bucket := newTestBucket("photos")
+	bucket.Spec.Versioning = seaweedv1.VersioningEnabled
+	bucket.Spec.ObjectLock = true
+	bucket.Spec.DefaultRetention = &seaweedv1.BucketDefaultRetention{
+		Mode: "Governance",
+		Days: &days,
+	}
+
+	fa := newFakeAdmin()
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+	reconcileUntilStable(t, r, key, 5)
+
+	for _, want := range []string{"Lock:photos", "Retention:photos:GOVERNANCE:30d:0y"} {
+		if len(callsFor(fa.calls, want)) == 0 {
+			t.Errorf("missing call %q; calls=%v", want, fa.calls)
+		}
+	}
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Status.DefaultRetention == nil || got.Status.DefaultRetention.Mode != seaweedv1.RetentionModeGovernance {
+		t.Errorf("status.defaultRetention=%+v want mode GOVERNANCE", got.Status.DefaultRetention)
+	}
+}
+
+// A spec without defaultRetention clears the rule only when status shows
+// this controller applied one; a rule written out-of-band is not owned.
+func TestReconcile_DefaultRetentionRemovedWhenOwned(t *testing.T) {
+	days := int32(30)
+	bucket := newTestBucket("photos")
+	bucket.Spec.Versioning = seaweedv1.VersioningEnabled
+	bucket.Spec.ObjectLock = true
+	bucket.Status.BucketName = "photos"
+	bucket.Status.ObjectLockEnabled = true
+	bucket.Status.DefaultRetention = &seaweedv1.BucketDefaultRetention{
+		Mode: seaweedv1.RetentionModeGovernance,
+		Days: &days,
+	}
+	bucket.Finalizers = []string{BucketFinalizer}
+
+	fa := newFakeAdmin()
+	fa.existsResp["photos"] = true
+	fa.retention = map[string]string{"photos": "GOVERNANCE"}
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+	reconcileUntilStable(t, r, key, 5)
+
+	if got := callsFor(fa.calls, "Retention:photos::0d:0y"); len(got) == 0 {
+		t.Errorf("missing retention clear call; calls=%v", fa.calls)
+	}
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Status.DefaultRetention != nil {
+		t.Errorf("status.defaultRetention=%+v want nil", got.Status.DefaultRetention)
+	}
+}
+
+// A failure after the retention write must not strand the claim: status
+// records ownership so a later pass can still update or clear the rule.
+func TestReconcile_DefaultRetentionClaimedBeforeLaterFailure(t *testing.T) {
+	days := int32(30)
+	bucket := newTestBucket("photos")
+	bucket.Spec.Versioning = seaweedv1.VersioningEnabled
+	bucket.Spec.ObjectLock = true
+	bucket.Spec.DefaultRetention = &seaweedv1.BucketDefaultRetention{
+		Mode: "Governance",
+		Days: &days,
+	}
+	bucket.Spec.Quota = &seaweedv1.BucketQuota{
+		Size:    resource.MustParse("100Gi"),
+		Enforce: true,
+	}
+
+	fa := newFakeAdmin()
+	fa.quotaErr = errors.New("quota backend down")
+	r, cli := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+	for i := 0; i < 5; i++ {
+		res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+		if err != nil {
+			t.Fatalf("reconcile step %d: %v", i, err)
+		}
+		if !res.Requeue && res.RequeueAfter == 0 {
+			break
+		}
+	}
+
+	got := &seaweedv1.Bucket{}
+	if err := cli.Get(context.Background(), key, got); err != nil {
+		t.Fatalf("get bucket: %v", err)
+	}
+	if got.Status.Phase != seaweedv1.BucketPhaseFailed {
+		t.Fatalf("phase=%q want Failed", got.Status.Phase)
+	}
+	if got.Status.DefaultRetention == nil || got.Status.DefaultRetention.Mode != seaweedv1.RetentionModeGovernance {
+		t.Fatalf("status.defaultRetention=%+v want the applied GOVERNANCE claim", got.Status.DefaultRetention)
+	}
+
+	// Dropping spec.defaultRetention must still clear the stranded rule.
+	got.Spec.DefaultRetention = nil
+	if err := cli.Update(context.Background(), got); err != nil {
+		t.Fatalf("update bucket: %v", err)
+	}
+	fa.quotaErr = nil
+	reconcileUntilStable(t, r, key, 5)
+	if got := callsFor(fa.calls, "Retention:photos::0d:0y"); len(got) == 0 {
+		t.Errorf("missing retention clear call; calls=%v", fa.calls)
+	}
+}
+
+func TestReconcile_DefaultRetentionNotTouchedWhenUnmanaged(t *testing.T) {
+	bucket := newTestBucket("photos")
+	bucket.Spec.Versioning = seaweedv1.VersioningEnabled
+	bucket.Spec.ObjectLock = true
+	bucket.Status.BucketName = "photos"
+	bucket.Status.ObjectLockEnabled = true
+	bucket.Finalizers = []string{BucketFinalizer}
+
+	fa := newFakeAdmin()
+	fa.existsResp["photos"] = true
+	fa.retention = map[string]string{"photos": "COMPLIANCE"}
+	r, _ := testReconciler(t, fa, newTestSeaweed(), bucket)
+	key := types.NamespacedName{Namespace: bucket.Namespace, Name: bucket.Name}
+	reconcileUntilStable(t, r, key, 5)
+
+	if got := callsFor(fa.calls, "Retention:photos:"); len(got) != 0 {
+		t.Errorf("unexpected retention calls %v for unmanaged rule; calls=%v", got, fa.calls)
+	}
+	if fa.retention["photos"] != "COMPLIANCE" {
+		t.Errorf("out-of-band retention was clobbered: %v", fa.retention)
 	}
 }
 

@@ -679,6 +679,11 @@ Supported per-bucket configuration:
   retaining version history.
 - `objectLock`: enable S3 Object Lock. Requires `versioning: Enabled`
   and is irreversible (matches S3 / SeaweedFS semantics).
+- `defaultRetention`: the Object Lock default retention rule for new
+  objects — `mode` `GOVERNANCE` or `COMPLIANCE` (accepted
+  case-insensitively) and exactly one of `days` or `years`. Requires
+  `objectLock: true`. Removing the block clears the rule on the bucket
+  without touching retention already granted to existing objects.
 - `quota`: cap total stored size with `resource.Quantity` (e.g. `100Gi`)
   and toggle enforcement.
 - `owner` / `access`: bind an existing IAM identity as bucket owner and
@@ -709,8 +714,10 @@ Supported per-bucket configuration:
   Buckets in the first place.
 
 CEL admission validations enforce: S3-compliant bucket-name regex, the
-`objectLock` ↔ `versioning` interlock, immutability of `objectLock` once
-enabled, and the "no return to Off" versioning transition rule.
+`objectLock` ↔ `versioning` interlock, `defaultRetention` requires
+`objectLock` and exactly one of `days`/`years`, immutability of
+`objectLock` once enabled, and the "no return to Off" versioning
+transition rule.
 
 See the `config/samples/seaweed_v1_bucket*.yaml` files for end-to-end
 examples (minimal, full-featured, object lock, cross-namespace).

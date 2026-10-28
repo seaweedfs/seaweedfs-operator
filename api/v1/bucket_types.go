@@ -34,6 +34,44 @@ const (
 	VersioningSuspended VersioningState = "Suspended"
 )
 
+// RetentionMode is the S3 Object Lock retention mode for a bucket's
+// default retention rule. Accepted case-insensitively; stored on the
+// bucket in the AWS uppercase form.
+// +kubebuilder:validation:XValidation:rule="self.lowerAscii() in ['governance', 'compliance']",message="must be GOVERNANCE or COMPLIANCE (case-insensitive)"
+type RetentionMode string
+
+const (
+	// RetentionModeGovernance lets users holding
+	// s3:BypassGovernanceRetention shorten or remove retention.
+	RetentionModeGovernance RetentionMode = "GOVERNANCE"
+	// RetentionModeCompliance cannot be shortened or removed by anyone,
+	// including the root account, until the period elapses.
+	RetentionModeCompliance RetentionMode = "COMPLIANCE"
+)
+
+// BucketDefaultRetention is the S3 Object Lock default retention rule:
+// every new object inherits this retain-until window unless the upload
+// sets an explicit retention. Exactly one of days or years is required.
+// Removing the block clears the rule on the bucket — it never shortens
+// retention already granted to existing objects, which is why S3 (and
+// this API) lets it be changed or removed even under COMPLIANCE.
+// +kubebuilder:validation:XValidation:rule="has(self.days) != has(self.years)",message="exactly one of days or years must be set"
+type BucketDefaultRetention struct {
+	// Mode is GOVERNANCE or COMPLIANCE.
+	// +kubebuilder:validation:Required
+	Mode RetentionMode `json:"mode"`
+
+	// Days is the retention period in days.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	Days *int32 `json:"days,omitempty"`
+
+	// Years is the retention period in years.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	Years *int32 `json:"years,omitempty"`
+}
+
 // BucketReclaimPolicy controls what happens to the underlying SeaweedFS
 // bucket when the Bucket CR is removed.
 // +kubebuilder:validation:Enum=Retain;Delete
@@ -183,6 +221,7 @@ type BucketPlacement struct {
 // +kubebuilder:validation:XValidation:rule="has(self.clusterRef) != has(self.seaweedRef)",message="exactly one of clusterRef or seaweedRef must be set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.clusterRef) || (has(self.clusterRef) && self.clusterRef == oldSelf.clusterRef)",message="clusterRef is immutable"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.seaweedRef) || (has(self.seaweedRef) && self.seaweedRef == oldSelf.seaweedRef)",message="seaweedRef is immutable"
+// +kubebuilder:validation:XValidation:rule="!has(self.defaultRetention) || self.objectLock",message="defaultRetention requires objectLock: true"
 type BucketSpec struct {
 	// Name is the S3 bucket name. Defaults to .metadata.name. Must satisfy
 	// the S3 bucket naming rules: 3-63 characters, lowercase alphanumeric,
@@ -251,6 +290,13 @@ type BucketSpec struct {
 	// +kubebuilder:default:=false
 	// +kubebuilder:validation:XValidation:rule="!oldSelf || self",message="objectLock cannot be disabled once enabled"
 	ObjectLock bool `json:"objectLock,omitempty"`
+
+	// DefaultRetention is the bucket's Object Lock default retention rule
+	// — the retain-until window applied to new objects. Requires
+	// objectLock: true. Removing the block clears the rule on the bucket;
+	// retention already granted to existing objects is unaffected.
+	// +optional
+	DefaultRetention *BucketDefaultRetention `json:"defaultRetention,omitempty"`
 
 	// Quota optionally caps the bucket's total stored size. Omit the
 	// block entirely to leave quota unmanaged.
@@ -407,6 +453,13 @@ type BucketStatus struct {
 	// ObjectLockEnabled is the observed Object Lock configuration.
 	// +optional
 	ObjectLockEnabled bool `json:"objectLockEnabled,omitempty"`
+
+	// DefaultRetention records the default retention rule last applied by
+	// this controller, so removing it from spec clears the stored rule
+	// rather than abandoning it. A rule written out-of-band on the filer
+	// is left alone until spec.defaultRetention claims the slot.
+	// +optional
+	DefaultRetention *BucketDefaultRetention `json:"defaultRetention,omitempty"`
 
 	// Quota is the observed quota on the filer.
 	// +optional

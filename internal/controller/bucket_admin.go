@@ -47,6 +47,10 @@ type BucketAdmin interface {
 	DeleteBucket(ctx context.Context, name string) error
 	SetVersioning(ctx context.Context, name, status string) error
 	EnableObjectLock(ctx context.Context, name string) error
+	// SetDefaultRetention writes the bucket's Object Lock default retention
+	// rule; an empty mode clears the rule. Idempotent — a no-op when the
+	// stored rule already matches.
+	SetDefaultRetention(ctx context.Context, name, mode string, days, years int) error
 	SetQuota(ctx context.Context, name string, sizeMiB int64, enforce bool) error
 	RemoveQuota(ctx context.Context, name string) error
 	SetOwner(ctx context.Context, name, owner string) error
@@ -206,6 +210,14 @@ func (a *swadminBucketAdmin) SetVersioning(ctx context.Context, name, status str
 
 func (a *swadminBucketAdmin) EnableObjectLock(ctx context.Context, name string) error {
 	_, err := a.run(ctx, fmt.Sprintf("s3.bucket.lock -name %s -enable", name))
+	return err
+}
+
+func (a *swadminBucketAdmin) SetDefaultRetention(ctx context.Context, name, mode string, days, years int) error {
+	err := a.sa.SetObjectLockDefaultRetention(ctx, name, mode, days, years)
+	if errors.Is(err, swadmin.ErrBucketNotFound) {
+		return ErrBucketNotFound
+	}
 	return err
 }
 

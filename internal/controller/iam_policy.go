@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+	s3policyengine "github.com/seaweedfs/seaweedfs/weed/s3api/policy_engine"
 )
 
 // policyDocumentVersion is the AWS IAM policy language version stamped on
@@ -191,8 +192,54 @@ func canonStatement(raw json.RawMessage) (string, map[string]any, error) {
 // policy: every stored statement matching one of the document's is replaced
 // by a copy carrying the retained Sid marker, marked copies already present
 // are kept, and owned statements missing from the stored document are
-// appended marked — so a retried deletion changes nothing.
+// appended marked — so a retried deletion changes nothing. Markers keep the
+// statement's original Sid unless that would push the document past the
+// bucket policy limit, in which case the bare prefix is used: a mark that
+// cannot fit must not keep a deletion pending forever.
 func restampRetained(stored, doc string) (string, error) {
+	out, err := restampRetainedMarked(stored, doc, func(sid string) string {
+		return retainedStatementSid + sid
+	})
+	if err != nil || len(out) <= s3policyengine.MaxBucketPolicySize {
+		return out, err
+	}
+	return restampRetainedMarked(stored, doc, func(string) string {
+		return retainedStatementSid
+	})
+}
+
+// retainedMarkGrowth returns the most a compact restamp of doc's statements
+// can add to a stored document: a Sid shorter than the marker grows to fit
+// it, and a statement without a Sid grows a whole new field. A Retain
+// binding reserves that room when its policy applies so the deletion-time
+// restamp is guaranteed to fit.
+func retainedMarkGrowth(doc string) (int, error) {
+	stmts, err := policyStatements(doc)
+	if err != nil {
+		return 0, err
+	}
+	growth := 0
+	for _, raw := range stmts {
+		_, st, err := canonStatement(raw)
+		if err != nil {
+			return 0, err
+		}
+		if sid, ok := st["Sid"].(string); ok {
+			if d := len(retainedStatementSid) - len(sid); d > 0 {
+				growth += d
+			}
+		} else {
+			growth += len(`"Sid":"` + retainedStatementSid + `",`)
+		}
+	}
+	return growth, nil
+}
+
+// restampRetainedMarked restamps owned statements with mark applied to
+// their Sid. Statements match on their content minus Sid — the mark rewrites
+// it — so copies already marked by an earlier pass, in either form, are
+// recognized and kept instead of duplicated.
+func restampRetainedMarked(stored, doc string, mark func(string) string) (string, error) {
 	var storedStmts []json.RawMessage
 	if strings.TrimSpace(stored) != "" {
 		var err error
@@ -204,27 +251,34 @@ func restampRetained(stored, doc string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	unmarked := map[string]json.RawMessage{} // own statement canon -> marked copy
-	markedOf := map[string]string{}          // marked statement canon -> own canon
+	sidlessKey := func(raw json.RawMessage) (string, error) {
+		_, st, err := canonStatement(raw)
+		if err != nil {
+			return "", err
+		}
+		delete(st, "Sid")
+		key, err := json.Marshal(st)
+		return string(key), err
+	}
+	marked := map[string]json.RawMessage{} // own statement key -> marked copy
 	var order []string
 	for _, raw := range ownStmts {
-		canon, st, err := canonStatement(raw)
+		key, err := sidlessKey(raw)
+		if err != nil {
+			return "", err
+		}
+		_, st, err := canonStatement(raw)
 		if err != nil {
 			return "", err
 		}
 		sid, _ := st["Sid"].(string)
-		st["Sid"] = retainedStatementSid + sid
+		st["Sid"] = mark(sid)
 		mraw, err := json.Marshal(st)
 		if err != nil {
 			return "", err
 		}
-		mcanon, _, err := canonStatement(mraw)
-		if err != nil {
-			return "", err
-		}
-		unmarked[canon] = mraw
-		markedOf[mcanon] = canon
-		order = append(order, canon)
+		marked[key] = mraw
+		order = append(order, key)
 	}
 	found := map[string]bool{}
 	seen := map[string]struct{}{}
@@ -242,32 +296,38 @@ func restampRetained(stored, doc string) (string, error) {
 		return nil
 	}
 	for _, raw := range storedStmts {
-		canon, _, err := canonStatement(raw)
+		key, err := sidlessKey(raw)
 		if err != nil {
 			return "", err
 		}
-		switch marked, ok := unmarked[canon]; {
-		case ok:
-			// unmarked owned statement: restamp it
-			if err := keep(marked); err != nil {
-				return "", err
-			}
-			found[canon] = true
-		case markedOf[canon] != "":
+		_, st, err := canonStatement(raw)
+		if err != nil {
+			return "", err
+		}
+		sid, _ := st["Sid"].(string)
+		if strings.HasPrefix(sid, retainedStatementSid) {
 			// already marked on an earlier pass
+			if _, own := marked[key]; own {
+				found[key] = true
+			}
 			if err := keep(raw); err != nil {
 				return "", err
 			}
-			found[markedOf[canon]] = true
-		default:
-			if err := keep(raw); err != nil {
+			continue
+		}
+		if m, own := marked[key]; own {
+			// unmarked owned statement: restamp it
+			if err := keep(m); err != nil {
 				return "", err
 			}
+			found[key] = true
+		} else if err := keep(raw); err != nil {
+			return "", err
 		}
 	}
-	for _, canon := range order {
-		if !found[canon] {
-			if err := keep(unmarked[canon]); err != nil {
+	for _, key := range order {
+		if !found[key] {
+			if err := keep(marked[key]); err != nil {
 				return "", err
 			}
 		}

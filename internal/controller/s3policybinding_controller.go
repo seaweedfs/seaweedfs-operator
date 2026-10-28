@@ -203,10 +203,24 @@ func (r *S3PolicyBindingReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	mergedDocs := make(map[string]string, len(desiredBuckets))
 	policyDocs := map[string]string{policyName: policyDoc}
+	retainedGrowth := 0
+	if binding.Spec.ReclaimPolicy == seaweedv1.S3ReclaimRetain {
+		var err error
+		if retainedGrowth, err = retainedMarkGrowth(policyDoc); err != nil {
+			return r.fail(ctx, &binding, "PolicyNotBucketPolicy", err.Error())
+		}
+	}
 	for _, b := range desiredBuckets {
 		merged, err := r.mergedBucketPolicy(ctx, admin, &binding, b, policyDoc, policyDocs)
 		if err != nil {
 			return r.fail(ctx, &binding, "PolicyNotBucketPolicy", err.Error())
+		}
+		// A Retain deletion restamps this binding's statements inside the
+		// stored document; the merged document must leave room for the
+		// markers or the finalizer can never complete.
+		if len(merged)+retainedGrowth > s3policyengine.MaxBucketPolicySize {
+			return r.fail(ctx, &binding, "PolicyNotBucketPolicy",
+				fmt.Sprintf("merged policy on %q leaves no room to mark its grants retained on delete", b))
 		}
 		mergedDocs[b] = merged
 	}

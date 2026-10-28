@@ -44,9 +44,9 @@ const (
 // S3Subject is a single principal a policy is attached to.
 type S3Subject struct {
 	// Kind is the subject kind. S3Identity attaches the policy to an IAM
-	// user; Bucket stores it as the named bucket's bucket policy (which
-	// therefore must carry a Principal per statement, as resource policies
-	// require). Defaults to S3Identity.
+	// user; Bucket merges the policy's statements into the named bucket's
+	// bucket policy (which therefore must carry a Principal per statement,
+	// as resource policies require). Defaults to S3Identity.
 	// +optional
 	// +kubebuilder:default:=S3Identity
 	Kind S3SubjectKind `json:"kind,omitempty"`
@@ -119,8 +119,8 @@ type S3PolicyBindingStatus struct {
 	// +listType=atomic
 	AttachedSubjects []string `json:"attachedSubjects,omitempty"`
 
-	// AttachedBuckets lists the bucket names the policy is currently
-	// applied to as their bucket policy.
+	// AttachedBuckets lists the bucket names the policy currently
+	// contributes statements to.
 	// +optional
 	// +listType=atomic
 	AttachedBuckets []string `json:"attachedBuckets,omitempty"`

@@ -876,9 +876,12 @@ underlying IAM object. Set `reclaimPolicy: Retain` to opt out.
   use `policyDocument` (not `statements`) with a `Principal` per
   statement, and `Resource` entries scoped to the bound buckets. One
   document may be shared across many buckets, e.g. granting access by
-  `jwt:groups` claim. A bucket carries one policy document, so when two
-  bindings target the same bucket the oldest wins and the other reports
-  `reason: BucketConflict`.
+  `jwt:groups` claim. A bucket carries one policy document, so when
+  several bindings target the same bucket their statements merge into a
+  single document — the same attachment-merging model Gateway API uses —
+  with contributors ordered by binding name and duplicate statements
+  stored once. Removing a subject or deleting a binding rewrites the
+  stored document from the remaining contributors.
 
   ```yaml
   apiVersion: seaweed.seaweedfs.com/v1

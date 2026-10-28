@@ -91,33 +91,30 @@ func buildPolicyDocument(spec *seaweedv1.S3PolicySpec) (string, error) {
 	return string(out), nil
 }
 
-// mergePolicyDocuments concatenates the statements of several policy
-// documents into one, in the order the documents are given and dropping
-// duplicates (compared after JSON canonicalization). Statement JSON passes
-// through verbatim so Principals, conditions, and other clauses survive
-// untouched. A single document is returned as-is — a binding applying alone
-// stores its policy document unchanged.
-func mergePolicyDocuments(docs []string) (string, error) {
-	if len(docs) == 1 {
-		return docs[0], nil
-	}
-	statements := []json.RawMessage{}
+// retainedStatementSid marks statements a reclaimPolicy=Retain binding left
+// in a bucket policy on deletion. The marker rides inside the stored
+// document so later merges — which rebuild it from live bindings alone —
+// keep carrying the retained grant until it is removed out of band.
+const retainedStatementSid = "seaweedfs:retained:"
+
+// mergedStatements concatenates the raw statements of several policy
+// documents, dropping duplicates (compared after JSON canonicalization).
+func mergedStatements(docs []string) ([]json.RawMessage, error) {
+	var statements []json.RawMessage
 	seen := map[string]struct{}{}
 	for _, doc := range docs {
-		var parsed struct {
-			Statement []json.RawMessage `json:"Statement"`
+		parsed, err := policyStatements(doc)
+		if err != nil {
+			return nil, fmt.Errorf("contributor policy is not valid JSON: %w", err)
 		}
-		if err := json.Unmarshal([]byte(doc), &parsed); err != nil {
-			return "", fmt.Errorf("contributor policy is not valid JSON: %w", err)
-		}
-		for _, raw := range parsed.Statement {
+		for _, raw := range parsed {
 			var canonical any
 			if err := json.Unmarshal(raw, &canonical); err != nil {
-				return "", fmt.Errorf("contributor statement is not valid JSON: %w", err)
+				return nil, fmt.Errorf("contributor statement is not valid JSON: %w", err)
 			}
 			key, err := json.Marshal(canonical)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
 			if _, dup := seen[string(key)]; dup {
 				continue
@@ -126,6 +123,22 @@ func mergePolicyDocuments(docs []string) (string, error) {
 			statements = append(statements, raw)
 		}
 	}
+	return statements, nil
+}
+
+// policyStatements extracts the raw statements of a policy document.
+func policyStatements(doc string) ([]json.RawMessage, error) {
+	var parsed struct {
+		Statement []json.RawMessage `json:"Statement"`
+	}
+	if err := json.Unmarshal([]byte(doc), &parsed); err != nil {
+		return nil, err
+	}
+	return parsed.Statement, nil
+}
+
+// assemblePolicyDocument marshals statements into a policy document.
+func assemblePolicyDocument(statements []json.RawMessage) (string, error) {
 	out, err := json.Marshal(struct {
 		Version   string            `json:"Version"`
 		Statement []json.RawMessage `json:"Statement"`
@@ -134,6 +147,57 @@ func mergePolicyDocuments(docs []string) (string, error) {
 		return "", err
 	}
 	return string(out), nil
+}
+
+// retainedStatements returns the statements an earlier Retain deletion
+// marked in the stored bucket document — anything else stored is ignored,
+// and an unparseable document counts as empty since it gets overwritten
+// anyway. Removing a contributor never reaps retained grants.
+func retainedStatements(stored []byte) ([]json.RawMessage, error) {
+	if len(stored) == 0 {
+		return nil, nil
+	}
+	storedStatements, err := policyStatements(string(stored))
+	if err != nil {
+		return nil, nil
+	}
+	var out []json.RawMessage
+	for _, raw := range storedStatements {
+		var st struct {
+			Sid string `json:"Sid"`
+		}
+		if err := json.Unmarshal(raw, &st); err != nil {
+			return nil, err
+		}
+		if strings.HasPrefix(st.Sid, retainedStatementSid) {
+			out = append(out, raw)
+		}
+	}
+	return out, nil
+}
+
+// markRetainedStatements restamps a document's statements with the retained
+// Sid marker so the stored copy outlives the deleting binding.
+func markRetainedStatements(doc string) ([]json.RawMessage, error) {
+	statements, err := policyStatements(doc)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]json.RawMessage, 0, len(statements))
+	for _, raw := range statements {
+		var st map[string]any
+		if err := json.Unmarshal(raw, &st); err != nil {
+			return nil, err
+		}
+		sid, _ := st["Sid"].(string)
+		st["Sid"] = retainedStatementSid + sid
+		marked, err := json.Marshal(st)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, marked)
+	}
+	return out, nil
 }
 
 // normalizeActions accepts the bare wildcard "*" as a friendly alias for the

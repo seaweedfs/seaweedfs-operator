@@ -355,6 +355,145 @@ func TestS3PolicyBinding_BucketPolicyMergesContributors(t *testing.T) {
 	}
 }
 
+// A claimant whose document cannot serve as a bucket policy is left out of
+// the merge instead of failing the healthy contributors — the invalid
+// binding alone reports the problem.
+func TestS3PolicyBinding_InvalidPeerDoesNotBlockMerge(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedBucket("data")
+	doc := testBucketPolicyDoc("arn:aws:s3:::data/*")
+	if err := fa.PutPolicy(context.Background(), "rw", doc); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	if err := fa.PutPolicy(context.Background(), "broken",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::data/*"]}]}`); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	good := testBinding("aaa-good",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	bad := testBinding("zzz-bad",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	bad.Spec.PolicyRef.Name = "broken"
+	r, cli := newBindingReconciler(t, fa, good, bad)
+	goodKey := types.NamespacedName{Namespace: "media", Name: "aaa-good"}
+	badKey := types.NamespacedName{Namespace: "media", Name: "zzz-bad"}
+	reconcileStable(t, r, goodKey, 5)
+	reconcileOnce(t, r, badKey)
+	reconcileOnce(t, r, badKey)
+
+	if got := string(fa.bucketPolicies["data"]); got != doc {
+		t.Errorf("bucket policy = %q, want the valid contributor's document", got)
+	}
+	if got := getBinding(t, cli, "aaa-good"); got.Status.Phase != seaweedv1.S3PhaseReady {
+		t.Errorf("good phase = %q, want Ready", got.Status.Phase)
+	}
+	if got := getBinding(t, cli, "zzz-bad"); got.Status.Phase != seaweedv1.S3PhaseFailed || bindingReadyReason(got) != "PolicyNotBucketPolicy" {
+		t.Errorf("bad phase/reason = %q/%q, want Failed/PolicyNotBucketPolicy", got.Status.Phase, bindingReadyReason(got))
+	}
+}
+
+// A Retain deletion restamps the binding's statements in the stored
+// document, and later merges keep carrying the retained grant.
+func TestS3PolicyBinding_RetainKeepsGrantsInBucketPolicy(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedBucket("data")
+	docRetained := testBucketPolicyDoc("arn:aws:s3:::data/*")
+	docSurvivor := testBucketPolicyDoc("arn:aws:s3:::data")
+	if err := fa.PutPolicy(context.Background(), "rw", docRetained); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	if err := fa.PutPolicy(context.Background(), "other", docSurvivor); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	retained := testBinding("aaa-retained",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	retained.Spec.ReclaimPolicy = seaweedv1.S3ReclaimRetain
+	survivor := testBinding("zzz-survivor",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	survivor.Spec.PolicyRef.Name = "other"
+
+	r, cli := newBindingReconciler(t, fa, retained, survivor)
+	retainedKey := types.NamespacedName{Namespace: "media", Name: "aaa-retained"}
+	survivorKey := types.NamespacedName{Namespace: "media", Name: "zzz-survivor"}
+	reconcileStable(t, r, retainedKey, 5)
+	reconcileStable(t, r, survivorKey, 5)
+
+	live := getBinding(t, cli, "aaa-retained")
+	if err := cli.Delete(context.Background(), live); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reconcileStable(t, r, retainedKey, 5)
+
+	var parsed struct {
+		Statement []struct {
+			Sid      string   `json:"Sid"`
+			Resource []string `json:"Resource"`
+		} `json:"Statement"`
+	}
+	if err := json.Unmarshal(fa.bucketPolicies["data"], &parsed); err != nil {
+		t.Fatalf("stored policy is not JSON: %v", err)
+	}
+	if len(parsed.Statement) != 2 {
+		t.Fatalf("statement count after retain = %d, want survivor + retained", len(parsed.Statement))
+	}
+	var sawRetained, sawSurvivor bool
+	for _, st := range parsed.Statement {
+		if strings.HasPrefix(st.Sid, "seaweedfs:retained:") {
+			sawRetained = true
+		} else {
+			sawSurvivor = true
+		}
+	}
+	if !sawRetained || !sawSurvivor {
+		t.Errorf("stored statements = %+v, want a survivor statement and a marked retained one", parsed.Statement)
+	}
+
+	// The survivor's next merge must carry the retained statement forward.
+	reconcileStable(t, r, survivorKey, 5)
+	if err := json.Unmarshal(fa.bucketPolicies["data"], &parsed); err != nil {
+		t.Fatalf("stored policy is not JSON after resync: %v", err)
+	}
+	if len(parsed.Statement) != 2 {
+		t.Errorf("statement count after resync = %d, want retained grant kept", len(parsed.Statement))
+	}
+}
+
+// Releasing into a claimant whose document is invalid clears the stored
+// policy instead of installing the unusable survivor document.
+func TestS3PolicyBinding_ReleaseClearsWhenSurvivorPolicyInvalid(t *testing.T) {
+	fa := newFakeIAMAdmin()
+	fa.seedBucket("data")
+	doc := testBucketPolicyDoc("arn:aws:s3:::data/*")
+	if err := fa.PutPolicy(context.Background(), "rw", doc); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	if err := fa.PutPolicy(context.Background(), "broken",
+		`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::data/*"]}]}`); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+	owner := testBinding("aaa-owner",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	blocked := testBinding("zzz-blocked",
+		seaweedv1.S3Subject{Kind: seaweedv1.S3SubjectKindBucket, Name: "data"})
+	blocked.Spec.PolicyRef.Name = "broken"
+
+	r, cli := newBindingReconciler(t, fa, owner, blocked)
+	ownerKey := types.NamespacedName{Namespace: "media", Name: "aaa-owner"}
+	reconcileStable(t, r, ownerKey, 5)
+	if got := string(fa.bucketPolicies["data"]); got != doc {
+		t.Fatalf("bucket policy = %q, want applied before delete", got)
+	}
+
+	live := getBinding(t, cli, "aaa-owner")
+	if err := cli.Delete(context.Background(), live); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	reconcileStable(t, r, ownerKey, 5)
+	if got := fa.bucketPolicies["data"]; got != nil {
+		t.Errorf("bucket policy after delete = %q, want cleared despite the invalid claimant", got)
+	}
+}
+
 // Statements two contributors carry identically are stored once.
 func TestS3PolicyBinding_BucketPolicyMergeDeduplicates(t *testing.T) {
 	fa := newFakeIAMAdmin()

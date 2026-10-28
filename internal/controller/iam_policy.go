@@ -176,28 +176,103 @@ func retainedStatements(stored []byte) ([]json.RawMessage, error) {
 	return out, nil
 }
 
-// markRetainedStatements restamps a document's statements with the retained
-// Sid marker so the stored copy outlives the deleting binding.
-func markRetainedStatements(doc string) ([]json.RawMessage, error) {
-	statements, err := policyStatements(doc)
-	if err != nil {
-		return nil, err
+// canonStatement returns a statement's canonical JSON (sorted keys, no
+// whitespace) and its decoded form.
+func canonStatement(raw json.RawMessage) (string, map[string]any, error) {
+	var st map[string]any
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return "", nil, err
 	}
-	out := make([]json.RawMessage, 0, len(statements))
-	for _, raw := range statements {
-		var st map[string]any
-		if err := json.Unmarshal(raw, &st); err != nil {
-			return nil, err
+	canon, err := json.Marshal(st)
+	return string(canon), st, err
+}
+
+// restampRetained marks doc's statements as retained inside the stored
+// policy: every stored statement matching one of the document's is replaced
+// by a copy carrying the retained Sid marker, marked copies already present
+// are kept, and owned statements missing from the stored document are
+// appended marked — so a retried deletion changes nothing.
+func restampRetained(stored, doc string) (string, error) {
+	var storedStmts []json.RawMessage
+	if strings.TrimSpace(stored) != "" {
+		var err error
+		if storedStmts, err = policyStatements(stored); err != nil {
+			return "", err
+		}
+	}
+	ownStmts, err := policyStatements(doc)
+	if err != nil {
+		return "", err
+	}
+	unmarked := map[string]json.RawMessage{} // own statement canon -> marked copy
+	markedOf := map[string]string{}          // marked statement canon -> own canon
+	var order []string
+	for _, raw := range ownStmts {
+		canon, st, err := canonStatement(raw)
+		if err != nil {
+			return "", err
 		}
 		sid, _ := st["Sid"].(string)
 		st["Sid"] = retainedStatementSid + sid
-		marked, err := json.Marshal(st)
+		mraw, err := json.Marshal(st)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
-		out = append(out, marked)
+		mcanon, _, err := canonStatement(mraw)
+		if err != nil {
+			return "", err
+		}
+		unmarked[canon] = mraw
+		markedOf[mcanon] = canon
+		order = append(order, canon)
 	}
-	return out, nil
+	found := map[string]bool{}
+	seen := map[string]struct{}{}
+	var out []json.RawMessage
+	keep := func(raw json.RawMessage) error {
+		canon, _, err := canonStatement(raw)
+		if err != nil {
+			return err
+		}
+		if _, dup := seen[canon]; dup {
+			return nil
+		}
+		seen[canon] = struct{}{}
+		out = append(out, raw)
+		return nil
+	}
+	for _, raw := range storedStmts {
+		canon, _, err := canonStatement(raw)
+		if err != nil {
+			return "", err
+		}
+		switch marked, ok := unmarked[canon]; {
+		case ok:
+			// unmarked owned statement: restamp it
+			if err := keep(marked); err != nil {
+				return "", err
+			}
+			found[canon] = true
+		case markedOf[canon] != "":
+			// already marked on an earlier pass
+			if err := keep(raw); err != nil {
+				return "", err
+			}
+			found[markedOf[canon]] = true
+		default:
+			if err := keep(raw); err != nil {
+				return "", err
+			}
+		}
+	}
+	for _, canon := range order {
+		if !found[canon] {
+			if err := keep(unmarked[canon]); err != nil {
+				return "", err
+			}
+		}
+	}
+	return assemblePolicyDocument(out)
 }
 
 // normalizeActions accepts the bare wildcard "*" as a friendly alias for the

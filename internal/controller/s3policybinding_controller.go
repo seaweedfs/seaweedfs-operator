@@ -405,6 +405,9 @@ func validateBucketPolicyDoc(policyDoc string, buckets []string) error {
 		return fmt.Errorf("policy document cannot serve as a bucket policy: %v", err)
 	}
 	for i, st := range doc.Statement {
+		if strings.HasPrefix(st.Sid, retainedStatementSid) {
+			return fmt.Errorf("statement %d: Sid %q uses the reserved %q prefix", i, st.Sid, retainedStatementSid)
+		}
 		if st.Principal == nil && st.NotPrincipal == nil {
 			return fmt.Errorf("statement %d: bucket policies must specify a Principal", i)
 		}
@@ -463,45 +466,33 @@ func (r *S3PolicyBindingReconciler) releaseBucketPolicy(ctx context.Context, adm
 		return err
 	}
 	if len(doc) > s3policyengine.MaxBucketPolicySize {
-		return nil
+		return fmt.Errorf("surviving contributors exceed the %d byte bucket policy limit", s3policyengine.MaxBucketPolicySize)
 	}
 	return applyBucketPolicy(ctx, admin, bucket, doc)
 }
 
 // retainBucketPolicy persists this binding's statements in the stored
-// document beyond deletion: survivors' contributions are rebuilt and this
-// binding's statements restamped with the retained marker so later merges
-// keep carrying the grant.
+// document beyond deletion: they are restamped with the retained marker so
+// later merges keep carrying the grant. The mark replaces the statements in
+// place, so a retried deletion does not add them twice.
 func (r *S3PolicyBindingReconciler) retainBucketPolicy(ctx context.Context, admin IAMAdmin, binding *seaweedv1.S3PolicyBinding, policyName, bucket string) error {
-	contributors, err := r.bucketContributors(ctx, admin, binding, bucket, "", map[string]string{})
-	if err != nil {
-		return err
-	}
-	retained, err := r.storedRetained(ctx, admin, bucket)
-	if err != nil {
-		return err
-	}
 	own, err := admin.GetPolicy(ctx, policyName)
-	switch {
-	case err == nil:
-		marked, err := markRetainedStatements(own)
-		if err != nil {
-			return err
+	if err != nil {
+		if errors.Is(err, ErrIAMNotFound) {
+			return nil
 		}
-		retained = append(retained, marked...)
-	case errors.Is(err, ErrIAMNotFound):
-	default:
 		return err
 	}
-	if len(contributors) == 0 && len(retained) == 0 {
-		return admin.SetBucketPolicy(ctx, bucket, nil)
+	stored, err := admin.GetBucketPolicy(ctx, bucket)
+	if err != nil {
+		return err
 	}
-	doc, err := assembleBucketPolicy(contributors, retained)
+	doc, err := restampRetained(string(stored), own)
 	if err != nil {
 		return err
 	}
 	if len(doc) > s3policyengine.MaxBucketPolicySize {
-		return nil
+		return fmt.Errorf("policy on %q exceeds the %d byte bucket policy limit", bucket, s3policyengine.MaxBucketPolicySize)
 	}
 	return applyBucketPolicy(ctx, admin, bucket, doc)
 }

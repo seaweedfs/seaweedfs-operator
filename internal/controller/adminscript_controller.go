@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -33,6 +34,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -43,6 +45,90 @@ import (
 // adminScriptRequeueAfter is the backoff used while the referenced Seaweed
 // cluster does not yet exist; the CronJob cannot be rendered until it does.
 const adminScriptRequeueAfter = 30 * time.Second
+
+// adminScriptLabelRequeue is the interval at which cluster pod labels are
+// re-checked while a run is active, so pods created mid-run are labeled too.
+const adminScriptLabelRequeue = 30 * time.Second
+
+// adminScriptLabelBackupAnnotation records, per AdminScript name, the pod
+// labels the controller overwrote plus the value each write applied, so
+// overlapping scripts unwind in reverse apply order. Value is JSON:
+// {"<script name>": {"<label key>": {"o": "<old value>"|null, "n": "<applied value>"}}}.
+const adminScriptLabelBackupAnnotation = "seaweed.seaweedfs.com/adminscript-labels-backup"
+
+// adminScriptLabelBackupEntry records the value a pod label held before an
+// AdminScript overwrote it (old is null when absent) and the value applied.
+type adminScriptLabelBackupEntry struct {
+	Old *string `json:"o"`
+	New string  `json:"n"`
+}
+
+// adminScriptLabelsFinalizer restores cluster pod labels an AdminScript set
+// before the object is allowed to disappear.
+const adminScriptLabelsFinalizer = "seaweed.seaweedfs.com/adminscript-pod-labels"
+
+// adminScriptLabelsClusterAnnotation records the name of the cluster whose
+// pods currently carry this AdminScript's labels, so a clusterRef edit still
+// restores the pods the labels were applied to.
+const adminScriptLabelsClusterAnnotation = "seaweed.seaweedfs.com/adminscript-labels-cluster"
+
+// reservedClusterPodLabel reports whether clusterPodLabels may not override
+// the key: these labels select and identify cluster pods, so overwriting them
+// hides pods from the selector that must restore them later.
+func reservedClusterPodLabel(key string) bool {
+	switch key {
+	case label.ManagedByLabelKey, label.ComponentLabelKey, label.NameLabelKey,
+		label.InstanceLabelKey, label.VersionLabelKey, label.PodName:
+		return true
+	}
+	return false
+}
+
+// scriptLabelCluster returns the cluster whose pods the script's labels were
+// applied to — the recorded cluster once labels were applied, else the
+// referenced one — so restore still finds them if clusterRef moved.
+func scriptLabelCluster(script *seaweedv1.AdminScript) string {
+	if name := script.Annotations[adminScriptLabelsClusterAnnotation]; name != "" {
+		return name
+	}
+	return script.Spec.ClusterRef.Name
+}
+
+// setScriptLabelCluster records the cluster whose pods carry this script's
+// labels, or clears the record once clusterPodLabels is empty.
+func (r *AdminScriptReconciler) setScriptLabelCluster(ctx context.Context, script *seaweedv1.AdminScript, clusterName string) error {
+	if len(script.Spec.ClusterPodLabels) == 0 {
+		clusterName = ""
+	}
+	if script.Annotations[adminScriptLabelsClusterAnnotation] == clusterName {
+		return nil
+	}
+	if clusterName == "" {
+		delete(script.Annotations, adminScriptLabelsClusterAnnotation)
+	} else {
+		if script.Annotations == nil {
+			script.Annotations = map[string]string{}
+		}
+		script.Annotations[adminScriptLabelsClusterAnnotation] = clusterName
+	}
+	return r.Update(ctx, script)
+}
+
+// isClusterPod reports whether the pod is owned by one of the cluster's
+// workloads — a StatefulSet, the volume DaemonSet, or a Deployment's
+// ReplicaSet — so labels cannot land on unrelated pods that happen to carry
+// matching name/instance labels.
+func isClusterPod(pod *corev1.Pod, clusterName string) bool {
+	for _, ref := range pod.OwnerReferences {
+		switch ref.Kind {
+		case "StatefulSet", "DaemonSet", "ReplicaSet":
+			if strings.HasPrefix(ref.Name, clusterName+"-") {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // AdminScriptReconciler reconciles an AdminScript into a native batch/v1
 // CronJob whose pod runs `weed shell` against the referenced cluster's
@@ -58,6 +144,7 @@ type AdminScriptReconciler struct {
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=adminscripts/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=adminscripts/finalizers,verbs=update
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;patch
 
 // Reconcile renders the CronJob for an AdminScript and mirrors the CronJob's
 // schedule status back onto the AdminScript.
@@ -71,11 +158,32 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Resolve the referenced cluster in the AdminScript's own namespace. The
 	// owned CronJob is garbage-collected automatically when the AdminScript
-	// is deleted, so no finalizer is needed.
+	// is deleted; only pod-label cleanup needs a finalizer.
 	var cluster seaweedv1.Seaweed
 	clusterKey := client.ObjectKey{Namespace: script.Namespace, Name: script.Spec.ClusterRef.Name}
-	if err := r.Get(ctx, clusterKey, &cluster); err != nil {
-		if apierrors.IsNotFound(err) {
+	clusterErr := r.Get(ctx, clusterKey, &cluster)
+
+	if !script.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(&script, adminScriptLabelsFinalizer) {
+			// The cluster may already be gone; the label selector only needs its name.
+			if err := r.syncClusterPodLabels(ctx, &script, scriptLabelCluster(&script), false); err != nil {
+				return ctrl.Result{}, err
+			}
+			controllerutil.RemoveFinalizer(&script, adminScriptLabelsFinalizer)
+			return ctrl.Result{}, r.Update(ctx, &script)
+		}
+		return ctrl.Result{}, nil
+	}
+
+	if len(script.Spec.ClusterPodLabels) > 0 && !controllerutil.ContainsFinalizer(&script, adminScriptLabelsFinalizer) {
+		controllerutil.AddFinalizer(&script, adminScriptLabelsFinalizer)
+		if err := r.Update(ctx, &script); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	if clusterErr != nil {
+		if apierrors.IsNotFound(clusterErr) {
 			log.Info("referenced Seaweed cluster not found; waiting", "cluster", clusterKey)
 			msg := fmt.Sprintf("Seaweed cluster %q not found in namespace %q", clusterKey.Name, clusterKey.Namespace)
 			if err := r.patchStatus(ctx, &script, seaweedv1.AdminScriptPhasePending, metav1.ConditionFalse, "ClusterNotFound", msg); err != nil {
@@ -83,7 +191,7 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			}
 			return ctrl.Result{RequeueAfter: adminScriptRequeueAfter}, nil
 		}
-		return ctrl.Result{}, err
+		return ctrl.Result{}, clusterErr
 	}
 
 	desired := r.buildCronJob(&script, &cluster)
@@ -93,6 +201,19 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if statusErr := r.patchStatus(ctx, &script, seaweedv1.AdminScriptPhasePending, metav1.ConditionFalse, "CronJobReconcileFailed", err.Error()); statusErr != nil {
 			log.Error(statusErr, "failed to update status after CronJob reconcile error")
 		}
+		return ctrl.Result{}, err
+	}
+
+	if appliedTo := scriptLabelCluster(&script); appliedTo != cluster.Name {
+		// clusterRef moved; restore the labels left on the previous cluster.
+		if err := r.syncClusterPodLabels(ctx, &script, appliedTo, false); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	if err := r.syncClusterPodLabels(ctx, &script, cluster.Name, len(cronJob.Status.Active) > 0); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.setScriptLabelCluster(ctx, &script, cluster.Name); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -107,6 +228,11 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.patchStatus(ctx, &script, phase, metav1.ConditionTrue, reason, message); err != nil {
 		return ctrl.Result{}, err
 	}
+	if len(cronJob.Status.Active) > 0 && len(script.Spec.ClusterPodLabels) > 0 {
+		// Requeue so pods created mid-run get labeled too and a missed
+		// CronJob status event cannot leave the labels stuck on.
+		return ctrl.Result{RequeueAfter: adminScriptLabelRequeue}, nil
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -116,6 +242,16 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // `weed shell` can authenticate to the masters over gRPC.
 func (r *AdminScriptReconciler) buildCronJob(script *seaweedv1.AdminScript, cluster *seaweedv1.Seaweed) *batchv1.CronJob {
 	labels := labelsForAdminScript(script.Name)
+	podLabels := make(map[string]string, len(labels)+len(script.Spec.ClusterPodLabels))
+	for k, v := range labels {
+		podLabels[k] = v
+	}
+	for k, v := range script.Spec.ClusterPodLabels {
+		if reservedClusterPodLabel(k) {
+			continue
+		}
+		podLabels[k] = v
+	}
 
 	image := cluster.ClusterImage()
 	if script.Spec.Image != nil && *script.Spec.Image != "" {
@@ -183,7 +319,7 @@ func (r *AdminScriptReconciler) buildCronJob(script *seaweedv1.AdminScript, clus
 		BackoffLimit:          script.Spec.BackoffLimit,
 		ActiveDeadlineSeconds: script.Spec.ActiveDeadlineSeconds,
 		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{Labels: labels},
+			ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 			Spec:       podSpec,
 		},
 	}
@@ -259,6 +395,136 @@ func (r *AdminScriptReconciler) createOrUpdateCronJob(ctx context.Context, owner
 	}
 	r.Recorder.Eventf(owner, corev1.EventTypeNormal, "CronJobUpdated", "updated CronJob %q", existing.Name)
 	return existing, nil
+}
+
+// syncClusterPodLabels applies spec.clusterPodLabels to every pod of the
+// referenced cluster while a run is active, and restores the previously
+// recorded label state once no run remains. Backups per AdminScript are kept
+// in adminScriptLabelBackupAnnotation so multiple scripts can label the same
+// pods and a spec edit mid-run never loses the original values.
+func (r *AdminScriptReconciler) syncClusterPodLabels(ctx context.Context, script *seaweedv1.AdminScript, clusterName string, active bool) error {
+	var pods corev1.PodList
+	if err := r.List(ctx, &pods, client.InNamespace(script.Namespace), client.MatchingLabels{
+		label.NameLabelKey:     "seaweedfs",
+		label.InstanceLabelKey: clusterName,
+	}); err != nil {
+		return err
+	}
+
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if !isClusterPod(pod, clusterName) {
+			continue
+		}
+		backups := map[string]map[string]adminScriptLabelBackupEntry{}
+		if raw := pod.Annotations[adminScriptLabelBackupAnnotation]; raw != "" {
+			if err := json.Unmarshal([]byte(raw), &backups); err != nil {
+				backups = nil
+			}
+		}
+		if backups == nil {
+			backups = map[string]map[string]adminScriptLabelBackupEntry{}
+		}
+		base := pod.DeepCopy()
+		if active && len(script.Spec.ClusterPodLabels) > 0 {
+			backup := backups[script.Name]
+			if backup == nil {
+				backup = map[string]adminScriptLabelBackupEntry{}
+				backups[script.Name] = backup
+			}
+			if pod.Labels == nil {
+				pod.Labels = map[string]string{}
+			}
+			for k, v := range script.Spec.ClusterPodLabels {
+				if reservedClusterPodLabel(k) {
+					continue
+				}
+				e, recorded := backup[k]
+				if recorded && pod.Labels[k] != e.New {
+					// Re-applying while another writer sits on top stacks
+					// this writer again: the writer that backed up its
+					// value now records what this writer had seen.
+					for name, other := range backups {
+						if name == script.Name {
+							continue
+						}
+						if o, ok := other[k]; ok && o.Old != nil && *o.Old == e.New {
+							o.Old = e.Old
+							other[k] = o
+						}
+					}
+					recorded = false
+				}
+				if !recorded {
+					e.Old = nil
+					if old, ok := pod.Labels[k]; ok {
+						e.Old = &old
+					}
+				}
+				e.New = v
+				backup[k] = e
+				pod.Labels[k] = v
+			}
+			for k, e := range backup {
+				if _, ok := script.Spec.ClusterPodLabels[k]; !ok {
+					releasePodLabel(backups, pod, script.Name, k, e)
+					delete(backup, k)
+				}
+			}
+			if len(backup) == 0 {
+				delete(backups, script.Name)
+			}
+		} else if backup, ok := backups[script.Name]; ok {
+			for k, e := range backup {
+				releasePodLabel(backups, pod, script.Name, k, e)
+			}
+			delete(backups, script.Name)
+		}
+		if len(backups) == 0 {
+			delete(pod.Annotations, adminScriptLabelBackupAnnotation)
+		} else {
+			raw, err := json.Marshal(backups)
+			if err != nil {
+				return err
+			}
+			if pod.Annotations == nil {
+				pod.Annotations = map[string]string{}
+			}
+			pod.Annotations[adminScriptLabelBackupAnnotation] = string(raw)
+		}
+		if apiequality.Semantic.DeepEqual(base.Labels, pod.Labels) &&
+			apiequality.Semantic.DeepEqual(base.Annotations, pod.Annotations) {
+			continue
+		}
+		if err := r.Patch(ctx, pod, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// releasePodLabel removes one script's write to a pod label. When another
+// script backed up the value this script applied, its backup is spliced to
+// the value this script saw; otherwise the pod label itself is restored,
+// but only while it still carries the applied value.
+func releasePodLabel(backups map[string]map[string]adminScriptLabelBackupEntry, pod *corev1.Pod, scriptName, key string, e adminScriptLabelBackupEntry) {
+	for name, other := range backups {
+		if name == scriptName {
+			continue
+		}
+		if o, ok := other[key]; ok && o.Old != nil && *o.Old == e.New {
+			o.Old = e.Old
+			other[key] = o
+			return
+		}
+	}
+	if pod.Labels[key] == e.New {
+		if e.Old == nil {
+			delete(pod.Labels, key)
+		} else {
+			pod.Labels[key] = *e.Old
+		}
+	}
 }
 
 // applyCronJobStatus mirrors the CronJob's schedule status onto the AdminScript.

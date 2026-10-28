@@ -229,6 +229,7 @@ leader-election lease has its own Role in the release namespace.
   verbs:
   - get
   - list
+  - patch
   - watch
 - apiGroups:
   - apps

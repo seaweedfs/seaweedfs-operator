@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -112,6 +113,26 @@ func signingKeyFingerprint(key []byte) string {
 func tlsMaterialFingerprint(ca, cert, key []byte) string {
 	sum := sha256.Sum256(bytes.Join([][]byte{ca, cert, key}, []byte{0}))
 	return hex.EncodeToString(sum[:8])
+}
+
+// peerAuthFingerprint renders the peer authorization a dial was built with
+// into the material fingerprint, so editing allowedCommonNames or
+// allowedWildcardDomain replaces cached clients built under the old
+// constraint instead of keeping removed identities trusted.
+func peerAuthFingerprint(tls *seaweedv1.TLSSpec) string {
+	if tls == nil {
+		return ""
+	}
+	var names []string
+	if c := tls.AllowedCommonNames; c != nil {
+		for _, l := range [][]string{c.Master, c.Volume, c.Filer, c.S3, c.Admin, c.Worker} {
+			names = append(names, l...)
+		}
+	}
+	sort.Strings(names)
+	names = append(names, tls.AllowedWildcardDomain)
+	sum := sha256.Sum256([]byte(strings.Join(names, "\x00")))
+	return "." + hex.EncodeToString(sum[:8])
 }
 
 // filerTarget bundles everything a gRPC client needs to reach a Seaweed
@@ -267,64 +288,70 @@ func loadOperatorGrpcDialOption(sw *seaweedv1.Seaweed) (grpc.DialOption, string,
 	if err != nil {
 		return nil, "", err
 	}
-	dialOption, err := swadmin.ClientTLSDialOptionVerifyPeer(ca, cert, key, expectedServerPeer(sw.Spec.TLS))
+	dialOption, err := swadmin.ClientTLSDialOptionVerifyPeer(ca, cert, key, expectedServerPeer(sw))
 	if err != nil {
 		return nil, "", fmt.Errorf("%w: build gRPC TLS credentials from %s: %v", errOperatorTLSUnavailable, dir, err)
 	}
-	return dialOption, tlsMaterialFingerprint(ca, cert, key), nil
+	return dialOption, tlsMaterialFingerprint(ca, cert, key) + peerAuthFingerprint(sw.Spec.TLS), nil
 }
 
 // expectedServerPeer derives the server identity the operator's dial must
-// see from the peer authorization the CR declares. On a shared CA (a SPIRE
-// trust domain, for example) chain verification alone accepts any workload
-// the CA issues, so the leaf is additionally checked against the configured
-// wildcard domain — matching a common name, a DNS SAN, or a spiffe:// URI
-// SAN under that trust domain — or against the union of the declared common
-// names when no wildcard domain is set. A CR with neither configured passes
-// no constraint and keeps chain-only verification.
-func expectedServerPeer(tls *seaweedv1.TLSSpec) func(*x509.Certificate) error {
-	if tls == nil {
+// see. On a shared CA (a SPIRE trust domain, for example) chain verification
+// alone accepts any workload the CA issues, so the leaf must also present an
+// identity the cluster owns: a name in the declared authorization — the
+// wildcard domain matched by CN or DNS SAN suffix or by spiffe:// URI SAN
+// trust domain, or an entry in allowedCommonNames — or one of the cluster's
+// component service DNS names, which covers CA-issued certs minted for the
+// services rather than the workload. A CR with no authorization configured
+// keeps chain-only verification.
+func expectedServerPeer(sw *seaweedv1.Seaweed) func(*x509.Certificate) error {
+	tls := sw.Spec.TLS
+	if tls == nil || (tls.AllowedWildcardDomain == "" && tls.AllowedCommonNames == nil) {
 		return nil
 	}
-	if domain := tls.AllowedWildcardDomain; domain != "" {
-		trustDomain := strings.TrimPrefix(domain, ".")
-		return func(leaf *x509.Certificate) error {
-			if strings.HasSuffix(leaf.Subject.CommonName, domain) {
-				return nil
-			}
-			for _, dns := range leaf.DNSNames {
-				if strings.HasSuffix(dns, domain) {
-					return nil
-				}
-			}
-			for _, uri := range leaf.URIs {
-				if uri.Scheme == "spiffe" && uri.Host == trustDomain {
-					return nil
-				}
-			}
-			return fmt.Errorf("server certificate identity matches no allowed wildcard domain %q", domain)
-		}
-	}
+	domain := tls.AllowedWildcardDomain
+	trustDomain := strings.TrimPrefix(domain, ".")
+	var names map[string]bool
 	if c := tls.AllowedCommonNames; c != nil {
-		allowed := map[string]bool{}
-		for _, names := range [][]string{c.Master, c.Volume, c.Filer, c.S3, c.Admin, c.Worker} {
-			for _, n := range names {
-				allowed[n] = true
+		names = map[string]bool{}
+		for _, l := range [][]string{c.Master, c.Volume, c.Filer, c.S3, c.Admin, c.Worker} {
+			for _, n := range l {
+				names[n] = true
 			}
 		}
-		return func(leaf *x509.Certificate) error {
-			if allowed[leaf.Subject.CommonName] {
+	}
+	ns := sw.Namespace
+	var services []string
+	for _, c := range []string{"master", "volume", "filer", "admin", "worker", "s3"} {
+		services = append(services, sw.Name+"-"+c)
+	}
+	return func(leaf *x509.Certificate) error {
+		if domain != "" && strings.HasSuffix(leaf.Subject.CommonName, domain) {
+			return nil
+		}
+		if names[leaf.Subject.CommonName] {
+			return nil
+		}
+		for _, dns := range leaf.DNSNames {
+			if domain != "" && strings.HasSuffix(dns, domain) {
 				return nil
 			}
-			for _, uri := range leaf.URIs {
-				if allowed[uri.String()] {
+			for _, svc := range services {
+				if dns == svc || dns == svc+"."+ns || strings.HasSuffix(dns, "."+svc+"-peer."+ns+".svc.cluster.local") {
 					return nil
 				}
 			}
-			return fmt.Errorf("server certificate identity %q matches no entry in spec.tls.allowedCommonNames", leaf.Subject.CommonName)
 		}
+		for _, uri := range leaf.URIs {
+			if domain != "" && uri.Scheme == "spiffe" && uri.Host == trustDomain {
+				return nil
+			}
+			if names[uri.String()] {
+				return nil
+			}
+		}
+		return fmt.Errorf("server certificate identity %q is not authorized by spec.tls", leaf.Subject.CommonName)
 	}
-	return nil
 }
 
 // reportClusterUnreachable persists ClusterReachable=False on obj's status

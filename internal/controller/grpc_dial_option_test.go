@@ -269,15 +269,21 @@ func TestExpectedServerPeer(t *testing.T) {
 		}
 		return u
 	}
+	swWith := func(tls *seaweedv1.TLSSpec) *seaweedv1.Seaweed {
+		return &seaweedv1.Seaweed{
+			ObjectMeta: metav1.ObjectMeta{Name: "seaweed", Namespace: "media"},
+			Spec:       seaweedv1.SeaweedSpec{TLS: tls},
+		}
+	}
 
 	t.Run("nil spec passes no constraint", func(t *testing.T) {
-		if expectedServerPeer(nil) != nil {
+		if expectedServerPeer(swWith(nil)) != nil {
 			t.Fatal("expected nil verifier")
 		}
 	})
 
 	t.Run("wildcard domain matches leaf CN", func(t *testing.T) {
-		verify := expectedServerPeer(&seaweedv1.TLSSpec{AllowedWildcardDomain: ".e2e.test"})
+		verify := expectedServerPeer(swWith(&seaweedv1.TLSSpec{AllowedWildcardDomain: ".e2e.test"}))
 		if err := verify(&x509.Certificate{Subject: pkix.Name{CommonName: "seaweed.e2e.test"}}); err != nil {
 			t.Fatalf("expected pass, got %v", err)
 		}
@@ -287,7 +293,7 @@ func TestExpectedServerPeer(t *testing.T) {
 	})
 
 	t.Run("wildcard domain matches spiffe trust domain", func(t *testing.T) {
-		verify := expectedServerPeer(&seaweedv1.TLSSpec{AllowedWildcardDomain: "cluster.local"})
+		verify := expectedServerPeer(swWith(&seaweedv1.TLSSpec{AllowedWildcardDomain: "cluster.local"}))
 		leaf := &x509.Certificate{URIs: []*url.URL{spiffe("spiffe://cluster.local/ns/media/sa/filer")}}
 		if err := verify(leaf); err != nil {
 			t.Fatalf("expected pass, got %v", err)
@@ -299,15 +305,44 @@ func TestExpectedServerPeer(t *testing.T) {
 	})
 
 	t.Run("allowed common names match CN and URI SANs", func(t *testing.T) {
-		verify := expectedServerPeer(&seaweedv1.TLSSpec{AllowedCommonNames: &seaweedv1.TLSAllowedCommonNames{
+		verify := expectedServerPeer(swWith(&seaweedv1.TLSSpec{AllowedCommonNames: &seaweedv1.TLSAllowedCommonNames{
 			Filer: []string{"filer.svid"},
-		}})
+		}}))
 		if err := verify(&x509.Certificate{Subject: pkix.Name{CommonName: "filer.svid"}}); err != nil {
 			t.Fatalf("expected pass, got %v", err)
 		}
 		leaf := &x509.Certificate{URIs: []*url.URL{spiffe("spiffe://td/ns/d/sa/filer")}}
 		if err := verify(leaf); err == nil {
 			t.Fatal("expected rejection for an undeclared identity")
+		}
+	})
+
+	t.Run("cluster service DNS names are accepted", func(t *testing.T) {
+		verify := expectedServerPeer(swWith(&seaweedv1.TLSSpec{AllowedWildcardDomain: ".example.org"}))
+		for _, dns := range []string{
+			"seaweed-filer",
+			"seaweed-filer.media",
+			"seaweed-filer-0.seaweed-filer-peer.media.svc.cluster.local",
+		} {
+			if err := verify(&x509.Certificate{DNSNames: []string{dns}}); err != nil {
+				t.Fatalf("expected pass for %q, got %v", dns, err)
+			}
+		}
+		if err := verify(&x509.Certificate{DNSNames: []string{"other-filer.media"}}); err == nil {
+			t.Fatal("expected rejection for a service name of another cluster")
+		}
+	})
+
+	t.Run("peer authorization changes the fingerprint", func(t *testing.T) {
+		base := peerAuthFingerprint(&seaweedv1.TLSSpec{AllowedWildcardDomain: ".a"})
+		if peerAuthFingerprint(&seaweedv1.TLSSpec{AllowedWildcardDomain: ".b"}) == base {
+			t.Fatal("wildcard domain not covered by the fingerprint")
+		}
+		if peerAuthFingerprint(&seaweedv1.TLSSpec{AllowedCommonNames: &seaweedv1.TLSAllowedCommonNames{Filer: []string{"x"}}}) == base {
+			t.Fatal("common names not covered by the fingerprint")
+		}
+		if peerAuthFingerprint(nil) != "" {
+			t.Fatal("expected empty fingerprint for nil tls")
 		}
 	})
 }

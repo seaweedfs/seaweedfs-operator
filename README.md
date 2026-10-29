@@ -591,7 +591,12 @@ Notes:
   common names) to restrict who may call each component's gRPC endpoint.
   SeaweedFS compares the peer certificate's **subject common name** — a URI-SAN
   identity like a SPIFFE SVID must also carry its workload identity in the CN
-  to be authorized by these fields.
+  to be authorized by these fields. On the operator's own dials the accepted
+  server identity is additionally pinned per endpoint: a certificate that names
+  a different component — via a `<name>-<component>.<namespace>.svc` DNS SAN, a
+  component's `allowedCommonNames` entry, or a `spiffe://` path segment naming
+  the component — is rejected on that dial, while a certificate naming no
+  component keeps the declared boundary.
 - `refreshInterval` sets `WEED_TLS_CERT_REFRESH_INTERVAL` on every component;
   the seaweedfs default of 5h is longer than typical SVID lifetimes, so set it
   below your cert lifetime or rotated credentials go stale.

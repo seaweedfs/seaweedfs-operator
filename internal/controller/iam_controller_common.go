@@ -20,11 +20,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -265,11 +267,64 @@ func loadOperatorGrpcDialOption(sw *seaweedv1.Seaweed) (grpc.DialOption, string,
 	if err != nil {
 		return nil, "", err
 	}
-	dialOption, err := swadmin.ClientTLSDialOption(ca, cert, key)
+	dialOption, err := swadmin.ClientTLSDialOptionVerifyPeer(ca, cert, key, expectedServerPeer(sw.Spec.TLS))
 	if err != nil {
 		return nil, "", fmt.Errorf("%w: build gRPC TLS credentials from %s: %v", errOperatorTLSUnavailable, dir, err)
 	}
 	return dialOption, tlsMaterialFingerprint(ca, cert, key), nil
+}
+
+// expectedServerPeer derives the server identity the operator's dial must
+// see from the peer authorization the CR declares. On a shared CA (a SPIRE
+// trust domain, for example) chain verification alone accepts any workload
+// the CA issues, so the leaf is additionally checked against the configured
+// wildcard domain — matching a common name, a DNS SAN, or a spiffe:// URI
+// SAN under that trust domain — or against the union of the declared common
+// names when no wildcard domain is set. A CR with neither configured passes
+// no constraint and keeps chain-only verification.
+func expectedServerPeer(tls *seaweedv1.TLSSpec) func(*x509.Certificate) error {
+	if tls == nil {
+		return nil
+	}
+	if domain := tls.AllowedWildcardDomain; domain != "" {
+		trustDomain := strings.TrimPrefix(domain, ".")
+		return func(leaf *x509.Certificate) error {
+			if strings.HasSuffix(leaf.Subject.CommonName, domain) {
+				return nil
+			}
+			for _, dns := range leaf.DNSNames {
+				if strings.HasSuffix(dns, domain) {
+					return nil
+				}
+			}
+			for _, uri := range leaf.URIs {
+				if uri.Scheme == "spiffe" && uri.Host == trustDomain {
+					return nil
+				}
+			}
+			return fmt.Errorf("server certificate identity matches no allowed wildcard domain %q", domain)
+		}
+	}
+	if c := tls.AllowedCommonNames; c != nil {
+		allowed := map[string]bool{}
+		for _, names := range [][]string{c.Master, c.Volume, c.Filer, c.S3, c.Admin, c.Worker} {
+			for _, n := range names {
+				allowed[n] = true
+			}
+		}
+		return func(leaf *x509.Certificate) error {
+			if allowed[leaf.Subject.CommonName] {
+				return nil
+			}
+			for _, uri := range leaf.URIs {
+				if allowed[uri.String()] {
+					return nil
+				}
+			}
+			return fmt.Errorf("server certificate identity %q matches no entry in spec.tls.allowedCommonNames", leaf.Subject.CommonName)
+		}
+	}
+	return nil
 }
 
 // reportClusterUnreachable persists ClusterReachable=False on obj's status

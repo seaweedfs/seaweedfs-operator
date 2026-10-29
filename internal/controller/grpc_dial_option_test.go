@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"math/big"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -253,6 +254,60 @@ func TestLoadSeaweedGrpcDialOption_VolumeSource(t *testing.T) {
 		}
 		if opt == nil {
 			t.Fatal("expected a TLS dial option")
+		}
+	})
+}
+
+// TestExpectedServerPeer pins the leaf-identity check the volume-sourced dial
+// adds on top of chain verification: on a shared CA any workload it issues
+// could otherwise impersonate the filer.
+func TestExpectedServerPeer(t *testing.T) {
+	spiffe := func(s string) *url.URL {
+		u, err := url.Parse(s)
+		if err != nil {
+			t.Fatalf("parse %q: %v", s, err)
+		}
+		return u
+	}
+
+	t.Run("nil spec passes no constraint", func(t *testing.T) {
+		if expectedServerPeer(nil) != nil {
+			t.Fatal("expected nil verifier")
+		}
+	})
+
+	t.Run("wildcard domain matches leaf CN", func(t *testing.T) {
+		verify := expectedServerPeer(&seaweedv1.TLSSpec{AllowedWildcardDomain: ".e2e.test"})
+		if err := verify(&x509.Certificate{Subject: pkix.Name{CommonName: "seaweed.e2e.test"}}); err != nil {
+			t.Fatalf("expected pass, got %v", err)
+		}
+		if err := verify(&x509.Certificate{Subject: pkix.Name{CommonName: "rogue.other.test"}}); err == nil {
+			t.Fatal("expected rejection for a CN outside the domain")
+		}
+	})
+
+	t.Run("wildcard domain matches spiffe trust domain", func(t *testing.T) {
+		verify := expectedServerPeer(&seaweedv1.TLSSpec{AllowedWildcardDomain: "cluster.local"})
+		leaf := &x509.Certificate{URIs: []*url.URL{spiffe("spiffe://cluster.local/ns/media/sa/filer")}}
+		if err := verify(leaf); err != nil {
+			t.Fatalf("expected pass, got %v", err)
+		}
+		leaf.URIs = []*url.URL{spiffe("spiffe://other.domain/ns/media/sa/filer")}
+		if err := verify(leaf); err == nil {
+			t.Fatal("expected rejection for another trust domain")
+		}
+	})
+
+	t.Run("allowed common names match CN and URI SANs", func(t *testing.T) {
+		verify := expectedServerPeer(&seaweedv1.TLSSpec{AllowedCommonNames: &seaweedv1.TLSAllowedCommonNames{
+			Filer: []string{"filer.svid"},
+		}})
+		if err := verify(&x509.Certificate{Subject: pkix.Name{CommonName: "filer.svid"}}); err != nil {
+			t.Fatalf("expected pass, got %v", err)
+		}
+		leaf := &x509.Certificate{URIs: []*url.URL{spiffe("spiffe://td/ns/d/sa/filer")}}
+		if err := verify(leaf); err == nil {
+			t.Fatal("expected rejection for an undeclared identity")
 		}
 	})
 }

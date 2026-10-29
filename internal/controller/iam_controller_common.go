@@ -300,21 +300,17 @@ func loadOperatorGrpcDialOption(sw *seaweedv1.Seaweed) (grpc.DialOption, string,
 // the same set allowedCommonNames divides its entries across.
 var tlsComponents = []string{"master", "volume", "filer", "s3", "admin", "worker"}
 
-// tlsPeerNames collects every allowedCommonNames entry keyed back to the
-// component buckets it was declared under — a name declared for several
-// components attributes to all of them.
-func tlsPeerNames(tls *seaweedv1.TLSSpec) map[string]map[string]bool {
-	declared := map[string]map[string]bool{}
+// tlsPeerNames collects every allowedCommonNames entry as a flat set. The
+// buckets name the component accepting those callers, not the callers' own
+// component, so a declared name carries no server-identity attribution.
+func tlsPeerNames(tls *seaweedv1.TLSSpec) map[string]bool {
+	declared := map[string]bool{}
 	if c := tls.AllowedCommonNames; c != nil {
-		for comp, list := range map[string][]string{
-			"master": c.Master, "volume": c.Volume, "filer": c.Filer,
-			"s3": c.S3, "admin": c.Admin, "worker": c.Worker,
+		for _, list := range [][]string{
+			c.Master, c.Volume, c.Filer, c.S3, c.Admin, c.Worker,
 		} {
 			for _, n := range list {
-				if declared[n] == nil {
-					declared[n] = map[string]bool{}
-				}
-				declared[n][comp] = true
+				declared[n] = true
 			}
 		}
 	}
@@ -351,13 +347,7 @@ func expectedServerPeer(sw *seaweedv1.Seaweed) func(*x509.Certificate) error {
 	}
 	domain := tls.AllowedWildcardDomain
 	trustDomain := strings.TrimPrefix(domain, ".")
-	var names map[string]bool
-	if declared := tlsPeerNames(tls); len(declared) > 0 {
-		names = map[string]bool{}
-		for n := range declared {
-			names[n] = true
-		}
-	}
+	names := tlsPeerNames(tls)
 	return func(leaf *x509.Certificate) error {
 		if domain != "" && strings.HasSuffix(leaf.Subject.CommonName, domain) {
 			return nil
@@ -392,10 +382,12 @@ func expectedServerPeer(sw *seaweedv1.Seaweed) func(*x509.Certificate) error {
 // leaf attributable to a different component is rejected even when it sits
 // inside the declared trust boundary — a certificate accepted as another
 // component's client identity no longer identifies every endpoint.
-// Attribution comes from the cluster's service DNS names, per-component
-// allowedCommonNames entries, and spiffe:// path segments naming a component;
-// a leaf naming no component keeps the union check, so deployments sharing
-// one unattributed certificate across components see no behavior change.
+// Attribution comes from the cluster's service DNS names, wildcard-domain
+// names prefixed by a component service, and spiffe:// path segments naming
+// a component — never from allowedCommonNames buckets, which list the
+// callers a component accepts rather than its own identity. A leaf naming
+// no component keeps the union check, so deployments sharing one
+// unattributed certificate across components see no behavior change.
 func expectedServerPeerFor(sw *seaweedv1.Seaweed) func(authority string, leaf *x509.Certificate) error {
 	union := expectedServerPeer(sw)
 	if union == nil {
@@ -455,9 +447,9 @@ func isOrdinal(s string) bool {
 }
 
 // attributedServerComponents reports which components the leaf's identity
-// evidence names: its service DNS SANs, allowedCommonNames entries (CN, DNS
-// SAN or URI SAN value), domain names prefixed by a component service name,
-// and spiffe:// SVID path segments equal to a component or its service name.
+// evidence names: its service DNS SANs, domain names prefixed by a component
+// service name, and spiffe:// SVID path segments equal to a component or its
+// service name.
 func attributedServerComponents(sw *seaweedv1.Seaweed, leaf *x509.Certificate) map[string]bool {
 	attributed := map[string]bool{}
 	tls := sw.Spec.TLS
@@ -466,20 +458,10 @@ func attributedServerComponents(sw *seaweedv1.Seaweed, leaf *x509.Certificate) m
 	}
 	domain := tls.AllowedWildcardDomain
 	trustDomain := strings.TrimPrefix(domain, ".")
-	declared := tlsPeerNames(tls)
-	addName := func(name string) {
-		if comps, ok := declared[name]; ok {
-			for c := range comps {
-				attributed[c] = true
-			}
-			return
-		}
-		if comp := domainPeerComponent(sw, name, domain); comp != "" {
+	if cn := leaf.Subject.CommonName; cn != "" {
+		if comp := domainPeerComponent(sw, cn, domain); comp != "" {
 			attributed[comp] = true
 		}
-	}
-	if cn := leaf.Subject.CommonName; cn != "" {
-		addName(cn)
 	}
 	for _, dns := range leaf.DNSNames {
 		service := false
@@ -490,16 +472,12 @@ func attributedServerComponents(sw *seaweedv1.Seaweed, leaf *x509.Certificate) m
 			}
 		}
 		if !service {
-			addName(dns)
+			if comp := domainPeerComponent(sw, dns, domain); comp != "" {
+				attributed[comp] = true
+			}
 		}
 	}
 	for _, uri := range leaf.URIs {
-		if comps, ok := declared[uri.String()]; ok {
-			for c := range comps {
-				attributed[c] = true
-			}
-			continue
-		}
 		if domain != "" && uri.Scheme == "spiffe" && uri.Host == trustDomain {
 			if comp := svidPathComponent(sw, uri.Path); comp != "" {
 				attributed[comp] = true

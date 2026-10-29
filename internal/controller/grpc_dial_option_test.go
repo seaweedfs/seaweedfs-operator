@@ -404,10 +404,12 @@ func TestExpectedServerPeerFor(t *testing.T) {
 		}
 	})
 
-	t.Run("another component's client identity is rejected", func(t *testing.T) {
+	t.Run("declared names carry no component attribution", func(t *testing.T) {
+		// allowedCommonNames.master lists callers the master accepts; a filer
+		// certificate declared there keeps union acceptance on every dial.
 		leaf := &x509.Certificate{Subject: pkix.Name{CommonName: "master-clients.svid"}}
-		if err := verify(filerAuth, leaf); err == nil {
-			t.Fatal("master-declared CN accepted on the filer dial")
+		if err := verify(filerAuth, leaf); err != nil {
+			t.Fatalf("master-declared CN on filer dial: %v", err)
 		}
 		if err := verify(masterAuth, leaf); err != nil {
 			t.Fatalf("master-declared CN on master dial: %v", err)
@@ -443,7 +445,7 @@ func TestExpectedServerPeerFor(t *testing.T) {
 		}
 	})
 
-	t.Run("name declared under several components attributes to all", func(t *testing.T) {
+	t.Run("name declared under several components keeps union acceptance", func(t *testing.T) {
 		swShared := &seaweedv1.Seaweed{
 			ObjectMeta: metav1.ObjectMeta{Name: "seaweed", Namespace: "media"},
 			Spec: seaweedv1.SeaweedSpec{TLS: &seaweedv1.TLSSpec{

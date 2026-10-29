@@ -115,10 +115,12 @@ type TLSSpec struct {
 	// (such as a SPIRE trust domain) cannot be used by unrelated workloads
 	// to reach the cluster's gRPC endpoints. The operator's own dials pin
 	// the server identity per endpoint: a certificate identifying a
-	// different component (by service DNS SAN, a component's
-	// AllowedCommonNames entry, or an SVID path segment naming the
+	// different component (by service DNS SAN, a component-service name
+	// inside the wildcard domain, or an SVID path segment naming the
 	// component) is rejected on that dial, while certificates naming no
 	// component keep the declared trust boundary unchanged.
+	// AllowedCommonNames lists the callers a component accepts; it does
+	// not identify a server certificate as that component.
 	// +optional
 	Source *TLSSource `json:"source,omitempty"`
 

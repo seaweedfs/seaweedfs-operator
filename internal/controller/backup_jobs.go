@@ -376,12 +376,7 @@ func buildMirrorDeployment(m *seaweedv1.Seaweed, name, replicationSecret string,
 	// path; reuse the shared helper and drop its security-config mount (we
 	// project security.toml above instead).
 	if tlsEffective(m) {
-		volumes = append(volumes, corev1.Volume{
-			Name: tlsVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{SecretName: TLSServerSecretName(m)},
-			},
-		})
+		volumes = append(volumes, tlsVolume(m))
 		mounts = append(mounts, corev1.VolumeMount{Name: tlsVolumeName, ReadOnly: true, MountPath: tlsMountPath})
 	}
 

@@ -397,6 +397,23 @@ func configSecretVolumeAndMount(volumeName, fileName string, sel *corev1.SecretK
 	return volume, mount
 }
 
+// tlsVolume is the single volume carrying a component's gRPC TLS material:
+// the user-provided source volume verbatim, or the cert-manager Secret the
+// operator provisions.
+func tlsVolume(m *seaweedv1.Seaweed) corev1.Volume {
+	volume := corev1.Volume{Name: tlsVolumeName}
+	if tlsFromVolume(m) {
+		volume.VolumeSource = *m.Spec.TLS.Source.Volume
+	} else {
+		volume.VolumeSource = corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: TLSServerSecretName(m),
+			},
+		}
+	}
+	return volume
+}
+
 // tlsVolumesAndMounts returns the set of pod volumes and container mounts
 // that wire the shared TLS Secret and security.toml Secret into a component
 // pod. Returns empty slices when neither TLS nor the security config is
@@ -426,17 +443,7 @@ func tlsVolumesAndMounts(m *seaweedv1.Seaweed) ([]corev1.Volume, []corev1.Volume
 		})
 	}
 	if tlsEffective(m) {
-		volume := corev1.Volume{Name: tlsVolumeName}
-		if tlsFromVolume(m) {
-			volume.VolumeSource = *m.Spec.TLS.Source.Volume
-		} else {
-			volume.VolumeSource = corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: TLSServerSecretName(m),
-				},
-			}
-		}
-		volumes = append(volumes, volume)
+		volumes = append(volumes, tlsVolume(m))
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      tlsVolumeName,
 			ReadOnly:  true,
@@ -467,8 +474,12 @@ func withJWTSigningAnnotation(m *seaweedv1.Seaweed, annotations map[string]strin
 	return merged
 }
 
-// jwtSigningRevision names the enabled sections: "none", "volumeWrite", or
-// "volumeWrite=30,filerWrite".
+// jwtSigningRevision names the enabled sections and the spec-driven parts of
+// the [grpc.*] render: "none", "volumeWrite", or
+// "volumeWrite=30,filerWrite,tls=wild:.svc;filer=a+b". The TLS suffix covers
+// peer authorization and file names — settings that change only
+// security.toml, not the pod spec — so editing them still rolls pods that
+// read the file at startup.
 func jwtSigningRevision(m *seaweedv1.Seaweed) string {
 	cfg := jwtSigningConfig(m)
 	expiry := jwtSigningExpiry(cfg)
@@ -482,6 +493,9 @@ func jwtSigningRevision(m *seaweedv1.Seaweed) string {
 			continue
 		}
 		parts = append(parts, s.field)
+	}
+	if r := tlsRevision(m.Spec.TLS); r != "" {
+		parts = append(parts, r)
 	}
 	if len(parts) == 0 {
 		return "none"

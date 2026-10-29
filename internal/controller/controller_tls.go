@@ -535,6 +535,41 @@ func (r *SeaweedReconciler) deleteLegacySecurityConfigMap(ctx context.Context, n
 	return nil
 }
 
+// tlsRevision encodes the spec fields that change the [grpc.*] sections of
+// security.toml but not the pod spec — file names, peer authorization — so
+// the jwtSigningAnnotation revision rolls pods on edits too. It returns ""
+// for a TLS spec that renders nothing spec-varying.
+func tlsRevision(tls *seaweedv1.TLSSpec) string {
+	if tls == nil {
+		return ""
+	}
+	var parts []string
+	if tls.AllowedWildcardDomain != "" {
+		parts = append(parts, "wild="+tls.AllowedWildcardDomain)
+	}
+	if c := tls.AllowedCommonNames; c != nil {
+		emit := func(name string, names []string) {
+			if len(names) > 0 {
+				parts = append(parts, name+"="+strings.Join(names, "+"))
+			}
+		}
+		emit("master", c.Master)
+		emit("volume", c.Volume)
+		emit("filer", c.Filer)
+		emit("admin", c.Admin)
+		emit("worker", c.Worker)
+		emit("s3", c.S3)
+	}
+	if tls.Source != nil && tls.Source.Files != nil {
+		ca, cert, key := tlsFileNames(tls)
+		parts = append(parts, fmt.Sprintf("files=%s,%s,%s", ca, cert, key))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "tls=" + strings.Join(parts, ";")
+}
+
 // grpcTLSSections are the security.toml sections carrying cert/key for every
 // gRPC endpoint, in render order. cns maps a section to its allowed common
 // names; nil means the section never carries allowed_commonNames (the client

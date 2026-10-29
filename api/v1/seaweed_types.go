@@ -120,13 +120,17 @@ type TLSSpec struct {
 	// AllowedCommonNames restricts which peer certificate common names each
 	// gRPC component accepts, rendered as allowed_commonNames in the
 	// matching [grpc.<component>] security.toml section. Available on both
-	// the cert-manager and volume-source paths.
+	// the cert-manager and volume-source paths. SeaweedFS compares the
+	// peer certificate's subject common name, so URI-SAN identities such
+	// as SPIFFE SVIDs must carry their identity in the CN to be
+	// authorized.
 	// +optional
 	AllowedCommonNames *TLSAllowedCommonNames `json:"allowedCommonNames,omitempty"`
 
 	// AllowedWildcardDomain accepts any peer certificate whose common name
 	// ends with the domain, rendered as [grpc] allowed_wildcard_domain.
-	// An alternative to per-component AllowedCommonNames.
+	// An alternative to per-component AllowedCommonNames; like it, only
+	// the peer certificate's subject common name is compared.
 	// +optional
 	AllowedWildcardDomain string `json:"allowedWildcardDomain,omitempty"`
 

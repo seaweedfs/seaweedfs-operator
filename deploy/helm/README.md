@@ -1,6 +1,6 @@
 # seaweedfs-operator
 
-![Version: 0.1.43](https://img.shields.io/badge/Version-0.1.43-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.40](https://img.shields.io/badge/AppVersion-1.0.40-informational?style=flat-square)
+![Version: 0.1.45](https://img.shields.io/badge/Version-0.1.45-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.42](https://img.shields.io/badge/AppVersion-1.0.42-informational?style=flat-square)
 
 A Helm chart for the seaweedfs-operator
 
@@ -22,7 +22,7 @@ A Helm chart for the seaweedfs-operator
 | csiDriver.enabled | bool | `false` | Register the SeaweedCSIDriver controller by setting ENABLE_CSI_DRIVER=true on the manager, and grant the manager the extra RBAC that controller needs (CSIDrivers, StorageClasses, nodes, PersistentVolumes, and cluster-wide bind/escalate on roles so it can create the driver's own ClusterRoles). Off by default, matching the manager's own default; a default install gets none of those grants. |
 | extraEnv | list | `[]` | Additional environment variables for the manager container. Takes the usual env list form, so a value can come from a secretKeyRef or fieldRef as well as a literal. ENABLE_CSI_DRIVER is rejected here — set csiDriver.enabled, which also grants the matching RBAC. |
 | extraVolumeMounts | list | `[]` | Additional volume mounts on the manager container, matching extraVolumes. |
-| extraVolumes | list | `[]` | Additional volumes on the manager pod, e.g. a CSI volume with the client certificate the operator dials Seaweed clusters with when a Seaweed CR uses spec.tls.source.volume. Pair with extraVolumeMounts and a SEAWEED_TLS_DIR entry in extraEnv. |
+| extraVolumes | list | `[]` | Additional volumes on the manager pod holding the PEM files (CA bundle, client certificate and key) the operator dials Seaweed clusters with when a Seaweed CR uses spec.tls.source.volume. Pair with extraVolumeMounts and a SEAWEED_TLS_DIR entry in extraEnv. A workload-identity CSI driver that only mounts an API socket (e.g. csi.spiffe.io) needs an agent such as spiffe-helper to write the PEM files first. |
 | fullnameOverride | string | `""` | String to fully override common.names.fullname template |
 | global | object | `{"imageRegistry":""}` | Global Docker image parameters. global.imageRegistry, when set, overrides the registry of every image in the chart; leave empty to use each image's own. |
 | grafanaDashboard.additionalLabels | object | `{"grafana_dashboard":"1"}` | Labels added to the Grafana Dashboard ConfigMap so the Grafana sidecar discovers it. kube-prometheus-stack only matches `grafana_dashboard: "1"`; the standalone grafana chart matches any value. Set a key to `null` to drop it — an empty map merges with the default rather than replacing it. |
@@ -62,6 +62,7 @@ A Helm chart for the seaweedfs-operator
 | serviceMonitor.interval | string | `"10s"` | Specify the interval at which metrics should be scraped |
 | serviceMonitor.scrapeTimeout | string | `"10s"` | Specify the timeout after which the scrape is ended |
 | tolerations | list | `[]` |  |
+| watchNamespaces | list | `[]` | Restrict the operator to specific namespaces. When empty (default), the operator watches all namespaces cluster-wide and gets a ClusterRole. When set, the operator only watches and reconciles namespaced resources in these namespaces and gets a per-namespace Role in each, plus a small ClusterRole limited to the cluster-scoped reads the controllers still need (namespaces, storageclasses). Leader-election leases are already covered by the chart's dedicated Role in the release namespace. |
 | webhook.certManager.enabled | bool | `false` | Use cert-manager to provision the webhook TLS certificate instead of the built-in certgen Jobs. Requires cert-manager to be installed in the cluster. When enabled the certgen Jobs and their RBAC are not created. |
 | webhook.certManager.issuerRef | object | `{}` | Point the webhook serving Certificate at an existing Issuer or ClusterIssuer instead of the self-signed Issuer created by default. The issuer must populate ca.crt in the issued secret so cert-manager can inject the CA into the webhook configurations; CA, Vault, and self-signed issuers do, ACME issuers such as Let's Encrypt do not. |
 | webhook.certgen.registry | string | `"registry.k8s.io"` |  |

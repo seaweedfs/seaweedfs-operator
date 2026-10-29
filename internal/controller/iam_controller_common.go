@@ -24,6 +24,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -288,11 +289,44 @@ func loadOperatorGrpcDialOption(sw *seaweedv1.Seaweed) (grpc.DialOption, string,
 	if err != nil {
 		return nil, "", err
 	}
-	dialOption, err := swadmin.ClientTLSDialOptionVerifyPeer(ca, cert, key, expectedServerPeer(sw))
+	dialOption, err := swadmin.ClientTLSDialOptionVerifyPeerFor(ca, cert, key, expectedServerPeerFor(sw))
 	if err != nil {
 		return nil, "", fmt.Errorf("%w: build gRPC TLS credentials from %s: %v", errOperatorTLSUnavailable, dir, err)
 	}
 	return dialOption, tlsMaterialFingerprint(ca, cert, key) + peerAuthFingerprint(sw.Spec.TLS), nil
+}
+
+// tlsComponents are the component buckets a peer identity can attribute to —
+// the same set allowedCommonNames divides its entries across.
+var tlsComponents = []string{"master", "volume", "filer", "s3", "admin", "worker"}
+
+// tlsPeerNames collects every allowedCommonNames entry as a flat set. The
+// buckets name the component accepting those callers, not the callers' own
+// component, so a declared name carries no server-identity attribution.
+func tlsPeerNames(tls *seaweedv1.TLSSpec) map[string]bool {
+	declared := map[string]bool{}
+	if c := tls.AllowedCommonNames; c != nil {
+		for _, list := range [][]string{
+			c.Master, c.Volume, c.Filer, c.S3, c.Admin, c.Worker,
+		} {
+			for _, n := range list {
+				declared[n] = true
+			}
+		}
+	}
+	return declared
+}
+
+// servicePeerDNS reports whether a DNS SAN names component c's service or a
+// peer pod under it, namespace-qualified so a same-named service in another
+// namespace on the same CA cannot impersonate it.
+func servicePeerDNS(sw *seaweedv1.Seaweed, c, dns string) bool {
+	svc := sw.Name + "-" + c
+	ns := sw.Namespace
+	return dns == svc+"."+ns ||
+		dns == svc+"."+ns+".svc" ||
+		dns == svc+"."+ns+".svc.cluster.local" ||
+		strings.HasSuffix(dns, "."+svc+"-peer."+ns+".svc.cluster.local")
 }
 
 // expectedServerPeer derives the server identity the operator's dial must
@@ -313,20 +347,7 @@ func expectedServerPeer(sw *seaweedv1.Seaweed) func(*x509.Certificate) error {
 	}
 	domain := tls.AllowedWildcardDomain
 	trustDomain := strings.TrimPrefix(domain, ".")
-	var names map[string]bool
-	if c := tls.AllowedCommonNames; c != nil {
-		names = map[string]bool{}
-		for _, l := range [][]string{c.Master, c.Volume, c.Filer, c.S3, c.Admin, c.Worker} {
-			for _, n := range l {
-				names[n] = true
-			}
-		}
-	}
-	ns := sw.Namespace
-	var services []string
-	for _, c := range []string{"master", "volume", "filer", "admin", "worker", "s3"} {
-		services = append(services, sw.Name+"-"+c)
-	}
+	names := tlsPeerNames(tls)
 	return func(leaf *x509.Certificate) error {
 		if domain != "" && strings.HasSuffix(leaf.Subject.CommonName, domain) {
 			return nil
@@ -338,10 +359,8 @@ func expectedServerPeer(sw *seaweedv1.Seaweed) func(*x509.Certificate) error {
 			if domain != "" && strings.HasSuffix(dns, domain) {
 				return nil
 			}
-			for _, svc := range services {
-				if dns == svc+"."+ns || dns == svc+"."+ns+".svc" ||
-					dns == svc+"."+ns+".svc.cluster.local" ||
-					strings.HasSuffix(dns, "."+svc+"-peer."+ns+".svc.cluster.local") {
+			for _, c := range tlsComponents {
+				if servicePeerDNS(sw, c, dns) {
 					return nil
 				}
 			}
@@ -356,6 +375,156 @@ func expectedServerPeer(sw *seaweedv1.Seaweed) func(*x509.Certificate) error {
 		}
 		return fmt.Errorf("server certificate identity %q is not authorized by spec.tls", leaf.Subject.CommonName)
 	}
+}
+
+// expectedServerPeerFor scopes expectedServerPeer to the dial target. The
+// handshake authority names the component the dial intends to reach, so a
+// leaf attributable to a different component is rejected even when it sits
+// inside the declared trust boundary — a certificate accepted as another
+// component's client identity no longer identifies every endpoint.
+// Attribution comes from the cluster's service DNS names, wildcard-domain
+// names prefixed by a component service, and spiffe:// path segments naming
+// a component — never from allowedCommonNames buckets, which list the
+// callers a component accepts rather than its own identity. A leaf naming
+// no component keeps the union check, so deployments sharing one
+// unattributed certificate across components see no behavior change.
+func expectedServerPeerFor(sw *seaweedv1.Seaweed) func(authority string, leaf *x509.Certificate) error {
+	union := expectedServerPeer(sw)
+	if union == nil {
+		return nil
+	}
+	return func(authority string, leaf *x509.Certificate) error {
+		comp := authorityComponent(sw, authority)
+		attributed := attributedServerComponents(sw, leaf)
+		if comp == "" || len(attributed) == 0 || attributed[comp] {
+			return union(leaf)
+		}
+		others := make([]string, 0, len(attributed))
+		for c := range attributed {
+			others = append(others, c)
+		}
+		sort.Strings(others)
+		return fmt.Errorf("server certificate identifies %s, not the %s endpoint", strings.Join(others, "+"), comp)
+	}
+}
+
+// authorityComponent resolves the component a dial target belongs to from the
+// service or peer-pod name in the authority's host. Targets that cannot be
+// mapped — pod IPs, external addresses, unrelated hosts — return "".
+func authorityComponent(sw *seaweedv1.Seaweed, authority string) string {
+	host, _, err := net.SplitHostPort(authority)
+	if err != nil {
+		host = authority
+	}
+	first, rest, _ := strings.Cut(host, ".")
+	second, _, _ := strings.Cut(rest, ".")
+	for _, c := range tlsComponents {
+		svc := sw.Name + "-" + c
+		if first == svc || host == svc {
+			return c
+		}
+		// StatefulSet pods (seaweed-master-0) reach the cluster through the
+		// peer headless service or as a bare pod name.
+		if suffix, ok := strings.CutPrefix(first, svc+"-"); ok && isOrdinal(suffix) {
+			if second == "" || second == svc+"-peer" || second == sw.Namespace {
+				return c
+			}
+		}
+	}
+	return ""
+}
+
+func isOrdinal(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// attributedServerComponents reports which components the leaf's identity
+// evidence names: its service DNS SANs, domain names prefixed by a component
+// service name, and spiffe:// SVID path segments equal to a component or its
+// service name.
+func attributedServerComponents(sw *seaweedv1.Seaweed, leaf *x509.Certificate) map[string]bool {
+	attributed := map[string]bool{}
+	tls := sw.Spec.TLS
+	if tls == nil {
+		return attributed
+	}
+	domain := tls.AllowedWildcardDomain
+	trustDomain := strings.TrimPrefix(domain, ".")
+	if cn := leaf.Subject.CommonName; cn != "" {
+		if comp := domainPeerComponent(sw, cn, domain); comp != "" {
+			attributed[comp] = true
+		}
+	}
+	for _, dns := range leaf.DNSNames {
+		service := false
+		for _, c := range tlsComponents {
+			if servicePeerDNS(sw, c, dns) {
+				attributed[c] = true
+				service = true
+			}
+		}
+		if !service {
+			if comp := domainPeerComponent(sw, dns, domain); comp != "" {
+				attributed[comp] = true
+			}
+		}
+	}
+	for _, uri := range leaf.URIs {
+		if domain != "" && uri.Scheme == "spiffe" && uri.Host == trustDomain {
+			if comp := svidPathComponent(sw, uri.Path); comp != "" {
+				attributed[comp] = true
+			}
+		}
+	}
+	return attributed
+}
+
+// domainPeerComponent attributes a wildcard-domain-matched name to a
+// component when its leading labels name that component's service
+// (seaweed-filer.e2e.test → filer); anything else in the domain stays
+// unattributed.
+func domainPeerComponent(sw *seaweedv1.Seaweed, name, domain string) string {
+	if domain == "" || !strings.HasSuffix(name, domain) {
+		return ""
+	}
+	host := strings.TrimSuffix(strings.TrimSuffix(name, domain), ".")
+	for _, c := range tlsComponents {
+		svc := sw.Name + "-" + c
+		if host == svc || strings.HasPrefix(host, svc+"-") {
+			return c
+		}
+	}
+	return ""
+}
+
+// svidPathComponent attributes a trust-domain SVID to a component when a path
+// segment names it (sa/seaweed-filer, ns/prod/role/filer). A full service
+// name outranks a bare component name, and a later segment outranks an
+// earlier one, so a namespace like ns/master cannot hide the workload
+// segment sa/seaweed-filer. SVIDs naming no component stay unattributed.
+func svidPathComponent(sw *seaweedv1.Seaweed, path string) string {
+	service, bare := "", ""
+	for _, seg := range strings.Split(strings.Trim(path, "/"), "/") {
+		for _, c := range tlsComponents {
+			if seg == sw.Name+"-"+c {
+				service = c
+			} else if seg == c {
+				bare = c
+			}
+		}
+	}
+	if service != "" {
+		return service
+	}
+	return bare
 }
 
 // reportClusterUnreachable persists ClusterReachable=False on obj's status

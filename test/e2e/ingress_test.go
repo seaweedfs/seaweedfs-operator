@@ -187,13 +187,14 @@ var _ = Describe("Per-component Ingress", Ordered, func() {
 			"app.kubernetes.io/managed-by", "seaweedfs-operator-component"))
 
 		By("pruning per-component Ingresses when they are removed from spec")
-		// Re-fetch so we edit the latest resourceVersion.
-		live := &seaweedv1.Seaweed{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: seaweedName, Namespace: testNamespace}, live)).To(Succeed())
-		live.Spec.Master.Ingress = nil
-		live.Spec.Volume.Ingress = nil
 		// Keep filer.ingress so we can verify the prune is selective.
-		Expect(k8sClient.Update(ctx, live)).To(Succeed())
+		Eventually(func(g Gomega) {
+			live := &seaweedv1.Seaweed{}
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: seaweedName, Namespace: testNamespace}, live)).To(Succeed())
+			live.Spec.Master.Ingress = nil
+			live.Spec.Volume.Ingress = nil
+			g.Expect(k8sClient.Update(ctx, live)).To(Succeed())
+		}, time.Minute, time.Second).Should(Succeed())
 
 		Eventually(func() bool {
 			masterGone := k8sClient.Get(ctx, types.NamespacedName{

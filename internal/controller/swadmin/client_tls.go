@@ -1,9 +1,11 @@
 package swadmin
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -26,6 +28,27 @@ func ClientTLSDialOption(ca, cert, key []byte) (grpc.DialOption, error) {
 // server identity on shared-CA deployments, where the chain alone does not
 // single out the intended peer.
 func ClientTLSDialOptionVerifyPeer(ca, cert, key []byte, verifyPeer func(*x509.Certificate) error) (grpc.DialOption, error) {
+	return ClientTLSDialOptionVerifyPeerFor(ca, cert, key, func(_ string, leaf *x509.Certificate) error {
+		if verifyPeer == nil {
+			return nil
+		}
+		return verifyPeer(leaf)
+	})
+}
+
+// ClientTLSDialOptionVerifyPeerFor is ClientTLSDialOptionVerifyPeer whose
+// callback additionally receives the handshake authority (host:port), so the
+// expected server identity can differ per endpoint — one credential can then
+// serve master, filer and volume dials while each still pins its own target.
+func ClientTLSDialOptionVerifyPeerFor(ca, cert, key []byte, verifyPeer func(authority string, leaf *x509.Certificate) error) (grpc.DialOption, error) {
+	creds, err := newAuthorityPeerCredentials(ca, cert, key, verifyPeer)
+	if err != nil {
+		return nil, err
+	}
+	return grpc.WithTransportCredentials(creds), nil
+}
+
+func newAuthorityPeerCredentials(ca, cert, key []byte, verifyPeer func(authority string, leaf *x509.Certificate) error) (credentials.TransportCredentials, error) {
 	clientCert, err := tls.X509KeyPair(cert, key)
 	if err != nil {
 		return nil, fmt.Errorf("load client cert/key: %w", err)
@@ -34,15 +57,67 @@ func ClientTLSDialOptionVerifyPeer(ca, cert, key []byte, verifyPeer func(*x509.C
 	if !roots.AppendCertsFromPEM(ca) {
 		return nil, fmt.Errorf("no CA certificates parsed from ca.crt")
 	}
-	cfg := &tls.Config{
-		Certificates: []tls.Certificate{clientCert},
-		MinVersion:   tls.VersionTLS12,
-		// Chain verification happens in VerifyPeerCertificate so the
-		// hostname check can be skipped without skipping verification.
-		InsecureSkipVerify:    true,
-		VerifyPeerCertificate: verifyChainOnly(roots, verifyPeer),
+	return &authorityPeerCredentials{
+		roots:      roots,
+		verifyPeer: verifyPeer,
+		config: &tls.Config{
+			Certificates:       []tls.Certificate{clientCert},
+			MinVersion:         tls.VersionTLS12,
+			NextProtos:         []string{"h2"},
+			InsecureSkipVerify: true,
+		},
+	}, nil
+}
+
+// authorityPeerCredentials binds VerifyPeerCertificate per handshake: the
+// stock tls credentials hand every handshake the same callback, which cannot
+// see the dial target, so per-endpoint peer checks need this thin wrapper.
+type authorityPeerCredentials struct {
+	config     *tls.Config
+	roots      *x509.CertPool
+	verifyPeer func(authority string, leaf *x509.Certificate) error
+}
+
+func (c *authorityPeerCredentials) ClientHandshake(ctx context.Context, authority string, rawConn net.Conn) (net.Conn, credentials.AuthInfo, error) {
+	cfg := c.config.Clone()
+	host, _, err := net.SplitHostPort(authority)
+	if err != nil {
+		host = authority
 	}
-	return grpc.WithTransportCredentials(credentials.NewTLS(cfg)), nil
+	cfg.ServerName = host // SNI only — verification is the callback below
+	verifyPeer := c.verifyPeer
+	cfg.VerifyPeerCertificate = verifyChainOnly(c.roots, func(leaf *x509.Certificate) error {
+		if verifyPeer == nil {
+			return nil
+		}
+		return verifyPeer(authority, leaf)
+	})
+	conn := tls.Client(rawConn, cfg)
+	if err := conn.HandshakeContext(ctx); err != nil {
+		rawConn.Close()
+		return nil, nil, fmt.Errorf("TLS handshake to %s: %w", authority, err)
+	}
+	return conn, credentials.TLSInfo{
+		State:          conn.ConnectionState(),
+		CommonAuthInfo: credentials.CommonAuthInfo{SecurityLevel: credentials.PrivacyAndIntegrity},
+	}, nil
+}
+
+func (c *authorityPeerCredentials) ServerHandshake(net.Conn) (net.Conn, credentials.AuthInfo, error) {
+	return nil, nil, fmt.Errorf("authorityPeerCredentials is client-only")
+}
+
+func (c *authorityPeerCredentials) Info() credentials.ProtocolInfo {
+	return credentials.ProtocolInfo{SecurityProtocol: "tls"}
+}
+
+func (c *authorityPeerCredentials) Clone() credentials.TransportCredentials {
+	return &authorityPeerCredentials{config: c.config.Clone(), roots: c.roots, verifyPeer: c.verifyPeer}
+}
+
+func (c *authorityPeerCredentials) OverrideServerName(serverNameOverride string) error {
+	c.config.ServerName = serverNameOverride
+	return nil
 }
 
 // verifyChainOnly returns a VerifyPeerCertificate callback that verifies the

@@ -166,10 +166,12 @@ var _ = Describe("Standalone S3 gateway", Ordered, func() {
 		Expect(ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number).To(Equal(int32(8333)))
 
 		By("pruning the gateway when Spec.S3 is cleared")
-		live := &seaweedv1.Seaweed{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: seaweedName, Namespace: testNamespace}, live)).To(Succeed())
-		live.Spec.S3 = nil
-		Expect(k8sClient.Update(ctx, live)).To(Succeed())
+		Eventually(func(g Gomega) {
+			live := &seaweedv1.Seaweed{}
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: seaweedName, Namespace: testNamespace}, live)).To(Succeed())
+			live.Spec.S3 = nil
+			g.Expect(k8sClient.Update(ctx, live)).To(Succeed())
+		}, time.Minute, time.Second).Should(Succeed())
 
 		Eventually(func() bool {
 			depGone := apierrors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{

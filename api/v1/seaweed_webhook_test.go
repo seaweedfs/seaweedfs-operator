@@ -623,6 +623,36 @@ func TestValidateTLS(t *testing.T) {
 		}
 	})
 
+	t.Run("a bare dot is not a file name", func(t *testing.T) {
+		sw := baseValid()
+		src := volumeSource()
+		src.Files = &TLSFileNames{Key: "."}
+		sw.Spec.TLS = &TLSSpec{Enabled: true, Source: src, AllowedWildcardDomain: ".example.org"}
+		if errs := sw.validateTLS(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "files.key") {
+			t.Fatalf("expected the file name error, got %v", errs)
+		}
+	})
+
+	t.Run("volume source needs exactly one source", func(t *testing.T) {
+		sw := baseValid()
+		src := volumeSource()
+		src.Volume = &corev1.VolumeSource{}
+		sw.Spec.TLS = &TLSSpec{Enabled: true, Source: src, AllowedWildcardDomain: ".example.org"}
+		if errs := sw.validateTLS(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "exactly one") {
+			t.Fatalf("expected the single-source error, got %v", errs)
+		}
+	})
+
+	t.Run("volume source with two sources is refused", func(t *testing.T) {
+		sw := baseValid()
+		src := volumeSource()
+		src.Volume.Secret = &corev1.SecretVolumeSource{SecretName: "tls"}
+		sw.Spec.TLS = &TLSSpec{Enabled: true, Source: src, AllowedWildcardDomain: ".example.org"}
+		if errs := sw.validateTLS(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "exactly one") {
+			t.Fatalf("expected the single-source error, got %v", errs)
+		}
+	})
+
 	t.Run("non-positive refreshInterval is refused", func(t *testing.T) {
 		sw := baseValid()
 		sw.Spec.TLS = &TLSSpec{Enabled: true, RefreshInterval: &metav1.Duration{}}

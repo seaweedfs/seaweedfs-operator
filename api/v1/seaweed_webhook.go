@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -315,12 +316,14 @@ func (r *Seaweed) validateTLS() []error {
 	}
 	if tls.Source.Volume == nil {
 		errs = append(errs, errors.New("spec.tls.source.volume is required"))
+	} else if !singleVolumeSource(tls.Source.Volume) {
+		errs = append(errs, errors.New("spec.tls.source.volume must set exactly one volume source"))
 	}
 	if files := tls.Source.Files; files != nil {
 		for _, f := range []struct{ field, name string }{
 			{"ca", files.CA}, {"cert", files.Cert}, {"key", files.Key},
 		} {
-			if strings.ContainsAny(f.name, "/\\") || f.name == ".." {
+			if strings.ContainsAny(f.name, "/\\") || f.name == ".." || f.name == "." {
 				errs = append(errs, fmt.Errorf("spec.tls.source.files.%s %q must be a file name inside the mounted volume", f.field, f.name))
 			}
 		}
@@ -356,6 +359,20 @@ func (r *Seaweed) validateTLS() []error {
 		}
 	}
 	return errs
+}
+
+// singleVolumeSource reports whether vs sets exactly one volume source.
+// Kubernetes requires exactly one; anything else only fails when the API
+// server validates the pod, so catch it at admission time.
+func singleVolumeSource(vs *corev1.VolumeSource) bool {
+	set := 0
+	v := reflect.ValueOf(*vs)
+	for i := 0; i < v.NumField(); i++ {
+		if !v.Field(i).IsNil() {
+			set++
+		}
+	}
+	return set == 1
 }
 
 // s3DeprecationWarnings surfaces admission.Warnings for the deprecated

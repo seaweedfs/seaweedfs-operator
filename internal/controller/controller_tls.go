@@ -200,7 +200,7 @@ func (r *SeaweedReconciler) deleteOwnedUnstructured(ctx context.Context, m *seaw
 	u := &unstructured.Unstructured{}
 	u.SetGroupVersionKind(gvk)
 	if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: m.Namespace}, u); err != nil {
-		if apierrors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) || runtime.IsNotRegisteredError(err) {
 			return nil
 		}
 		return err

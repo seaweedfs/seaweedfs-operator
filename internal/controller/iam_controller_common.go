@@ -267,7 +267,7 @@ func loadOperatorGrpcDialOption(sw *seaweedv1.Seaweed) (grpc.DialOption, string,
 	}
 	dialOption, err := swadmin.ClientTLSDialOption(ca, cert, key)
 	if err != nil {
-		return nil, "", fmt.Errorf("build gRPC TLS credentials from %s: %w", dir, err)
+		return nil, "", fmt.Errorf("%w: build gRPC TLS credentials from %s: %v", errOperatorTLSUnavailable, dir, err)
 	}
 	return dialOption, tlsMaterialFingerprint(ca, cert, key), nil
 }

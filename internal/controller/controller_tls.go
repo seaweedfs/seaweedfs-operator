@@ -614,12 +614,12 @@ func renderSecurityTOML(cfg seaweedv1.JWTSigningSpec, keys jwtSigningKeys, tls *
 	}
 
 	ca, cert, key := tlsFileNames(tls)
-	fmt.Fprintf(&b, "\n# all grpc tls authentications are mutual\n[grpc]\nca = \"%s/%s\"\n", tlsMountPath, ca)
+	fmt.Fprintf(&b, "\n# all grpc tls authentications are mutual\n[grpc]\nca = %q\n", tlsMountPath+"/"+ca)
 	if tls.AllowedWildcardDomain != "" {
 		fmt.Fprintf(&b, "allowed_wildcard_domain = %q\n", tls.AllowedWildcardDomain)
 	}
 	for _, s := range grpcTLSSections {
-		fmt.Fprintf(&b, "\n[grpc.%s]\ncert = \"%s/%s\"\nkey  = \"%s/%s\"\n", s.name, tlsMountPath, cert, tlsMountPath, key)
+		fmt.Fprintf(&b, "\n[grpc.%s]\ncert = %q\nkey  = %q\n", s.name, tlsMountPath+"/"+cert, tlsMountPath+"/"+key)
 		if s.cns != nil && tls.AllowedCommonNames != nil {
 			if names := s.cns(tls.AllowedCommonNames); len(names) > 0 {
 				fmt.Fprintf(&b, "allowed_commonNames = %q\n", strings.Join(names, ","))

@@ -21,7 +21,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -32,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
@@ -185,6 +189,18 @@ func loadFilerAdminSigningKey(ctx context.Context, c client.Client, sw *seaweedv
 	return []byte(raw), nil
 }
 
+// operatorTLSDirEnv names the directory on the operator pod holding the CA,
+// cert and key the operator dials a cluster with when the cluster's gRPC TLS
+// material comes from spec.tls.source.volume. The source volume is mounted
+// into component pods only, so the operator's credentials arrive separately.
+const operatorTLSDirEnv = "SEAWEED_TLS_DIR"
+
+// errOperatorTLSUnavailable marks the case where a cluster requires mTLS from
+// a user-managed source volume but the operator holds no material to dial
+// with. Reconcilers surface it as ClusterReachable=False instead of failing
+// a dial that can never succeed.
+var errOperatorTLSUnavailable = errors.New("operator TLS material unavailable")
+
 // loadSeaweedGrpcDialOption returns the transport credentials the operator's
 // gRPC clients must use to reach sw's components, plus a fingerprint of the
 // TLS material for admin cache keys. Both are zero when the cluster's gRPC
@@ -197,6 +213,9 @@ func loadFilerAdminSigningKey(ctx context.Context, c client.Client, sw *seaweedv
 func loadSeaweedGrpcDialOption(ctx context.Context, c client.Client, sw *seaweedv1.Seaweed) (grpc.DialOption, string, error) {
 	if !tlsEnabled(sw) {
 		return nil, "", nil
+	}
+	if tlsFromVolume(sw) {
+		return loadOperatorGrpcDialOption(sw)
 	}
 	var sec corev1.Secret
 	if err := c.Get(ctx, types.NamespacedName{Namespace: sw.Namespace, Name: TLSServerSecretName(sw)}, &sec); err != nil {
@@ -214,6 +233,58 @@ func loadSeaweedGrpcDialOption(ctx context.Context, c client.Client, sw *seaweed
 		return nil, "", fmt.Errorf("build gRPC TLS credentials from secret %s/%s: %w", sw.Namespace, TLSServerSecretName(sw), err)
 	}
 	return dialOption, tlsMaterialFingerprint(ca, cert, key), nil
+}
+
+// loadOperatorGrpcDialOption builds credentials from PEM files on the
+// operator's own pod, under the directory SEAWEED_TLS_DIR points at. File
+// names follow spec.tls.source.files so the same CSI driver layout can serve
+// the components and the operator; files are re-read on every call so
+// rotating short-lived material is picked up like a Secret refresh.
+func loadOperatorGrpcDialOption(sw *seaweedv1.Seaweed) (grpc.DialOption, string, error) {
+	dir := os.Getenv(operatorTLSDirEnv)
+	if dir == "" {
+		return nil, "", fmt.Errorf("%w: Seaweed %s/%s uses spec.tls.source.volume; set %s on the operator deployment to a directory holding its client CA, cert and key", errOperatorTLSUnavailable, sw.Namespace, sw.Name, operatorTLSDirEnv)
+	}
+	caName, certName, keyName := tlsFileNames(sw.Spec.TLS)
+	read := func(name string) ([]byte, error) {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s/%s: %v", errOperatorTLSUnavailable, dir, name, err)
+		}
+		return b, nil
+	}
+	ca, err := read(caName)
+	if err != nil {
+		return nil, "", err
+	}
+	cert, err := read(certName)
+	if err != nil {
+		return nil, "", err
+	}
+	key, err := read(keyName)
+	if err != nil {
+		return nil, "", err
+	}
+	dialOption, err := swadmin.ClientTLSDialOption(ca, cert, key)
+	if err != nil {
+		return nil, "", fmt.Errorf("build gRPC TLS credentials from %s: %w", dir, err)
+	}
+	return dialOption, tlsMaterialFingerprint(ca, cert, key), nil
+}
+
+// reportClusterUnreachable persists ClusterReachable=False on obj's status
+// and requeues on the IAM resync cadence instead of erroring — used when the
+// cluster exists but the operator cannot currently reach it.
+func reportClusterUnreachable(ctx context.Context, c client.Client, obj client.Object, conds *[]metav1.Condition, generation int64, err error) (ctrl.Result, error) {
+	reason := "ClusterUnreachable"
+	if errors.Is(err, errOperatorTLSUnavailable) {
+		reason = "OperatorTLSNotConfigured"
+	}
+	setIAMCondition(conds, generation, seaweedv1.S3ConditionClusterReachable, metav1.ConditionFalse, reason, err.Error())
+	if uerr := c.Status().Update(ctx, obj); uerr != nil {
+		return ctrl.Result{}, uerr
+	}
+	return ctrl.Result{RequeueAfter: iamResyncInterval}, nil
 }
 
 // setIAMCondition upserts a condition on an IAM CR's condition list, stamping

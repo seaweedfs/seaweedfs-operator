@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -193,6 +194,11 @@ func (r *SeaweedCSIDriverReconciler) resolveFiler(ctx context.Context, driver *s
 
 	target, found, err := resolveSeaweedFiler(ctx, r.Client, ref, driver.Namespace)
 	if err != nil {
+		if errors.Is(err, errOperatorTLSUnavailable) {
+			r.setCondition(driver, seaweedv1.CSIConditionClusterReachable, metav1.ConditionFalse, "OperatorTLSNotConfigured", err.Error())
+			res, perr := r.patchPending(ctx, driver)
+			return "", res, true, perr
+		}
 		return "", ctrl.Result{}, true, err
 	}
 	if !found {

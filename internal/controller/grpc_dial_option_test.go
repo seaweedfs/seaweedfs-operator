@@ -8,7 +8,10 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -177,4 +180,79 @@ func TestBucketReconcile_PassesTLSDialOptionToFactory(t *testing.T) {
 	if gotDialOption == nil {
 		t.Fatal("BucketAdminFactory received no dial option for a TLS-enabled cluster")
 	}
+}
+
+// With a spec.tls.source volume the cluster never has an operator-managed
+// Secret; the operator's own credentials come from SEAWEED_TLS_DIR, re-read
+// per call so rotated material is picked up.
+func TestLoadSeaweedGrpcDialOption_VolumeSource(t *testing.T) {
+	scheme := iamTestScheme(t)
+	newSw := func(files *seaweedv1.TLSFileNames) *seaweedv1.Seaweed {
+		sw := newTestSeaweedWithFiler()
+		sw.Spec.TLS = &seaweedv1.TLSSpec{
+			Enabled: true,
+			Source: &seaweedv1.TLSSource{
+				Volume: &corev1.VolumeSource{CSI: &corev1.CSIVolumeSource{Driver: "csi.spiffe.io"}},
+				Files:  files,
+			},
+		}
+		return sw
+	}
+	writeDir := func(t *testing.T, data map[string][]byte, names [3]string) string {
+		dir := t.TempDir()
+		for i, name := range names {
+			key := []string{"ca.crt", "tls.crt", "tls.key"}[i]
+			if err := os.WriteFile(filepath.Join(dir, name), data[key], 0o600); err != nil {
+				t.Fatalf("write %s: %v", name, err)
+			}
+		}
+		return dir
+	}
+
+	t.Run("unset dir reports unavailable material", func(t *testing.T) {
+		sw := newSw(nil)
+		cli := iamTestClient(t, scheme, sw)
+		_, _, err := loadSeaweedGrpcDialOption(context.Background(), cli, sw)
+		if !errors.Is(err, errOperatorTLSUnavailable) {
+			t.Fatalf("expected errOperatorTLSUnavailable, got %v", err)
+		}
+	})
+
+	t.Run("missing files report unavailable material", func(t *testing.T) {
+		sw := newSw(nil)
+		t.Setenv(operatorTLSDirEnv, t.TempDir())
+		cli := iamTestClient(t, scheme, sw)
+		_, _, err := loadSeaweedGrpcDialOption(context.Background(), cli, sw)
+		if !errors.Is(err, errOperatorTLSUnavailable) {
+			t.Fatalf("expected errOperatorTLSUnavailable, got %v", err)
+		}
+	})
+
+	t.Run("dir with default names dials TLS", func(t *testing.T) {
+		sw := newSw(nil)
+		data := testTLSSecret(t, sw).Data
+		t.Setenv(operatorTLSDirEnv, writeDir(t, data, [3]string{"ca.crt", "tls.crt", "tls.key"}))
+		cli := iamTestClient(t, scheme, sw)
+		opt, fp, err := loadSeaweedGrpcDialOption(context.Background(), cli, sw)
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		if opt == nil || fp == "" {
+			t.Fatalf("expected dial option and fingerprint, got %v / %q", opt, fp)
+		}
+	})
+
+	t.Run("dir honoring source.files names", func(t *testing.T) {
+		sw := newSw(&seaweedv1.TLSFileNames{CA: "bundle.pem", Cert: "svid.pem", Key: "svid_key.pem"})
+		data := testTLSSecret(t, sw).Data
+		t.Setenv(operatorTLSDirEnv, writeDir(t, data, [3]string{"bundle.pem", "svid.pem", "svid_key.pem"}))
+		cli := iamTestClient(t, scheme, sw)
+		opt, _, err := loadSeaweedGrpcDialOption(context.Background(), cli, sw)
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		if opt == nil {
+			t.Fatal("expected a TLS dial option")
+		}
+	})
 }

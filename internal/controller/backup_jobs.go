@@ -225,6 +225,7 @@ func backupPodSpec(
 			Command:         []string{"/bin/sh", "-ec", command},
 			SecurityContext: containerSecurityContext,
 			VolumeMounts:    mounts,
+			Env:             componentEnvVars(m),
 		}},
 		Volumes: volumes,
 	}

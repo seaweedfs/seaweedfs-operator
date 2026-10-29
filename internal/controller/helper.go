@@ -348,8 +348,10 @@ func mergeVolumeMounts(base, override []corev1.VolumeMount) []corev1.VolumeMount
 }
 
 // tlsEffective reports whether TLS should actually be wired into this
-// reconcile pass. In addition to the user's Spec.TLS.Enabled flag it
-// requires the cert-manager CRD probe to have succeeded — otherwise
+// reconcile pass. A user-provided source volume always qualifies — the
+// operator provisions nothing and cert-manager is irrelevant. Otherwise, in
+// addition to the user's Spec.TLS.Enabled flag it requires the cert-manager
+// CRD probe to have succeeded — otherwise
 // the operator has not (and cannot) reconcile the Secret/ConfigMap
 // that the pod mounts would reference, so adding those mounts would
 // pin the pod in ContainerCreating with a missing-volume-source error.

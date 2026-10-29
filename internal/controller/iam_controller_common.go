@@ -528,17 +528,25 @@ func domainPeerComponent(sw *seaweedv1.Seaweed, name, domain string) string {
 }
 
 // svidPathComponent attributes a trust-domain SVID to a component when a path
-// segment names it (sa/seaweeds-filer, ns/prod/role/filer); SVIDs naming no
-// component stay unattributed.
+// segment names it (sa/seaweed-filer, ns/prod/role/filer). A full service
+// name outranks a bare component name, and a later segment outranks an
+// earlier one, so a namespace like ns/master cannot hide the workload
+// segment sa/seaweed-filer. SVIDs naming no component stay unattributed.
 func svidPathComponent(sw *seaweedv1.Seaweed, path string) string {
+	service, bare := "", ""
 	for _, seg := range strings.Split(strings.Trim(path, "/"), "/") {
 		for _, c := range tlsComponents {
-			if seg == sw.Name+"-"+c || seg == c {
-				return c
+			if seg == sw.Name+"-"+c {
+				service = c
+			} else if seg == c {
+				bare = c
 			}
 		}
 	}
-	return ""
+	if service != "" {
+		return service
+	}
+	return bare
 }
 
 // reportClusterUnreachable persists ClusterReachable=False on obj's status

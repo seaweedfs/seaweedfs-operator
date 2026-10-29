@@ -433,6 +433,16 @@ func TestExpectedServerPeerFor(t *testing.T) {
 		}
 	})
 
+	t.Run("svid namespace segment does not hide the workload identity", func(t *testing.T) {
+		leaf := &x509.Certificate{URIs: []*url.URL{spiffe("spiffe://e2e.test/ns/master/sa/seaweed-filer")}}
+		if err := verify(filerAuth, leaf); err != nil {
+			t.Fatalf("filer SVID behind a master-named namespace on filer dial: %v", err)
+		}
+		if err := verify(masterAuth, leaf); err == nil {
+			t.Fatal("filer SVID accepted on the master dial")
+		}
+	})
+
 	t.Run("name declared under several components attributes to all", func(t *testing.T) {
 		swShared := &seaweedv1.Seaweed{
 			ObjectMeta: metav1.ObjectMeta{Name: "seaweed", Namespace: "media"},

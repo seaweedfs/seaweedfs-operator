@@ -354,3 +354,103 @@ func TestExpectedServerPeer(t *testing.T) {
 		}
 	})
 }
+
+// TestExpectedServerPeerFor pins the per-target hardening: a leaf attributable
+// to a different component is rejected on the dialed endpoint even though it
+// sits inside the declared trust boundary, while unattributed leaves keep the
+// union behavior so shared-certificate deployments are unaffected.
+func TestExpectedServerPeerFor(t *testing.T) {
+	spiffe := func(s string) *url.URL {
+		u, err := url.Parse(s)
+		if err != nil {
+			t.Fatalf("parse %q: %v", s, err)
+		}
+		return u
+	}
+	sw := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "seaweed", Namespace: "media"},
+		Spec: seaweedv1.SeaweedSpec{TLS: &seaweedv1.TLSSpec{
+			AllowedWildcardDomain: ".e2e.test",
+			AllowedCommonNames: &seaweedv1.TLSAllowedCommonNames{
+				Master: []string{"master-clients.svid"},
+				Filer:  []string{"filer-clients.svid"},
+			},
+		}},
+	}
+	verify := expectedServerPeerFor(sw)
+	filerAuth := "seaweed-filer.media:8888"
+	masterAuth := "seaweed-master-0.seaweed-master-peer.media:9333"
+
+	t.Run("nil spec passes no constraint", func(t *testing.T) {
+		if expectedServerPeerFor(&seaweedv1.Seaweed{}) != nil {
+			t.Fatal("expected nil verifier")
+		}
+	})
+
+	t.Run("matching service identity passes on its own endpoint", func(t *testing.T) {
+		leaf := &x509.Certificate{DNSNames: []string{"seaweed-filer.media.svc.cluster.local"}}
+		if err := verify(filerAuth, leaf); err != nil {
+			t.Fatalf("filer cert on filer dial: %v", err)
+		}
+	})
+
+	t.Run("wrong-component service identity is rejected", func(t *testing.T) {
+		leaf := &x509.Certificate{DNSNames: []string{"seaweed-master.media.svc.cluster.local"}}
+		if err := verify(filerAuth, leaf); err == nil {
+			t.Fatal("master cert accepted on the filer dial")
+		}
+		if err := verify(masterAuth, leaf); err != nil {
+			t.Fatalf("master cert on master dial: %v", err)
+		}
+	})
+
+	t.Run("another component's client identity is rejected", func(t *testing.T) {
+		leaf := &x509.Certificate{Subject: pkix.Name{CommonName: "master-clients.svid"}}
+		if err := verify(filerAuth, leaf); err == nil {
+			t.Fatal("master-declared CN accepted on the filer dial")
+		}
+		if err := verify(masterAuth, leaf); err != nil {
+			t.Fatalf("master-declared CN on master dial: %v", err)
+		}
+	})
+
+	t.Run("domain names attribute by service prefix", func(t *testing.T) {
+		if err := verify(filerAuth, &x509.Certificate{Subject: pkix.Name{CommonName: "seaweed-filer.e2e.test"}}); err != nil {
+			t.Fatalf("filer domain CN on filer dial: %v", err)
+		}
+		if err := verify(filerAuth, &x509.Certificate{Subject: pkix.Name{CommonName: "seaweed-master.e2e.test"}}); err == nil {
+			t.Fatal("master domain CN accepted on the filer dial")
+		}
+	})
+
+	t.Run("spiffe svid attributes by path segment", func(t *testing.T) {
+		filerSVID := &x509.Certificate{URIs: []*url.URL{spiffe("spiffe://e2e.test/ns/media/sa/seaweed-filer")}}
+		if err := verify(filerAuth, filerSVID); err != nil {
+			t.Fatalf("filer SVID on filer dial: %v", err)
+		}
+		if err := verify(masterAuth, filerSVID); err == nil {
+			t.Fatal("filer SVID accepted on the master dial")
+		}
+	})
+
+	t.Run("unattributed leaf keeps the union check on a known endpoint", func(t *testing.T) {
+		leaf := &x509.Certificate{Subject: pkix.Name{CommonName: "shared.e2e.test"}}
+		if err := verify(filerAuth, leaf); err != nil {
+			t.Fatalf("shared domain cert on filer dial: %v", err)
+		}
+	})
+
+	t.Run("unresolvable authority keeps the union check", func(t *testing.T) {
+		leaf := &x509.Certificate{DNSNames: []string{"seaweed-filer.media.svc.cluster.local"}}
+		if err := verify("10.9.8.7:8080", leaf); err != nil {
+			t.Fatalf("filer cert on unmapped dial: %v", err)
+		}
+	})
+
+	t.Run("unauthorized leaf still fails", func(t *testing.T) {
+		leaf := &x509.Certificate{Subject: pkix.Name{CommonName: "rogue.other.test"}}
+		if err := verify(filerAuth, leaf); err == nil {
+			t.Fatal("unauthorized cert accepted")
+		}
+	})
+}

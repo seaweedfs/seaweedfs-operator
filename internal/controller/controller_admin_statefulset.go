@@ -175,7 +175,7 @@ func (r *SeaweedReconciler) createAdminStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		})
 	}
 
-	env := append(m.BaseAdminSpec().Env(), kubernetesEnvVars...)
+	env := append(m.BaseAdminSpec().Env(), componentEnvVars(m)...)
 
 	adminPodSpec.EnableServiceLinks = &enableServiceLinks
 	adminPodSpec.Containers = []corev1.Container{{

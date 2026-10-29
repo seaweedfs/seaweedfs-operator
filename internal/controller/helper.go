@@ -45,6 +45,25 @@ var (
 	}
 )
 
+// tlsRefreshIntervalEnvVar is the env seaweedfs' pemfile provider reads for
+// how often to re-read cert, key and CA files (any time.ParseDuration value).
+const tlsRefreshIntervalEnvVar = "WEED_TLS_CERT_REFRESH_INTERVAL"
+
+// componentEnvVars is kubernetesEnvVars plus the per-CR knobs that ride on
+// the pod environment: spec.tls.refreshInterval becomes
+// WEED_TLS_CERT_REFRESH_INTERVAL so short-lived material (e.g. hourly SVIDs)
+// is reloaded without pod restarts.
+func componentEnvVars(m *seaweedv1.Seaweed) []corev1.EnvVar {
+	env := kubernetesEnvVars
+	if m.Spec.TLS != nil && m.Spec.TLS.RefreshInterval != nil {
+		env = append(env, corev1.EnvVar{
+			Name:  tlsRefreshIntervalEnvVar,
+			Value: m.Spec.TLS.RefreshInterval.Duration.String(),
+		})
+	}
+	return env
+}
+
 func ReconcileResult(err error) (bool, ctrl.Result, error) {
 	if err != nil {
 		return true, ctrl.Result{}, err

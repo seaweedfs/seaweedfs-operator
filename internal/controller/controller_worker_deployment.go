@@ -180,7 +180,7 @@ func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1
 		Image:           m.BaseWorkerSpec().Image(),
 		ImagePullPolicy: m.BaseWorkerSpec().ImagePullPolicy(),
 		SecurityContext: m.BaseWorkerSpec().ContainerSecurityContext(),
-		Env:             append(m.BaseWorkerSpec().Env(), kubernetesEnvVars...),
+		Env:             append(m.BaseWorkerSpec().Env(), componentEnvVars(m)...),
 		Resources:       filterContainerResources(m.Spec.Worker.ResourceRequirements),
 		VolumeMounts:    mergeVolumeMounts(volumeMounts, m.BaseWorkerSpec().VolumeMounts()),
 		Command: []string{
@@ -208,7 +208,7 @@ func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1
 			Image:           m.BaseWorkerSpec().Image(),
 			ImagePullPolicy: m.BaseWorkerSpec().ImagePullPolicy(),
 			SecurityContext: m.BaseWorkerSpec().ContainerSecurityContext(),
-			Env:             append(m.BaseWorkerSpec().Env(), kubernetesEnvVars...),
+			Env:             append(m.BaseWorkerSpec().Env(), componentEnvVars(m)...),
 			// No persistence: it backs -workingDir, which the Rust worker does not take.
 			VolumeMounts: tlsMounts,
 			Command: []string{

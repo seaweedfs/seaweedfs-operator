@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -608,7 +609,7 @@ func TestEnsureTLS_VolumeSource(t *testing.T) {
 		Spec: seaweedv1.SeaweedSpec{
 			TLS: &seaweedv1.TLSSpec{
 				Enabled: true,
-				Source: &seaweedv1.TLSSource{Volume: &corev1.VolumeSource{}},
+				Source:  &seaweedv1.TLSSource{Volume: &corev1.VolumeSource{}},
 			},
 		},
 	}
@@ -644,5 +645,30 @@ func TestEnsureTLS_VolumeSource(t *testing.T) {
 	gone.SetGroupVersionKind(certificateGVK)
 	if err := r.Get(ctx, client.ObjectKey{Name: foreignCert.GetName(), Namespace: m.Namespace}, gone); err != nil {
 		t.Errorf("expected a foreign Certificate left alone, got err=%v", err)
+	}
+}
+
+func TestComponentEnvVars_RefreshInterval(t *testing.T) {
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+		Spec:       seaweedv1.SeaweedSpec{TLS: &seaweedv1.TLSSpec{Enabled: true}},
+	}
+	for _, e := range componentEnvVars(m) {
+		if e.Name == tlsRefreshIntervalEnvVar {
+			t.Fatalf("refresh env must not be set without spec.tls.refreshInterval")
+		}
+	}
+	m.Spec.TLS.RefreshInterval = &metav1.Duration{Duration: 5 * time.Minute}
+	var found bool
+	for _, e := range componentEnvVars(m) {
+		if e.Name == tlsRefreshIntervalEnvVar {
+			found = true
+			if e.Value != "5m0s" {
+				t.Errorf("refresh env = %q, want %q", e.Value, "5m0s")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected WEED_TLS_CERT_REFRESH_INTERVAL in component env")
 	}
 }

@@ -187,7 +187,7 @@ func (r *SeaweedReconciler) createMasterStatefulSet(m *seaweedv1.Seaweed) *appsv
 		Image:           m.BaseMasterSpec().Image(),
 		ImagePullPolicy: m.BaseMasterSpec().ImagePullPolicy(),
 		SecurityContext: m.BaseMasterSpec().ContainerSecurityContext(),
-		Env:             append(m.BaseMasterSpec().Env(), kubernetesEnvVars...),
+		Env:             append(m.BaseMasterSpec().Env(), componentEnvVars(m)...),
 		Resources:       filterContainerResources(m.Spec.Master.ResourceRequirements),
 		VolumeMounts:    mergeVolumeMounts(masterConfigMounts, m.BaseMasterSpec().VolumeMounts()),
 		Command: []string{

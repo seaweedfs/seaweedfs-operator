@@ -206,7 +206,7 @@ func (r *SeaweedReconciler) createFilerStatefulSet(m *seaweedv1.Seaweed) *appsv1
 		Image:           m.BaseFilerSpec().Image(),
 		ImagePullPolicy: m.BaseFilerSpec().ImagePullPolicy(),
 		SecurityContext: m.BaseFilerSpec().ContainerSecurityContext(),
-		Env:             append(m.BaseFilerSpec().Env(), kubernetesEnvVars...),
+		Env:             append(m.BaseFilerSpec().Env(), componentEnvVars(m)...),
 		Resources:       filterContainerResources(m.Spec.Filer.ResourceRequirements),
 		VolumeMounts:    mergeVolumeMounts(volumeMounts, m.BaseFilerSpec().VolumeMounts()),
 		Command: []string{

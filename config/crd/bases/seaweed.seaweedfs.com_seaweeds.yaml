@@ -10461,6 +10461,9 @@ spec:
                             - volumePath
                             type: object
                         type: object
+                        x-kubernetes-validations:
+                        - message: must set exactly one volume source
+                          rule: self.size() == 1
                     required:
                     - volume
                     type: object

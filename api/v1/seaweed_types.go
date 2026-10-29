@@ -159,6 +159,7 @@ type TLSSource struct {
 	// Volume provides the CA bundle and the cert/key pair. Any corev1
 	// volume source is allowed; the volume is mounted read-only at
 	// /etc/sw-tls on every component.
+	// +kubebuilder:validation:XValidation:rule="self.size() == 1",message="must set exactly one volume source"
 	Volume *corev1.VolumeSource `json:"volume"`
 
 	// Files names the CA, cert and key files inside the mounted volume.

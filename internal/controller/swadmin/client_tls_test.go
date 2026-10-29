@@ -9,9 +9,11 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -175,6 +177,79 @@ func TestIAMClient_MTLS_RejectsUnknownCA(t *testing.T) {
 	if _, err := c.GetUser(ctx, "alice"); err == nil {
 		t.Fatal("GetUser succeeded against a server signed by an unknown CA")
 	}
+}
+
+// TestAuthorityPeerCredentials_Handshake pins the per-handshake binding: the
+// verify callback observes the dial authority, so one credential can demand a
+// different peer identity per endpoint — here the "filer" authority passes
+// while the same certificate on a "master" authority is refused.
+func TestAuthorityPeerCredentials_Handshake(t *testing.T) {
+	pki := newTestPKI(t)
+	var gotAuthority string
+	creds, err := newAuthorityPeerCredentials(pki.caPEM, pki.certPEM, pki.keyPEM, func(authority string, leaf *x509.Certificate) error {
+		gotAuthority = authority
+		if strings.Contains(authority, "filer") {
+			return nil
+		}
+		return fmt.Errorf("not the filer endpoint")
+	})
+	if err != nil {
+		t.Fatalf("newAuthorityPeerCredentials: %v", err)
+	}
+
+	run := func(authority string) error {
+		clientConn, serverConn := net.Pipe()
+		defer clientConn.Close()
+		go func() {
+			defer serverConn.Close()
+			srv := tls.Server(serverConn, &tls.Config{
+				Certificates: mustKeyPair(t, pki.certPEM, pki.keyPEM),
+				ClientCAs:    mustPool(t, pki.caPEM),
+				ClientAuth:   tls.RequireAndVerifyClientCert,
+				MinVersion:   tls.VersionTLS12,
+			})
+			_ = srv.Handshake()
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		conn, info, err := creds.ClientHandshake(ctx, authority, clientConn)
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		if _, ok := info.(credentials.TLSInfo); !ok {
+			return fmt.Errorf("unexpected auth info %T", info)
+		}
+		return nil
+	}
+
+	if err := run("seaweed-filer.media:18888"); err != nil {
+		t.Fatalf("filer-target handshake: %v", err)
+	}
+	if gotAuthority != "seaweed-filer.media:18888" {
+		t.Fatalf("verifyPeer saw %q", gotAuthority)
+	}
+	if err := run("seaweed-master.media:9333"); err == nil {
+		t.Fatal("handshake to a master authority passed with a filer-locked verifier")
+	}
+}
+
+func mustKeyPair(t *testing.T, certPEM, keyPEM []byte) []tls.Certificate {
+	t.Helper()
+	c, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		t.Fatalf("key pair: %v", err)
+	}
+	return []tls.Certificate{c}
+}
+
+func mustPool(t *testing.T, caPEM []byte) *x509.CertPool {
+	t.Helper()
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		t.Fatal("append CA")
+	}
+	return pool
 }
 
 // TestClientTLSDialOption_BadMaterial pins the error paths so a malformed

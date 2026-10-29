@@ -560,8 +560,9 @@ As an alternative to cert-manager — for example workload identity issued by
 SPIRE, where every component should present its own short-lived SVID — set
 `spec.tls.source.volume` to any Kubernetes volume source that delivers
 `ca.crt`/`tls.crt`/`tls.key` PEM files. The volume is mounted read-only at
-`/etc/sw-tls` on every component and the operator creates no Issuer,
-Certificate or Secret:
+`/etc/sw-tls` on every component and the operator creates no cert-manager
+Issuer, Certificate or TLS Secret. It still creates the
+`<name>-security-config` Secret that holds `security.toml`:
 
 ```yaml
 spec:

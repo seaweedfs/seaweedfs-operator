@@ -198,7 +198,9 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller:latest=${IMG}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) -n $(NAMESPACE) apply -f -
+	@# Server-side apply: the seaweeds CRD exceeds kubectl's 256KiB
+	@# last-applied-configuration annotation limit, so client-side apply fails.
+	$(KUSTOMIZE) build config/default | $(KUBECTL) -n $(NAMESPACE) apply --server-side -f -
 	$(KUBECTL) wait deployment.apps/seaweedfs-operator-controller-manager --for condition=Available --namespace $(NAMESPACE) --timeout 5m
 
 .PHONY: undeploy

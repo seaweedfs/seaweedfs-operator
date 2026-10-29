@@ -291,7 +291,7 @@ func (r *AdminScriptReconciler) buildCronJob(script *seaweedv1.AdminScript, clus
 		volumeMounts = append(volumeMounts, tlsMounts...)
 	}
 
-	env := append([]corev1.EnvVar{{Name: adminScriptEnvVar, Value: script.Spec.Script}}, kubernetesEnvVars...)
+	env := append([]corev1.EnvVar{{Name: adminScriptEnvVar, Value: script.Spec.Script}}, componentEnvVars(cluster)...)
 
 	var envFrom []corev1.EnvFromSource
 	if credName := adminScriptCredentialsSecretName(script, cluster); credName != "" {

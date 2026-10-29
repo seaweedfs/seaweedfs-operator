@@ -4,12 +4,16 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -108,7 +112,7 @@ func TestRenderSecurityTOML(t *testing.T) {
 	}
 
 	t.Run("nothing enabled emits no jwt section", func(t *testing.T) {
-		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{}, allKeys, false)
+		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{}, allKeys, nil)
 		if strings.Contains(got, "[jwt") {
 			t.Errorf("expected no [jwt.*] sections, got %q", got)
 		}
@@ -132,7 +136,7 @@ func TestRenderSecurityTOML(t *testing.T) {
 	}
 	for _, tc := range sections {
 		t.Run(tc.name+" renders only its own section", func(t *testing.T) {
-			got := renderSecurityTOML(tc.cfg, allKeys, false)
+			got := renderSecurityTOML(tc.cfg, allKeys, nil)
 			if !strings.Contains(got, tc.section+"\nkey = \""+tc.key+"\"") {
 				t.Errorf("expected %s with key %q, got %q", tc.section, tc.key, got)
 			}
@@ -152,7 +156,7 @@ func TestRenderSecurityTOML(t *testing.T) {
 
 	t.Run("sub-section headers do not swallow their parent", func(t *testing.T) {
 		// The two share a prefix; each needs its own key.
-		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{VolumeWrite: true, VolumeRead: true}, allKeys, false)
+		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{VolumeWrite: true, VolumeRead: true}, allKeys, nil)
 		if !strings.Contains(got, "[jwt.signing]\nkey = \"vw-key\"") || !strings.Contains(got, "[jwt.signing.read]\nkey = \"vr-key\"") {
 			t.Errorf("expected both volume sections with their own keys, got %q", got)
 		}
@@ -167,7 +171,7 @@ func TestRenderSecurityTOML(t *testing.T) {
 				FilerWrite:  0,
 			},
 		}
-		got := renderSecurityTOML(cfg, allKeys, false)
+		got := renderSecurityTOML(cfg, allKeys, nil)
 		if !strings.Contains(got, "[jwt.signing]\nkey = \"vw-key\"\nexpires_after_seconds = 30\n") {
 			t.Errorf("expected volume write expiry override, got %q", got)
 		}
@@ -177,7 +181,7 @@ func TestRenderSecurityTOML(t *testing.T) {
 	})
 
 	t.Run("with TLS emits grpc sections", func(t *testing.T) {
-		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{FilerWrite: true}, allKeys, true)
+		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{FilerWrite: true}, allKeys, &seaweedv1.TLSSpec{Enabled: true})
 		if !strings.Contains(got, "[jwt.filer_signing]") {
 			t.Errorf("expected [jwt.filer_signing] section, got %q", got)
 		}
@@ -198,7 +202,7 @@ func TestRenderSecurityTOML(t *testing.T) {
 
 	t.Run("TLS alone emits no jwt section", func(t *testing.T) {
 		// Enabling mTLS must not silently enable JWTs.
-		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{}, allKeys, true)
+		got := renderSecurityTOML(seaweedv1.JWTSigningSpec{}, allKeys, &seaweedv1.TLSSpec{Enabled: true})
 		if strings.Contains(got, "[jwt") {
 			t.Errorf("expected no [jwt.*] sections for a TLS-only cluster, got %q", got)
 		}
@@ -218,7 +222,7 @@ func TestParseJWTSigningKeysRoundTrip(t *testing.T) {
 		filerRead:   "fr-key",
 	}
 	cfg := seaweedv1.JWTSigningSpec{VolumeWrite: true, VolumeRead: true, FilerWrite: true, FilerRead: true}
-	if got := parseJWTSigningKeys(renderSecurityTOML(cfg, want, true)); got != want {
+	if got := parseJWTSigningKeys(renderSecurityTOML(cfg, want, &seaweedv1.TLSSpec{Enabled: true})); got != want {
 		t.Errorf("parseJWTSigningKeys round trip = %+v, want %+v", got, want)
 	}
 }
@@ -494,5 +498,177 @@ func TestEnsureSecuritySecret_SkipsLegacyDeleteWhenSecretPresent(t *testing.T) {
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(context.Background(), client.ObjectKey{Name: SecurityConfigSecretName(m), Namespace: m.Namespace}, cm); err != nil {
 		t.Errorf("legacy ConfigMap should be left untouched when the Secret already holds keys, got err=%v", err)
+	}
+}
+
+// A user-provided TLS volume makes tlsEffective true without cert-manager —
+// there is no Certificate to wait on, so the cached probe result must not gate it.
+func TestTLSEffective_VolumeSource(t *testing.T) {
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+		Spec: seaweedv1.SeaweedSpec{
+			TLS: &seaweedv1.TLSSpec{
+				Enabled: true,
+				Source: &seaweedv1.TLSSource{Volume: &corev1.VolumeSource{
+					CSI: &corev1.CSIVolumeSource{Driver: "csi.spiffe.io"},
+				}},
+			},
+		},
+	}
+	if !tlsFromVolume(m) {
+		t.Fatal("tlsFromVolume = false, want true")
+	}
+	if !tlsEffective(m) {
+		t.Fatal("tlsEffective = false without cert-manager, want true")
+	}
+}
+
+func TestTLSVolumesAndMounts_VolumeSource(t *testing.T) {
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+		Spec: seaweedv1.SeaweedSpec{
+			Master: &seaweedv1.MasterSpec{Replicas: 1},
+			TLS: &seaweedv1.TLSSpec{
+				Enabled: true,
+				Source: &seaweedv1.TLSSource{Volume: &corev1.VolumeSource{
+					CSI: &corev1.CSIVolumeSource{Driver: "csi.spiffe.io", ReadOnly: ptr.To(true)},
+				}},
+			},
+		},
+	}
+	vols, mounts := tlsVolumesAndMounts(m)
+	var tlsVol *corev1.Volume
+	for i := range vols {
+		if vols[i].Name == tlsVolumeName {
+			tlsVol = &vols[i]
+		}
+	}
+	if tlsVol == nil {
+		t.Fatalf("expected a %s volume, got %v", tlsVolumeName, vols)
+	}
+	if tlsVol.CSI == nil || tlsVol.CSI.Driver != "csi.spiffe.io" {
+		t.Errorf("expected the user volume source, got %+v", tlsVol.VolumeSource)
+	}
+	var found bool
+	for _, mt := range mounts {
+		if mt.Name == tlsVolumeName && mt.MountPath == tlsMountPath && mt.ReadOnly {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a read-only %s mount, got %v", tlsMountPath, mounts)
+	}
+}
+
+func TestRenderSecurityTOML_VolumeSource(t *testing.T) {
+	tls := &seaweedv1.TLSSpec{
+		Enabled: true,
+		Source: &seaweedv1.TLSSource{
+			Volume: &corev1.VolumeSource{},
+			Files:  &seaweedv1.TLSFileNames{CA: "bundle.pem", Cert: "svid.pem", Key: "svid_key.pem"},
+		},
+		AllowedWildcardDomain: ".svc.example.org",
+		AllowedCommonNames: &seaweedv1.TLSAllowedCommonNames{
+			Master: []string{"master-a", "master-b"},
+			Volume: []string{"volume-a"},
+		},
+	}
+	got := renderSecurityTOML(seaweedv1.JWTSigningSpec{}, jwtSigningKeys{}, tls)
+	for _, want := range []string{
+		`ca = "` + tlsMountPath + `/bundle.pem"`,
+		`allowed_wildcard_domain = ".svc.example.org"`,
+		`cert = "` + tlsMountPath + `/svid.pem"`,
+		`key  = "` + tlsMountPath + `/svid_key.pem"`,
+		`allowed_commonNames = "master-a,master-b"`,
+		`allowed_commonNames = "volume-a"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in security.toml, got:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "tls.crt") {
+		t.Errorf("default file names must not appear when overridden, got:\n%s", got)
+	}
+	// Sections without configured names carry no allowed_commonNames.
+	if idx := strings.Index(got, "[grpc.filer]"); idx >= 0 {
+		section := got[idx:]
+		if end := strings.Index(section, "\n["); end > 0 {
+			section = section[:end]
+		}
+		if strings.Contains(section, "allowed_commonNames") {
+			t.Errorf("filer section must not carry allowed_commonNames, got:\n%s", section)
+		}
+	}
+}
+
+// With a volume source the operator must provision nothing and must remove
+// cert-manager objects it owned from a previous configuration.
+func TestEnsureTLS_VolumeSource(t *testing.T) {
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+		Spec: seaweedv1.SeaweedSpec{
+			TLS: &seaweedv1.TLSSpec{
+				Enabled: true,
+				Source:  &seaweedv1.TLSSource{Volume: &corev1.VolumeSource{}},
+			},
+		},
+	}
+
+	owned := func(gvk schema.GroupVersionKind, name string) *unstructured.Unstructured {
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(gvk)
+		u.SetName(name)
+		u.SetNamespace(m.Namespace)
+		u.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(m, seaweedv1.GroupVersion.WithKind("Seaweed"))})
+		return u
+	}
+	staleCert := owned(certificateGVK, m.Name+serverCertSuffix)
+	staleIssuer := owned(issuerGVK, m.Name+selfSignedIssuerSuffix)
+	foreignCert := owned(certificateGVK, m.Name+caSecretSuffix)
+	foreignCert.SetOwnerReferences(nil)
+
+	r := securityTestReconciler(t, staleCert, staleIssuer, foreignCert)
+	ctx := context.Background()
+	if _, _, err := r.ensureTLS(ctx, m); err != nil {
+		t.Fatalf("ensureTLS: %v", err)
+	}
+
+	gone := &unstructured.Unstructured{}
+	gone.SetGroupVersionKind(certificateGVK)
+	if err := r.Get(ctx, client.ObjectKey{Name: staleCert.GetName(), Namespace: m.Namespace}, gone); !apierrors.IsNotFound(err) {
+		t.Errorf("expected owned Certificate deleted, got err=%v", err)
+	}
+	gone.SetGroupVersionKind(issuerGVK)
+	if err := r.Get(ctx, client.ObjectKey{Name: staleIssuer.GetName(), Namespace: m.Namespace}, gone); !apierrors.IsNotFound(err) {
+		t.Errorf("expected owned Issuer deleted, got err=%v", err)
+	}
+	gone.SetGroupVersionKind(certificateGVK)
+	if err := r.Get(ctx, client.ObjectKey{Name: foreignCert.GetName(), Namespace: m.Namespace}, gone); err != nil {
+		t.Errorf("expected a foreign Certificate left alone, got err=%v", err)
+	}
+}
+
+func TestComponentEnvVars_RefreshInterval(t *testing.T) {
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "ns"},
+		Spec:       seaweedv1.SeaweedSpec{TLS: &seaweedv1.TLSSpec{Enabled: true}},
+	}
+	for _, e := range componentEnvVars(m) {
+		if e.Name == tlsRefreshIntervalEnvVar {
+			t.Fatalf("refresh env must not be set without spec.tls.refreshInterval")
+		}
+	}
+	m.Spec.TLS.RefreshInterval = &metav1.Duration{Duration: 5 * time.Minute}
+	var found bool
+	for _, e := range componentEnvVars(m) {
+		if e.Name == tlsRefreshIntervalEnvVar {
+			found = true
+			if e.Value != "5m0s" {
+				t.Errorf("refresh env = %q, want %q", e.Value, "5m0s")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected WEED_TLS_CERT_REFRESH_INTERVAL in component env")
 	}
 }

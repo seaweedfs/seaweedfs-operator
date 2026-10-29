@@ -117,6 +117,9 @@ func (r *S3CredentialsReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	target, found, err := resolveSeaweedFiler(ctx, r.Client, cred.Spec.SeaweedRef, cred.Namespace)
 	if err != nil {
+		if errors.Is(err, errOperatorTLSUnavailable) {
+			return reportClusterUnreachable(ctx, r.Client, &cred, &cred.Status.Conditions, cred.Generation, err)
+		}
 		return ctrl.Result{}, err
 	}
 	if !found {

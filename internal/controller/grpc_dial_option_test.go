@@ -8,7 +8,11 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
+	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -177,4 +181,176 @@ func TestBucketReconcile_PassesTLSDialOptionToFactory(t *testing.T) {
 	if gotDialOption == nil {
 		t.Fatal("BucketAdminFactory received no dial option for a TLS-enabled cluster")
 	}
+}
+
+// With a spec.tls.source volume the cluster never has an operator-managed
+// Secret; the operator's own credentials come from SEAWEED_TLS_DIR, re-read
+// per call so rotated material is picked up.
+func TestLoadSeaweedGrpcDialOption_VolumeSource(t *testing.T) {
+	scheme := iamTestScheme(t)
+	newSw := func(files *seaweedv1.TLSFileNames) *seaweedv1.Seaweed {
+		sw := newTestSeaweedWithFiler()
+		sw.Spec.TLS = &seaweedv1.TLSSpec{
+			Enabled: true,
+			Source: &seaweedv1.TLSSource{
+				Volume: &corev1.VolumeSource{CSI: &corev1.CSIVolumeSource{Driver: "csi.spiffe.io"}},
+				Files:  files,
+			},
+		}
+		return sw
+	}
+	writeDir := func(t *testing.T, data map[string][]byte, names [3]string) string {
+		dir := t.TempDir()
+		for i, name := range names {
+			key := []string{"ca.crt", "tls.crt", "tls.key"}[i]
+			if err := os.WriteFile(filepath.Join(dir, name), data[key], 0o600); err != nil {
+				t.Fatalf("write %s: %v", name, err)
+			}
+		}
+		return dir
+	}
+
+	t.Run("unset dir reports unavailable material", func(t *testing.T) {
+		sw := newSw(nil)
+		cli := iamTestClient(t, scheme, sw)
+		_, _, err := loadSeaweedGrpcDialOption(context.Background(), cli, sw)
+		if !errors.Is(err, errOperatorTLSUnavailable) {
+			t.Fatalf("expected errOperatorTLSUnavailable, got %v", err)
+		}
+	})
+
+	t.Run("missing files report unavailable material", func(t *testing.T) {
+		sw := newSw(nil)
+		t.Setenv(operatorTLSDirEnv, t.TempDir())
+		cli := iamTestClient(t, scheme, sw)
+		_, _, err := loadSeaweedGrpcDialOption(context.Background(), cli, sw)
+		if !errors.Is(err, errOperatorTLSUnavailable) {
+			t.Fatalf("expected errOperatorTLSUnavailable, got %v", err)
+		}
+	})
+
+	t.Run("dir with default names dials TLS", func(t *testing.T) {
+		sw := newSw(nil)
+		data := testTLSSecret(t, sw).Data
+		t.Setenv(operatorTLSDirEnv, writeDir(t, data, [3]string{"ca.crt", "tls.crt", "tls.key"}))
+		cli := iamTestClient(t, scheme, sw)
+		opt, fp, err := loadSeaweedGrpcDialOption(context.Background(), cli, sw)
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		if opt == nil || fp == "" {
+			t.Fatalf("expected dial option and fingerprint, got %v / %q", opt, fp)
+		}
+	})
+
+	t.Run("dir honoring source.files names", func(t *testing.T) {
+		sw := newSw(&seaweedv1.TLSFileNames{CA: "bundle.pem", Cert: "svid.pem", Key: "svid_key.pem"})
+		data := testTLSSecret(t, sw).Data
+		t.Setenv(operatorTLSDirEnv, writeDir(t, data, [3]string{"bundle.pem", "svid.pem", "svid_key.pem"}))
+		cli := iamTestClient(t, scheme, sw)
+		opt, _, err := loadSeaweedGrpcDialOption(context.Background(), cli, sw)
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		if opt == nil {
+			t.Fatal("expected a TLS dial option")
+		}
+	})
+}
+
+// TestExpectedServerPeer pins the leaf-identity check the volume-sourced dial
+// adds on top of chain verification: on a shared CA any workload it issues
+// could otherwise impersonate the filer.
+func TestExpectedServerPeer(t *testing.T) {
+	spiffe := func(s string) *url.URL {
+		u, err := url.Parse(s)
+		if err != nil {
+			t.Fatalf("parse %q: %v", s, err)
+		}
+		return u
+	}
+	swWith := func(tls *seaweedv1.TLSSpec) *seaweedv1.Seaweed {
+		return &seaweedv1.Seaweed{
+			ObjectMeta: metav1.ObjectMeta{Name: "seaweed", Namespace: "media"},
+			Spec:       seaweedv1.SeaweedSpec{TLS: tls},
+		}
+	}
+
+	t.Run("nil spec passes no constraint", func(t *testing.T) {
+		if expectedServerPeer(swWith(nil)) != nil {
+			t.Fatal("expected nil verifier")
+		}
+	})
+
+	t.Run("wildcard domain matches leaf CN", func(t *testing.T) {
+		verify := expectedServerPeer(swWith(&seaweedv1.TLSSpec{AllowedWildcardDomain: ".e2e.test"}))
+		if err := verify(&x509.Certificate{Subject: pkix.Name{CommonName: "seaweed.e2e.test"}}); err != nil {
+			t.Fatalf("expected pass, got %v", err)
+		}
+		if err := verify(&x509.Certificate{Subject: pkix.Name{CommonName: "rogue.other.test"}}); err == nil {
+			t.Fatal("expected rejection for a CN outside the domain")
+		}
+	})
+
+	t.Run("wildcard domain matches spiffe trust domain", func(t *testing.T) {
+		verify := expectedServerPeer(swWith(&seaweedv1.TLSSpec{AllowedWildcardDomain: "cluster.local"}))
+		leaf := &x509.Certificate{URIs: []*url.URL{spiffe("spiffe://cluster.local/ns/media/sa/filer")}}
+		if err := verify(leaf); err != nil {
+			t.Fatalf("expected pass, got %v", err)
+		}
+		leaf.URIs = []*url.URL{spiffe("spiffe://other.domain/ns/media/sa/filer")}
+		if err := verify(leaf); err == nil {
+			t.Fatal("expected rejection for another trust domain")
+		}
+	})
+
+	t.Run("allowed common names match CN and URI SANs", func(t *testing.T) {
+		verify := expectedServerPeer(swWith(&seaweedv1.TLSSpec{AllowedCommonNames: &seaweedv1.TLSAllowedCommonNames{
+			Filer: []string{"filer.svid"},
+		}}))
+		if err := verify(&x509.Certificate{Subject: pkix.Name{CommonName: "filer.svid"}}); err != nil {
+			t.Fatalf("expected pass, got %v", err)
+		}
+		leaf := &x509.Certificate{URIs: []*url.URL{spiffe("spiffe://td/ns/d/sa/filer")}}
+		if err := verify(leaf); err == nil {
+			t.Fatal("expected rejection for an undeclared identity")
+		}
+	})
+
+	t.Run("cluster service DNS names are accepted", func(t *testing.T) {
+		verify := expectedServerPeer(swWith(&seaweedv1.TLSSpec{AllowedWildcardDomain: ".example.org"}))
+		for _, dns := range []string{
+			"seaweed-filer.media",
+			"seaweed-filer.media.svc",
+			"seaweed-filer.media.svc.cluster.local",
+			"seaweed-filer-0.seaweed-filer-peer.media.svc.cluster.local",
+		} {
+			if err := verify(&x509.Certificate{DNSNames: []string{dns}}); err != nil {
+				t.Fatalf("expected pass for %q, got %v", dns, err)
+			}
+		}
+		for _, dns := range []string{
+			"seaweed-filer",
+			"seaweed-filer.other",
+			"seaweed-filer.other.svc.cluster.local",
+			"other-filer.media",
+		} {
+			if err := verify(&x509.Certificate{DNSNames: []string{dns}}); err == nil {
+				t.Fatalf("expected rejection for %q", dns)
+			}
+		}
+	})
+
+	t.Run("peer authorization changes the fingerprint", func(t *testing.T) {
+		base := peerAuthFingerprint(&seaweedv1.TLSSpec{AllowedWildcardDomain: ".a"})
+		if peerAuthFingerprint(&seaweedv1.TLSSpec{AllowedWildcardDomain: ".b"}) == base {
+			t.Fatal("wildcard domain not covered by the fingerprint")
+		}
+		if peerAuthFingerprint(&seaweedv1.TLSSpec{AllowedCommonNames: &seaweedv1.TLSAllowedCommonNames{Filer: []string{"x"}}}) == base {
+			t.Fatal("common names not covered by the fingerprint")
+		}
+		if peerAuthFingerprint(nil) != "" {
+			t.Fatal("expected empty fingerprint for nil tls")
+		}
+	})
 }

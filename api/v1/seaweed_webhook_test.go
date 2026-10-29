@@ -18,6 +18,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 // baseValid returns a Seaweed CR that satisfies the webhook's required
@@ -523,6 +524,140 @@ func TestValidateWorker(t *testing.T) {
 		sw.Spec.Worker.MetricsPort = &port
 		if errs := sw.validateWorker(); len(errs) != 0 {
 			t.Fatalf("unexpected errors: %v", errs)
+		}
+	})
+}
+
+func TestValidateTLS(t *testing.T) {
+	volumeSource := func() *TLSSource {
+		return &TLSSource{Volume: &corev1.VolumeSource{
+			CSI: &corev1.CSIVolumeSource{Driver: "csi.spiffe.io", ReadOnly: ptr.To(true)},
+		}}
+	}
+	allNames := &TLSAllowedCommonNames{
+		Master: []string{"master.svid"}, Volume: []string{"volume.svid"},
+		Filer: []string{"filer.svid"}, Admin: []string{"admin.svid"}, Worker: []string{"worker.svid"},
+	}
+
+	t.Run("no tls is fine", func(t *testing.T) {
+		if errs := baseValid().validateTLS(); len(errs) != 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+	})
+
+	t.Run("cert-manager path needs no authorization", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.TLS = &TLSSpec{Enabled: true}
+		if errs := sw.validateTLS(); len(errs) != 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+	})
+
+	t.Run("source and issuerRef together are refused", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.TLS = &TLSSpec{Enabled: true, Source: volumeSource(), AllowedWildcardDomain: ".example.org",
+			IssuerRef: &TLSIssuerRef{Name: "ca"}}
+		if errs := sw.validateTLS(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "mutually exclusive") {
+			t.Fatalf("expected the exclusivity error, got %v", errs)
+		}
+	})
+
+	t.Run("source without enabled is refused", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.TLS = &TLSSpec{Source: volumeSource(), AllowedWildcardDomain: ".example.org"}
+		if errs := sw.validateTLS(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "enabled") {
+			t.Fatalf("expected the enabled requirement, got %v", errs)
+		}
+	})
+
+	t.Run("volume source without authorization is refused", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.TLS = &TLSSpec{Enabled: true, Source: volumeSource()}
+		if errs := sw.validateTLS(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "master, volume") {
+			t.Fatalf("expected the authorization requirement, got %v", errs)
+		}
+	})
+
+	t.Run("volume source with only wildcard domain is fine", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.TLS = &TLSSpec{Enabled: true, Source: volumeSource(), AllowedWildcardDomain: ".example.org"}
+		if errs := sw.validateTLS(); len(errs) != 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+	})
+
+	t.Run("volume source requires names for deployed components only", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.TLS = &TLSSpec{Enabled: true, Source: volumeSource(), AllowedCommonNames: allNames}
+		if errs := sw.validateTLS(); len(errs) != 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+	})
+
+	t.Run("deployed filer must have names too", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.Filer = &FilerSpec{Replicas: 1}
+		sw.Spec.TLS = &TLSSpec{Enabled: true, Source: volumeSource(),
+			AllowedCommonNames: &TLSAllowedCommonNames{Master: []string{"m"}, Volume: []string{"v"}}}
+		if errs := sw.validateTLS(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "filer") {
+			t.Fatalf("expected filer in the missing list, got %v", errs)
+		}
+	})
+
+	t.Run("a missing component is named in the error", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.TLS = &TLSSpec{Enabled: true, Source: volumeSource(),
+			AllowedCommonNames: &TLSAllowedCommonNames{Master: []string{"m"}}}
+		if errs := sw.validateTLS(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "volume") {
+			t.Fatalf("expected volume in the missing list, got %v", errs)
+		}
+	})
+
+	t.Run("file names must be basenames", func(t *testing.T) {
+		sw := baseValid()
+		src := volumeSource()
+		src.Files = &TLSFileNames{CA: "../escape.pem"}
+		sw.Spec.TLS = &TLSSpec{Enabled: true, Source: src, AllowedWildcardDomain: ".example.org"}
+		if errs := sw.validateTLS(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "files.ca") {
+			t.Fatalf("expected the file name error, got %v", errs)
+		}
+	})
+
+	t.Run("a bare dot is not a file name", func(t *testing.T) {
+		sw := baseValid()
+		src := volumeSource()
+		src.Files = &TLSFileNames{Key: "."}
+		sw.Spec.TLS = &TLSSpec{Enabled: true, Source: src, AllowedWildcardDomain: ".example.org"}
+		if errs := sw.validateTLS(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "files.key") {
+			t.Fatalf("expected the file name error, got %v", errs)
+		}
+	})
+
+	t.Run("volume source needs exactly one source", func(t *testing.T) {
+		sw := baseValid()
+		src := volumeSource()
+		src.Volume = &corev1.VolumeSource{}
+		sw.Spec.TLS = &TLSSpec{Enabled: true, Source: src, AllowedWildcardDomain: ".example.org"}
+		if errs := sw.validateTLS(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "exactly one") {
+			t.Fatalf("expected the single-source error, got %v", errs)
+		}
+	})
+
+	t.Run("volume source with two sources is refused", func(t *testing.T) {
+		sw := baseValid()
+		src := volumeSource()
+		src.Volume.Secret = &corev1.SecretVolumeSource{SecretName: "tls"}
+		sw.Spec.TLS = &TLSSpec{Enabled: true, Source: src, AllowedWildcardDomain: ".example.org"}
+		if errs := sw.validateTLS(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "exactly one") {
+			t.Fatalf("expected the single-source error, got %v", errs)
+		}
+	})
+
+	t.Run("non-positive refreshInterval is refused", func(t *testing.T) {
+		sw := baseValid()
+		sw.Spec.TLS = &TLSSpec{Enabled: true, RefreshInterval: &metav1.Duration{}}
+		if errs := sw.validateTLS(); len(errs) != 1 || !strings.Contains(errs[0].Error(), "refreshInterval") {
+			t.Fatalf("expected the refreshInterval error, got %v", errs)
 		}
 	})
 }

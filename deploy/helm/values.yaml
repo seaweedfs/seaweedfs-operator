@@ -99,6 +99,25 @@ watchNamespaces: []
 extraEnv: []
 #  - name: SOME_FLAG
 #    value: "true"
+#  - name: SEAWEED_TLS_DIR
+#    value: /etc/operator-tls
+
+# -- Additional volumes on the manager pod holding the PEM files (CA bundle,
+# client certificate and key) the operator dials Seaweed clusters with when a
+# Seaweed CR uses spec.tls.source.volume. Pair with extraVolumeMounts and a
+# SEAWEED_TLS_DIR entry in extraEnv. A workload-identity CSI driver that only
+# mounts an API socket (e.g. csi.spiffe.io) needs an agent such as
+# spiffe-helper to write the PEM files first.
+extraVolumes: []
+#  - name: operator-tls
+#    secret:
+#      secretName: operator-tls
+
+# -- Additional volume mounts on the manager container, matching extraVolumes.
+extraVolumeMounts: []
+#  - name: operator-tls
+#    mountPath: /etc/operator-tls
+#    readOnly: true
 
 # -- Bucket usage stats refresh configuration. The operator periodically
 # calls collection.list per Seaweed cluster and patches status.usage on

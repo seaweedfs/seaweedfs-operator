@@ -89,6 +89,9 @@ func (r *S3PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	target, found, err := resolveSeaweedFiler(ctx, r.Client, policy.Spec.SeaweedRef, policy.Namespace)
 	if err != nil {
+		if errors.Is(err, errOperatorTLSUnavailable) {
+			return reportClusterUnreachable(ctx, r.Client, &policy, &policy.Status.Conditions, policy.Generation, err)
+		}
 		return ctrl.Result{}, err
 	}
 	if !found {

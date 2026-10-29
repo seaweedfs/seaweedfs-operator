@@ -554,6 +554,56 @@ spec:
       group: cert-manager.io   # default
 ```
 
+#### mTLS material from a mounted volume
+
+As an alternative to cert-manager — for example workload identity issued by
+SPIRE, where every component should present its own short-lived SVID — set
+`spec.tls.source.volume` to any Kubernetes volume source that delivers
+`ca.crt`/`tls.crt`/`tls.key` PEM files. The volume is mounted read-only at
+`/etc/sw-tls` on every component and the operator creates no cert-manager
+Issuer, Certificate or TLS Secret. It still creates the
+`<name>-security-config` Secret that holds `security.toml`:
+
+```yaml
+spec:
+  tls:
+    enabled: true
+    source:
+      volume:
+        emptyDir: {}          # written by a spiffe-helper sidecar, a CSI
+                              # driver that emits PEM files, a Secret, ...
+      files:                  # optional; defaults shown
+        ca: ca.crt
+        cert: tls.crt
+        key: tls.key
+    allowedWildcardDomain: ".cluster.local"   # see below
+    refreshInterval: 10m      # re-read the mounted PEMs; set below cert lifetime
+```
+
+Notes:
+
+- `source` and `issuerRef` are mutually exclusive, and `source.volume` must set
+  exactly one inner volume source.
+- A shared CA (such as a SPIRE trust domain) issues to every workload, so chain
+  verification alone is not an authorization boundary: configure
+  `allowedWildcardDomain` and/or per-component `allowedCommonNames`
+  (`master`, `volume`, `filer`, `s3`, `admin`, `worker`, each a list of peer
+  common names) to restrict who may call each component's gRPC endpoint.
+  SeaweedFS compares the peer certificate's **subject common name** — a URI-SAN
+  identity like a SPIFFE SVID must also carry its workload identity in the CN
+  to be authorized by these fields.
+- `refreshInterval` sets `WEED_TLS_CERT_REFRESH_INTERVAL` on every component;
+  the seaweedfs default of 5h is longer than typical SVID lifetimes, so set it
+  below your cert lifetime or rotated credentials go stale.
+- The operator itself dials the cluster over the same mTLS. With `source` the
+  source volume is only mounted into the component pods, so the operator's own
+  credentials arrive separately: set `SEAWEED_TLS_DIR` on the operator
+  deployment to a directory holding its client CA, cert and key (same file
+  names as `source.files`), via the chart's
+  `extraVolumes`/`extraVolumeMounts`/`extraEnv` (see the chart README). Files
+  are re-read on use and the cached dial is rebuilt whenever the material or
+  the declared peer authorization changes.
+
 > Note: this `spec.tls` block configures mTLS *between SeaweedFS components*. It is
 > independent of the operator's own admission-webhook serving certificate, which is
 > covered under [Installation → Manual](#manual).

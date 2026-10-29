@@ -45,6 +45,25 @@ var (
 	}
 )
 
+// tlsRefreshIntervalEnvVar is the env seaweedfs' pemfile provider reads for
+// how often to re-read cert, key and CA files (any time.ParseDuration value).
+const tlsRefreshIntervalEnvVar = "WEED_TLS_CERT_REFRESH_INTERVAL"
+
+// componentEnvVars is kubernetesEnvVars plus the per-CR knobs that ride on
+// the pod environment: spec.tls.refreshInterval becomes
+// WEED_TLS_CERT_REFRESH_INTERVAL so short-lived material (e.g. hourly SVIDs)
+// is reloaded without pod restarts.
+func componentEnvVars(m *seaweedv1.Seaweed) []corev1.EnvVar {
+	env := kubernetesEnvVars
+	if m.Spec.TLS != nil && m.Spec.TLS.RefreshInterval != nil {
+		env = append(env, corev1.EnvVar{
+			Name:  tlsRefreshIntervalEnvVar,
+			Value: m.Spec.TLS.RefreshInterval.Duration.String(),
+		})
+	}
+	return env
+}
+
 func ReconcileResult(err error) (bool, ctrl.Result, error) {
 	if err != nil {
 		return true, ctrl.Result{}, err
@@ -329,8 +348,10 @@ func mergeVolumeMounts(base, override []corev1.VolumeMount) []corev1.VolumeMount
 }
 
 // tlsEffective reports whether TLS should actually be wired into this
-// reconcile pass. In addition to the user's Spec.TLS.Enabled flag it
-// requires the cert-manager CRD probe to have succeeded — otherwise
+// reconcile pass. A user-provided source volume always qualifies — the
+// operator provisions nothing and cert-manager is irrelevant. Otherwise, in
+// addition to the user's Spec.TLS.Enabled flag it requires the cert-manager
+// CRD probe to have succeeded — otherwise
 // the operator has not (and cannot) reconcile the Secret/ConfigMap
 // that the pod mounts would reference, so adding those mounts would
 // pin the pod in ContainerCreating with a missing-volume-source error.
@@ -340,6 +361,9 @@ func mergeVolumeMounts(base, override []corev1.VolumeMount) []corev1.VolumeMount
 // than breaking the whole cluster — matching the soft no-op contract
 // documented on TLSSpec.
 func tlsEffective(m *seaweedv1.Seaweed) bool {
+	if tlsFromVolume(m) {
+		return true
+	}
 	return tlsEnabled(m) && certManagerAvailableCached()
 }
 
@@ -375,6 +399,23 @@ func configSecretVolumeAndMount(volumeName, fileName string, sel *corev1.SecretK
 	return volume, mount
 }
 
+// tlsVolume is the single volume carrying a component's gRPC TLS material:
+// the user-provided source volume verbatim, or the cert-manager Secret the
+// operator provisions.
+func tlsVolume(m *seaweedv1.Seaweed) corev1.Volume {
+	volume := corev1.Volume{Name: tlsVolumeName}
+	if tlsFromVolume(m) {
+		volume.VolumeSource = *m.Spec.TLS.Source.Volume
+	} else {
+		volume.VolumeSource = corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: TLSServerSecretName(m),
+			},
+		}
+	}
+	return volume
+}
+
 // tlsVolumesAndMounts returns the set of pod volumes and container mounts
 // that wire the shared TLS Secret and security.toml Secret into a component
 // pod. Returns empty slices when neither TLS nor the security config is
@@ -404,14 +445,7 @@ func tlsVolumesAndMounts(m *seaweedv1.Seaweed) ([]corev1.Volume, []corev1.Volume
 		})
 	}
 	if tlsEffective(m) {
-		volumes = append(volumes, corev1.Volume{
-			Name: tlsVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: TLSServerSecretName(m),
-				},
-			},
-		})
+		volumes = append(volumes, tlsVolume(m))
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      tlsVolumeName,
 			ReadOnly:  true,
@@ -442,8 +476,12 @@ func withJWTSigningAnnotation(m *seaweedv1.Seaweed, annotations map[string]strin
 	return merged
 }
 
-// jwtSigningRevision names the enabled sections: "none", "volumeWrite", or
-// "volumeWrite=30,filerWrite".
+// jwtSigningRevision names the enabled sections and the spec-driven parts of
+// the [grpc.*] render: "none", "volumeWrite", or
+// "volumeWrite=30,filerWrite,tls=wild:.svc;filer=a+b". The TLS suffix covers
+// peer authorization and file names — settings that change only
+// security.toml, not the pod spec — so editing them still rolls pods that
+// read the file at startup.
 func jwtSigningRevision(m *seaweedv1.Seaweed) string {
 	cfg := jwtSigningConfig(m)
 	expiry := jwtSigningExpiry(cfg)
@@ -457,6 +495,9 @@ func jwtSigningRevision(m *seaweedv1.Seaweed) string {
 			continue
 		}
 		parts = append(parts, s.field)
+	}
+	if r := tlsRevision(m.Spec.TLS); r != "" {
+		parts = append(parts, r)
 	}
 	if len(parts) == 0 {
 		return "none"

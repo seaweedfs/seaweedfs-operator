@@ -288,7 +288,7 @@ func (r *SeaweedReconciler) buildFlatVolumePodSpec(m *seaweedv1.Seaweed, disks v
 		Image:           m.BaseVolumeSpec().Image(),
 		ImagePullPolicy: m.BaseVolumeSpec().ImagePullPolicy(),
 		SecurityContext: m.BaseVolumeSpec().ContainerSecurityContext(),
-		Env:             append(m.BaseVolumeSpec().Env(), kubernetesEnvVars...),
+		Env:             append(m.BaseVolumeSpec().Env(), componentEnvVars(m)...),
 		Resources:       filterContainerResources(m.Spec.Volume.ResourceRequirements),
 		Command: []string{
 			"/bin/sh",
@@ -504,7 +504,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 		Image:           m.BaseVolumeSpec().Image(),
 		ImagePullPolicy: getImagePullPolicy(m, topologySpec),
 		SecurityContext: getContainerSecurityContext(m, topologySpec),
-		Env:             append(getEnvVars(m, topologySpec), kubernetesEnvVars...),
+		Env:             append(getEnvVars(m, topologySpec), componentEnvVars(m)...),
 		Resources:       filterContainerResources(resourceRequirements),
 		Command: []string{
 			"/bin/sh",

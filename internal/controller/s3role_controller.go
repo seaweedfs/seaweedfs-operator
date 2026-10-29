@@ -109,6 +109,9 @@ func (r *S3RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	target, found, err := resolveSeaweedFiler(ctx, r.Client, role.Spec.SeaweedRef, role.Namespace)
 	if err != nil {
+		if errors.Is(err, errOperatorTLSUnavailable) {
+			return reportClusterUnreachable(ctx, r.Client, &role, &role.Status.Conditions, role.Generation, err)
+		}
 		return ctrl.Result{}, err
 	}
 	if !found {

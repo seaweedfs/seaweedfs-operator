@@ -73,6 +73,9 @@ func (r *S3OIDCProviderReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	target, found, err := resolveSeaweedFiler(ctx, r.Client, provider.Spec.SeaweedRef, provider.Namespace)
 	if err != nil {
+		if errors.Is(err, errOperatorTLSUnavailable) {
+			return reportClusterUnreachable(ctx, r.Client, &provider, &provider.Status.Conditions, provider.Generation, err)
+		}
 		return ctrl.Result{}, err
 	}
 	if !found {

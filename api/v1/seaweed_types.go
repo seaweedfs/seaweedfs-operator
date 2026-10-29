@@ -88,12 +88,13 @@ type IngressTLS struct {
 	SecretName string   `json:"secretName,omitempty"`
 }
 
-// TLSSpec controls mTLS between SeaweedFS components via cert-manager.
-// When Enabled, the operator provisions a cert-manager Certificate covering
-// every component's headless service and renders a security.toml ConfigMap
-// that wires mTLS into every gRPC endpoint. cert-manager must be installed
-// in the cluster — the operator will emit a condition on the Seaweed CR and
-// refuse to mount TLS if the cert-manager CRDs are missing.
+// TLSSpec controls mTLS between SeaweedFS components. When Enabled, TLS
+// material comes either from a cert-manager Certificate the operator
+// provisions (the default) or from a user-managed volume (Source), and the
+// operator renders a security.toml Secret that wires mTLS into every gRPC
+// endpoint. The cert-manager path requires cert-manager installed in the
+// cluster — the operator will emit a condition on the Seaweed CR and refuse
+// to mount TLS if the cert-manager CRDs are missing.
 type TLSSpec struct {
 	// Enabled turns on mTLS. Defaults to false.
 	Enabled bool `json:"enabled,omitempty"`
@@ -102,8 +103,43 @@ type TLSSpec struct {
 	// ClusterIssuer to sign the server certificate. When empty the operator
 	// provisions a self-signed Issuer + CA Certificate + CA Issuer chain
 	// owned by the Seaweed CR, matching the default Helm chart behavior.
+	// Mutually exclusive with Source.
 	// +optional
 	IssuerRef *TLSIssuerRef `json:"issuerRef,omitempty"`
+
+	// Source mounts TLS material from a user-provided volume — for example
+	// a CSI driver such as the SPIFFE CSI driver — instead of a cert-manager
+	// Certificate. With Source set the operator creates no Issuer,
+	// Certificate or Secret for TLS, and AllowedWildcardDomain or
+	// per-component AllowedCommonNames must be configured so a shared CA
+	// (such as a SPIRE trust domain) cannot be used by unrelated workloads
+	// to reach the cluster's gRPC endpoints.
+	// +optional
+	Source *TLSSource `json:"source,omitempty"`
+
+	// AllowedCommonNames restricts which peer certificate common names each
+	// gRPC component accepts, rendered as allowed_commonNames in the
+	// matching [grpc.<component>] security.toml section. Available on both
+	// the cert-manager and volume-source paths. SeaweedFS compares the
+	// peer certificate's subject common name, so URI-SAN identities such
+	// as SPIFFE SVIDs must carry their identity in the CN to be
+	// authorized.
+	// +optional
+	AllowedCommonNames *TLSAllowedCommonNames `json:"allowedCommonNames,omitempty"`
+
+	// AllowedWildcardDomain accepts any peer certificate whose common name
+	// ends with the domain, rendered as [grpc] allowed_wildcard_domain.
+	// An alternative to per-component AllowedCommonNames; like it, only
+	// the peer certificate's subject common name is compared.
+	// +optional
+	AllowedWildcardDomain string `json:"allowedWildcardDomain,omitempty"`
+
+	// RefreshInterval sets WEED_TLS_CERT_REFRESH_INTERVAL on every
+	// component: how often cert, key and CA files are re-read from disk.
+	// The seaweedfs default is 5h, which exceeds the lifetime of short-lived
+	// credentials such as SPIFFE SVIDs, so set this below the cert lifetime.
+	// +optional
+	RefreshInterval *metav1.Duration `json:"refreshInterval,omitempty"`
 }
 
 // TLSIssuerRef is a thin mirror of cert-manager's ObjectReference so the
@@ -116,6 +152,47 @@ type TLSIssuerRef struct {
 	Kind string `json:"kind,omitempty"`
 	// +kubebuilder:default:=cert-manager.io
 	Group string `json:"group,omitempty"`
+}
+
+// TLSSource carries user-managed gRPC TLS material into every component.
+type TLSSource struct {
+	// Volume provides the CA bundle and the cert/key pair. Any corev1
+	// volume source is allowed; the volume is mounted read-only at
+	// /etc/sw-tls on every component.
+	Volume *corev1.VolumeSource `json:"volume"`
+
+	// Files names the CA, cert and key files inside the mounted volume.
+	// Names default to ca.crt, tls.crt and tls.key.
+	// +optional
+	Files *TLSFileNames `json:"files,omitempty"`
+}
+
+// TLSFileNames names the three PEM files under the mounted TLS volume.
+type TLSFileNames struct {
+	// +optional
+	CA string `json:"ca,omitempty"`
+	// +optional
+	Cert string `json:"cert,omitempty"`
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
+// TLSAllowedCommonNames lists the peer certificate common names each
+// component's gRPC server accepts. A component not listed here, or listed
+// with an empty value, accepts any certificate chaining to the CA.
+type TLSAllowedCommonNames struct {
+	// +optional
+	Master []string `json:"master,omitempty"`
+	// +optional
+	Volume []string `json:"volume,omitempty"`
+	// +optional
+	Filer []string `json:"filer,omitempty"`
+	// +optional
+	S3 []string `json:"s3,omitempty"`
+	// +optional
+	Admin []string `json:"admin,omitempty"`
+	// +optional
+	Worker []string `json:"worker,omitempty"`
 }
 
 // SecurityConfigSpec mirrors the Helm chart's

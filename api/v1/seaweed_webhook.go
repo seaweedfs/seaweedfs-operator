@@ -21,7 +21,9 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"reflect"
 	"regexp"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -96,6 +98,7 @@ func (v *SeaweedCustomValidator) ValidateCreate(_ context.Context, obj *Seaweed)
 		errs = append(errs, err)
 	}
 	errs = append(errs, obj.validateBackup()...)
+	errs = append(errs, obj.validateTLS()...)
 
 	return obj.s3DeprecationWarnings(), utilerrors.NewAggregate(errs)
 }
@@ -123,6 +126,7 @@ func (v *SeaweedCustomValidator) ValidateUpdate(_ context.Context, _, obj *Seawe
 		errs = append(errs, err)
 	}
 	errs = append(errs, obj.validateBackup()...)
+	errs = append(errs, obj.validateTLS()...)
 
 	return obj.s3DeprecationWarnings(), utilerrors.NewAggregate(errs)
 }
@@ -281,6 +285,94 @@ func (r *Seaweed) validateBackup() []error {
 		}
 	}
 	return errs
+}
+
+// validateTLS checks the spec.tls invariants CEL cannot express: the source
+// volume and cert-manager issuer are mutually exclusive, file names must be
+// basenames inside the mount, and a user-managed volume requires peer
+// authorization — a wildcard domain, or allowed common names for every
+// component the CR deploys — because a shared CA (such as a SPIRE trust
+// domain) would otherwise let any workload it issues reach the cluster's
+// gRPC endpoints.
+func (r *Seaweed) validateTLS() []error {
+	tls := r.Spec.TLS
+	if tls == nil {
+		return nil
+	}
+	var errs []error
+
+	if tls.RefreshInterval != nil && tls.RefreshInterval.Duration <= 0 {
+		errs = append(errs, errors.New("spec.tls.refreshInterval must be positive"))
+	}
+
+	if tls.Source == nil {
+		return errs
+	}
+	if !tls.Enabled {
+		errs = append(errs, errors.New("spec.tls.source requires spec.tls.enabled"))
+	}
+	if tls.IssuerRef != nil {
+		errs = append(errs, errors.New("spec.tls.source and spec.tls.issuerRef are mutually exclusive"))
+	}
+	if tls.Source.Volume == nil {
+		errs = append(errs, errors.New("spec.tls.source.volume is required"))
+	} else if !singleVolumeSource(tls.Source.Volume) {
+		errs = append(errs, errors.New("spec.tls.source.volume must set exactly one volume source"))
+	}
+	if files := tls.Source.Files; files != nil {
+		for _, f := range []struct{ field, name string }{
+			{"ca", files.CA}, {"cert", files.Cert}, {"key", files.Key},
+		} {
+			if strings.ContainsAny(f.name, "/\\") || f.name == ".." || f.name == "." {
+				errs = append(errs, fmt.Errorf("spec.tls.source.files.%s %q must be a file name inside the mounted volume", f.field, f.name))
+			}
+		}
+	}
+
+	if tls.Source.Volume != nil && tls.AllowedWildcardDomain == "" {
+		allow := TLSAllowedCommonNames{}
+		if tls.AllowedCommonNames != nil {
+			allow = *tls.AllowedCommonNames
+		}
+		var missing []string
+		require := func(component string, names []string) {
+			if len(names) == 0 {
+				missing = append(missing, component)
+			}
+		}
+		require("master", allow.Master)
+		require("volume", allow.Volume)
+		if r.Spec.Filer != nil {
+			require("filer", allow.Filer)
+		}
+		if r.Spec.S3 != nil {
+			require("s3", allow.S3)
+		}
+		if r.Spec.Admin != nil {
+			require("admin", allow.Admin)
+		}
+		if r.Spec.Worker != nil {
+			require("worker", allow.Worker)
+		}
+		if len(missing) > 0 {
+			errs = append(errs, fmt.Errorf("spec.tls.source.volume requires spec.tls.allowedWildcardDomain or spec.tls.allowedCommonNames entries for every deployed component; missing: %s", strings.Join(missing, ", ")))
+		}
+	}
+	return errs
+}
+
+// singleVolumeSource reports whether vs sets exactly one volume source.
+// Kubernetes requires exactly one; anything else only fails when the API
+// server validates the pod, so catch it at admission time.
+func singleVolumeSource(vs *corev1.VolumeSource) bool {
+	set := 0
+	v := reflect.ValueOf(*vs)
+	for i := 0; i < v.NumField(); i++ {
+		if !v.Field(i).IsNil() {
+			set++
+		}
+	}
+	return set == 1
 }
 
 // s3DeprecationWarnings surfaces admission.Warnings for the deprecated

@@ -301,9 +301,11 @@ func loadOperatorGrpcDialOption(sw *seaweedv1.Seaweed) (grpc.DialOption, string,
 // identity the cluster owns: a name in the declared authorization — the
 // wildcard domain matched by CN or DNS SAN suffix or by spiffe:// URI SAN
 // trust domain, or an entry in allowedCommonNames — or one of the cluster's
-// component service DNS names, which covers CA-issued certs minted for the
-// services rather than the workload. A CR with no authorization configured
-// keeps chain-only verification.
+// namespace-qualified component service DNS names, which covers CA-issued
+// certs minted for the services rather than the workload. Bare short names
+// are not accepted: they carry no namespace, so a same-named service in
+// another namespace sharing the CA could impersonate the component. A CR
+// with no authorization configured keeps chain-only verification.
 func expectedServerPeer(sw *seaweedv1.Seaweed) func(*x509.Certificate) error {
 	tls := sw.Spec.TLS
 	if tls == nil || (tls.AllowedWildcardDomain == "" && tls.AllowedCommonNames == nil) {
@@ -337,7 +339,9 @@ func expectedServerPeer(sw *seaweedv1.Seaweed) func(*x509.Certificate) error {
 				return nil
 			}
 			for _, svc := range services {
-				if dns == svc || dns == svc+"."+ns || strings.HasSuffix(dns, "."+svc+"-peer."+ns+".svc.cluster.local") {
+				if dns == svc+"."+ns || dns == svc+"."+ns+".svc" ||
+					dns == svc+"."+ns+".svc.cluster.local" ||
+					strings.HasSuffix(dns, "."+svc+"-peer."+ns+".svc.cluster.local") {
 					return nil
 				}
 			}

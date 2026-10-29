@@ -320,16 +320,24 @@ func TestExpectedServerPeer(t *testing.T) {
 	t.Run("cluster service DNS names are accepted", func(t *testing.T) {
 		verify := expectedServerPeer(swWith(&seaweedv1.TLSSpec{AllowedWildcardDomain: ".example.org"}))
 		for _, dns := range []string{
-			"seaweed-filer",
 			"seaweed-filer.media",
+			"seaweed-filer.media.svc",
+			"seaweed-filer.media.svc.cluster.local",
 			"seaweed-filer-0.seaweed-filer-peer.media.svc.cluster.local",
 		} {
 			if err := verify(&x509.Certificate{DNSNames: []string{dns}}); err != nil {
 				t.Fatalf("expected pass for %q, got %v", dns, err)
 			}
 		}
-		if err := verify(&x509.Certificate{DNSNames: []string{"other-filer.media"}}); err == nil {
-			t.Fatal("expected rejection for a service name of another cluster")
+		for _, dns := range []string{
+			"seaweed-filer",
+			"seaweed-filer.other",
+			"seaweed-filer.other.svc.cluster.local",
+			"other-filer.media",
+		} {
+			if err := verify(&x509.Certificate{DNSNames: []string{dns}}); err == nil {
+				t.Fatalf("expected rejection for %q", dns)
+			}
 		}
 	})
 

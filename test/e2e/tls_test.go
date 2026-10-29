@@ -31,6 +31,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -361,6 +362,9 @@ func countUnstructured(ctx context.Context, c client.Client, ns string, gvk sche
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(schema.GroupVersionKind{Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind + "List"})
 	if err := c.List(ctx, list, client.InNamespace(ns)); err != nil {
+		if meta.IsNoMatchError(err) {
+			return 0
+		}
 		return -1
 	}
 	return len(list.Items)

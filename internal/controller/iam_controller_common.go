@@ -301,16 +301,20 @@ func loadOperatorGrpcDialOption(sw *seaweedv1.Seaweed) (grpc.DialOption, string,
 var tlsComponents = []string{"master", "volume", "filer", "s3", "admin", "worker"}
 
 // tlsPeerNames collects every allowedCommonNames entry keyed back to the
-// component bucket it was declared under.
-func tlsPeerNames(tls *seaweedv1.TLSSpec) map[string]string {
-	declared := map[string]string{}
+// component buckets it was declared under — a name declared for several
+// components attributes to all of them.
+func tlsPeerNames(tls *seaweedv1.TLSSpec) map[string]map[string]bool {
+	declared := map[string]map[string]bool{}
 	if c := tls.AllowedCommonNames; c != nil {
 		for comp, list := range map[string][]string{
 			"master": c.Master, "volume": c.Volume, "filer": c.Filer,
 			"s3": c.S3, "admin": c.Admin, "worker": c.Worker,
 		} {
 			for _, n := range list {
-				declared[n] = comp
+				if declared[n] == nil {
+					declared[n] = map[string]bool{}
+				}
+				declared[n][comp] = true
 			}
 		}
 	}
@@ -464,8 +468,10 @@ func attributedServerComponents(sw *seaweedv1.Seaweed, leaf *x509.Certificate) m
 	trustDomain := strings.TrimPrefix(domain, ".")
 	declared := tlsPeerNames(tls)
 	addName := func(name string) {
-		if comp, ok := declared[name]; ok {
-			attributed[comp] = true
+		if comps, ok := declared[name]; ok {
+			for c := range comps {
+				attributed[c] = true
+			}
 			return
 		}
 		if comp := domainPeerComponent(sw, name, domain); comp != "" {
@@ -488,8 +494,10 @@ func attributedServerComponents(sw *seaweedv1.Seaweed, leaf *x509.Certificate) m
 		}
 	}
 	for _, uri := range leaf.URIs {
-		if comp, ok := declared[uri.String()]; ok {
-			attributed[comp] = true
+		if comps, ok := declared[uri.String()]; ok {
+			for c := range comps {
+				attributed[c] = true
+			}
 			continue
 		}
 		if domain != "" && uri.Scheme == "spiffe" && uri.Host == trustDomain {

@@ -433,6 +433,26 @@ func TestExpectedServerPeerFor(t *testing.T) {
 		}
 	})
 
+	t.Run("name declared under several components attributes to all", func(t *testing.T) {
+		swShared := &seaweedv1.Seaweed{
+			ObjectMeta: metav1.ObjectMeta{Name: "seaweed", Namespace: "media"},
+			Spec: seaweedv1.SeaweedSpec{TLS: &seaweedv1.TLSSpec{
+				AllowedWildcardDomain: ".e2e.test",
+				AllowedCommonNames: &seaweedv1.TLSAllowedCommonNames{
+					Master: []string{"shared-clients.svid"},
+					Filer:  []string{"shared-clients.svid"},
+				},
+			}},
+		}
+		sharedVerify := expectedServerPeerFor(swShared)
+		leaf := &x509.Certificate{Subject: pkix.Name{CommonName: "shared-clients.svid"}}
+		for _, authority := range []string{filerAuth, masterAuth} {
+			if err := sharedVerify(authority, leaf); err != nil {
+				t.Fatalf("shared declared CN rejected on %s: %v", authority, err)
+			}
+		}
+	})
+
 	t.Run("unattributed leaf keeps the union check on a known endpoint", func(t *testing.T) {
 		leaf := &x509.Certificate{Subject: pkix.Name{CommonName: "shared.e2e.test"}}
 		if err := verify(filerAuth, leaf); err != nil {

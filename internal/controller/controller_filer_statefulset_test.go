@@ -186,7 +186,11 @@ func TestFilerProbeNotRejectedByReadJWT(t *testing.T) {
 			}
 
 			// The security.toml mounted into this very pod.
-			securityTOML := renderSecurityTOML(jwtSigningConfig(m), jwtSigningKeys{filerWrite: "w", filerRead: "r"}, tlsEffective(m))
+			var tls *seaweedv1.TLSSpec
+			if tlsEffective(m) {
+				tls = m.Spec.TLS
+			}
+			securityTOML := renderSecurityTOML(jwtSigningConfig(m), jwtSigningKeys{filerWrite: "w", filerRead: "r"}, tls)
 			readJWTRequired := strings.Contains(securityTOML, "[jwt.filer_signing.read]")
 			if readJWTRequired != tc.wantGuard {
 				t.Fatalf("[jwt.filer_signing.read] rendered = %v, want %v:\n%s", readJWTRequired, tc.wantGuard, securityTOML)

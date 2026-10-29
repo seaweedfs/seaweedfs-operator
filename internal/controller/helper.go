@@ -340,6 +340,9 @@ func mergeVolumeMounts(base, override []corev1.VolumeMount) []corev1.VolumeMount
 // than breaking the whole cluster — matching the soft no-op contract
 // documented on TLSSpec.
 func tlsEffective(m *seaweedv1.Seaweed) bool {
+	if tlsFromVolume(m) {
+		return true
+	}
 	return tlsEnabled(m) && certManagerAvailableCached()
 }
 
@@ -404,14 +407,17 @@ func tlsVolumesAndMounts(m *seaweedv1.Seaweed) ([]corev1.Volume, []corev1.Volume
 		})
 	}
 	if tlsEffective(m) {
-		volumes = append(volumes, corev1.Volume{
-			Name: tlsVolumeName,
-			VolumeSource: corev1.VolumeSource{
+		volume := corev1.Volume{Name: tlsVolumeName}
+		if tlsFromVolume(m) {
+			volume.VolumeSource = *m.Spec.TLS.Source.Volume
+		} else {
+			volume.VolumeSource = corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: TLSServerSecretName(m),
 				},
-			},
-		})
+			}
+		}
+		volumes = append(volumes, volume)
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      tlsVolumeName,
 			ReadOnly:  true,

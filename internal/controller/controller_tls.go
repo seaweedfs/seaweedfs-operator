@@ -104,6 +104,31 @@ func tlsEnabled(m *seaweedv1.Seaweed) bool {
 	return m.Spec.TLS != nil && m.Spec.TLS.Enabled
 }
 
+// tlsFromVolume returns true when TLS material comes from a user-provided
+// volume instead of a cert-manager Certificate: nothing is provisioned and
+// the pod mounts reference the source volume directly.
+func tlsFromVolume(m *seaweedv1.Seaweed) bool {
+	return tlsEnabled(m) && m.Spec.TLS.Source != nil && m.Spec.TLS.Source.Volume != nil
+}
+
+// tlsFileNames resolves the ca/cert/key names inside the TLS mount,
+// defaulting to the cert-manager layout.
+func tlsFileNames(tls *seaweedv1.TLSSpec) (ca, cert, key string) {
+	ca, cert, key = "ca.crt", "tls.crt", "tls.key"
+	if tls != nil && tls.Source != nil && tls.Source.Files != nil {
+		if tls.Source.Files.CA != "" {
+			ca = tls.Source.Files.CA
+		}
+		if tls.Source.Files.Cert != "" {
+			cert = tls.Source.Files.Cert
+		}
+		if tls.Source.Files.Key != "" {
+			key = tls.Source.Files.Key
+		}
+	}
+	return ca, cert, key
+}
+
 // TLSServerSecretName is the Secret a component should mount at tlsMountPath.
 // Exported so component builders can reference it without re-deriving.
 func TLSServerSecretName(m *seaweedv1.Seaweed) string {
@@ -122,6 +147,9 @@ func SecurityConfigSecretName(m *seaweedv1.Seaweed) string {
 func (r *SeaweedReconciler) ensureTLS(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	if !tlsEnabled(m) {
 		return ReconcileResult(nil)
+	}
+	if tlsFromVolume(m) {
+		return ReconcileResult(r.pruneCertManagerObjects(ctx, m))
 	}
 	if !r.certManagerCRDAvailable(ctx) {
 		return ReconcileResult(nil)
@@ -144,6 +172,43 @@ func (r *SeaweedReconciler) ensureTLS(ctx context.Context, m *seaweedv1.Seaweed)
 		return done, res, err
 	}
 	return ReconcileResult(nil)
+}
+
+// pruneCertManagerObjects drops the cert-manager objects the operator may
+// have provisioned for m — relevant when a cluster switches to a user-managed
+// TLS volume, after which no Issuer, Certificate or TLS Secret may exist.
+// Secrets written by cert-manager are owned by their Certificate and are
+// garbage-collected with it; only objects the CR owns directly are deleted.
+func (r *SeaweedReconciler) pruneCertManagerObjects(ctx context.Context, m *seaweedv1.Seaweed) error {
+	for _, o := range []struct {
+		gvk  schema.GroupVersionKind
+		name string
+	}{
+		{issuerGVK, m.Name + selfSignedIssuerSuffix},
+		{certificateGVK, m.Name + caSecretSuffix},
+		{issuerGVK, m.Name + caIssuerSuffix},
+		{certificateGVK, m.Name + serverCertSuffix},
+	} {
+		if err := r.deleteOwnedUnstructured(ctx, m, o.gvk, o.name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *SeaweedReconciler) deleteOwnedUnstructured(ctx context.Context, m *seaweedv1.Seaweed, gvk schema.GroupVersionKind, name string) error {
+	u := &unstructured.Unstructured{}
+	u.SetGroupVersionKind(gvk)
+	if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: m.Namespace}, u); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if !metav1.IsControlledBy(u, m) {
+		return nil
+	}
+	return r.Delete(ctx, u)
 }
 
 // ensureSecurityConfig provisions the security.toml Secret when the CR asks
@@ -389,6 +454,10 @@ func (r *SeaweedReconciler) ensureSecuritySecret(ctx context.Context, m *seaweed
 		}
 	}
 
+	var tls *seaweedv1.TLSSpec
+	if tlsEffective(m) {
+		tls = m.Spec.TLS
+	}
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -397,7 +466,7 @@ func (r *SeaweedReconciler) ensureSecuritySecret(ctx context.Context, m *seaweed
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			"security.toml": []byte(renderSecurityTOML(cfg, keys, tlsEffective(m))),
+			"security.toml": []byte(renderSecurityTOML(cfg, keys, tls)),
 		},
 	}
 	if err := controllerutil.SetControllerReference(m, secret, r.Scheme); err != nil {
@@ -466,11 +535,29 @@ func (r *SeaweedReconciler) deleteLegacySecurityConfigMap(ctx context.Context, n
 	return nil
 }
 
+// grpcTLSSections are the security.toml sections carrying cert/key for every
+// gRPC endpoint, in render order. cns maps a section to its allowed common
+// names; nil means the section never carries allowed_commonNames (the client
+// section configures outbound dials, where seaweedfs does not verify the
+// peer's common name).
+var grpcTLSSections = []struct {
+	name string
+	cns  func(*seaweedv1.TLSAllowedCommonNames) []string
+}{
+	{name: "volume", cns: func(c *seaweedv1.TLSAllowedCommonNames) []string { return c.Volume }},
+	{name: "master", cns: func(c *seaweedv1.TLSAllowedCommonNames) []string { return c.Master }},
+	{name: "filer", cns: func(c *seaweedv1.TLSAllowedCommonNames) []string { return c.Filer }},
+	{name: "admin", cns: func(c *seaweedv1.TLSAllowedCommonNames) []string { return c.Admin }},
+	{name: "worker", cns: func(c *seaweedv1.TLSAllowedCommonNames) []string { return c.Worker }},
+	{name: "client"},
+	{name: "s3", cns: func(c *seaweedv1.TLSAllowedCommonNames) []string { return c.S3 }},
+}
+
 // renderSecurityTOML emits one [jwt.*] section per flag the CR turns on, and
-// the [grpc.*] mTLS sections when withTLS is true. seaweedfs treats a missing
+// the [grpc.*] mTLS sections when tls is non-nil. seaweedfs treats a missing
 // key as "do not check", so leaving a section out is what disables it, and a
 // zero expiry keeps seaweedfs' own default.
-func renderSecurityTOML(cfg seaweedv1.JWTSigningSpec, keys jwtSigningKeys, withTLS bool) string {
+func renderSecurityTOML(cfg seaweedv1.JWTSigningSpec, keys jwtSigningKeys, tls *seaweedv1.TLSSpec) string {
 	var b strings.Builder
 	b.WriteString(`# generated by seaweedfs-operator — do not edit
 # this file is read by master, volume server, filer, and admin
@@ -487,43 +574,23 @@ func renderSecurityTOML(cfg seaweedv1.JWTSigningSpec, keys jwtSigningKeys, withT
 		}
 	}
 
-	if !withTLS {
+	if tls == nil {
 		return b.String()
 	}
 
-	fmt.Fprintf(&b, `
-# all grpc tls authentications are mutual
-[grpc]
-ca = "%[1]s/ca.crt"
-
-[grpc.volume]
-cert = "%[1]s/tls.crt"
-key  = "%[1]s/tls.key"
-
-[grpc.master]
-cert = "%[1]s/tls.crt"
-key  = "%[1]s/tls.key"
-
-[grpc.filer]
-cert = "%[1]s/tls.crt"
-key  = "%[1]s/tls.key"
-
-[grpc.admin]
-cert = "%[1]s/tls.crt"
-key  = "%[1]s/tls.key"
-
-[grpc.worker]
-cert = "%[1]s/tls.crt"
-key  = "%[1]s/tls.key"
-
-[grpc.client]
-cert = "%[1]s/tls.crt"
-key  = "%[1]s/tls.key"
-
-[grpc.s3]
-cert = "%[1]s/tls.crt"
-key  = "%[1]s/tls.key"
-`, tlsMountPath)
+	ca, cert, key := tlsFileNames(tls)
+	fmt.Fprintf(&b, "\n# all grpc tls authentications are mutual\n[grpc]\nca = \"%s/%s\"\n", tlsMountPath, ca)
+	if tls.AllowedWildcardDomain != "" {
+		fmt.Fprintf(&b, "allowed_wildcard_domain = %q\n", tls.AllowedWildcardDomain)
+	}
+	for _, s := range grpcTLSSections {
+		fmt.Fprintf(&b, "\n[grpc.%s]\ncert = \"%s/%s\"\nkey  = \"%s/%s\"\n", s.name, tlsMountPath, cert, tlsMountPath, key)
+		if s.cns != nil && tls.AllowedCommonNames != nil {
+			if names := s.cns(tls.AllowedCommonNames); len(names) > 0 {
+				fmt.Fprintf(&b, "allowed_commonNames = %q\n", strings.Join(names, ","))
+			}
+		}
+	}
 	return b.String()
 }
 

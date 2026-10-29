@@ -58,10 +58,11 @@ func buildRustWorkerStartupScript(m *seaweedv1.Seaweed) string {
 	commands = append(commands, fmt.Sprintf("--namespace=http://%s-filer:%d", m.Name, lancePort))
 	// The Rust binary reads no security.toml; it takes the same certificates as flags.
 	if tlsEffective(m) {
+		ca, cert, key := tlsFileNames(m.Spec.TLS)
 		commands = append(commands,
-			fmt.Sprintf("--tls-ca=%s/ca.crt", tlsMountPath),
-			fmt.Sprintf("--tls-cert=%s/tls.crt", tlsMountPath),
-			fmt.Sprintf("--tls-key=%s/tls.key", tlsMountPath))
+			fmt.Sprintf("--tls-ca=%s/%s", tlsMountPath, ca),
+			fmt.Sprintf("--tls-cert=%s/%s", tlsMountPath, cert),
+			fmt.Sprintf("--tls-key=%s/%s", tlsMountPath, key))
 	}
 	// -maxExecute defaults to 4 but --max-concurrency to 1, so render the shared 4.
 	maxConcurrency := int32(4)

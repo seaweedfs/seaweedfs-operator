@@ -371,7 +371,7 @@ spec:
 - **Services not created**: Verify topology group names don't conflict with existing resources
 - **Wrong node placement**: Ensure `nodeSelector` matches actual node labels
 - **Resource conflicts**: Check that different topology groups don't compete for the same nodes
-- **Replication not working**: For a replication code `xyz`, the master needs `x + 1` datacenters, the datacenter that holds the first copy needs `y + 1` racks, and the rack that holds the first copy needs `z + 1` volume servers. A write that names a datacenter starts there. "210" needs three datacenters; "110" needs two, each with two racks if writes may start in either
+- **Replication not working**: For a replication code `xyz`, the master needs `x + 1` datacenters, and the datacenter that holds the first copy needs `y + 1` racks that each have `z + 1` volume servers with a free slot. A write that names a datacenter starts there. "210" needs three datacenters; "110" needs two, each with two racks if writes may start in either
 
 ### General Debugging
 1. Check operator logs: `kubectl logs -n seaweedfs-system deploy/seaweedfs-operator`

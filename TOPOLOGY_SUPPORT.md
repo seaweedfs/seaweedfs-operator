@@ -4,7 +4,7 @@ This document describes how to configure topology information (rack and datacent
 
 ## Overview
 
-SeaweedFS supports topology-aware placement of data across different racks and datacenters to ensure high availability and fault tolerance. This is especially important for replication strategies like "210" (2 copies in different datacenters, 1 copy in different rack, 0 copies in same rack).
+SeaweedFS supports topology-aware placement of data across different racks and datacenters to ensure high availability and fault tolerance. This is especially important for replication strategies like "110". A replication code `xyz` asks for `x` copies in other datacenters, `y` copies on other racks of the same datacenter, and `z` copies on other servers of the same rack, so "110" keeps one copy on another rack and one in another datacenter, and "210" needs three datacenters.
 
 The SeaweedFS Operator provides two approaches for topology configuration:
 
@@ -46,7 +46,7 @@ spec:
   image: chrislusf/seaweedfs:latest
   master:
     replicas: 3
-    defaultReplication: "210"
+    defaultReplication: "110"
 
   # Define multiple topology groups
   volumeTopology:
@@ -107,72 +107,9 @@ spec:
       storageClassName: "fast-ssd"
 ```
 
-### Complete Example for 210 Replication (Multi-Instance Approach)
+### One Seaweed per Cluster
 
-For 210 replication using the multi-instance approach (2 copies in different datacenters, 1 copy in different rack, 0 copies in same rack), you need to deploy multiple separate Seaweed instances with volume servers in multiple racks and datacenters:
-
-```yaml
-apiVersion: seaweed.seaweedfs.com/v1
-kind: Seaweed
-metadata:
-  name: seaweed-210-replication
-spec:
-  image: chrislusf/seaweedfs:latest
-  master:
-    replicas: 3
-    # Enable 210 replication
-    defaultReplication: "210"
-  volume:
-    replicas: 6
-    requests:
-      storage: 10Gi
-    rack: "rack1"
-    dataCenter: "dc1"
-    # Use node selectors to ensure proper placement
-    nodeSelector:
-      topology.kubernetes.io/zone: "dc1-rack1"
----
-# Additional volume servers in different rack/datacenter
-apiVersion: seaweed.seaweedfs.com/v1
-kind: Seaweed
-metadata:
-  name: seaweed-dc1-rack2
-spec:
-  image: chrislusf/seaweedfs:latest
-  # Only deploy volume servers
-  master:
-    replicas: 0
-  volume:
-    replicas: 3
-    requests:
-      storage: 10Gi
-    rack: "rack2"
-    dataCenter: "dc1"
-    nodeSelector:
-      topology.kubernetes.io/zone: "dc1-rack2"
-  filer:
-    replicas: 0
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: Seaweed
-metadata:
-  name: seaweed-dc2-rack1
-spec:
-  image: chrislusf/seaweedfs:latest
-  # Only deploy volume servers
-  master:
-    replicas: 0
-  volume:
-    replicas: 3
-    requests:
-      storage: 10Gi
-    rack: "rack1"
-    dataCenter: "dc2"
-    nodeSelector:
-      topology.kubernetes.io/zone: "dc2-rack1"
-  filer:
-    replicas: 0
-```
+Masters, filers and volume servers of a `Seaweed` resource connect to that resource's own masters, and `master.replicas` and `filer.replicas` must be at least 1. Volume servers in a second `Seaweed` therefore form a separate cluster. Put every rack and datacenter of a cluster in `volumeTopology` groups of one `Seaweed`, as in [seaweed_v1_seaweed_topology.yaml](./config/samples/seaweed_v1_seaweed_topology.yaml).
 
 ## Fields
 
@@ -434,7 +371,7 @@ spec:
 - **Services not created**: Verify topology group names don't conflict with existing resources
 - **Wrong node placement**: Ensure `nodeSelector` matches actual node labels
 - **Resource conflicts**: Check that different topology groups don't compete for the same nodes
-- **210 replication not working**: Verify that you have volume servers in at least 2 different datacenters and multiple racks across all topology groups
+- **Replication not working**: The master needs `x + 1` datacenters for a replication code `xyz`, and the datacenter that holds the first copy needs `y + 1` racks. "210" needs three datacenters; "110" works with two when one of them has two racks
 
 ### General Debugging
 1. Check operator logs: `kubectl logs -n seaweedfs-system deploy/seaweedfs-operator`

@@ -14,7 +14,7 @@ spec:
   master:
     replicas: 3
     volumeSizeLimitMB: 1024
-    defaultReplication: "210"  # Enable 210 replication
+    defaultReplication: "110"
 
   # DISABLE legacy volume section by setting replicas to 0
   # This is now allowed after the validation fix

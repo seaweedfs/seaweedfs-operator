@@ -51,6 +51,14 @@ spec:
         seaweedfs/datacenter: "dc2"
         seaweedfs/rack: "rack1"
 
+    dc2-rack2:
+      replicas: 3
+      rack: "rack2"
+      dataCenter: "dc2"
+      nodeSelector:
+        seaweedfs/datacenter: "dc2"
+        seaweedfs/rack: "rack2"
+
   filer:
     replicas: 2
     s3:

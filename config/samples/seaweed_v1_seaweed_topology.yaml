@@ -1,34 +1,64 @@
+# One Seaweed CR runs the masters and filers and places volume servers per
+# data center and rack with volumeTopology. Volume servers of another Seaweed
+# CR join that CR's own masters, so racks are split into groups here, not
+# into separate CRs.
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Seaweed
 metadata:
   name: seaweed-topology
   namespace: default
 spec:
-  # SeaweedFS image
   image: chrislusf/seaweedfs:latest
   volumeServerDiskCount: 1
 
-  # Master configuration with 210 replication
   master:
     replicas: 3
     volumeSizeLimitMB: 1024
-    # Set default replication to 210 (2 copies in different datacenters, 1 copy in different rack, 0 copies in same rack)
-    defaultReplication: "210"
+    # 110: one copy on another rack of the same data center and one copy in
+    # another data center. The first digit counts other data centers, so
+    # "210" would need three of them.
+    defaultReplication: "110"
 
-  # Volume server configuration with topology information
+  # Defaults for every volumeTopology group; replicas: 0 runs no volume
+  # servers outside the groups.
   volume:
-    replicas: 6  # Deploy 6 volume servers across different racks/datacenters
+    replicas: 0
     requests:
       storage: 10Gi
-    # Topology configuration
-    rack: "rack1"
-    dataCenter: "dc1"
-    # Node selector to ensure pods are placed on nodes with appropriate labels
-    nodeSelector:
-      seaweedfs/datacenter: "dc1"
-      seaweedfs/rack: "rack1"
 
-  # Filer configuration
+  volumeTopology:
+    dc1-rack1:
+      replicas: 3
+      rack: "rack1"
+      dataCenter: "dc1"
+      nodeSelector:
+        seaweedfs/datacenter: "dc1"
+        seaweedfs/rack: "rack1"
+
+    dc1-rack2:
+      replicas: 3
+      rack: "rack2"
+      dataCenter: "dc1"
+      nodeSelector:
+        seaweedfs/datacenter: "dc1"
+        seaweedfs/rack: "rack2"
+
+    dc2-rack1:
+      replicas: 3
+      rack: "rack1"
+      dataCenter: "dc2"
+      nodeSelector:
+        seaweedfs/datacenter: "dc2"
+        seaweedfs/rack: "rack1"
+
+    dc2-rack2:
+      replicas: 3
+      rack: "rack2"
+      dataCenter: "dc2"
+      nodeSelector:
+        seaweedfs/datacenter: "dc2"
+        seaweedfs/rack: "rack2"
+
   filer:
     replicas: 2
     s3:
@@ -37,58 +67,3 @@ spec:
       [leveldb2]
       enabled = true
       dir = "/data/filerldb2"
-
----
-# Additional Seaweed instances for other racks/datacenters
-apiVersion: seaweed.seaweedfs.com/v1
-kind: Seaweed
-metadata:
-  name: seaweed-topology-dc1-rack2
-  namespace: default
-spec:
-  image: chrislusf/seaweedfs:latest
-  volumeServerDiskCount: 1
-
-  # Only deploy volume servers for this instance
-  master:
-    replicas: 0  # Don't deploy masters, use the main instance
-
-  volume:
-    replicas: 3
-    requests:
-      storage: 10Gi
-    rack: "rack2"
-    dataCenter: "dc1"
-    nodeSelector:
-      seaweedfs/datacenter: "dc1"
-      seaweedfs/rack: "rack2"
-
-  filer:
-    replicas: 0  # Don't deploy filers, use the main instance
-
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: Seaweed
-metadata:
-  name: seaweed-topology-dc2-rack1
-  namespace: default
-spec:
-  image: chrislusf/seaweedfs:latest
-  volumeServerDiskCount: 1
-
-  # Only deploy volume servers for this instance
-  master:
-    replicas: 0  # Don't deploy masters, use the main instance
-
-  volume:
-    replicas: 3
-    requests:
-      storage: 10Gi
-    rack: "rack1"
-    dataCenter: "dc2"
-    nodeSelector:
-      seaweedfs/datacenter: "dc2"
-      seaweedfs/rack: "rack1"
-
-  filer:
-    replicas: 0  # Don't deploy filers, use the main instance

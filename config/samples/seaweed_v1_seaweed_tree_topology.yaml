@@ -8,12 +8,13 @@ spec:
   image: chrislusf/seaweedfs:latest
   volumeServerDiskCount: 1
 
-  # Master configuration with 210 replication
   master:
     replicas: 3
     volumeSizeLimitMB: 1024
-    # Set default replication to 210 (2 copies in different datacenters, 1 copy in different rack, 0 copies in same rack)
-    defaultReplication: "210"
+    # 110: one copy on another rack of the same data center and one copy in
+    # another data center. The first digit counts other data centers, so
+    # "210" would need three of them.
+    defaultReplication: "110"
 
   # Default volume server configuration. Settings here are inherited by all topology groups.
   # Set replicas to 0 to disable the simple volume group and only use volumeTopology.

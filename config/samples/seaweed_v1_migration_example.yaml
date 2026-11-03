@@ -14,7 +14,7 @@ spec:
   master:
     replicas: 3
     volumeSizeLimitMB: 1024
-    defaultReplication: "210"  # Enable 210 replication
+    defaultReplication: "110"
 
   # DISABLE legacy volume section by setting replicas to 0
   # This is now allowed after the validation fix
@@ -73,6 +73,18 @@ spec:
       storageClassName: "fast-ssd"  # Use faster storage
       compactionMBps: 100
       maxVolumeCounts: 100
+
+    dc2-rack2:
+      replicas: 3
+      requests:
+        storage: 15Gi
+      rack: "rack2"
+      dataCenter: "dc2"
+      nodeSelector:
+        topology.kubernetes.io/zone: "us-east-1b"
+        seaweedfs/datacenter: "dc2"
+        seaweedfs/rack: "rack2"
+      storageClassName: "fast-ssd"
 
   # Filer configuration
   filer:

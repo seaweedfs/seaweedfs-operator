@@ -13,12 +13,7 @@ import (
 // CRDs undeliverable by any Flux install that substitutes, so none may carry one. The Helm chart's CRD
 // bundle is a copy (make helm-crd-copy) that can lag the generated CRDs, so it is checked too.
 func TestGeneratedCRDsCarryNoVariableReference(t *testing.T) {
-	files, err := filepath.Glob("../../config/crd/bases/*.yaml")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("no generated CRDs found: %v", err)
-	}
-	files = append(files, "../../deploy/helm/templates/crd-seaweed.yaml")
-	for _, f := range files {
+	for _, f := range generatedCRDFiles(t) {
 		raw, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
@@ -29,4 +24,13 @@ func TestGeneratedCRDsCarryNoVariableReference(t *testing.T) {
 			}
 		}
 	}
+}
+
+func generatedCRDFiles(t *testing.T) []string {
+	t.Helper()
+	files, err := filepath.Glob("../../config/crd/bases/*.yaml")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no generated CRDs found: %v", err)
+	}
+	return append(files, "../../deploy/helm/templates/crd-seaweed.yaml")
 }

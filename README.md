@@ -58,11 +58,13 @@ If the CRD is managed outside of this chart (e.g., installed cluster-wide via Gi
 
 #### Upgrade conflict with `kubectl-client-side-apply`
 
-If the CRD was ever applied with client-side `kubectl apply`, kubectl owns its `.spec.versions`, and Helm 4, which upgrades with server-side apply, fails with `conflict with "kubectl-client-side-apply" using apiextensions.k8s.io/v1: .spec.versions`. Run your usual upgrade once with `--force-conflicts` so Helm takes those fields over:
+If the CRD was ever applied with client-side `kubectl apply`, kubectl owns its `.spec.versions`. A Helm upgrade that uses server-side apply (Helm 4's default for releases it installed) can then fail with `conflict with "kubectl-client-side-apply" using apiextensions.k8s.io/v1: .spec.versions`. Run that upgrade once with `--force-conflicts` so Helm takes those fields over:
 
 ```bash
 helm upgrade <release-name> seaweedfs-operator/seaweedfs-operator -n <release-namespace> -f <your-values.yaml> --force-conflicts
 ```
+
+`--force-conflicts` takes over conflicting fields on every resource in the release, not only the CRD, so first check that no other tool is meant to own them. Helm refuses it on upgrades that use client-side apply, which do not hit this conflict.
 
 If applying the CRD by hand fails with `metadata.annotations: Too long`, use `kubectl apply --server-side`.
 

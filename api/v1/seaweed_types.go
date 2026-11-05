@@ -1152,7 +1152,12 @@ type ComponentSpec struct {
 	// Template.
 	StatefulSetUpdateStrategy appsv1.StatefulSetUpdateStrategyType `json:"statefulSetUpdateStrategy,omitempty"`
 
-	// Volumes of the component. Merged into the volumes created by the operator if non-empty
+	// Volumes of the component. Merged into the volumes created by the operator if non-empty.
+	// Schema is preserved as opaque for the same CRD-size reason as Sidecars;
+	// validation happens at pod-create time.
+	// +optional
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
 	Volumes []corev1.Volume `json:"volumes,omitempty"`
 
 	// VolumeMounts of the component. Merged into the volumeMounts created by the operator if non-empty

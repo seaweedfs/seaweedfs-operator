@@ -152,6 +152,22 @@ func TestCreateWorkerDeploymentLanceSidecar(t *testing.T) {
 		t.Errorf("expected sidecar liveness probe on %d, got %v", seaweedv1.WorkerLanceMetricsPort, lance.LivenessProbe)
 	}
 
+	env := map[string]string{}
+	for _, e := range lance.Env {
+		env[e.Name] = e.Value
+	}
+	if env["WEED_MASTERS"] != getMasterPeersString(m) {
+		t.Errorf("expected WEED_MASTERS=%q, got %q", getMasterPeersString(m), env["WEED_MASTERS"])
+	}
+	if _, ok := env["WEED_WORKER_SECURITY_TOML"]; ok {
+		t.Errorf("expected no security.toml path without a security config, got %v", lance.Env)
+	}
+	for _, e := range podContainer(t, pod, "worker").Env {
+		if e.Name == "WEED_MASTERS" {
+			t.Errorf("the Go worker takes -master, not WEED_MASTERS")
+		}
+	}
+
 	m.Spec.Filer.Lance = &seaweedv1.LanceConfig{Enabled: false}
 	pod = &r.createWorkerDeployment(m).Spec.Template.Spec
 	if podContainer(t, pod, "worker-lance") != nil {
@@ -182,5 +198,37 @@ func TestCreateWorkerDeploymentPersistencePlacement(t *testing.T) {
 	}
 	if mounted(podContainer(t, pod, "worker-lance")) {
 		t.Errorf("expected the sidecar not to mount worker-data")
+	}
+}
+
+// With a security config the sidecar reads it from the mount: the filers'
+// TLS, volume reads and the namespace's cluster key live there.
+func TestCreateWorkerDeploymentLanceSidecarSecurityToml(t *testing.T) {
+	m := newWorkerCluster(&seaweedv1.WorkerSpec{Replicas: 1})
+	m.Spec.Filer.Lance = &seaweedv1.LanceConfig{Enabled: true}
+	m.Spec.SecurityConfig = &seaweedv1.SecurityConfigSpec{JWTSigning: &seaweedv1.JWTSigningSpec{FilerWrite: true}}
+	r := &SeaweedReconciler{}
+	pod := &r.createWorkerDeployment(m).Spec.Template.Spec
+	lance := podContainer(t, pod, "worker-lance")
+	if lance == nil {
+		t.Fatalf("worker-lance sidecar missing, got %v", pod.Containers)
+	}
+	var tomlPath string
+	for _, e := range lance.Env {
+		if e.Name == "WEED_WORKER_SECURITY_TOML" {
+			tomlPath = e.Value
+		}
+	}
+	if tomlPath != securityConfigMountPath+"/security.toml" {
+		t.Errorf("expected WEED_WORKER_SECURITY_TOML under %s, got %q", securityConfigMountPath, tomlPath)
+	}
+	mounted := false
+	for _, vm := range lance.VolumeMounts {
+		if vm.MountPath == securityConfigMountPath {
+			mounted = true
+		}
+	}
+	if !mounted {
+		t.Errorf("expected security.toml mounted at %s, got %v", securityConfigMountPath, lance.VolumeMounts)
 	}
 }

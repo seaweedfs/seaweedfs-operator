@@ -56,7 +56,8 @@ func buildRustWorkerStartupScript(m *seaweedv1.Seaweed) string {
 		lancePort = m.Spec.Filer.Lance.LanceEffectivePort()
 	}
 	commands = append(commands, fmt.Sprintf("--namespace=http://%s-filer:%d", m.Name, lancePort))
-	// The Rust binary reads no security.toml; it takes the same certificates as flags.
+	// The admin stream's certificates are flags; security.toml (rustWorkerEnv)
+	// covers the filers, volume servers and the namespace's cluster key.
 	if tlsEffective(m) {
 		ca, cert, key := tlsFileNames(m.Spec.TLS)
 		commands = append(commands,
@@ -78,6 +79,23 @@ func buildRustWorkerStartupScript(m *seaweedv1.Seaweed) string {
 	guard := `if [ ! -s /usr/bin/weed-worker ]; then echo "weed-worker is missing or empty in this image ($(uname -m)); it ships in images 4.45+ on amd64/arm64" >&2; exit 1; fi`
 
 	return guard + "\n" + strings.Join(commands, " ")
+}
+
+// rustWorkerEnv tells the worker-lance sidecar where the cluster is. Images
+// from 4.53 keep tables through the filers the masters list and take
+// security.toml for the filers' TLS, volume reads and the namespace's
+// cluster key (jwt.filer_signing.key). They are passed as environment
+// variables, which an older weed-worker ignores, rather than flags it would
+// refuse.
+func rustWorkerEnv(m *seaweedv1.Seaweed) []corev1.EnvVar {
+	env := []corev1.EnvVar{{Name: "WEED_MASTERS", Value: getMasterPeersString(m)}}
+	if securityConfigNeeded(m) {
+		env = append(env, corev1.EnvVar{
+			Name:  "WEED_WORKER_SECURITY_TOML",
+			Value: securityConfigMountPath + "/security.toml",
+		})
+	}
+	return env
 }
 
 // workerProbes builds the /ready and /health probes a worker container serves on its metrics port.
@@ -208,7 +226,7 @@ func (r *SeaweedReconciler) createWorkerDeployment(m *seaweedv1.Seaweed) *appsv1
 			Image:           m.BaseWorkerSpec().Image(),
 			ImagePullPolicy: m.BaseWorkerSpec().ImagePullPolicy(),
 			SecurityContext: m.BaseWorkerSpec().ContainerSecurityContext(),
-			Env:             append(m.BaseWorkerSpec().Env(), componentEnvVars(m)...),
+			Env:             append(append(m.BaseWorkerSpec().Env(), componentEnvVars(m)...), rustWorkerEnv(m)...),
 			// No persistence: it backs -workingDir, which the Rust worker does not take.
 			VolumeMounts: tlsMounts,
 			Command: []string{

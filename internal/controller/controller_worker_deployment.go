@@ -82,7 +82,7 @@ func buildRustWorkerStartupScript(m *seaweedv1.Seaweed) string {
 }
 
 // rustWorkerEnv tells the worker-lance sidecar where the cluster is. Images
-// from 4.53 keep tables through the filers the masters list and take
+// after 4.52 keep tables through the filers the masters list and take
 // security.toml for the filers' TLS, volume reads and the namespace's
 // cluster key (jwt.filer_signing.key). They are passed as environment
 // variables, which an older weed-worker ignores, rather than flags it would

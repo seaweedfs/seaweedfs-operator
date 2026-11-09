@@ -36,7 +36,7 @@ func TestVectorDeployment(t *testing.T) {
 			t.Fatal("missing vector engine replicas")
 		}
 		args := strings.Join(c.Args, " ")
-		if !strings.Contains(args, "--listen=$(POD_IP):8090") || !strings.Contains(args, "--masters=") {
+		if !strings.Contains(strings.Join(c.Command, " "), `--listen="$POD_IP:8090"`) || !strings.Contains(args, "--masters=") {
 			t.Fatalf("discovery args: %s", args)
 		}
 		if metrics != strings.Contains(args, "--metrics-port=9329") || metrics != (c.ReadinessProbe.HTTPGet != nil) {

@@ -84,13 +84,13 @@ func (r *SeaweedReconciler) createVectorDeployment(m *seaweedv1.Seaweed) *appsv1
 	}
 	vols, mounts := tlsVolumesAndMounts(m)
 	pod.Volumes = append(pod.Volumes, vols...)
-	args := []string{fmt.Sprintf("--listen=$(POD_IP):%d", vectorEffectivePort(m)), "--masters=" + getMasterPeersString(m)}
+	args := []string{"--masters=" + getMasterPeersString(m)}
 	if v.ReadCacheMB != nil {
 		args = append(args, fmt.Sprintf("--read-cache-mb=%d", *v.ReadCacheMB))
 	}
 	container := corev1.Container{
 		Name: ComponentVector, Image: base.Image(), ImagePullPolicy: base.ImagePullPolicy(), SecurityContext: base.ContainerSecurityContext(),
-		Command: []string{"/usr/bin/weed-vector"}, Resources: filterContainerResources(v.ResourceRequirements),
+		Command: []string{"/bin/sh", "-ec", fmt.Sprintf(`case "$POD_IP" in *:*) POD_IP="[$POD_IP]";; esac; exec /usr/bin/weed-vector --listen="$POD_IP:%d" "$@"`, vectorEffectivePort(m)), "vector"}, Resources: filterContainerResources(v.ResourceRequirements),
 		Env: append(base.Env(), componentEnvVars(m)...), VolumeMounts: mergeVolumeMounts(mounts, base.VolumeMounts()),
 		Ports: []corev1.ContainerPort{{Name: "vector-grpc", ContainerPort: vectorEffectivePort(m)}},
 	}
@@ -99,7 +99,7 @@ func (r *SeaweedReconciler) createVectorDeployment(m *seaweedv1.Seaweed) *appsv1
 		container.Env = append(container.Env, corev1.EnvVar{Name: "WEED_VECTOR_SECURITY_TOML", Value: securityConfigMountPath + "/security.toml"})
 	}
 	if v.MetricsPort != nil {
-		args = append(args, fmt.Sprintf("--metrics-port=%d", *v.MetricsPort), "--metrics-ip=0.0.0.0")
+		args = append(args, fmt.Sprintf("--metrics-port=%d", *v.MetricsPort), "--metrics-ip=$(POD_IP)")
 		container.Ports = append(container.Ports, corev1.ContainerPort{Name: "vector-metrics", ContainerPort: *v.MetricsPort})
 		container.ReadinessProbe, container.LivenessProbe = workerProbes(*v.MetricsPort)
 	} else {

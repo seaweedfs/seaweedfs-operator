@@ -1479,7 +1479,7 @@ spec:
                 - message: 'defaultRetention requires objectLock: true'
                   rule: '!has(self.defaultRetention) || self.objectLock'
                 - message: Vector buckets use S3 Vectors policies and do not support object bucket settings
-                  rule: self.type != 'Vector' || (!self.objectLock && self.versioning == 'Off' && !has(self.defaultRetention) && !has(self.quota) && (!has(self.owner) || self.owner == ”) && (!has(self.access) || size(self.access) == 0) && !self.anonymousRead && !has(self.placement))
+                  rule: self.type != 'Vector' || (!self.objectLock && self.versioning == 'Off' && !has(self.defaultRetention) && !has(self.quota) && (!has(self.owner) || size(self.owner) == 0) && (!has(self.access) || size(self.access) == 0) && !self.anonymousRead && !has(self.placement))
             status:
               properties:
                 bucketName:

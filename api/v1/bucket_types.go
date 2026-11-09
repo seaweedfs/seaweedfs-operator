@@ -222,7 +222,7 @@ type BucketPlacement struct {
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.clusterRef) || (has(self.clusterRef) && self.clusterRef == oldSelf.clusterRef)",message="clusterRef is immutable"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.seaweedRef) || (has(self.seaweedRef) && self.seaweedRef == oldSelf.seaweedRef)",message="seaweedRef is immutable"
 // +kubebuilder:validation:XValidation:rule="!has(self.defaultRetention) || self.objectLock",message="defaultRetention requires objectLock: true"
-// +kubebuilder:validation:XValidation:rule="self.type != 'Vector' || (!self.objectLock && self.versioning == 'Off' && !has(self.defaultRetention) && !has(self.quota) && (!has(self.owner) || self.owner == ”) && (!has(self.access) || size(self.access) == 0) && !self.anonymousRead && !has(self.placement))",message="Vector buckets use S3 Vectors policies and do not support object bucket settings"
+// +kubebuilder:validation:XValidation:rule="self.type != 'Vector' || (!self.objectLock && self.versioning == 'Off' && !has(self.defaultRetention) && !has(self.quota) && (!has(self.owner) || size(self.owner) == 0) && (!has(self.access) || size(self.access) == 0) && !self.anonymousRead && !has(self.placement))",message="Vector buckets use S3 Vectors policies and do not support object bucket settings"
 type BucketSpec struct {
 	// +optional
 	// +kubebuilder:default:=Object

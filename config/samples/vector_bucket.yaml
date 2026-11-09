@@ -1,0 +1,9 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: embeddings
+spec:
+  type: Vector
+  seaweedRef:
+    name: vector-demo
+  reclaimPolicy: Retain

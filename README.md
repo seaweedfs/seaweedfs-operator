@@ -1267,3 +1267,11 @@ Released 4.53 engines use TCP probes. With an engine supporting HTTP metrics
 (seaweedfs/seaweedfs#12517), set `spec.vector.metricsPort: 9329` to enable
 registration-aware `/ready`, `/health`, and Prometheus scraping through the
 existing ServiceMonitor configuration.
+
+To provision a vector bucket declaratively, use the existing `Bucket` resource
+with `spec.type: Vector` and a `seaweedRef`. The default remains `Object`.
+Vector buckets share ownership, adoption, reclaim policy and resync behavior
+with object buckets. A conflicting object/Iceberg bucket cannot be adopted as
+Vector, and deletion fails while indexes remain. Object versioning, Object Lock,
+quota, access grants and placement fields are rejected for Vector; manage its
+permissions with S3 Vectors IAM/bucket policies.

@@ -193,6 +193,16 @@ func (r *BucketReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 	defer closeBucketAdmin(admin, log)
 
+	if bucket.Spec.Type == "Vector" {
+		executor, ok := admin.(interface {
+			ExecuteS3VectorsOperation(context.Context, string, interface{}, interface{}) error
+		})
+		if !ok {
+			return r.failPhase(ctx, &bucket, seaweedv1.BucketPhaseFailed, "VectorUnsupported", "bucket admin does not support S3 Vectors")
+		}
+		admin = &vectorBucketAdmin{BucketAdmin: admin, execute: executor.ExecuteS3VectorsOperation}
+	}
+
 	// Deletion path.
 	if !bucket.DeletionTimestamp.IsZero() {
 		return r.handleDeletion(ctx, &bucket, admin)

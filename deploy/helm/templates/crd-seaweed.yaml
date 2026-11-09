@@ -1447,6 +1447,15 @@ spec:
                   required:
                     - name
                   type: object
+                type:
+                  default: Object
+                  enum:
+                    - Object
+                    - Vector
+                  type: string
+                  x-kubernetes-validations:
+                    - message: bucket type is immutable
+                      rule: self == oldSelf
                 versioning:
                   default: "Off"
                   enum:
@@ -1469,6 +1478,8 @@ spec:
                   rule: '!has(oldSelf.seaweedRef) || (has(self.seaweedRef) && self.seaweedRef == oldSelf.seaweedRef)'
                 - message: 'defaultRetention requires objectLock: true'
                   rule: '!has(self.defaultRetention) || self.objectLock'
+                - message: Vector buckets use S3 Vectors policies and do not support object bucket settings
+                  rule: self.type != 'Vector' || (!self.objectLock && self.versioning == 'Off' && !has(self.defaultRetention) && !has(self.quota) && (!has(self.owner) || self.owner == ”) && (!has(self.access) || size(self.access) == 0) && !self.anonymousRead && !has(self.placement))
             status:
               properties:
                 bucketName:

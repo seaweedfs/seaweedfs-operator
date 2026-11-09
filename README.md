@@ -1248,3 +1248,22 @@ make run ENABLE_WEBHOOKS=false
 # From another terminal in the same directory
 kubectl apply -f config/samples/seaweed_v1_seaweed.yaml
 ```
+
+### Vector buckets
+
+`spec.vector` deploys `weed-vector` engines on Linux amd64/arm64 nodes. Engines
+register their pod addresses with the masters and work with both Go and Rust
+volume servers. See [the example](config/samples/seaweed_vector.yaml).
+Configure S3 credentials before exposing the gateway. Enable the admin and worker
+components for Lance vector index build/reindex maintenance; searches also work
+before an ANN index is built.
+
+The component inherits image, resources, environment, scheduling, security and
+probe overrides through the existing component settings. `spec.tls` supplies its
+server/client certificate and security.toml, including encrypted volume read
+credentials. Removing `spec.vector` prunes its Deployment, Service and monitor.
+
+Released 4.53 engines use TCP probes. With an engine supporting HTTP metrics
+(seaweedfs/seaweedfs#12517), set `spec.vector.metricsPort: 9329` to enable
+registration-aware `/ready`, `/health`, and Prometheus scraping through the
+existing ServiceMonitor configuration.

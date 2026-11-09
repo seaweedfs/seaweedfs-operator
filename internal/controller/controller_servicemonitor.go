@@ -102,6 +102,9 @@ func desiredServiceMonitorNames(m *seaweedv1.Seaweed) map[string]bool {
 	if spec := m.Spec.Admin; spec != nil {
 		add("-admin", spec.MetricsPort)
 	}
+	if spec := m.Spec.Vector; spec != nil {
+		add("-vector", spec.MetricsPort)
+	}
 	if spec := m.Spec.Worker; spec != nil && m.Spec.Admin != nil {
 		add("-worker", spec.MetricsPort)
 	}

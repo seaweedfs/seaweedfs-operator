@@ -200,6 +200,8 @@ type TLSAllowedCommonNames struct {
 	Admin []string `json:"admin,omitempty"`
 	// +optional
 	Worker []string `json:"worker,omitempty"`
+	// +optional
+	Vector []string `json:"vector,omitempty"`
 }
 
 // SecurityConfigSpec mirrors the Helm chart's
@@ -315,6 +317,9 @@ type SeaweedSpec struct {
 
 	// Worker processes that connect to admin server and execute background jobs
 	Worker *WorkerSpec `json:"worker,omitempty"`
+
+	// +optional
+	Vector *VectorSpec `json:"vector,omitempty"`
 
 	// S3 is a top-level, standalone S3 gateway running as a Deployment.
 	// Prefer this over FilerSpec.S3 for new clusters — embedded filer S3
@@ -444,6 +449,8 @@ type SeaweedStatus struct {
 	// Worker component status
 	// +optional
 	Worker ComponentStatus `json:"worker,omitempty"`
+	// +optional
+	Vector ComponentStatus `json:"vector,omitempty"`
 
 	// S3 standalone gateway status (SeaweedSpec.S3)
 	// +optional

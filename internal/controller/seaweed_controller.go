@@ -49,6 +49,7 @@ const (
 	ComponentFiler  = "filer"
 	ComponentAdmin  = "admin"
 	ComponentWorker = "worker"
+	ComponentVector = "vector"
 )
 
 // Reconcile cadences. The reconciler pulls itself back periodically via
@@ -178,6 +179,10 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				return result, err
 			}
 		}
+	}
+
+	if done, result, err = r.ensureVectors(ctx, seaweedCR); done {
+		return result, err
 	}
 
 	if done, result, err = r.ensureS3Gateway(ctx, seaweedCR); done {
@@ -313,6 +318,12 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		}
 	}
 
+	vectorStatus, err := r.getComponentStatus(ctx, seaweedCR, ComponentVector)
+	if err != nil {
+		return false, err
+	}
+	vectorStatus.Service, vectorStatus.Endpoint = componentEndpoint(seaweedCR, ComponentVector)
+
 	// Get standalone S3 gateway status (if enabled)
 	s3Status, err := r.getS3Status(ctx, seaweedCR)
 	if err != nil {
@@ -360,9 +371,14 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 		isReady = isReady && (sftpStatus.Replicas == 0 || sftpStatus.ReadyReplicas == sftpStatus.Replicas)
 	}
 
+	if seaweedCR.Spec.Vector != nil {
+		isReady = isReady && (vectorStatus.Replicas == 0 || vectorStatus.ReadyReplicas == vectorStatus.Replicas)
+	}
+
 	// Update status
 	seaweedCR.Status.ObservedGeneration = seaweedCR.Generation
 	seaweedCR.Status.Master = masterStatus
+	seaweedCR.Status.Vector = vectorStatus
 	seaweedCR.Status.Volume = volumeStatus
 	if seaweedCR.Spec.Filer != nil {
 		seaweedCR.Status.Filer = filerStatus
@@ -401,6 +417,10 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	}
 	if seaweedCR.Spec.Worker != nil && seaweedCR.Spec.Admin != nil {
 		notReadyMessage += fmt.Sprintf(", Worker: %d/%d ready", workerStatus.ReadyReplicas, workerStatus.Replicas)
+	}
+
+	if seaweedCR.Spec.Vector != nil {
+		notReadyMessage += fmt.Sprintf(", Vector: %d/%d ready", vectorStatus.ReadyReplicas, vectorStatus.Replicas)
 	}
 
 	// Update conditions
@@ -463,6 +483,10 @@ func componentEndpoint(m *seaweedv1.Seaweed, component string) (service, endpoin
 		if m.Spec.Admin != nil {
 			return m.Name + "-admin", url("http", m.Name+"-admin", seaweedv1.AdminHTTPPort)
 		}
+	case ComponentVector:
+		if m.Spec.Vector != nil {
+			return m.Name + "-vector", url("grpc", m.Name+"-vector", vectorEffectivePort(m))
+		}
 	case s3Component:
 		if m.Spec.S3 != nil && m.Spec.Filer != nil {
 			if httpsPort := s3HTTPSPort(m); httpsPort != 0 {
@@ -493,6 +517,10 @@ func (r *SeaweedReconciler) getComponentStatus(ctx context.Context, seaweedCR *s
 	case ComponentAdmin:
 		if seaweedCR.Spec.Admin != nil {
 			return r.getStatefulSetStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-admin", 1)
+		}
+	case ComponentVector:
+		if seaweedCR.Spec.Vector != nil {
+			return r.getDeploymentStatus(ctx, seaweedCR.Namespace, seaweedCR.Name+"-vector", seaweedCR.Spec.Vector.Replicas)
 		}
 	case ComponentWorker:
 		if seaweedCR.Spec.Worker != nil {

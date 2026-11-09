@@ -407,6 +407,7 @@ func (r *SeaweedReconciler) ensureServerCertificate(ctx context.Context, m *seaw
 		name + "-filer-peer",
 		name + "-admin",
 		name + "-worker",
+		name + "-vector",
 		name + "-s3",
 		fmt.Sprintf("*.%s-master-peer.%s.svc.cluster.local", name, ns),
 		fmt.Sprintf("*.%s-volume-peer.%s.svc.cluster.local", name, ns),
@@ -558,6 +559,7 @@ func tlsRevision(tls *seaweedv1.TLSSpec) string {
 		emit("filer", c.Filer)
 		emit("admin", c.Admin)
 		emit("worker", c.Worker)
+		emit("vector", c.Vector)
 		emit("s3", c.S3)
 	}
 	if tls.Source != nil && tls.Source.Files != nil {
@@ -584,6 +586,7 @@ var grpcTLSSections = []struct {
 	{name: "filer", cns: func(c *seaweedv1.TLSAllowedCommonNames) []string { return c.Filer }},
 	{name: "admin", cns: func(c *seaweedv1.TLSAllowedCommonNames) []string { return c.Admin }},
 	{name: "worker", cns: func(c *seaweedv1.TLSAllowedCommonNames) []string { return c.Worker }},
+	{name: "vector", cns: func(c *seaweedv1.TLSAllowedCommonNames) []string { return c.Vector }},
 	{name: "client"},
 	{name: "s3", cns: func(c *seaweedv1.TLSAllowedCommonNames) []string { return c.S3 }},
 }
@@ -626,6 +629,7 @@ func renderSecurityTOML(cfg seaweedv1.JWTSigningSpec, keys jwtSigningKeys, tls *
 			}
 		}
 	}
+	fmt.Fprintf(&b, "\n[https.client]\ncert = %q\nkey = %q\nca = %q\n", tlsMountPath+"/"+cert, tlsMountPath+"/"+key, tlsMountPath+"/"+ca)
 	return b.String()
 }
 

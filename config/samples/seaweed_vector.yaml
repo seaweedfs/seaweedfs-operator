@@ -1,0 +1,23 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: vector-demo
+spec:
+  image: chrislusf/seaweedfs:4.53
+  master:
+    replicas: 1
+  volume:
+    replicas: 1
+    requests:
+      storage: 10Gi
+  filer:
+    replicas: 1
+  s3:
+    replicas: 1
+  vector:
+    replicas: 2
+    readCacheMB: 512
+  admin:
+    replicas: 1
+  worker:
+    replicas: 1

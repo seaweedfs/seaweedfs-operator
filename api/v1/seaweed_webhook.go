@@ -87,6 +87,7 @@ func (v *SeaweedCustomValidator) ValidateCreate(_ context.Context, obj *Seaweed)
 	errs = append(errs, obj.validateVolumeTopology()...)
 
 	errs = append(errs, obj.validateWorker()...)
+	errs = append(errs, obj.validateVector()...)
 
 	if err := obj.validateMasterPersistence(); err != nil {
 		errs = append(errs, err)
@@ -116,6 +117,7 @@ func (v *SeaweedCustomValidator) ValidateUpdate(_ context.Context, _, obj *Seawe
 	}
 	errs = append(errs, obj.validateVolumeTopology()...)
 	errs = append(errs, obj.validateWorker()...)
+	errs = append(errs, obj.validateVector()...)
 	if err := obj.validateMasterPersistence(); err != nil {
 		errs = append(errs, err)
 	}
@@ -353,6 +355,9 @@ func (r *Seaweed) validateTLS() []error {
 		}
 		if r.Spec.Worker != nil {
 			require("worker", allow.Worker)
+		}
+		if r.Spec.Vector != nil {
+			require("vector", allow.Vector)
 		}
 		if len(missing) > 0 {
 			errs = append(errs, fmt.Errorf("spec.tls.source.volume requires spec.tls.allowedWildcardDomain or spec.tls.allowedCommonNames entries for every deployed component; missing: %s", strings.Join(missing, ", ")))

@@ -1261,7 +1261,19 @@ before an ANN index is built.
 The component inherits image, resources, environment, scheduling, security and
 probe overrides through the existing component settings. `spec.tls` supplies its
 server/client certificate and security.toml, including encrypted volume read
-credentials. Removing `spec.vector` prunes its Deployment, Service and monitor.
+credentials. When volume servers use HTTPS, enable the Vector HTTP client explicitly:
+
+```yaml
+spec:
+  vector:
+    env:
+      - name: WEED_HTTPS_CLIENT_ENABLED
+        value: "true"
+```
+
+Use this setting only when the volume HTTP endpoints serve TLS. `spec.tls` alone
+does not switch volume HTTP listeners to HTTPS. Removing `spec.vector` prunes its
+Deployment, Service and monitor.
 
 Released 4.53 engines use TCP probes. With an engine supporting HTTP metrics
 (seaweedfs/seaweedfs#12517), set `spec.vector.metricsPort: 9329` to enable

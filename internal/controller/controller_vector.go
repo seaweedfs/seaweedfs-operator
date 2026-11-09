@@ -28,6 +28,9 @@ func vectorEffectivePort(m *seaweedv1.Seaweed) int32 {
 
 func (r *SeaweedReconciler) ensureVectors(ctx context.Context, m *seaweedv1.Seaweed) (bool, ctrl.Result, error) {
 	name := m.Name + "-vector"
+	if m.Spec.Vector != nil && m.Spec.Filer == nil {
+		r.Log.Info("Vector engines require a Filer", "seaweed", m.Name)
+	}
 	if m.Spec.Vector == nil || m.Spec.Filer == nil {
 		if err := r.pruneOwned(ctx, m, &appsv1.Deployment{}, name); err != nil {
 			return ReconcileResult(err)

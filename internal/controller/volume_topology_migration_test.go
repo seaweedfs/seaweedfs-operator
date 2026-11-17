@@ -792,6 +792,22 @@ func TestGetVolumeStatusCountsDrainingFlatWorkload(t *testing.T) {
 		}
 	})
 
+	t.Run("flat servers held for evacuation do not hide an unready group", func(t *testing.T) {
+		m := m.DeepCopy()
+		m.Spec.Volume.Replicas = 1
+		sts := flatVolumeSTS(m, 2)
+		sts.Status.ReadyReplicas = 2
+		r := newEvacTestReconciler(t, &fakeVolumeAdmin{}, m, sts)
+
+		status, err := r.getVolumeStatus(context.Background(), m)
+		if err != nil {
+			t.Fatalf("getVolumeStatus: %v", err)
+		}
+		if status.Replicas != 2 || status.ReadyReplicas != 1 {
+			t.Fatalf("status = %d/%d, want 1/2 (1 of 1 flat + 0 of 1 topology)", status.ReadyReplicas, status.Replicas)
+		}
+	})
+
 	t.Run("flat replicas next to the groups count from the spec", func(t *testing.T) {
 		m := m.DeepCopy()
 		m.Spec.Volume.Replicas = 3

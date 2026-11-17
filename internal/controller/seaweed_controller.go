@@ -587,7 +587,9 @@ func (r *SeaweedReconciler) getDeploymentStatus(ctx context.Context, namespace, 
 func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaweedv1.Seaweed) (seaweedv1.ComponentStatus, error) {
 	status := seaweedv1.ComponentStatus{}
 
-	// Aggregate volume status from base spec and topology groups
+	// Aggregate volume status from base spec and topology groups. Each
+	// workload's ready count is capped at its desired count, so servers held
+	// for evacuation cannot hide an unready workload.
 	totalDesiredReplicas := int32(0)
 	totalReadyReplicas := int32(0)
 
@@ -603,7 +605,7 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 			return status, err
 		}
 		totalDesiredReplicas += legacyStatus.Replicas
-		totalReadyReplicas += legacyStatus.ReadyReplicas
+		totalReadyReplicas += min(legacyStatus.ReadyReplicas, legacyStatus.Replicas)
 	} else if seaweedCR.Spec.Volume != nil {
 		var baseStatus seaweedv1.ComponentStatus
 		var err error
@@ -616,7 +618,7 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 			return status, err
 		}
 		totalDesiredReplicas += baseStatus.Replicas
-		totalReadyReplicas += baseStatus.ReadyReplicas
+		totalReadyReplicas += min(baseStatus.ReadyReplicas, baseStatus.Replicas)
 	}
 
 	// Check volume topology groups
@@ -630,7 +632,7 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 			return status, err
 		}
 		totalDesiredReplicas += topologyStatus.Replicas
-		totalReadyReplicas += topologyStatus.ReadyReplicas
+		totalReadyReplicas += min(topologyStatus.ReadyReplicas, topologyStatus.Replicas)
 	}
 
 	status.Replicas = totalDesiredReplicas

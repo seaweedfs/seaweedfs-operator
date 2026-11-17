@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/onsi/ginkgo/v2 v2.34.0
 	github.com/onsi/gomega v1.44.0
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.95.1
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.95.2
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/seaweedfs/seaweedfs v0.0.0-20261116053142-5ef99c1d8dbb
 	github.com/stretchr/testify v1.12.1

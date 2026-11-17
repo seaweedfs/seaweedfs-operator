@@ -36,6 +36,16 @@ func (r *SeaweedReconciler) ensureVolumeServers(ctx context.Context, seaweedCR *
 		if flatVolumeRetired(seaweedCR) {
 			return r.retireFlatVolumeServers(ctx, seaweedCR)
 		}
+		// A flat DaemonSet switched to a StatefulSet drains into the groups
+		// before the StatefulSet replaces it.
+		ds := &appsv1.DaemonSet{}
+		dsErr := r.Get(ctx, types.NamespacedName{Namespace: seaweedCR.Namespace, Name: seaweedCR.Name + "-volume"}, ds)
+		if dsErr != nil && !apierrors.IsNotFound(dsErr) {
+			return ReconcileResult(dsErr)
+		}
+		if dsErr == nil && isOwnedBy(ds.OwnerReferences, seaweedCR.UID) {
+			return r.retireFlatVolumeServers(ctx, seaweedCR)
+		}
 	}
 
 	// Fallback to single volume server group (legacy behavior).

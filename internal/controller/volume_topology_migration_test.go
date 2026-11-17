@@ -528,6 +528,26 @@ func TestEnsureVolumeServersTopologyKeepsFlatReplicas(t *testing.T) {
 		}
 	})
 
+	t.Run("flat DaemonSet switched to a StatefulSet drains first", func(t *testing.T) {
+		m := withFlat(2)
+		ds, pod := flatDaemonSetWithPod(m, "test-volume-abcde", "10.0.0.5")
+		fa := &fakeVolumeAdmin{counts: map[string]int{"10.0.0.5:8444": 6}}
+		r := newEvacTestReconciler(t, fa, m, ds, pod)
+		seedReadyTopologySTS(t, ctx, r, m, "dc1")
+
+		done, _, err := r.ensureVolumeServers(ctx, m)
+		if err != nil {
+			t.Fatalf("ensureVolumeServers: %v", err)
+		}
+		if !done {
+			t.Fatal("expected the DaemonSet drain to hold reconciliation")
+		}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume"}, &appsv1.DaemonSet{}); err != nil {
+			t.Fatalf("DaemonSet must be kept while its server holds volumes: %v", err)
+		}
+		waitForEvacuation(t, fa, "10.0.0.5:8444")
+	})
+
 	t.Run("replicas 0 retires the flat set", func(t *testing.T) {
 		m := withFlat(0)
 		fa := &fakeVolumeAdmin{counts: map[string]int{

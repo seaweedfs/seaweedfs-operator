@@ -592,7 +592,7 @@ func (r *SeaweedReconciler) getVolumeStatus(ctx context.Context, seaweedCR *seaw
 	totalReadyReplicas := int32(0)
 
 	// Check base volume spec
-	if len(seaweedCR.Spec.VolumeTopology) > 0 {
+	if flatVolumeRetired(seaweedCR) {
 		// Topology groups replace the flat workload entirely, so
 		// spec.volume.replicas is not a desired count anymore — while a
 		// leftover <name>-volume workload drains during migration, report

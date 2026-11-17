@@ -33,10 +33,9 @@ func (r *SeaweedReconciler) ensureVolumeServers(ctx context.Context, seaweedCR *
 		if done, result, err = r.ensureVolumeServersWithTopology(ctx, seaweedCR); done {
 			return
 		}
-		// Topology groups take over volume duty entirely; retire a flat
-		// <name>-volume workload left over from before the migration so it
-		// does not keep running untracked.
-		return r.retireFlatVolumeServers(ctx, seaweedCR)
+		if flatVolumeRetired(seaweedCR) {
+			return r.retireFlatVolumeServers(ctx, seaweedCR)
+		}
 	}
 
 	// Fallback to single volume server group (legacy behavior).
@@ -235,11 +234,23 @@ func (r *SeaweedReconciler) ensureVolumeServersWithTopology(ctx context.Context,
 	return
 }
 
+// flatVolumeRetired reports whether spec.volumeTopology has taken over volume
+// duty entirely. Next to topology groups, spec.volume runs servers of its own
+// only as a StatefulSet with replicas; otherwise it just supplies the groups'
+// defaults.
+func flatVolumeRetired(m *seaweedv1.Seaweed) bool {
+	if len(m.Spec.VolumeTopology) == 0 {
+		return false
+	}
+	vol := m.Spec.Volume
+	return vol == nil || vol.IsDaemonSet() || vol.Replicas == 0
+}
+
 // retireFlatVolumeServers drains and removes the legacy <name>-volume
 // workload once spec.volumeTopology has taken over. The flat branch of
-// ensureVolumeServers is skipped whenever topology groups exist, so without
-// this the old StatefulSet and its Services keep running orphaned — and
-// getVolumeStatus no longer counts them once spec.volume is dropped.
+// ensureVolumeServers is skipped then, so without this the old StatefulSet
+// and its Services keep running orphaned — and getVolumeStatus no longer
+// counts them once spec.volume is dropped.
 //
 // Removal is gated twice. First on replacement capacity: the topology groups
 // must have all their replicas ready, or an already-empty flat set would be

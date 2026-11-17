@@ -89,11 +89,10 @@ func desiredServiceMonitorNames(m *seaweedv1.Seaweed) map[string]bool {
 	if spec := m.Spec.Master; spec != nil {
 		add("-master", spec.MetricsPort)
 	}
-	if len(m.Spec.VolumeTopology) > 0 {
-		for name, spec := range m.Spec.VolumeTopology {
-			add("-volume-"+name, spec.MetricsPort)
-		}
-	} else if spec := m.Spec.Volume; spec != nil {
+	for name, spec := range m.Spec.VolumeTopology {
+		add("-volume-"+name, spec.MetricsPort)
+	}
+	if spec := m.Spec.Volume; spec != nil && !flatVolumeRetired(m) {
 		add("-volume", spec.MetricsPort)
 	}
 	if spec := m.Spec.Filer; spec != nil {

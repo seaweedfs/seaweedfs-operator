@@ -180,6 +180,26 @@ func TestPruneServiceMonitorsFlatVolumeMigration(t *testing.T) {
 	}
 }
 
+func TestDesiredServiceMonitorNamesFlatVolumeNextToTopology(t *testing.T) {
+	port := metricsPort(9327)
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "test"},
+		Spec: seaweedv1.SeaweedSpec{
+			Volume: &seaweedv1.VolumeSpec{VolumeServerConfig: seaweedv1.VolumeServerConfig{MetricsPort: port}},
+			VolumeTopology: map[string]*seaweedv1.VolumeTopologySpec{
+				"dc1": {VolumeServerConfig: seaweedv1.VolumeServerConfig{MetricsPort: port}},
+			},
+		},
+	}
+	for _, replicas := range []int32{2, 0} {
+		m.Spec.Volume.Replicas = replicas
+		names := desiredServiceMonitorNames(m)
+		if !names["sw-volume-dc1"] || names["sw-volume"] != (replicas > 0) {
+			t.Errorf("replicas=%d: desired = %v", replicas, names)
+		}
+	}
+}
+
 func TestReconcileServiceMonitor(t *testing.T) {
 	ctx := context.Background()
 	key := client.ObjectKey{Namespace: "test", Name: "sw-master"}

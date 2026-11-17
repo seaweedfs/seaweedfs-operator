@@ -25,6 +25,12 @@ func (r *SeaweedReconciler) createVolumeServerServiceMonitor(m *seaweedv1.Seawee
 			},
 			Selector: metav1.LabelSelector{
 				MatchLabels: metricsServiceLabels(labels),
+				// Topology Services carry the flat labels too; their own
+				// monitors scrape them.
+				MatchExpressions: []metav1.LabelSelectorRequirement{{
+					Key:      "seaweedfs/topology",
+					Operator: metav1.LabelSelectorOpDoesNotExist,
+				}},
 			},
 		},
 	}

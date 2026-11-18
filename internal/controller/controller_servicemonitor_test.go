@@ -10,6 +10,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -177,6 +178,43 @@ func TestPruneServiceMonitorsFlatVolumeMigration(t *testing.T) {
 	}
 	if serviceMonitorExists(t, r, "sw-volume") {
 		t.Error("disabled monitor kept while its workload still serves")
+	}
+}
+
+func TestDesiredServiceMonitorNamesFlatVolumeNextToTopology(t *testing.T) {
+	port := metricsPort(9327)
+	m := &seaweedv1.Seaweed{
+		ObjectMeta: metav1.ObjectMeta{Name: "sw", Namespace: "test"},
+		Spec: seaweedv1.SeaweedSpec{
+			Volume: &seaweedv1.VolumeSpec{VolumeServerConfig: seaweedv1.VolumeServerConfig{MetricsPort: port}},
+			VolumeTopology: map[string]*seaweedv1.VolumeTopologySpec{
+				"dc1": {VolumeServerConfig: seaweedv1.VolumeServerConfig{MetricsPort: port}},
+			},
+		},
+	}
+	for _, replicas := range []int32{2, 0} {
+		m.Spec.Volume.Replicas = replicas
+		names := desiredServiceMonitorNames(m)
+		if !names["sw-volume-dc1"] || names["sw-volume"] != (replicas > 0) {
+			t.Errorf("replicas=%d: desired = %v", replicas, names)
+		}
+	}
+}
+
+func TestFlatVolumeServiceMonitorSkipsTopologyServices(t *testing.T) {
+	m := topologyOnlySeaweed()
+	m.Spec.Volume = &seaweedv1.VolumeSpec{Replicas: 1, VolumeServerConfig: seaweedv1.VolumeServerConfig{MetricsPort: metricsPort(9327)}}
+	r := &SeaweedReconciler{}
+
+	flat, err := metav1.LabelSelectorAsSelector(&r.createVolumeServerServiceMonitor(m).Spec.Selector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !flat.Matches(labels.Set(r.createVolumeServerService(m, 0).Labels)) {
+		t.Error("flat monitor does not select the flat per-replica Service")
+	}
+	if flat.Matches(labels.Set(r.createVolumeServerTopologyService(m, "dc1", 0).Labels)) {
+		t.Error("flat monitor also selects a topology per-replica Service")
 	}
 }
 

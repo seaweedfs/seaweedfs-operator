@@ -335,8 +335,8 @@ If you're upgrading from a version without topology support, existing volume ser
 When transitioning from the simple topology approach to the more flexible tree topology approach:
 
 1. **Document Current Configuration**: Note your current volume server configuration
-2. **Create Equivalent Topology Groups**: Create equivalent topology groups in `volumeTopology`
-3. **Disable Simple Topology**: Set original `volume.replicas: 0` to disable simple topology
+2. **Create Equivalent Topology Groups**: Create equivalent topology groups in `volumeTopology`. While `volume.replicas` stays above 0, the `<name>-volume` StatefulSet keeps running and being reconciled next to the groups.
+3. **Disable Simple Topology**: Set original `volume.replicas: 0` to disable simple topology. Once every topology group has its replicas ready, the operator evacuates the volumes on the flat servers, scales the `<name>-volume` StatefulSet down as they empty, and then removes it with its Services.
 4. **Apply Configuration**: Apply the updated configuration
 5. **Verify Topology**: Verify all volume servers report correct topology
 

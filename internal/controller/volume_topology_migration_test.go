@@ -463,6 +463,109 @@ func TestEnsureVolumeServersTopologyRetiresFlatWorkload(t *testing.T) {
 	})
 }
 
+// spec.volume with replicas runs servers of its own next to the topology
+// groups and keeps being reconciled; only replicas: 0 hands volume duty to
+// the groups and retires the flat set.
+func TestEnsureVolumeServersTopologyKeepsFlatReplicas(t *testing.T) {
+	ctx := context.Background()
+	withFlat := func(replicas int32) *seaweedv1.Seaweed {
+		m := topologyOnlySeaweed()
+		m.Spec.Volume = &seaweedv1.VolumeSpec{Replicas: replicas}
+		m.Spec.Volume.Requests = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
+		return m
+	}
+
+	t.Run("flat set is created next to the groups", func(t *testing.T) {
+		m := withFlat(2)
+		r := newEvacTestReconciler(t, &fakeVolumeAdmin{}, m)
+
+		if _, _, err := r.ensureVolumeServers(ctx, m); err != nil {
+			t.Fatalf("ensureVolumeServers: %v", err)
+		}
+		for _, name := range []string{"test-volume", "test-volume-dc1"} {
+			if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: name}, &appsv1.StatefulSet{}); err != nil {
+				t.Fatalf("StatefulSet %s: %v", name, err)
+			}
+		}
+		for _, svc := range []string{"test-volume-peer", "test-volume-0", "test-volume-1"} {
+			if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: svc}, &corev1.Service{}); err != nil {
+				t.Fatalf("flat service %s: %v", svc, err)
+			}
+		}
+	})
+
+	t.Run("existing flat set follows the spec", func(t *testing.T) {
+		m := withFlat(2)
+		fa := &fakeVolumeAdmin{counts: map[string]int{
+			volumeServerNodeAddress(m, 0): 3,
+			volumeServerNodeAddress(m, 1): 3,
+		}}
+		r := newEvacTestReconciler(t, fa, m)
+		old := m.DeepCopy()
+		old.Spec.Image = "seaweedfs/seaweedfs:old"
+		sts := r.createVolumeServerStatefulSet(old)
+		sts.OwnerReferences = []metav1.OwnerReference{controllerRef(m, "StatefulSet")}
+		if err := r.Create(ctx, sts); err != nil {
+			t.Fatalf("create flat StatefulSet: %v", err)
+		}
+		seedReadyTopologySTS(t, ctx, r, m, "dc1")
+
+		if _, _, err := r.ensureVolumeServers(ctx, m); err != nil {
+			t.Fatalf("ensureVolumeServers: %v", err)
+		}
+		got := &appsv1.StatefulSet{}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume"}, got); err != nil {
+			t.Fatalf("flat StatefulSet must stay: %v", err)
+		}
+		if n := ptr.Deref(got.Spec.Replicas, 0); n != 2 {
+			t.Fatalf("flat replicas = %d, want 2", n)
+		}
+		if image := got.Spec.Template.Spec.Containers[0].Image; image != m.Spec.Image {
+			t.Fatalf("flat image = %q, want %q", image, m.Spec.Image)
+		}
+		if nodes := fa.evacuatedNodes(); len(nodes) != 0 {
+			t.Fatalf("flat servers evacuated: %v", nodes)
+		}
+	})
+
+	t.Run("flat DaemonSet switched to a StatefulSet drains first", func(t *testing.T) {
+		m := withFlat(2)
+		ds, pod := flatDaemonSetWithPod(m, "test-volume-abcde", "10.0.0.5")
+		fa := &fakeVolumeAdmin{counts: map[string]int{"10.0.0.5:8444": 6}}
+		r := newEvacTestReconciler(t, fa, m, ds, pod)
+		seedReadyTopologySTS(t, ctx, r, m, "dc1")
+
+		done, _, err := r.ensureVolumeServers(ctx, m)
+		if err != nil {
+			t.Fatalf("ensureVolumeServers: %v", err)
+		}
+		if !done {
+			t.Fatal("expected the DaemonSet drain to hold reconciliation")
+		}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume"}, &appsv1.DaemonSet{}); err != nil {
+			t.Fatalf("DaemonSet must be kept while its server holds volumes: %v", err)
+		}
+		waitForEvacuation(t, fa, "10.0.0.5:8444")
+	})
+
+	t.Run("replicas 0 retires the flat set", func(t *testing.T) {
+		m := withFlat(0)
+		fa := &fakeVolumeAdmin{counts: map[string]int{
+			volumeServerNodeAddress(m, 0): 0,
+			volumeServerNodeAddress(m, 1): 0,
+		}}
+		r := newEvacTestReconciler(t, fa, m, flatVolumeSTS(m, 2))
+		seedReadyTopologySTS(t, ctx, r, m, "dc1")
+
+		if _, _, err := r.ensureVolumeServers(ctx, m); err != nil {
+			t.Fatalf("ensureVolumeServers: %v", err)
+		}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-volume"}, &appsv1.StatefulSet{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("drained flat StatefulSet should be deleted, got err=%v", err)
+		}
+	})
+}
+
 // Per-replica Services outlive scale-ins because nothing pruned them; with
 // ingress hosts following live Services that meant dead routes. Pruning keys
 // off the workload's live replica count so a replica held for evacuation
@@ -633,7 +736,7 @@ func TestCreateAllIngressVolumeHosts(t *testing.T) {
 	t.Run("pruned flat services lose their hosts", func(t *testing.T) {
 		m := topologyOnlySeaweed()
 		m.Spec.HostSuffix = &suffix
-		m.Spec.Volume = &seaweedv1.VolumeSpec{Replicas: 2} // kept for inheritance
+		m.Spec.Volume = &seaweedv1.VolumeSpec{Replicas: 0} // defaults only
 		topoSvc := flatVolumeService("test-volume-dc1-0", "default", m.UID)
 		topoSvc.Labels["seaweedfs/topology"] = "dc1"
 		r, _ := componentIngressTestReconciler(t, m, topoSvc)
@@ -657,7 +760,7 @@ func TestGetVolumeStatusCountsDrainingFlatWorkload(t *testing.T) {
 	m := topologyOnlySeaweed()
 	// spec.volume is still set here, as in a mid-migration CR whose storage
 	// requests are inherited by the topology groups.
-	m.Spec.Volume = &seaweedv1.VolumeSpec{Replicas: 5}
+	m.Spec.Volume = &seaweedv1.VolumeSpec{Replicas: 0}
 
 	t.Run("owned flat set reports live replicas", func(t *testing.T) {
 		sts := flatVolumeSTS(m, 2)
@@ -668,8 +771,7 @@ func TestGetVolumeStatusCountsDrainingFlatWorkload(t *testing.T) {
 		if err != nil {
 			t.Fatalf("getVolumeStatus: %v", err)
 		}
-		// Flat contributes its live 2/1, topology its desired 1/0 — the
-		// stale spec.volume.replicas=5 must not appear.
+		// Flat contributes its live 2/1, topology its desired 1/0.
 		if status.Replicas != 3 || status.ReadyReplicas != 1 {
 			t.Fatalf("status = %d/%d, want 3/1 (2 live flat + 1 topology)", status.ReadyReplicas, status.Replicas)
 		}
@@ -687,6 +789,38 @@ func TestGetVolumeStatusCountsDrainingFlatWorkload(t *testing.T) {
 		}
 		if status.Replicas != 1 || status.ReadyReplicas != 0 {
 			t.Fatalf("status = %d/%d, want 1/0 (topology only)", status.ReadyReplicas, status.Replicas)
+		}
+	})
+
+	t.Run("flat servers held for evacuation do not hide an unready group", func(t *testing.T) {
+		m := m.DeepCopy()
+		m.Spec.Volume.Replicas = 1
+		sts := flatVolumeSTS(m, 2)
+		sts.Status.ReadyReplicas = 2
+		r := newEvacTestReconciler(t, &fakeVolumeAdmin{}, m, sts)
+
+		status, err := r.getVolumeStatus(context.Background(), m)
+		if err != nil {
+			t.Fatalf("getVolumeStatus: %v", err)
+		}
+		if status.Replicas != 2 || status.ReadyReplicas != 1 {
+			t.Fatalf("status = %d/%d, want 1/2 (1 of 1 flat + 0 of 1 topology)", status.ReadyReplicas, status.Replicas)
+		}
+	})
+
+	t.Run("flat replicas next to the groups count from the spec", func(t *testing.T) {
+		m := m.DeepCopy()
+		m.Spec.Volume.Replicas = 3
+		sts := flatVolumeSTS(m, 2)
+		sts.Status.ReadyReplicas = 2
+		r := newEvacTestReconciler(t, &fakeVolumeAdmin{}, m, sts)
+
+		status, err := r.getVolumeStatus(context.Background(), m)
+		if err != nil {
+			t.Fatalf("getVolumeStatus: %v", err)
+		}
+		if status.Replicas != 4 || status.ReadyReplicas != 2 {
+			t.Fatalf("status = %d/%d, want 2/4 (3 flat + 1 topology)", status.ReadyReplicas, status.Replicas)
 		}
 	})
 }

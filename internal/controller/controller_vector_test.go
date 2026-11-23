@@ -61,6 +61,23 @@ func TestVectorDeployment(t *testing.T) {
 	}
 }
 
+func TestVectorReadCacheIsAnEnvironmentVariable(t *testing.T) {
+	m := vectorCluster()
+	m.Spec.Vector.ReadCacheMB = ptr.To(int64(1024))
+	c := podContainer(t, &(&SeaweedReconciler{}).createVectorDeployment(m).Spec.Template.Spec, "vector")
+	// An engine from 4.56 refuses the flag.
+	if strings.Contains(strings.Join(c.Args, " "), "--read-cache-mb") {
+		t.Fatalf("read cache passed as a flag: %v", c.Args)
+	}
+	found := false
+	for _, env := range c.Env {
+		found = found || (env.Name == "WEED_VECTOR_READ_CACHE_MB" && env.Value == "1024")
+	}
+	if !found {
+		t.Fatalf("WEED_VECTOR_READ_CACHE_MB missing: %v", c.Env)
+	}
+}
+
 func TestVectorTLS(t *testing.T) {
 	m := vectorCluster()
 	m.Spec.TLS = &seaweedv1.TLSSpec{Enabled: true, Source: &seaweedv1.TLSSource{Volume: &corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "tls"}}}}

@@ -187,6 +187,7 @@ Each topology group supports the following fields:
 - `service` (ServiceSpec, optional): Service configuration for this topology group
 
 **Pod Configuration:**
+- `version` (string, optional): Image tag for this group's volume servers, replacing the tag on `spec.image`
 - `env` ([]corev1.EnvVar): Environment variables for volume server containers
 - `imagePullPolicy` (corev1.PullPolicy): Image pull policy override
 - `imagePullSecrets` ([]corev1.LocalObjectReference): Image pull secrets
@@ -214,6 +215,7 @@ These fields use topology-specific values when provided, otherwise fall back to 
 
 These fields use topology-specific values when provided, otherwise fall back to `spec.volume` settings:
 
+- **`version`**: `volumeTopology.GROUP.version` → `spec.volume.version` → `spec.version`. Each group's StatefulSet rolls on its own, so changing one group's version upgrades that failure domain without restarting the others.
 - **`env`**: `volumeTopology.GROUP.env` → `spec.volume.env`
 - **`requests`** and **`limits`**: `volumeTopology.GROUP.requests/limits` → `spec.volume.requests/limits`
 

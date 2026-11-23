@@ -501,7 +501,7 @@ func (r *SeaweedReconciler) createVolumeServerTopologyStatefulSet(m *seaweedv1.S
 	}
 	volumePodSpec.Containers = []corev1.Container{{
 		Name:            "volume",
-		Image:           m.BaseVolumeSpec().Image(),
+		Image:           m.VolumeTopologyImage(topologySpec),
 		ImagePullPolicy: getImagePullPolicy(m, topologySpec),
 		SecurityContext: getContainerSecurityContext(m, topologySpec),
 		Env:             append(getEnvVars(m, topologySpec), componentEnvVars(m)...),

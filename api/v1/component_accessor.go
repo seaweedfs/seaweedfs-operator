@@ -325,6 +325,15 @@ func (s *Seaweed) BaseVolumeSpec() ComponentAccessor {
 	return buildSeaweedComponentAccessor(&s.Spec, cs)
 }
 
+// VolumeTopologyImage is a topology group's volume image: the group's version
+// wins over spec.volume's, which wins over the cluster-level version.
+func (s *Seaweed) VolumeTopologyImage(topologySpec *VolumeTopologySpec) string {
+	if topologySpec != nil && topologySpec.Version != nil && *topologySpec.Version != "" {
+		return applyVersion(s.Spec.Image, *topologySpec.Version)
+	}
+	return s.BaseVolumeSpec().Image()
+}
+
 // BaseAdminSpec provides merged spec of admin
 func (s *Seaweed) BaseAdminSpec() ComponentAccessor {
 	return buildSeaweedComponentAccessor(&s.Spec, &s.Spec.Admin.ComponentSpec)

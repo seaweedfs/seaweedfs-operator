@@ -17,6 +17,8 @@ type VectorSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
 	MetricsPort *int32 `json:"metricsPort,omitempty"`
+	// ReadCacheMB sizes the read cache of engines up to 4.55; later engines
+	// size their caches from their memory limit and ignore it.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	ReadCacheMB *int64 `json:"readCacheMB,omitempty"`

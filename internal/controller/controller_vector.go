@@ -88,9 +88,6 @@ func (r *SeaweedReconciler) createVectorDeployment(m *seaweedv1.Seaweed) *appsv1
 	vols, mounts := tlsVolumesAndMounts(m)
 	pod.Volumes = append(pod.Volumes, vols...)
 	args := []string{"--masters=" + getMasterPeersString(m)}
-	if v.ReadCacheMB != nil {
-		args = append(args, fmt.Sprintf("--read-cache-mb=%d", *v.ReadCacheMB))
-	}
 	container := corev1.Container{
 		Name: ComponentVector, Image: base.Image(), ImagePullPolicy: base.ImagePullPolicy(), SecurityContext: base.ContainerSecurityContext(),
 		Command: []string{"/bin/sh", "-ec", fmt.Sprintf(`case "$POD_IP" in *:*) POD_IP="[$POD_IP]";; esac; exec /usr/bin/weed-vector --listen="$POD_IP:%d" "$@"`, vectorEffectivePort(m)), "vector"}, Resources: filterContainerResources(v.ResourceRequirements),
@@ -98,6 +95,10 @@ func (r *SeaweedReconciler) createVectorDeployment(m *seaweedv1.Seaweed) *appsv1
 		Ports: []corev1.ContainerPort{{Name: "vector-grpc", ContainerPort: vectorEffectivePort(m)}},
 	}
 	container.Env = append(container.Env, corev1.EnvVar{Name: "POD_IP", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.podIP"}}})
+	// A variable, not the flag: engines from 4.56 size their caches themselves and refuse the flag.
+	if v.ReadCacheMB != nil {
+		container.Env = append(container.Env, corev1.EnvVar{Name: "WEED_VECTOR_READ_CACHE_MB", Value: fmt.Sprint(*v.ReadCacheMB)})
+	}
 	if securityConfigNeeded(m) {
 		container.Env = append(container.Env, corev1.EnvVar{Name: "WEED_VECTOR_SECURITY_TOML", Value: securityConfigMountPath + "/security.toml"})
 	}

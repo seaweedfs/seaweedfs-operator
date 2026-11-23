@@ -16,7 +16,6 @@ spec:
     replicas: 1
   vector:
     replicas: 2
-    readCacheMB: 512
   admin:
     replicas: 1
   worker:

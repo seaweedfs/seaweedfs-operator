@@ -52,7 +52,6 @@ func TestBuildRustWorkerStartupScript(t *testing.T) {
 		"it ships in images 4.45+ on amd64/arm64",
 		"/usr/bin/weed-worker --admin=sw-admin:23646",
 		"--id=$(POD_NAME)",
-		"--namespace=http://sw-filer:9101",
 		"--max-concurrency=7",
 		"--metrics-port=9328",
 		"--metrics-ip=0.0.0.0",
@@ -61,8 +60,8 @@ func TestBuildRustWorkerStartupScript(t *testing.T) {
 			t.Errorf("expected %q in rust worker script, got %q", want, got)
 		}
 	}
-	// weed-worker exits on unknown flags; Go-only knobs must stay off its command line.
-	for _, absent := range []string{"9350", "-jobType", "-maxDetect", "weed "} {
+	// weed-worker exits on unknown flags; Go-only knobs and options a release may drop stay off its command line.
+	for _, absent := range []string{"9350", "-jobType", "-maxDetect", "weed ", "--namespace", "--masters", "--filer-group"} {
 		if strings.Contains(got, absent) {
 			t.Errorf("unexpected %q in rust worker script %q", absent, got)
 		}
@@ -103,14 +102,31 @@ func TestBuildRustWorkerStartupScript_DefaultConcurrency(t *testing.T) {
 	}
 }
 
-// The namespace URL must carry the same effective port the filer service publishes.
-func TestBuildRustWorkerStartupScript_CustomLancePort(t *testing.T) {
-	port := int32(19101)
-	m := newWorkerCluster(&seaweedv1.WorkerSpec{Replicas: 1})
-	m.Spec.Filer.Lance = &seaweedv1.LanceConfig{Enabled: true, Port: &port}
+func rustWorkerEnvValue(m *seaweedv1.Seaweed, name string) string {
+	for _, e := range rustWorkerEnv(m) {
+		if e.Name == name {
+			return e.Value
+		}
+	}
+	return ""
+}
 
-	if got := buildRustWorkerStartupScript(m); !strings.Contains(got, "--namespace=http://sw-filer:19101") {
-		t.Errorf("expected custom lance port in namespace URL, got %q", got)
+func TestRustWorkerEnvNamespace(t *testing.T) {
+	m := newWorkerCluster(&seaweedv1.WorkerSpec{Replicas: 1})
+	if got := rustWorkerEnvValue(m, "WEED_LANCE_NAMESPACE"); got != "http://sw-filer:9101" {
+		t.Errorf("expected WEED_LANCE_NAMESPACE=http://sw-filer:9101, got %q", got)
+	}
+
+	// The namespace URL must carry the same effective port the filer service publishes.
+	port := int32(19101)
+	m.Spec.Filer.Lance = &seaweedv1.LanceConfig{Enabled: true, Port: &port}
+	if got := rustWorkerEnvValue(m, "WEED_LANCE_NAMESPACE"); got != "http://sw-filer:19101" {
+		t.Errorf("expected custom lance port in WEED_LANCE_NAMESPACE, got %q", got)
+	}
+
+	m.Spec.Filer = nil
+	if got := rustWorkerEnvValue(m, "WEED_LANCE_NAMESPACE"); got != "http://sw-filer:9101" {
+		t.Errorf("expected the default lance port without a filer spec, got %q", got)
 	}
 }
 
@@ -159,12 +175,15 @@ func TestCreateWorkerDeploymentLanceSidecar(t *testing.T) {
 	if env["WEED_MASTERS"] != getMasterPeersString(m) {
 		t.Errorf("expected WEED_MASTERS=%q, got %q", getMasterPeersString(m), env["WEED_MASTERS"])
 	}
+	if env["WEED_LANCE_NAMESPACE"] != "http://sw-filer:9101" {
+		t.Errorf("expected WEED_LANCE_NAMESPACE=http://sw-filer:9101, got %q", env["WEED_LANCE_NAMESPACE"])
+	}
 	if _, ok := env["WEED_WORKER_SECURITY_TOML"]; ok {
 		t.Errorf("expected no security.toml path without a security config, got %v", lance.Env)
 	}
 	for _, e := range podContainer(t, pod, "worker").Env {
-		if e.Name == "WEED_MASTERS" {
-			t.Errorf("the Go worker takes -master, not WEED_MASTERS")
+		if e.Name == "WEED_MASTERS" || e.Name == "WEED_LANCE_NAMESPACE" {
+			t.Errorf("unexpected %s on the Go worker", e.Name)
 		}
 	}
 

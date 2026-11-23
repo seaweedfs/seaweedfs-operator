@@ -50,12 +50,6 @@ func buildRustWorkerStartupScript(m *seaweedv1.Seaweed) string {
 	commands = append(commands, fmt.Sprintf("--admin=%s", getAdminAddress(m)))
 	// The Rust default id is fixed, so replicas > 1 would collide without the pod name.
 	commands = append(commands, "--id=$(POD_NAME)")
-	// The sidecar itself is gated on ServesLance; the nil guard covers direct callers.
-	lancePort := int32(seaweedv1.FilerLancePort)
-	if m.Spec.Filer != nil {
-		lancePort = m.Spec.Filer.Lance.LanceEffectivePort()
-	}
-	commands = append(commands, fmt.Sprintf("--namespace=http://%s-filer:%d", m.Name, lancePort))
 	// The admin stream's certificates are flags; security.toml (rustWorkerEnv)
 	// covers the filers, volume servers and the namespace's cluster key.
 	if tlsEffective(m) {
@@ -81,14 +75,22 @@ func buildRustWorkerStartupScript(m *seaweedv1.Seaweed) string {
 	return guard + "\n" + strings.Join(commands, " ")
 }
 
-// rustWorkerEnv tells the worker-lance sidecar where the cluster is. Images
-// after 4.52 keep tables through the filers the masters list and take
-// security.toml for the filers' TLS, volume reads and the namespace's
-// cluster key (jwt.filer_signing.key). They are passed as environment
-// variables, which an older weed-worker ignores, rather than flags it would
-// refuse.
+// rustWorkerEnv configures the worker-lance sidecar. WEED_MASTERS and
+// WEED_LANCE_NAMESPACE are for workers up to 4.55, which require both; later
+// workers learn the cluster from admin and read neither. security.toml
+// carries the filers' TLS, volume reads and the namespace's cluster key
+// (jwt.filer_signing.key). Variables, not flags: a worker ignores unknown
+// variables but refuses unknown flags.
 func rustWorkerEnv(m *seaweedv1.Seaweed) []corev1.EnvVar {
-	env := []corev1.EnvVar{{Name: "WEED_MASTERS", Value: getMasterPeersString(m)}}
+	// The sidecar itself is gated on ServesLance; the nil guard covers direct callers.
+	lancePort := int32(seaweedv1.FilerLancePort)
+	if m.Spec.Filer != nil {
+		lancePort = m.Spec.Filer.Lance.LanceEffectivePort()
+	}
+	env := []corev1.EnvVar{
+		{Name: "WEED_MASTERS", Value: getMasterPeersString(m)},
+		{Name: "WEED_LANCE_NAMESPACE", Value: fmt.Sprintf("http://%s-filer:%d", m.Name, lancePort)},
+	}
 	if securityConfigNeeded(m) {
 		env = append(env, corev1.EnvVar{
 			Name:  "WEED_WORKER_SECURITY_TOML",

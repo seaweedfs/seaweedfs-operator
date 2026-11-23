@@ -75,10 +75,9 @@ func buildRustWorkerStartupScript(m *seaweedv1.Seaweed) string {
 	return guard + "\n" + strings.Join(commands, " ")
 }
 
-// rustWorkerEnv configures the worker-lance sidecar. 4.56+ workers learn the
-// filers and namespaces from admin; WEED_MASTERS and WEED_LANCE_NAMESPACE are
-// for workers up to 4.55, and for a 4.56 worker under an older admin, which
-// names no namespace. security.toml carries the filers' TLS, volume reads and
+// rustWorkerEnv configures the worker-lance sidecar. WEED_MASTERS and
+// WEED_LANCE_NAMESPACE are for workers up to 4.55, which require both; later
+// workers learn the cluster from admin and read neither. security.toml carries the filers' TLS, volume reads and
 // the namespace's cluster key (jwt.filer_signing.key). Variables, not flags:
 // a worker ignores unknown variables but refuses unknown flags.
 func rustWorkerEnv(m *seaweedv1.Seaweed) []corev1.EnvVar {

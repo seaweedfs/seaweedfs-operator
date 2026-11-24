@@ -216,10 +216,9 @@ PersistentVolume/node/pod access, and so on). Those grants still exist; they now
 `config/csi`, which is applied by `make deploy-csi` (or `kustomize build config/csi`). That overlay
 also flips the operator's `ENABLE_CSI_DRIVER` on, so the manager registers the CSI controller.
 
-If you are already on a version with the old broad `config/default` role and you add SeaweedCSIDriver
-resources, switch from `make deploy` to `make deploy-csi`. After upgrading, the old install no longer
-has the verbs the CSI controller needs; the rest of the cluster is unaffected and secrets write is still
-granted by the default role.
+If an existing Kustomize install runs SeaweedCSIDriver resources, redeploy it with `make deploy-csi`:
+`make deploy` now removes the CSI grants from the manager role, so the CSI controller can no longer
+reconcile its driver. Remove such an install with `make undeploy-csi`.
 
 ### You need to also deploy a configuration to get it running (see next section)!
 

@@ -18,3 +18,18 @@ resources:
 - ../default
 - role.yaml
 - role_binding.yaml
+
+patches:
+- patch: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: controller-manager
+    spec:
+      template:
+        spec:
+          containers:
+            - name: manager
+              env:
+                - name: ENABLE_CSI_DRIVER
+                  value: "true"

@@ -1195,9 +1195,9 @@ implemented by
 
 ### Upgrading Kustomize installs with CSI
 
-PR #471 (issue #470) narrowed the default `make deploy` (kustomize `config/default`) ClusterRole: it no longer grants `bind`/`escalate` or cluster-wide write on secrets, ServiceAccounts, pods, nodes, PersistentVolumes, StorageClasses or CSIDrivers. The default kustomize install now matches the Helm chart's default render.
+PR #471 (issue #470) narrowed the default `make deploy` (kustomize `config/default`) ClusterRole: it no longer grants `bind`/`escalate`, and the cluster-wide write grants for ServiceAccounts, pods, nodes, PersistentVolumes, StorageClasses, CSIDrivers and the RBAC role/privilege-escalation verbs now live only in the `config/csi` overlay applied by `make deploy-csi`. The default kustomize install now matches the Helm chart's default render.
 
-If you run the CSI driver through kustomize, switch to `make deploy-csi` / `make undeploy-csi` (the `config/csi` overlay) instead of `make deploy`. `make deploy` no longer creates the permissions the CSI controller needs. See [CSI_SUPPORT.md](CSI_SUPPORT.md) and `config/csi/README.md`.
+Secrets write is still granted by the default role (the operator still creates and updates Secrets for component configs and TLS material). If you run the CSI driver through kustomize, switch to `make deploy-csi` / `make undeploy-csi` (the `config/csi` overlay) instead of `make deploy`. See [CSI_SUPPORT.md](CSI_SUPPORT.md) and `config/csi/README.md`.
 
 ## Development
 

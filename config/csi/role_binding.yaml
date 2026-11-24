@@ -1,8 +1,5 @@
-# Binds the CSI-only ClusterRole (config/csi/role.yaml, generated from
-# internal/controller/csirbac) to the manager ServiceAccount that
-# config/rbac/role_binding.yaml already binds manager-role to. The subject
-# namespace is set on the overlay's Kustomization, not here, so both
-# generated and hand-authored overlay bindings target the same namespace.
+# Binds the CSI-only ClusterRole to the manager ServiceAccount that
+# config/rbac/role_binding.yaml binds the default role to.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:

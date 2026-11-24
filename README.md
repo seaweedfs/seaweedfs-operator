@@ -1193,6 +1193,12 @@ implemented by
 
 - TBD
 
+### Upgrading Kustomize installs with CSI
+
+PR #471 (issue #470) narrowed the default `make deploy` (kustomize `config/default`) ClusterRole: it no longer grants `bind`/`escalate` or cluster-wide write on secrets, ServiceAccounts, pods, nodes, PersistentVolumes, StorageClasses or CSIDrivers. The default kustomize install now matches the Helm chart's default render.
+
+If you run the CSI driver through kustomize, switch to `make deploy-csi` / `make undeploy-csi` (the `config/csi` overlay) instead of `make deploy`. `make deploy` no longer creates the permissions the CSI controller needs. See [CSI_SUPPORT.md](CSI_SUPPORT.md) and `config/csi/README.md`.
+
 ## Development
 
 Follow the instructions in <https://sdk.operatorframework.io/docs/building-operators/golang/quickstart/>

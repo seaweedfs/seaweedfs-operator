@@ -32,7 +32,18 @@ endif
 # filepath.Abs, which strips the trailing "..." and loads only the module root
 # (https://github.com/kubernetes-sigs/controller-tools/issues/1484).
 # GOWORK=off keeps a go.work that lists other modules from adding their paths.
-CONTROLLER_GEN_PATHS = $(shell GOWORK=off go list -m)/...
+MODULE_PATH = $(shell GOWORK=off go list -m)
+CONTROLLER_GEN_PATHS = $(MODULE_PATH)/...
+
+# The SeaweedCSIDriver RBAC markers live in their own package
+# (internal/controller/csirbac) because controller-gen cannot exclude a single
+# marker from a pass, while a default install must not hold the cluster-wide
+# grants that controller needs. `make manifests` renders config/rbac/role.yaml
+# from DEFAULT_RBAC_PATHS and config/csi/role.yaml from CSI_RBAC_PATH;
+# DEFAULT_RBAC_PATHS therefore lists every package that can declare a marker
+# except the CSI one. Paths are separated by ';'.
+CSI_RBAC_PATH = $(MODULE_PATH)/internal/controller/csirbac
+DEFAULT_RBAC_PATHS = $(MODULE_PATH)/api/...;$(MODULE_PATH)/cmd/...;$(MODULE_PATH)/internal/controller
 
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
@@ -86,7 +97,9 @@ debug: generate fmt vet manifests
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:maxDescLen=0 webhook paths="$(CONTROLLER_GEN_PATHS)" output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role paths="$(DEFAULT_RBAC_PATHS)" output:rbac:artifacts:config=config/rbac
+	$(CONTROLLER_GEN) rbac:roleName=manager-role-csi paths="$(CSI_RBAC_PATH)" output:rbac:artifacts:config=config/csi
+	$(CONTROLLER_GEN) crd:maxDescLen=0 webhook paths="$(CONTROLLER_GEN_PATHS)" output:crd:artifacts:config=config/crd/bases
 	@# Fix invalid OpenAPI format fields (int32/int64 are not valid in OpenAPI v3)
 	@perl -i -pe 's/\s+format: int32\n//g; s/\s+format: int64\n//g' config/crd/bases/seaweed.seaweedfs.com_seaweeds.yaml
 
@@ -201,9 +214,19 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 	$(KUSTOMIZE) build config/default | $(KUBECTL) -n $(NAMESPACE) apply --server-side -f -
 	$(KUBECTL) wait deployment.apps/seaweedfs-operator-controller-manager --for condition=Available --namespace $(NAMESPACE) --timeout 5m
 
+.PHONY: deploy-csi
+deploy-csi: manifests kustomize ## Deploy controller with the SeaweedCSIDriver RBAC (cluster-scoped, includes bind/escalate).
+	cd config/manager && $(KUSTOMIZE) edit set image controller:latest=${IMG}
+	$(KUSTOMIZE) build config/csi | $(KUBECTL) -n $(NAMESPACE) apply --server-side -f -
+	$(KUBECTL) wait deployment.apps/seaweedfs-operator-controller-manager --for condition=Available --namespace $(NAMESPACE) --timeout 5m
+
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete -n $(NAMESPACE) --ignore-not-found=$(ignore-not-found) -f -
+
+.PHONY: undeploy-csi
+undeploy-csi: kustomize ## Undeploy a `make deploy-csi` install, including the CSI-only ClusterRole. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+	$(KUSTOMIZE) build config/csi | $(KUBECTL) delete -n $(NAMESPACE) --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: redeploy
 redeploy: deploy ## Redeploy controller with new docker image.

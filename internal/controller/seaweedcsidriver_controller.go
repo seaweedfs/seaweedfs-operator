@@ -58,20 +58,11 @@ type SeaweedCSIDriverReconciler struct {
 	Recorder record.EventRecorder
 }
 
-// +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweedcsidrivers,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweedcsidrivers/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweedcsidrivers/finalizers,verbs=update
-// +kubebuilder:rbac:groups=apps,resources=deployments;daemonsets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=storage.k8s.io,resources=csidrivers;storageclasses,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings;roles;rolebindings,verbs=get;list;watch;create;update;patch;delete;bind;escalate
-// The driver ServiceAccounts run with the permissions below; the operator must
-// hold them (plus bind/escalate above) to create the backing roles without
-// privilege escalation.
-// +kubebuilder:rbac:groups=core,resources=persistentvolumes;persistentvolumeclaims;nodes;pods;secrets;events,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattachments;csinodes,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots;volumesnapshotcontents,verbs=get;list
-// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+// The RBAC this controller needs is declared in internal/controller/csirbac,
+// not here: controller-gen cannot exclude a single marker from a pass, so the
+// markers live in their own package and `make manifests` renders them into
+// config/csi/role.yaml. A default install does not run this controller (see
+// ENABLE_CSI_DRIVER in cmd/main.go) and therefore must not hold those grants.
 
 // Reconcile drives a SeaweedCSIDriver towards its spec.
 func (r *SeaweedCSIDriverReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

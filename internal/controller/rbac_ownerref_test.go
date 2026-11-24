@@ -38,12 +38,18 @@ import (
 // OwnerReferencesPermissionEnforcement admission plugin requires `update` on
 // that kind's finalizers subresource.
 func TestManagerRoleGrantsFinalizersForEveryWritableCRD(t *testing.T) {
+	// The SeaweedCSIDriver kind's grants live in the CSI-only role now, and a
+	// default install never applies it. Check both artifacts so every kind the
+	// operator can create is covered on whichever install path runs that
+	// controller.
 	role := loadManagerClusterRole(t)
+	csiRole := loadClusterRoleFile(t, filepath.Join("config", "csi", "role.yaml"))
+	rules := append(append([]rbacv1.PolicyRule{}, role.Rules...), csiRole.Rules...)
 
 	const group = "seaweed.seaweedfs.com"
 	writable := map[string]bool{}
 	finalizers := map[string]bool{}
-	for _, rule := range role.Rules {
+	for _, rule := range rules {
 		if !slices.Contains(rule.APIGroups, group) {
 			continue
 		}
@@ -81,12 +87,19 @@ func TestManagerRoleGrantsFinalizersForEveryWritableCRD(t *testing.T) {
 }
 
 // loadManagerClusterRole decodes config/rbac/role.yaml, the controller-gen
-// output that both the kustomize overlay and the Helm chart's manager
+// output that both the default kustomize overlay and the Helm chart's manager
 // ClusterRole are derived from.
 func loadManagerClusterRole(t *testing.T) *rbacv1.ClusterRole {
 	t.Helper()
+	return loadClusterRoleFile(t, filepath.Join("config", "rbac", "role.yaml"))
+}
 
-	path := filepath.Join(projectRoot(), "config", "rbac", "role.yaml")
+// loadClusterRoleFile decodes a controller-gen role artifact relative to the
+// project root.
+func loadClusterRoleFile(t *testing.T, relPath string) *rbacv1.ClusterRole {
+	t.Helper()
+
+	path := filepath.Join(projectRoot(), relPath)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)

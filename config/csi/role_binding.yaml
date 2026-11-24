@@ -1,0 +1,17 @@
+# Binds the CSI-only ClusterRole (config/csi/role.yaml, generated from
+# internal/controller/csirbac) to the manager ServiceAccount that
+# config/rbac/role_binding.yaml already binds manager-role to. The subject
+# namespace is set on the overlay's Kustomization, not here, so both
+# generated and hand-authored overlay bindings target the same namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: manager-role-csi-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: manager-role-csi
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: seaweedfs-operator-system

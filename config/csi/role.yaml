@@ -1,0 +1,112 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role-csi
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  - nodes
+  - persistentvolumeclaims
+  - persistentvolumes
+  - pods
+  - secrets
+  - serviceaccounts
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterrolebindings
+  - clusterroles
+  - rolebindings
+  - roles
+  verbs:
+  - bind
+  - create
+  - delete
+  - escalate
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - seaweedcsidrivers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - seaweedcsidrivers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - seaweedcsidrivers/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumesnapshotcontents
+  - volumesnapshots
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - csidrivers
+  - storageclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - csinodes
+  - volumeattachments
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch

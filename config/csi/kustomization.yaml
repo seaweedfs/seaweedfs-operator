@@ -1,0 +1,32 @@
+# SeaweedCSIDriver overlay.
+#
+# A default install (config/default, what `make deploy` applies and what the Helm
+# chart renders with its default values) does not run the SeaweedCSIDriver
+# controller and therefore does not hold the cluster-wide grants it needs:
+# CSIDriver/StorageClass writes, node and PersistentVolume access,
+# ServiceAccount management, and bind/escalate on roles so it can create the
+# driver's own ClusterRoles. Applying that to every install turns an
+# operator-pod compromise into cluster-admin.
+#
+# `make deploy-csi` (or `kustomize build config/csi`) composes the default
+# install with the CSI-only ClusterRole, mirroring `csiDriver.enabled=true` in
+# the Helm chart. role.yaml is generated from internal/controller/csirbac by
+# `make manifests`; do not hand-edit it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: seaweedfs-operator-system
+resources:
+- ../default
+- role.yaml
+- role_binding.yaml
+
+patches:
+- target:
+    kind: Deployment
+    name: controller-manager
+  patch: |
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: ENABLE_CSI_DRIVER
+        value: "true"

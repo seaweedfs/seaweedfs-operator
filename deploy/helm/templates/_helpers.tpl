@@ -404,7 +404,8 @@ cluster-global objects, so enabling it keeps its grants cluster-wide).
 {{- if .Values.csiDriver }}
 {{- if .Values.csiDriver.enabled }}
 # Rules only the SeaweedCSIDriver controller needs, from the kubebuilder
-# markers in internal/controller/seaweedcsidriver_controller.go. The manager
+# markers in internal/controller/csirbac (also rendered by `make manifests`
+# into config/csi/role.yaml for `make deploy-csi`). The manager
 # registers that controller only when csiDriver.enabled sets
 # ENABLE_CSI_DRIVER=true, so the same value gates the grants: a default
 # install cannot manage CSIDrivers, cluster-wide RBAC (bind/escalate), nodes,
@@ -419,18 +420,6 @@ cluster-global objects, so enabling it keeps its grants cluster-wide).
   - persistentvolumes
   - pods
   - serviceaccounts
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - coordination.k8s.io
-  resources:
-  - leases
   verbs:
   - create
   - delete

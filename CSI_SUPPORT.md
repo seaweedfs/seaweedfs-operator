@@ -83,6 +83,11 @@ can create the driver's own ClusterRoles. A chart install with the controller
 off holds none of those. Setting `ENABLE_CSI_DRIVER` through `extraEnv` is
 rejected at render time for that reason.
 
+With the kustomize install, use `make deploy-csi` rather than `make deploy`:
+the default overlay (`config/default`) carries no CSI grants, and `config/csi`
+composes it with the CSI-only ClusterRole generated from
+`internal/controller/csirbac`.
+
 A CSI driver is **node-global**: the kubelet registers exactly one driver per
 `driverName` per node, regardless of how many SeaweedFS clusters run on it.
 For that reason the driver is modeled as its own opt-in resource rather than a

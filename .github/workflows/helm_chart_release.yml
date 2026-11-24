@@ -13,7 +13,6 @@ on:
 permissions:
   contents: write
   pages: write
-  packages: write
 
 jobs:
   release:
@@ -122,6 +121,9 @@ jobs:
   oci:
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     env:
       CHART_VERSION: ${{ needs.release.outputs.chart_version }}
     steps:

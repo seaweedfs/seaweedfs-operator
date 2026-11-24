@@ -201,6 +201,20 @@ seaweedfs-operator-system   seaweedfs-operator-controller-manager-54cc768f4c-cwz
 
 See the next section for example usage - **at this point you only deployed the Operator itself!**
 
+### Upgrading Kustomize installs with CSI
+
+The default Kustomize install (`make deploy`, or `kustomize build config/default`) no longer grants `bind`
+and `escalate` on roles and clusterroles, and it no longer grants the cluster-wide write
+grants that exist only for the SeaweedCSIDriver controller (CSIDriver/StorageClass, ServiceAccount,
+PersistentVolume/node/pod access, and so on). Those grants still exist; they now live under
+`config/csi`, which is applied by `make deploy-csi` (or `kustomize build config/csi`). That overlay
+also flips the operator's `ENABLE_CSI_DRIVER` on, so the manager registers the CSI controller.
+
+If you are already on a version with the old broad `config/default` role and you add SeaweedCSIDriver
+resources, switch from `make deploy` to `make deploy-csi`. After upgrading, the old install no longer
+has the verbs the CSI controller needs; the rest of the cluster is unaffected and secrets write is still
+granted by the default role.
+
 ### You need to also deploy a configuration to get it running (see next section)!
 
 ## Configuration Examples

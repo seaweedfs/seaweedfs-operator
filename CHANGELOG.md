@@ -19,3 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Corrected the upgrade/CSI wording in `README.md`: the default Kustomize install no longer grants `bind` and `escalate`; the cluster-wide CSI/RBAC write grants now live under `config/csi`.
 - `README.md` no longer claims that the `secrets` write grant was removed; the default role still grants `secrets` read/write (create/get/list/watch/update/patch/delete). The accurate note is kept.
 - Added `CHANGELOG.md`.
+
+### Reviewer follow-ups
+
+- Updated the drift test to skip when no kustomize binary is found, including `os.ErrNotExist`.
+- Kept the generated artifacts (`config/rbac/role.yaml`, `config/csi/role.yaml`, CRDs, webhook manifests) as outputs of `make manifests`; do not hand-edit them.

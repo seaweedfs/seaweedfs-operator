@@ -370,10 +370,6 @@ func kustomizeBuild(t *testing.T, dir string) []byte {
 			continue
 		}
 		if errors.Is(err, os.ErrNotExist) {
-			// kustomize can exit non-zero with an error whose cause is os.ErrNotExist
-			// when the build dir or a resource it references is missing; treat that as
-			// "no usable binary/output" the same way we treat a missing binary, instead
-			// of failing the test.
 			continue
 		}
 		if err != nil {

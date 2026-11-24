@@ -46,4 +46,3 @@ package csirbac
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes;persistentvolumeclaims;nodes;pods;secrets;events,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattachments;csinodes,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots;volumesnapshotcontents,verbs=get;list
-// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete

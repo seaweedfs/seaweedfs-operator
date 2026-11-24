@@ -14,12 +14,9 @@ limitations under the License.
 */
 
 // Package controller holds the kubebuilder RBAC markers shared by the
-// manager role (config/rbac/role.yaml), including the coordination.k8s.io
-// leases grant the manager needs for leader election. It is a separate
-// package from internal/controller/csirbac so that controller-gen's default
-// pass (DEFAULT_RBAC_PATHS) can include it while the CSI-only pass
+// manager role (config/rbac/role.yaml). It is a separate package from
+// internal/controller/csirbac so that controller-gen's default pass
+// (DEFAULT_RBAC_PATHS) can include it while the CSI-only pass
 // (CSI_RBAC_PATH) cannot accidentally pull the CSI cluster-wide grants into
 // the default role.
 package controller
-
-// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete

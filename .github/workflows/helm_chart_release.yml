@@ -13,6 +13,7 @@ on:
 permissions:
   contents: write
   pages: write
+  packages: write
 
 jobs:
   release:
@@ -115,3 +116,9 @@ jobs:
           git add helm/index.yaml index.yaml
           git commit -m "Update Helm repo index for seaweedfs-operator-${CHART_VERSION}" || true
           git push origin gh-pages
+
+      - name: Push chart to GitHub Container Registry
+        run: |
+          CHART_VERSION="${{ steps.set_chart_version.outputs.chart_version }}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+          helm push ".cr-release-packages/seaweedfs-operator-${CHART_VERSION}.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"

@@ -17,6 +17,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      chart_version: ${{ steps.set_chart_version.outputs.chart_version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -115,3 +117,26 @@ jobs:
           git add helm/index.yaml index.yaml
           git commit -m "Update Helm repo index for seaweedfs-operator-${CHART_VERSION}" || true
           git push origin gh-pages
+
+  oci:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      CHART_VERSION: ${{ needs.release.outputs.chart_version }}
+    steps:
+      - name: Install Helm
+        uses: azure/setup-helm@v5
+
+      - name: Download chart from the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "seaweedfs-operator-${CHART_VERSION}" -R "${{ github.repository }}" -p "seaweedfs-operator-${CHART_VERSION}.tgz"
+
+      - name: Push chart to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+          helm push "seaweedfs-operator-${CHART_VERSION}.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"

@@ -35,6 +35,12 @@ helm template seaweedfs-operator seaweedfs-operator/seaweedfs-operator
 
 > **Note**: For versions prior to 0.1.2, the legacy repository URL `https://seaweedfs.github.io/seaweedfs-operator/helm` can still be used, but new releases will only be published to the main repository URL above.
 
+The chart is also published as an OCI artifact to the GitHub Container Registry, which also works through an OCI registry mirror:
+
+```bash
+helm install seaweedfs-operator oci://ghcr.io/seaweedfs/charts/seaweedfs-operator --version <chart-version>
+```
+
 #### Upgrading from chart versions <= 0.1.14
 
 Starting in chart version 0.1.15, the `seaweeds.seaweed.seaweedfs.com` CRD is shipped as a templated resource instead of living in `crds/`. This lets `helm upgrade` actually update it — the `crds/` directory is install-only in Helm 3.

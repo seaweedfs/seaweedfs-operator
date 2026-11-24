@@ -6,11 +6,11 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: manager-role-csi-binding
+  name: seaweedfs-operator-manager-role-csi-binding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: manager-role-csi
+  name: seaweedfs-operator-manager-role-csi
 subjects:
 - kind: ServiceAccount
   name: default

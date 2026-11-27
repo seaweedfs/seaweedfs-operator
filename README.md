@@ -1188,8 +1188,15 @@ spec:
 - `successfulJobsHistoryLimit` / `failedJobsHistoryLimit` / `backoffLimit` /
   `activeDeadlineSeconds` / `startingDeadlineSeconds` / `timeZone` are passed
   through to the generated `CronJob`/`Job`.
-- `image` overrides the container image (defaults to the cluster's image), and
-  `credentialsSecret` projects a Secret's keys into the run pod as environment
+- `image` overrides the container image (defaults to the cluster's image). It
+  must name the cluster image's repository; only the tag or digest may differ.
+- `serviceAccountName` must name a ServiceAccount annotated
+  `seaweedfs.com/allow-admin-script: "true"`. Annotate only identities that
+  AdminScript authors may run code as.
+- A refused `image` or `serviceAccountName` sets the Ready reason to
+  `ImageDenied` or `ServiceAccountDenied` and suspends an existing CronJob until
+  the spec or the ServiceAccount is fixed.
+- `credentialsSecret` projects a Secret's keys into the run pod as environment
   variables for scripts that need them (defaults to the cluster's admin
   `credentialsSecret` when set).
 - `podSecurityContext` and `containerSecurityContext` optionally harden each

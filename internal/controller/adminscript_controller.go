@@ -206,28 +206,26 @@ func imageRepository(image string) string {
 // suspendCronJob stops an existing CronJob from launching runs while the
 // script is refused, without rendering the refused spec into it. Dropping the
 // last-applied annotation makes the next accepted reconcile restore the spec.
-// It returns whether a run is still active.
-func (r *AdminScriptReconciler) suspendCronJob(ctx context.Context, script *seaweedv1.AdminScript) (bool, error) {
+func (r *AdminScriptReconciler) suspendCronJob(ctx context.Context, script *seaweedv1.AdminScript) (*batchv1.CronJob, error) {
 	var cronJob batchv1.CronJob
 	if err := r.Get(ctx, client.ObjectKey{Namespace: script.Namespace, Name: script.Name}, &cronJob); err != nil {
-		return false, client.IgnoreNotFound(err)
+		return nil, client.IgnoreNotFound(err)
 	}
 	if !metav1.IsControlledBy(&cronJob, script) {
-		return false, nil
+		return nil, nil
 	}
-	active := len(cronJob.Status.Active) > 0
 	_, applied := cronJob.Annotations[LastAppliedConfigAnnotation]
 	if !applied && cronJob.Spec.Suspend != nil && *cronJob.Spec.Suspend {
-		return active, nil
+		return &cronJob, nil
 	}
 	patch, err := json.Marshal(map[string]any{
 		"metadata": map[string]any{"annotations": map[string]any{LastAppliedConfigAnnotation: nil}},
 		"spec":     map[string]any{"suspend": true},
 	})
 	if err != nil {
-		return active, err
+		return nil, err
 	}
-	return active, r.Patch(ctx, &cronJob, client.RawPatch(types.MergePatchType, patch))
+	return &cronJob, r.Patch(ctx, &cronJob, client.RawPatch(types.MergePatchType, patch))
 }
 
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=adminscripts,verbs=get;list;watch;create;update;patch;delete
@@ -291,11 +289,14 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	if denyReason != "" {
 		r.Recorder.Event(&script, corev1.EventTypeWarning, denyReason, denyMessage)
-		active, err := r.suspendCronJob(ctx, &script)
+		cronJob, err := r.suspendCronJob(ctx, &script)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		if !active {
+		if cronJob != nil {
+			r.applyCronJobStatus(&script, cronJob)
+		}
+		if cronJob == nil || len(cronJob.Status.Active) == 0 {
 			if err := r.syncClusterPodLabels(ctx, &script, scriptLabelCluster(&script), false); err != nil {
 				return ctrl.Result{}, err
 			}

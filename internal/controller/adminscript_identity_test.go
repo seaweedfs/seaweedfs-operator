@@ -49,7 +49,7 @@ func identityReconciler(t *testing.T, objs ...client.Object) *AdminScriptReconci
 	}
 	return &AdminScriptReconciler{
 		Client: fake.NewClientBuilder().WithScheme(scheme).
-			WithStatusSubresource(&seaweedv1.AdminScript{}).WithObjects(objs...).Build(),
+			WithStatusSubresource(&seaweedv1.AdminScript{}, &batchv1.CronJob{}).WithObjects(objs...).Build(),
 		Scheme:   scheme,
 		Recorder: record.NewFakeRecorder(20),
 	}
@@ -194,5 +194,41 @@ func TestRefusedScriptRestoresClusterPodLabels(t *testing.T) {
 	}
 	if _, ok := restored.Labels["reboot-block"]; ok {
 		t.Fatalf("refused script with no active run must restore pod labels, got %v", restored.Labels)
+	}
+}
+
+func TestRefusedScriptMirrorsCronJobStatus(t *testing.T) {
+	ctx := context.Background()
+	script := testAdminScript()
+	script.UID = "script-uid"
+	script.Spec.ServiceAccountName = "maintenance"
+	r := identityReconciler(t, testCluster(), script, serviceAccount("maintenance", true))
+
+	_, cronJob := reconcileScript(t, r)
+	cronJob.Status.Active = []corev1.ObjectReference{{Name: "nightly-balance-1"}}
+	if err := r.Status().Update(ctx, cronJob); err != nil {
+		t.Fatalf("mark run active: %v", err)
+	}
+	if got, _ := reconcileScript(t, r); got.Status.Active != 1 {
+		t.Fatalf("status.active = %d, want 1", got.Status.Active)
+	}
+
+	script.Spec.ServiceAccountName = "unapproved"
+	var stored seaweedv1.AdminScript
+	if err := r.Get(ctx, client.ObjectKeyFromObject(script), &stored); err != nil {
+		t.Fatalf("get script: %v", err)
+	}
+	stored.Spec.ServiceAccountName = "unapproved"
+	if err := r.Update(ctx, &stored); err != nil {
+		t.Fatalf("refuse script: %v", err)
+	}
+	_, cronJob = reconcileScript(t, r)
+	cronJob.Status.Active = nil
+	if err := r.Status().Update(ctx, cronJob); err != nil {
+		t.Fatalf("finish run: %v", err)
+	}
+	got, _ := reconcileScript(t, r)
+	if scriptReadyReason(got) != "ServiceAccountDenied" || got.Status.Active != 0 {
+		t.Fatalf("refused script status = %q active=%d, want ServiceAccountDenied active=0", scriptReadyReason(got), got.Status.Active)
 	}
 }

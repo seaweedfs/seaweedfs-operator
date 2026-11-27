@@ -181,8 +181,8 @@ func (r *AdminScriptReconciler) checkWorkloadIdentity(ctx context.Context, scrip
 	return "", "", nil
 }
 
-// imageRepository strips the tag or digest from an image reference and the
-// implicit docker.io registry, so equal repositories compare equal.
+// imageRepository strips the tag or digest from an image reference and
+// qualifies Docker Hub names, so only equal repositories compare equal.
 func imageRepository(image string) string {
 	if i := strings.Index(image, "@"); i >= 0 {
 		image = image[:i]
@@ -190,8 +190,17 @@ func imageRepository(image string) string {
 	if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
 		image = image[:i]
 	}
-	image = strings.TrimPrefix(image, "docker.io/")
-	return strings.TrimPrefix(image, "library/")
+	domain, path := "docker.io", image
+	if i := strings.Index(image, "/"); i >= 0 && (strings.ContainsAny(image[:i], ".:") || image[:i] == "localhost") {
+		domain, path = image[:i], image[i+1:]
+	}
+	if domain == "index.docker.io" {
+		domain = "docker.io"
+	}
+	if domain == "docker.io" && !strings.Contains(path, "/") {
+		path = "library/" + path
+	}
+	return domain + "/" + path
 }
 
 // suspendCronJob stops an existing CronJob from launching runs while the

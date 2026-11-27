@@ -45,8 +45,8 @@ type componentServiceAccount struct {
 }
 
 // componentServiceAccounts lists every ServiceAccount the CR's components
-// select. Volume topology groups carry their own ComponentSpec, so a group's
-// explicit identity is checked separately from the flat spec.volume one.
+// select. Volume topology groups carry their own ComponentSpec and do not
+// inherit spec.volume's, so a retired flat spec.volume selects none.
 func componentServiceAccounts(cr *seaweedv1.Seaweed) []componentServiceAccount {
 	var selected []componentServiceAccount
 	add := func(component string, accessor seaweedv1.ComponentAccessor) {
@@ -58,7 +58,7 @@ func componentServiceAccounts(cr *seaweedv1.Seaweed) []componentServiceAccount {
 	if cr.Spec.Master != nil {
 		add(ComponentMaster, cr.BaseMasterSpec())
 	}
-	if cr.Spec.Volume != nil {
+	if cr.Spec.Volume != nil && !flatVolumeRetired(cr) {
 		add(ComponentVolume, cr.BaseVolumeSpec())
 	}
 	// Sorted so the denial message is stable across reconciles.

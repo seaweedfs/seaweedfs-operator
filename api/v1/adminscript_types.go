@@ -169,12 +169,10 @@ type AdminScriptSpec struct {
 	// operator does not create it. Defaults to the namespace default SA. A
 	// named ServiceAccount must carry the annotation
 	// seaweedfs.com/allow-admin-script: "true"; otherwise the CronJob is
-	// suspended and the script reports ServiceAccountDenied. The webhook and
-	// the controller both also require the name to be a valid Kubernetes
-	// ServiceAccount name; the CRD enforces the static part so a malformed
-	// name is rejected even where webhooks are disabled.
+	// suspended and the script reports ServiceAccountDenied.
 	// +optional
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$`
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
 	// NodeSelector constrains the run's pod to nodes with matching labels.

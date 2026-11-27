@@ -850,7 +850,8 @@ spec:
                         type: string
                     type: object
                   serviceAccountName:
-                    pattern: ^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -2552,7 +2553,8 @@ spec:
                         type: string
                     type: object
                   serviceAccountName:
-                    pattern: ^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -3578,7 +3580,8 @@ spec:
                         type: string
                     type: object
                   serviceAccountName:
-                    pattern: ^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -4497,7 +4500,8 @@ spec:
                         type: string
                     type: object
                   serviceAccountName:
-                    pattern: ^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -5452,7 +5456,8 @@ spec:
                         type: string
                     type: object
                   serviceAccountName:
-                    pattern: ^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -7205,7 +7210,8 @@ spec:
                   schedulerName:
                     type: string
                   serviceAccountName:
-                    pattern: ^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -8134,7 +8140,8 @@ spec:
                         type: string
                     type: object
                   serviceAccountName:
-                    pattern: ^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -9037,7 +9044,8 @@ spec:
                           type: string
                       type: object
                     serviceAccountName:
-                      pattern: ^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$
+                      maxLength: 253
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                       type: string
                     sidecars:
                       x-kubernetes-preserve-unknown-fields: true
@@ -10014,7 +10022,8 @@ spec:
                   schedulerName:
                     type: string
                   serviceAccountName:
-                    pattern: ^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true

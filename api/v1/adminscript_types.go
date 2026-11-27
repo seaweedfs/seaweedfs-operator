@@ -20,6 +20,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // AdminScriptClusterRef identifies the Seaweed cluster whose masters and
@@ -142,7 +143,16 @@ type AdminScriptSpec struct {
 	// Image overrides the container image for the run. Defaults to the
 	// referenced cluster's image, so the shell version always matches the
 	// cluster it administers.
+	//
+	// When set, the image must come from an approved registry and be pinned to
+	// a tag or a digest, so a namespace tenant cannot schedule the admin shell
+	// under an arbitrary image. The approved registries mirror the cluster
+	// image the operator would otherwise use; anything else is rejected at
+	// admission (CRD-level CEL, always enforced) and again by the controller
+	// (status condition + event) so the rejection is visible even where
+	// admission webhooks are disabled.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="!has(self) || self.matches('^(ghcr\\.io/seaweedfs/|docker\\.io/chrislusf/)[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+|@sha256:[a-f0-9]{64})$')",message="image must come from an approved registry and be tag- or digest-pinned"
 	Image *string `json:"image,omitempty"`
 
 	// ImagePullSecrets to use for pulling the image. Defaults to the
@@ -165,8 +175,26 @@ type AdminScriptSpec struct {
 	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 
 	// ServiceAccountName runs the pod under a specific ServiceAccount. The
-	// operator does not create it. Defaults to the namespace default SA.
+	// operator does not create it; it must already exist in the same namespace
+	// as the AdminScript. The operator does not default this to the namespace
+	// default ServiceAccount — leaving it empty runs the pod under the SA the
+	// CronJob controller assigns, which is the namespace default only when no
+	// ServiceAccount is configured on the namespace.
+	//
+	// When set, the name must be a valid Kubernetes ServiceAccount name and the
+	// referenced ServiceAccount must carry the annotation
+	// seaweedfs.com/allow-admin-script: "true" before it may be used by an
+	// AdminScript. That annotation is the only gate between a namespace tenant
+	// with create adminscripts permission and arbitrary code execution as any
+	// ServiceAccount in the namespace, so it must be set deliberately on each
+	// identity that is meant to run admin scripts and reviewed for what that
+	// identity can do.
+	//
+	// The controller enforces this at runtime (status condition + event) in
+	// addition to any admission webhook, so the rejection is visible even where
+	// admission webhooks are disabled (M-5).
 	// +optional
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$`
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
 	// NodeSelector constrains the run's pod to nodes with matching labels.
@@ -213,6 +241,20 @@ const (
 	// AdminScriptConditionReady summarises whether the CronJob is reconciled
 	// and scheduling as configured.
 	AdminScriptConditionReady = "Ready"
+
+	// AdminScriptConditionImageDenied summarises whether spec.image was refused.
+	// When True, the CronJob is not created/updated and the controller falls
+	// back to the referenced cluster's image for the next reconcile attempt.
+	// A user-facing image override is only admitted when it passes the CRD's
+	// CEL rule and, when a webhook is present, the admission check.
+	AdminScriptConditionImageDenied = "ImageDenied"
+
+	// AdminScriptConditionServiceAccountDenied summarises whether
+	// spec.serviceAccountName was refused. When True, the named ServiceAccount
+	// either does not exist in the namespace or is not annotated with
+	// seaweedfs.com/allow-admin-script: "true", and the controller will not
+	// schedule the run under it.
+	AdminScriptConditionServiceAccountDenied = "ServiceAccountDenied"
 )
 
 // AdminScriptStatus reflects the observed state of the AdminScript.

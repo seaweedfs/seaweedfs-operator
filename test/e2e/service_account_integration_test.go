@@ -38,8 +38,8 @@ import (
 // the namespace's default SA, which forces OpenShift / PSA-restricted
 // clusters to bind elevated SCCs to that default SA. Verifies the field
 // flows through to the rendered StatefulSet pod template for each
-// component. The referenced ServiceAccounts are intentionally not
-// created — this test asserts manifest rendering, not pod scheduling.
+// component. The referenced ServiceAccounts carry the annotation the
+// operator requires before it renders them.
 var _ = Describe("ServiceAccountName Integration", Ordered, func() {
 	var (
 		ctx           context.Context
@@ -71,6 +71,18 @@ var _ = Describe("ServiceAccountName Integration", Ordered, func() {
 		volumeSA := "seaweedfs-volume"
 		filerSA := "seaweedfs-filer"
 		topologySA := "seaweedfs-volume-rack1"
+
+		BeforeAll(func() {
+			for _, name := range []string{masterSA, volumeSA, filerSA, topologySA} {
+				Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        name,
+						Namespace:   testNamespace,
+						Annotations: map[string]string{seaweedv1.ServiceAccountAllowedAnnotation: "true"},
+					},
+				})).To(Succeed())
+			}
+		})
 
 		// buildBase returns a Seaweed CR with master and filer wired up,
 		// each pinned to its own ServiceAccount. The volume side is

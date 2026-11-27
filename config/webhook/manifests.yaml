@@ -36,6 +36,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /validate-seaweed-seaweedfs-com-v1-adminscript
+  failurePolicy: Fail
+  name: vadminscript.kb.io
+  rules:
+  - apiGroups:
+    - seaweed.seaweedfs.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - adminscripts
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /validate-seaweed-seaweedfs-com-v1-seaweed
   failurePolicy: Fail
   name: vseaweed.kb.io

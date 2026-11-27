@@ -173,10 +173,11 @@ func main() {
 	}
 
 	if err = (&controller.SeaweedReconciler{
-		Client:   mgr.GetClient(),
-		Log:      ctrl.Log.WithName("controller").WithName("Seaweed"),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("seaweed-controller"),
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Log:       ctrl.Log.WithName("controller").WithName("Seaweed"),
+		Scheme:    mgr.GetScheme(),
+		Recorder:  mgr.GetEventRecorderFor("seaweed-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Seaweed")
 		os.Exit(1)
@@ -337,6 +338,10 @@ func main() {
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err = (&seaweedv1.Seaweed{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "Seaweed")
+			os.Exit(1)
+		}
+		if err = (&seaweedv1.AdminScript{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "AdminScript")
 			os.Exit(1)
 		}
 	}

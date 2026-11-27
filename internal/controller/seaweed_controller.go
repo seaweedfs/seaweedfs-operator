@@ -89,9 +89,12 @@ func reconcileRequeueAfter(isReady bool) time.Duration {
 // SeaweedReconciler reconciles a Seaweed object
 type SeaweedReconciler struct {
 	client.Client
-	Log      logr.Logger
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	// APIReader reads ServiceAccounts uncached, so a component identity check
+	// needs only get on them; nil falls back to Client.
+	APIReader client.Reader
+	Log       logr.Logger
+	Scheme    *runtime.Scheme
+	Recorder  record.EventRecorder
 
 	// VolumeAdminFactory builds the master-side admin used to evacuate volume
 	// servers before a scale-down removes them. Defaulted in SetupWithManager;
@@ -126,6 +129,13 @@ func (r *SeaweedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	seaweedCR, done, result, err := r.findSeaweedCustomResourceInstance(ctx, log, req)
 	if done {
+		return result, err
+	}
+
+	// Deny a component ServiceAccount before anything is applied: the pods it
+	// selects would run with the cluster's TLS material and whatever RBAC that
+	// identity holds, so a tenant-writable CR must not choose it freely.
+	if done, result, err = r.ensureComponentServiceAccounts(ctx, seaweedCR); done {
 		return result, err
 	}
 
@@ -422,6 +432,10 @@ func (r *SeaweedReconciler) updateStatus(ctx context.Context, seaweedCR *seaweed
 	if seaweedCR.Spec.Vector != nil {
 		notReadyMessage += fmt.Sprintf(", Vector: %d/%d ready", vectorStatus.ReadyReplicas, vectorStatus.Replicas)
 	}
+
+	// Reaching this point means every component identity was accepted (the
+	// denial path returns before status refresh), so drop a stale denial.
+	meta.RemoveStatusCondition(&seaweedCR.Status.Conditions, componentServiceAccountDeniedCondition)
 
 	// Update conditions
 	readyCondition := metav1.Condition{

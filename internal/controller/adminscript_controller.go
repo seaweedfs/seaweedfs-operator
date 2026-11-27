@@ -76,7 +76,7 @@ const adminScriptLabelsClusterAnnotation = "seaweed.seaweedfs.com/adminscript-la
 
 // adminScriptAllowedServiceAccountAnnotation must be "true" on a ServiceAccount
 // before an AdminScript may run under it.
-const adminScriptAllowedServiceAccountAnnotation = "seaweedfs.com/allow-admin-script"
+const adminScriptAllowedServiceAccountAnnotation = seaweedv1.ServiceAccountAllowedAnnotation
 
 // reservedClusterPodLabel reports whether clusterPodLabels may not override
 // the key: these labels select and identify cluster pods, so overwriting them
@@ -181,27 +181,10 @@ func (r *AdminScriptReconciler) checkWorkloadIdentity(ctx context.Context, scrip
 	return "", "", nil
 }
 
-// imageRepository strips the tag or digest from an image reference and
-// qualifies Docker Hub names, so only equal repositories compare equal.
-func imageRepository(image string) string {
-	if i := strings.Index(image, "@"); i >= 0 {
-		image = image[:i]
-	}
-	if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
-		image = image[:i]
-	}
-	domain, path := "docker.io", image
-	if i := strings.Index(image, "/"); i >= 0 && (strings.ContainsAny(image[:i], ".:") || image[:i] == "localhost") {
-		domain, path = image[:i], image[i+1:]
-	}
-	if domain == "index.docker.io" {
-		domain = "docker.io"
-	}
-	if domain == "docker.io" && !strings.Contains(path, "/") {
-		path = "library/" + path
-	}
-	return domain + "/" + path
-}
+// imageRepository is the shared repository canonicalizer from api/v1, kept
+// under a package-local name so the AdminScript admission webhook and this
+// reconcile-time check cannot disagree about which repositories match.
+var imageRepository = seaweedv1.ImageRepository
 
 // suspendCronJob stops an existing CronJob from launching runs while the
 // script is refused, without rendering the refused spec into it. Dropping the

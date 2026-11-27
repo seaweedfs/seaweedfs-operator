@@ -285,10 +285,11 @@ func main() {
 	}
 
 	if err = (&controller.AdminScriptReconciler{
-		Client:   mgr.GetClient(),
-		Log:      ctrl.Log.WithName("controller").WithName("AdminScript"),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("adminscript-controller"),
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Log:       ctrl.Log.WithName("controller").WithName("AdminScript"),
+		Scheme:    mgr.GetScheme(),
+		Recorder:  mgr.GetEventRecorderFor("adminscript-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AdminScript")
 		os.Exit(1)

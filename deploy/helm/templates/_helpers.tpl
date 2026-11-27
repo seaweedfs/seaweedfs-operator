@@ -232,6 +232,12 @@ leader-election lease has its own Role in the release namespace.
   - patch
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - get
+- apiGroups:
   - apps
   resources:
   - daemonsets

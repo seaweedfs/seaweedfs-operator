@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -32,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -74,17 +74,8 @@ const adminScriptLabelsFinalizer = "seaweed.seaweedfs.com/adminscript-pod-labels
 // restores the pods the labels were applied to.
 const adminScriptLabelsClusterAnnotation = "seaweed.seaweedfs.com/adminscript-labels-cluster"
 
-// adminScriptAllowedImageRegistries is the regex an AdminScript.spec.image
-// must match at the CRD level (CEL) and again here at the controller level so
-// the rejection is visible even when admission webhooks are disabled (M-5).
-// The approved registries mirror the cluster image the operator would otherwise
-// use; anything else is rejected.
-const adminScriptAllowedImageRegistries = "^(ghcr\\.io/seaweedfs/|docker\\.io/chrislusf/)[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+|@sha256:[a-f0-9]{64})$"
-
-// adminScriptAllowedServiceAccountAnnotation is the annotation a ServiceAccount
-// must carry before an AdminScript may run under it. It is the only runtime gate
-// between a tenant with create adminscripts permission and arbitrary code
-// execution as any ServiceAccount in the namespace.
+// adminScriptAllowedServiceAccountAnnotation must be "true" on a ServiceAccount
+// before an AdminScript may run under it.
 const adminScriptAllowedServiceAccountAnnotation = "seaweedfs.com/allow-admin-script"
 
 // reservedClusterPodLabel reports whether clusterPodLabels may not override
@@ -150,88 +141,82 @@ func isClusterPod(pod *corev1.Pod, clusterName string) bool {
 // masters/filer with the spec'd script piped to stdin.
 type AdminScriptReconciler struct {
 	client.Client
-	Log      logr.Logger
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	// APIReader reads ServiceAccounts uncached, so the operator needs only
+	// get on them; nil falls back to Client.
+	APIReader client.Reader
+	Log       logr.Logger
+	Scheme    *runtime.Scheme
+	Recorder  record.EventRecorder
 }
 
-// validateAdminScriptWorkloadIdentity checks the H-2 knobs — spec.image and
-// spec.serviceAccountName — and returns a status update when either is denied.
-// It does not write status itself; the caller persists the condition it returns
-// via patchStatus/setCondition. When both are accepted it returns nil.
-func (r *AdminScriptReconciler) validateAdminScriptWorkloadIdentity(ctx context.Context, script *seaweedv1.AdminScript) (denied bool, err error) {
-	// Image is optional; an unset image inherits the cluster image and is never
-	// denied here (the CRD CEL rule allows !has(self)). When set, the controller
-	// re-checks the same registry/tag/digest constraint the CRD enforces, because
-	// a hand-edited object or a webhook-less install (M-5) would otherwise admit
-	// an arbitrary image that runs with the cluster's admin credentials.
+// checkWorkloadIdentity returns the reason and message for refusing the
+// script's image or ServiceAccount, or an empty reason when both are allowed.
+func (r *AdminScriptReconciler) checkWorkloadIdentity(ctx context.Context, script *seaweedv1.AdminScript, cluster *seaweedv1.Seaweed) (reason, message string, err error) {
 	if script.Spec.Image != nil && *script.Spec.Image != "" {
-		if !imageAllowedRegistryRegexp.MatchString(*script.Spec.Image) {
-			r.Recorder.Eventf(script, corev1.EventTypeWarning, "ImageDenied",
-				"AdminScript image %q is not from an approved registry; the run will use the referenced cluster's image instead",
-				*script.Spec.Image)
-			return true, nil
+		if want := imageRepository(cluster.ClusterImage()); imageRepository(*script.Spec.Image) != want {
+			return "ImageDenied", fmt.Sprintf("image %q is not from the cluster image repository %q", *script.Spec.Image, want), nil
 		}
 	}
-
-	// serviceAccountName is also optional; the empty string means the CronJob
-	// controller assigns the namespace default (or whatever the namespace SA
-	// configuration resolves to), which is the pre-H-2 behaviour for scripts that
-	// do not opt into a specific identity.
-	if script.Spec.ServiceAccountName != "" {
-		if err := r.validateServiceAccountName(ctx, script); err != nil {
-			r.Recorder.Eventf(script, corev1.EventTypeWarning, "ServiceAccountDenied",
-				"AdminScript serviceAccountName %q is not permitted: %v", script.Spec.ServiceAccountName, err)
-			return true, nil
-		}
+	name := script.Spec.ServiceAccountName
+	if name == "" {
+		return "", "", nil
 	}
-	return false, nil
-}
-
-// imageAllowedRegistryRegexp is the compiled form of adminScriptAllowedImageRegistries.
-var imageAllowedRegistryRegexp = regexp.MustCompile(adminScriptAllowedImageRegistries)
-
-// imageMatchesAllowedRegistry is the runtime mirror of the CRD CEL rule on
-// AdminScriptSpec.Image. It exists so the rejection is visible even where
-// admission webhooks are disabled (M-5).
-func (r *AdminScriptReconciler) imageMatchesAllowedRegistry(image string) bool {
-	return imageAllowedRegistryRegexp.MatchString(image)
-}
-
-// validateServiceAccountName checks that the named ServiceAccount exists in the
-// AdminScript's namespace and is annotated with the allow-admin-script annotation.
-// It returns an error describing the refusal when the SA is not permitted.
-func (r *AdminScriptReconciler) validateServiceAccountName(ctx context.Context, script *seaweedv1.AdminScript) error {
-	if !validation.IsDNS1123Subdomain(script.Spec.ServiceAccountName) {
-		return fmt.Errorf("serviceAccountName %q is not a valid Kubernetes ServiceAccount name", script.Spec.ServiceAccountName)
+	if errs := validation.IsDNS1123Subdomain(name); len(errs) > 0 {
+		return "ServiceAccountDenied", fmt.Sprintf("serviceAccountName %q is not a valid name: %s", name, strings.Join(errs, "; ")), nil
 	}
-	sa := &corev1.ServiceAccount{}
-	if err := r.Get(ctx, client.ObjectKey{Name: script.Spec.ServiceAccountName, Namespace: script.Namespace}, sa); err != nil {
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.Client
+	}
+	var sa corev1.ServiceAccount
+	if err := reader.Get(ctx, client.ObjectKey{Namespace: script.Namespace, Name: name}, &sa); err != nil {
 		if apierrors.IsNotFound(err) {
-			return fmt.Errorf("serviceAccountName %q does not exist in namespace %q", script.Spec.ServiceAccountName, script.Namespace)
+			return "ServiceAccountDenied", fmt.Sprintf("ServiceAccount %q not found in namespace %q", name, script.Namespace), nil
 		}
-		return fmt.Errorf("looking up serviceAccountName %q: %w", script.Spec.ServiceAccountName, err)
+		return "", "", fmt.Errorf("get ServiceAccount %q: %w", name, err)
 	}
-	if sa.Annotations == nil || sa.Annotations[adminScriptAllowedServiceAccountAnnotation] != "true" {
-		return fmt.Errorf("ServiceAccount %q is not permitted to run admin scripts; add the annotation %s: \"true\" to it and review what that identity can do", script.Spec.ServiceAccountName, adminScriptAllowedServiceAccountAnnotation)
+	if sa.Annotations[adminScriptAllowedServiceAccountAnnotation] != "true" {
+		return "ServiceAccountDenied", fmt.Sprintf("ServiceAccount %q lacks the annotation %s: \"true\"", name, adminScriptAllowedServiceAccountAnnotation), nil
 	}
-	return nil
+	return "", "", nil
 }
 
-// setCondition records a status condition on the AdminScript.
-func (r *AdminScriptReconciler) setCondition(script *seaweedv1.AdminScript, condType string, status metav1.ConditionStatus, reason, message string) {
-	meta.SetStatusCondition(&script.Status.Conditions, metav1.Condition{
-		Type:               condType,
-		Status:             status,
-		ObservedGeneration: script.Generation,
-		Reason:             reason,
-		Message:            message,
+// imageRepository strips the tag or digest from an image reference and the
+// implicit docker.io registry, so equal repositories compare equal.
+func imageRepository(image string) string {
+	if i := strings.Index(image, "@"); i >= 0 {
+		image = image[:i]
+	}
+	if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
+		image = image[:i]
+	}
+	image = strings.TrimPrefix(image, "docker.io/")
+	return strings.TrimPrefix(image, "library/")
+}
+
+// suspendCronJob stops an existing CronJob from launching runs while the
+// script is refused, without rendering the refused spec into it. Dropping the
+// last-applied annotation makes the next accepted reconcile restore the spec.
+func (r *AdminScriptReconciler) suspendCronJob(ctx context.Context, script *seaweedv1.AdminScript) error {
+	var cronJob batchv1.CronJob
+	if err := r.Get(ctx, client.ObjectKey{Namespace: script.Namespace, Name: script.Name}, &cronJob); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	if !metav1.IsControlledBy(&cronJob, script) {
+		return nil
+	}
+	_, applied := cronJob.Annotations[LastAppliedConfigAnnotation]
+	if !applied && cronJob.Spec.Suspend != nil && *cronJob.Spec.Suspend {
+		return nil
+	}
+	patch, err := json.Marshal(map[string]any{
+		"metadata": map[string]any{"annotations": map[string]any{LastAppliedConfigAnnotation: nil}},
+		"spec":     map[string]any{"suspend": true},
 	})
-}
-
-// clearCondition removes a status condition from the AdminScript.
-func (r *AdminScriptReconciler) clearCondition(script *seaweedv1.AdminScript, condType string) {
-	meta.RemoveStatusCondition(&script.Status.Conditions, condType)
+	if err != nil {
+		return err
+	}
+	return r.Patch(ctx, &cronJob, client.RawPatch(types.MergePatchType, patch))
 }
 
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=adminscripts,verbs=get;list;watch;create;update;patch;delete
@@ -240,7 +225,6 @@ func (r *AdminScriptReconciler) clearCondition(script *seaweedv1.AdminScript, co
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get
-// +kubebuilder:rbac:groups="",resources=serviceaccounts/finalizers,verbs=get
 
 // Reconcile renders the CronJob for an AdminScript and mirrors the CronJob's
 // schedule status back onto the AdminScript.
@@ -290,30 +274,20 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, clusterErr
 	}
 
-	// H-2: gate the workload-identity selectors at reconcile time, in addition to
-	// any admission webhook. The checks run before buildCronJob so an denied image
-	// or serviceAccountName never reaches the rendered CronJob.
-	if denied, err := r.validateAdminScriptWorkloadIdentity(ctx, &script); denied {
-		if err != nil {
+	denyReason, denyMessage, err := r.checkWorkloadIdentity(ctx, &script, &cluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if denyReason != "" {
+		r.Recorder.Event(&script, corev1.EventTypeWarning, denyReason, denyMessage)
+		if err := r.suspendCronJob(ctx, &script); err != nil {
 			return ctrl.Result{}, err
 		}
-		// Image denied: clear the condition once the spec is fixed, but do not block
-		// the reconcile on it — fall back to the cluster image for the next run.
-		if script.Spec.Image != nil && *script.Spec.Image != "" {
-			r.setCondition(&script, seaweedv1.AdminScriptConditionImageDenied, metav1.ConditionTrue, "ImageDenied",
-				fmt.Sprintf("image %q is not from an approved registry; the run will use the referenced cluster's image", *script.Spec.Image))
-			r.clearCondition(&script, seaweedv1.AdminScriptConditionServiceAccountDenied)
-		} else {
-			r.clearCondition(&script, seaweedv1.AdminScriptConditionImageDenied)
-		}
-		if err := r.patchStatus(ctx, &script, seaweedv1.AdminScriptPhasePending, metav1.ConditionFalse, "WorkloadIdentityDenied",
-			"one or more workload-identity fields were refused; see conditions for details"); err != nil {
+		if err := r.patchStatus(ctx, &script, seaweedv1.AdminScriptPhasePending, metav1.ConditionFalse, denyReason, denyMessage); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{RequeueAfter: adminScriptRequeueAfter}, nil
 	}
-	r.clearCondition(&script, seaweedv1.AdminScriptConditionImageDenied)
-	r.clearCondition(&script, seaweedv1.AdminScriptConditionServiceAccountDenied)
 
 	desired := r.buildCronJob(&script, &cluster)
 	cronJob, err := r.createOrUpdateCronJob(ctx, &script, desired)
@@ -657,9 +631,7 @@ func (r *AdminScriptReconciler) applyCronJobStatus(script *seaweedv1.AdminScript
 }
 
 // patchStatus sets the phase, Ready condition and observedGeneration, then
-// writes the status subresource. When the Ready condition is True it also clears
-// the H-2 denial conditions, since a healthy reconcile means the workload-identity
-// fields were accepted (or are empty and therefore not denied).
+// writes the status subresource.
 func (r *AdminScriptReconciler) patchStatus(ctx context.Context, script *seaweedv1.AdminScript, phase seaweedv1.AdminScriptPhase, status metav1.ConditionStatus, reason, message string) error {
 	script.Status.Phase = phase
 	script.Status.ObservedGeneration = script.Generation
@@ -670,10 +642,6 @@ func (r *AdminScriptReconciler) patchStatus(ctx context.Context, script *seaweed
 		Message:            message,
 		ObservedGeneration: script.Generation,
 	})
-	if status == metav1.ConditionTrue {
-		r.clearCondition(script, seaweedv1.AdminScriptConditionImageDenied)
-		r.clearCondition(script, seaweedv1.AdminScriptConditionServiceAccountDenied)
-	}
 	return r.Status().Update(ctx, script)
 }
 

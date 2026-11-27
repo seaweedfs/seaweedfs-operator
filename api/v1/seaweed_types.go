@@ -1116,21 +1116,7 @@ type ComponentSpec struct {
 	// in the same namespace as the Seaweed CR. Required on clusters that
 	// bind SCCs or PSA-restricted privileges per-SA (e.g. OpenShift) and
 	// want to avoid granting elevated permissions to the default SA.
-	//
-	// The name must be a valid Kubernetes ServiceAccount name. For Seaweed
-	// components (long-lived workloads that hold cluster credentials) the
-	// operator additionally requires the named ServiceAccount to carry the
-	// annotation seaweedfs.com/allow-admin-script: "true" at reconcile time;
-	// otherwise the component is left in a degraded Ready condition. This gate
-	// is the same one AdminScript uses (H-2 fix) and prevents a namespace tenant
-	// from running a Seaweed component under an identity that is broader than
-	// intended. Unlike AdminScript, the operator does not default Seaweed
-	// components to the namespace default SA when this is empty — omitting it
-	// lets the pod controller assign the namespace default, which is acceptable
-	// only when the cluster's RBAC is already scoped to the intended identity
-	// (see PR-1).
 	// +optional
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$`
 	ServiceAccountName *string `json:"serviceAccountName,omitempty"`
 
 	// SchedulerName of the component. Override the cluster-level one if present

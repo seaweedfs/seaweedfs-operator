@@ -1,0 +1,158 @@
+package controller
+
+import (
+	"context"
+	"testing"
+
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
+)
+
+func TestImageRepository(t *testing.T) {
+	for image, want := range map[string]string{
+		"chrislusf/seaweedfs:3.60":                    "chrislusf/seaweedfs",
+		"docker.io/chrislusf/seaweedfs:latest":        "chrislusf/seaweedfs",
+		"chrislusf/seaweedfs@sha256:abc":              "chrislusf/seaweedfs",
+		"chrislusf/seaweedfs:4.0@sha256:abc":          "chrislusf/seaweedfs",
+		"registry.local:5000/mirror/seaweedfs":        "registry.local:5000/mirror/seaweedfs",
+		"registry.local:5000/mirror/seaweedfs:4.01":   "registry.local:5000/mirror/seaweedfs",
+		"docker.io/library/busybox:1.36":              "busybox",
+		"ghcr.io/seaweedfs/seaweedfs-operator:v1.0.0": "ghcr.io/seaweedfs/seaweedfs-operator",
+	} {
+		if got := imageRepository(image); got != want {
+			t.Errorf("imageRepository(%q) = %q, want %q", image, got, want)
+		}
+	}
+}
+
+func identityReconciler(t *testing.T, objs ...client.Object) *AdminScriptReconciler {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{seaweedv1.AddToScheme, batchv1.AddToScheme, corev1.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatalf("add scheme: %v", err)
+		}
+	}
+	return &AdminScriptReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&seaweedv1.AdminScript{}).WithObjects(objs...).Build(),
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(20),
+	}
+}
+
+func reconcileScript(t *testing.T, r *AdminScriptReconciler) (*seaweedv1.AdminScript, *batchv1.CronJob) {
+	t.Helper()
+	ctx := context.Background()
+	key := types.NamespacedName{Namespace: "default", Name: "nightly-balance"}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	var script seaweedv1.AdminScript
+	if err := r.Get(ctx, key, &script); err != nil {
+		t.Fatalf("get script: %v", err)
+	}
+	var cronJob batchv1.CronJob
+	if err := r.Get(ctx, key, &cronJob); err != nil {
+		return &script, nil
+	}
+	return &script, &cronJob
+}
+
+func scriptReadyReason(script *seaweedv1.AdminScript) string {
+	if c := meta.FindStatusCondition(script.Status.Conditions, seaweedv1.AdminScriptConditionReady); c != nil {
+		return c.Reason
+	}
+	return ""
+}
+
+func serviceAccount(name string, allowed bool) *corev1.ServiceAccount {
+	sa := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: name}}
+	if allowed {
+		sa.Annotations = map[string]string{adminScriptAllowedServiceAccountAnnotation: "true"}
+	}
+	return sa
+}
+
+func TestReconcileChecksWorkloadIdentity(t *testing.T) {
+	cases := []struct {
+		name       string
+		image      string
+		sa         string
+		objs       []client.Object
+		wantReason string
+	}{
+		{name: "defaults", wantReason: "Scheduled"},
+		{name: "same repository, other tag", image: "docker.io/chrislusf/seaweedfs:4.01", wantReason: "Scheduled"},
+		{name: "foreign image", image: "evil.example/shell:1", wantReason: "ImageDenied"},
+		{name: "same name, other registry", image: "evil.example/chrislusf/seaweedfs:test", wantReason: "ImageDenied"},
+		{name: "invalid name", sa: "Not_Valid", wantReason: "ServiceAccountDenied"},
+		{name: "missing account", sa: "maintenance", wantReason: "ServiceAccountDenied"},
+		{name: "unannotated account", sa: "maintenance", objs: []client.Object{serviceAccount("maintenance", false)}, wantReason: "ServiceAccountDenied"},
+		{name: "annotated account", sa: "maintenance", objs: []client.Object{serviceAccount("maintenance", true)}, wantReason: "Scheduled"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			script := testAdminScript()
+			if tc.image != "" {
+				script.Spec.Image = &tc.image
+			}
+			script.Spec.ServiceAccountName = tc.sa
+			r := identityReconciler(t, append(tc.objs, testCluster(), script)...)
+			got, cronJob := reconcileScript(t, r)
+			if reason := scriptReadyReason(got); reason != tc.wantReason {
+				t.Fatalf("Ready reason = %q, want %q", reason, tc.wantReason)
+			}
+			if scheduled := tc.wantReason == "Scheduled"; scheduled != (cronJob != nil) {
+				t.Fatalf("CronJob exists = %v, want %v", cronJob != nil, scheduled)
+			}
+		})
+	}
+}
+
+func TestRefusedScriptSuspendsExistingCronJob(t *testing.T) {
+	ctx := context.Background()
+	script := testAdminScript()
+	script.UID = "script-uid"
+	script.Spec.ServiceAccountName = "maintenance"
+	sa := serviceAccount("maintenance", true)
+	r := identityReconciler(t, testCluster(), script, sa)
+
+	if _, cronJob := reconcileScript(t, r); cronJob == nil || (cronJob.Spec.Suspend != nil && *cronJob.Spec.Suspend) {
+		t.Fatalf("accepted script should schedule an unsuspended CronJob, got %+v", cronJob)
+	}
+
+	sa.Annotations = nil
+	if err := r.Update(ctx, sa); err != nil {
+		t.Fatalf("drop annotation: %v", err)
+	}
+	got, cronJob := reconcileScript(t, r)
+	if scriptReadyReason(got) != "ServiceAccountDenied" {
+		t.Fatalf("Ready reason = %q, want ServiceAccountDenied", scriptReadyReason(got))
+	}
+	if cronJob == nil || cronJob.Spec.Suspend == nil || !*cronJob.Spec.Suspend {
+		t.Fatalf("refused script must suspend its existing CronJob, got %+v", cronJob)
+	}
+
+	sa.Annotations = map[string]string{adminScriptAllowedServiceAccountAnnotation: "true"}
+	if err := r.Update(ctx, sa); err != nil {
+		t.Fatalf("restore annotation: %v", err)
+	}
+	got, cronJob = reconcileScript(t, r)
+	if scriptReadyReason(got) != "Scheduled" {
+		t.Fatalf("Ready reason = %q, want Scheduled", scriptReadyReason(got))
+	}
+	if cronJob.Spec.Suspend != nil && *cronJob.Spec.Suspend {
+		t.Fatal("accepted script must resume the CronJob it suspended")
+	}
+}

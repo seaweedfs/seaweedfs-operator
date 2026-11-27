@@ -197,26 +197,28 @@ func imageRepository(image string) string {
 // suspendCronJob stops an existing CronJob from launching runs while the
 // script is refused, without rendering the refused spec into it. Dropping the
 // last-applied annotation makes the next accepted reconcile restore the spec.
-func (r *AdminScriptReconciler) suspendCronJob(ctx context.Context, script *seaweedv1.AdminScript) error {
+// It returns whether a run is still active.
+func (r *AdminScriptReconciler) suspendCronJob(ctx context.Context, script *seaweedv1.AdminScript) (bool, error) {
 	var cronJob batchv1.CronJob
 	if err := r.Get(ctx, client.ObjectKey{Namespace: script.Namespace, Name: script.Name}, &cronJob); err != nil {
-		return client.IgnoreNotFound(err)
+		return false, client.IgnoreNotFound(err)
 	}
 	if !metav1.IsControlledBy(&cronJob, script) {
-		return nil
+		return false, nil
 	}
+	active := len(cronJob.Status.Active) > 0
 	_, applied := cronJob.Annotations[LastAppliedConfigAnnotation]
 	if !applied && cronJob.Spec.Suspend != nil && *cronJob.Spec.Suspend {
-		return nil
+		return active, nil
 	}
 	patch, err := json.Marshal(map[string]any{
 		"metadata": map[string]any{"annotations": map[string]any{LastAppliedConfigAnnotation: nil}},
 		"spec":     map[string]any{"suspend": true},
 	})
 	if err != nil {
-		return err
+		return active, err
 	}
-	return r.Patch(ctx, &cronJob, client.RawPatch(types.MergePatchType, patch))
+	return active, r.Patch(ctx, &cronJob, client.RawPatch(types.MergePatchType, patch))
 }
 
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=adminscripts,verbs=get;list;watch;create;update;patch;delete
@@ -280,8 +282,14 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	if denyReason != "" {
 		r.Recorder.Event(&script, corev1.EventTypeWarning, denyReason, denyMessage)
-		if err := r.suspendCronJob(ctx, &script); err != nil {
+		active, err := r.suspendCronJob(ctx, &script)
+		if err != nil {
 			return ctrl.Result{}, err
+		}
+		if !active {
+			if err := r.syncClusterPodLabels(ctx, &script, scriptLabelCluster(&script), false); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 		if err := r.patchStatus(ctx, &script, seaweedv1.AdminScriptPhasePending, metav1.ConditionFalse, denyReason, denyMessage); err != nil {
 			return ctrl.Result{}, err

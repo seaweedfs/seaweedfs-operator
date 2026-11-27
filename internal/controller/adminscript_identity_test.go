@@ -156,3 +156,39 @@ func TestRefusedScriptSuspendsExistingCronJob(t *testing.T) {
 		t.Fatal("accepted script must resume the CronJob it suspended")
 	}
 }
+
+func TestRefusedScriptRestoresClusterPodLabels(t *testing.T) {
+	ctx := context.Background()
+	script := testAdminScript()
+	script.UID = "script-uid"
+	script.Spec.ServiceAccountName = "maintenance"
+	script.Spec.ClusterPodLabels = map[string]string{"reboot-block": "adminscript"}
+	sa := serviceAccount("maintenance", true)
+	pod := clusterPod("master-0", "seaweed-sample", nil)
+	r := identityReconciler(t, testCluster(), script, sa, pod)
+
+	got, _ := reconcileScript(t, r)
+	if err := r.syncClusterPodLabels(ctx, got, "seaweed-sample", true); err != nil {
+		t.Fatalf("apply labels: %v", err)
+	}
+	podKey := client.ObjectKeyFromObject(pod)
+	var labeled corev1.Pod
+	if err := r.Get(ctx, podKey, &labeled); err != nil || labeled.Labels["reboot-block"] != "adminscript" {
+		t.Fatalf("labels not applied: %v %v", err, labeled.Labels)
+	}
+
+	sa.Annotations = nil
+	if err := r.Update(ctx, sa); err != nil {
+		t.Fatalf("drop annotation: %v", err)
+	}
+	if got, _ = reconcileScript(t, r); scriptReadyReason(got) != "ServiceAccountDenied" {
+		t.Fatalf("Ready reason = %q, want ServiceAccountDenied", scriptReadyReason(got))
+	}
+	var restored corev1.Pod
+	if err := r.Get(ctx, podKey, &restored); err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	if _, ok := restored.Labels["reboot-block"]; ok {
+		t.Fatalf("refused script with no active run must restore pod labels, got %v", restored.Labels)
+	}
+}

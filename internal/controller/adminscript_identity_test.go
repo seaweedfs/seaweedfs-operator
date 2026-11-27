@@ -18,27 +18,6 @@ import (
 	seaweedv1 "github.com/seaweedfs/seaweedfs-operator/api/v1"
 )
 
-func TestImageRepository(t *testing.T) {
-	for image, want := range map[string]string{
-		"chrislusf/seaweedfs:3.60":                    "docker.io/chrislusf/seaweedfs",
-		"docker.io/chrislusf/seaweedfs:latest":        "docker.io/chrislusf/seaweedfs",
-		"index.docker.io/chrislusf/seaweedfs":         "docker.io/chrislusf/seaweedfs",
-		"chrislusf/seaweedfs@sha256:abc":              "docker.io/chrislusf/seaweedfs",
-		"chrislusf/seaweedfs:4.0@sha256:abc":          "docker.io/chrislusf/seaweedfs",
-		"registry.local:5000/mirror/seaweedfs":        "registry.local:5000/mirror/seaweedfs",
-		"registry.local:5000/mirror/seaweedfs:4.01":   "registry.local:5000/mirror/seaweedfs",
-		"busybox:1.36":                                "docker.io/library/busybox",
-		"docker.io/library/busybox:1.36":              "docker.io/library/busybox",
-		"localhost/weed:v1":                           "localhost/weed",
-		"docker.io/localhost/weed:v2":                 "docker.io/localhost/weed",
-		"ghcr.io/seaweedfs/seaweedfs-operator:v1.0.0": "ghcr.io/seaweedfs/seaweedfs-operator",
-	} {
-		if got := imageRepository(image); got != want {
-			t.Errorf("imageRepository(%q) = %q, want %q", image, got, want)
-		}
-	}
-}
-
 func identityReconciler(t *testing.T, objs ...client.Object) *AdminScriptReconciler {
 	t.Helper()
 	scheme := runtime.NewScheme()
@@ -83,7 +62,7 @@ func scriptReadyReason(script *seaweedv1.AdminScript) string {
 func serviceAccount(name string, allowed bool) *corev1.ServiceAccount {
 	sa := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: name}}
 	if allowed {
-		sa.Annotations = map[string]string{adminScriptAllowedServiceAccountAnnotation: "true"}
+		sa.Annotations = map[string]string{seaweedv1.ServiceAccountAllowedAnnotation: "true"}
 	}
 	return sa
 }
@@ -148,7 +127,7 @@ func TestRefusedScriptSuspendsExistingCronJob(t *testing.T) {
 		t.Fatalf("refused script must suspend its existing CronJob, got %+v", cronJob)
 	}
 
-	sa.Annotations = map[string]string{adminScriptAllowedServiceAccountAnnotation: "true"}
+	sa.Annotations = map[string]string{seaweedv1.ServiceAccountAllowedAnnotation: "true"}
 	if err := r.Update(ctx, sa); err != nil {
 		t.Fatalf("restore annotation: %v", err)
 	}

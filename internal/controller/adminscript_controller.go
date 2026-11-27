@@ -74,10 +74,6 @@ const adminScriptLabelsFinalizer = "seaweed.seaweedfs.com/adminscript-pod-labels
 // restores the pods the labels were applied to.
 const adminScriptLabelsClusterAnnotation = "seaweed.seaweedfs.com/adminscript-labels-cluster"
 
-// adminScriptAllowedServiceAccountAnnotation must be "true" on a ServiceAccount
-// before an AdminScript may run under it.
-const adminScriptAllowedServiceAccountAnnotation = seaweedv1.ServiceAccountAllowedAnnotation
-
 // reservedClusterPodLabel reports whether clusterPodLabels may not override
 // the key: these labels select and identify cluster pods, so overwriting them
 // hides pods from the selector that must restore them later.
@@ -153,7 +149,7 @@ type AdminScriptReconciler struct {
 // script's image or ServiceAccount, or an empty reason when both are allowed.
 func (r *AdminScriptReconciler) checkWorkloadIdentity(ctx context.Context, script *seaweedv1.AdminScript, cluster *seaweedv1.Seaweed) (reason, message string, err error) {
 	if script.Spec.Image != nil && *script.Spec.Image != "" {
-		if want := imageRepository(cluster.ClusterImage()); imageRepository(*script.Spec.Image) != want {
+		if want := seaweedv1.ImageRepository(cluster.ClusterImage()); seaweedv1.ImageRepository(*script.Spec.Image) != want {
 			return "ImageDenied", fmt.Sprintf("image %q is not from the cluster image repository %q", *script.Spec.Image, want), nil
 		}
 	}
@@ -175,16 +171,11 @@ func (r *AdminScriptReconciler) checkWorkloadIdentity(ctx context.Context, scrip
 		}
 		return "", "", fmt.Errorf("get ServiceAccount %q: %w", name, err)
 	}
-	if sa.Annotations[adminScriptAllowedServiceAccountAnnotation] != "true" {
-		return "ServiceAccountDenied", fmt.Sprintf("ServiceAccount %q lacks the annotation %s: \"true\"", name, adminScriptAllowedServiceAccountAnnotation), nil
+	if err := seaweedv1.ServiceAccountAllowed(&sa); err != nil {
+		return "ServiceAccountDenied", err.Error(), nil
 	}
 	return "", "", nil
 }
-
-// imageRepository is the shared repository canonicalizer from api/v1, kept
-// under a package-local name so the AdminScript admission webhook and this
-// reconcile-time check cannot disagree about which repositories match.
-var imageRepository = seaweedv1.ImageRepository
 
 // suspendCronJob stops an existing CronJob from launching runs while the
 // script is refused, without rendering the refused spec into it. Dropping the

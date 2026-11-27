@@ -1193,7 +1193,8 @@ spec:
 - `serviceAccountName` must name a ServiceAccount annotated
   `seaweedfs.com/allow-admin-script: "true"`. Annotate only identities that
   AdminScript authors may run code as. The operator rechecks the annotation
-  every 30 seconds.
+  every 30 seconds, so a run can still start up to 30 seconds after the
+  annotation is removed.
 - A refused `image` or `serviceAccountName` sets the Ready reason to
   `ImageDenied` or `ServiceAccountDenied` and suspends an existing CronJob until
   the spec or the ServiceAccount is fixed.

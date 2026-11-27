@@ -251,3 +251,18 @@ func TestMissingClusterSuspendsCronJob(t *testing.T) {
 		t.Fatalf("missing cluster: reason %q suspend %v, want ClusterNotFound and a suspended CronJob", scriptReadyReason(got), cronJob.Spec.Suspend)
 	}
 }
+
+func TestNamedServiceAccountIsRechecked(t *testing.T) {
+	for _, sa := range []string{"", "maintenance"} {
+		script := testAdminScript()
+		script.Spec.ServiceAccountName = sa
+		r := identityReconciler(t, testCluster(), script, serviceAccount("maintenance", true))
+		res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(script)})
+		if err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		if want := sa != ""; (res.RequeueAfter > 0) != want {
+			t.Errorf("serviceAccountName %q: RequeueAfter = %v, want requeue %v", sa, res.RequeueAfter, want)
+		}
+	}
+}

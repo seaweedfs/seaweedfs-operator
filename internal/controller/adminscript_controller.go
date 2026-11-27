@@ -349,6 +349,11 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// CronJob status event cannot leave the labels stuck on.
 		return ctrl.Result{RequeueAfter: adminScriptLabelRequeue}, nil
 	}
+	if script.Spec.ServiceAccountName != "" {
+		// ServiceAccounts are not watched; recheck so a removed annotation
+		// suspends the CronJob.
+		return ctrl.Result{RequeueAfter: adminScriptRequeueAfter}, nil
+	}
 	return ctrl.Result{}, nil
 }
 

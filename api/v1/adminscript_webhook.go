@@ -24,6 +24,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -73,9 +74,17 @@ func (v *AdminScriptCustomValidator) ValidateCreate(ctx context.Context, obj *Ad
 	return nil, v.validate(ctx, obj)
 }
 
-// ValidateUpdate implements admission.Validator.
-func (v *AdminScriptCustomValidator) ValidateUpdate(ctx context.Context, _, obj *AdminScript) (admission.Warnings, error) {
+// ValidateUpdate implements admission.Validator. An update that keeps the
+// image, ServiceAccount and cluster is not rechecked: the controller suspends a
+// script whose identity was revoked, and rechecking here would also block the
+// finalizer removal that lets such a script be deleted.
+func (v *AdminScriptCustomValidator) ValidateUpdate(ctx context.Context, oldObj, obj *AdminScript) (admission.Warnings, error) {
 	adminscriptlog.Info("validate update", "name", obj.Name)
+	if ptr.Deref(oldObj.Spec.Image, "") == ptr.Deref(obj.Spec.Image, "") &&
+		oldObj.Spec.ServiceAccountName == obj.Spec.ServiceAccountName &&
+		oldObj.Spec.ClusterRef.Name == obj.Spec.ClusterRef.Name {
+		return nil, nil
+	}
 	return nil, v.validate(ctx, obj)
 }
 

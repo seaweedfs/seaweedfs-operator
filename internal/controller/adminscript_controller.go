@@ -275,6 +275,9 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if apierrors.IsNotFound(clusterErr) {
 			log.Info("referenced Seaweed cluster not found; waiting", "cluster", clusterKey)
 			msg := fmt.Sprintf("Seaweed cluster %q not found in namespace %q", clusterKey.Name, clusterKey.Namespace)
+			if _, err := r.suspendCronJob(ctx, &script); err != nil {
+				return ctrl.Result{}, err
+			}
 			if err := r.patchStatus(ctx, &script, seaweedv1.AdminScriptPhasePending, metav1.ConditionFalse, "ClusterNotFound", msg); err != nil {
 				return ctrl.Result{}, err
 			}

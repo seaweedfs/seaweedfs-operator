@@ -232,3 +232,22 @@ func TestRefusedScriptMirrorsCronJobStatus(t *testing.T) {
 		t.Fatalf("refused script status = %q active=%d, want ServiceAccountDenied active=0", scriptReadyReason(got), got.Status.Active)
 	}
 }
+
+func TestMissingClusterSuspendsCronJob(t *testing.T) {
+	ctx := context.Background()
+	script := testAdminScript()
+	script.UID = "script-uid"
+	cluster := testCluster()
+	r := identityReconciler(t, cluster, script)
+
+	if _, cronJob := reconcileScript(t, r); cronJob == nil {
+		t.Fatal("accepted script should schedule a CronJob")
+	}
+	if err := r.Delete(ctx, cluster); err != nil {
+		t.Fatalf("delete cluster: %v", err)
+	}
+	got, cronJob := reconcileScript(t, r)
+	if scriptReadyReason(got) != "ClusterNotFound" || cronJob.Spec.Suspend == nil || !*cronJob.Spec.Suspend {
+		t.Fatalf("missing cluster: reason %q suspend %v, want ClusterNotFound and a suspended CronJob", scriptReadyReason(got), cronJob.Spec.Suspend)
+	}
+}

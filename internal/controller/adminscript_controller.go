@@ -31,6 +31,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -135,9 +137,69 @@ func isClusterPod(pod *corev1.Pod, clusterName string) bool {
 // masters/filer with the spec'd script piped to stdin.
 type AdminScriptReconciler struct {
 	client.Client
-	Log      logr.Logger
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	// APIReader reads ServiceAccounts uncached, so the operator needs only
+	// get on them; nil falls back to Client.
+	APIReader client.Reader
+	Log       logr.Logger
+	Scheme    *runtime.Scheme
+	Recorder  record.EventRecorder
+}
+
+// checkWorkloadIdentity returns the reason and message for refusing the
+// script's image or ServiceAccount, or an empty reason when both are allowed.
+func (r *AdminScriptReconciler) checkWorkloadIdentity(ctx context.Context, script *seaweedv1.AdminScript, cluster *seaweedv1.Seaweed) (reason, message string, err error) {
+	if script.Spec.Image != nil && *script.Spec.Image != "" {
+		if want := seaweedv1.ImageRepository(cluster.ClusterImage()); seaweedv1.ImageRepository(*script.Spec.Image) != want {
+			return "ImageDenied", fmt.Sprintf("image %q is not from the cluster image repository %q", *script.Spec.Image, want), nil
+		}
+	}
+	name := script.Spec.ServiceAccountName
+	if name == "" {
+		return "", "", nil
+	}
+	if errs := validation.IsDNS1123Subdomain(name); len(errs) > 0 {
+		return "ServiceAccountDenied", fmt.Sprintf("serviceAccountName %q is not a valid name: %s", name, strings.Join(errs, "; ")), nil
+	}
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.Client
+	}
+	var sa corev1.ServiceAccount
+	if err := reader.Get(ctx, client.ObjectKey{Namespace: script.Namespace, Name: name}, &sa); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "ServiceAccountDenied", fmt.Sprintf("ServiceAccount %q not found in namespace %q", name, script.Namespace), nil
+		}
+		return "", "", fmt.Errorf("get ServiceAccount %q: %w", name, err)
+	}
+	if err := seaweedv1.ServiceAccountAllowed(&sa); err != nil {
+		return "ServiceAccountDenied", err.Error(), nil
+	}
+	return "", "", nil
+}
+
+// suspendCronJob stops an existing CronJob from launching runs while the
+// script is refused, without rendering the refused spec into it. Dropping the
+// last-applied annotation makes the next accepted reconcile restore the spec.
+func (r *AdminScriptReconciler) suspendCronJob(ctx context.Context, script *seaweedv1.AdminScript) (*batchv1.CronJob, error) {
+	var cronJob batchv1.CronJob
+	if err := r.Get(ctx, client.ObjectKey{Namespace: script.Namespace, Name: script.Name}, &cronJob); err != nil {
+		return nil, client.IgnoreNotFound(err)
+	}
+	if !metav1.IsControlledBy(&cronJob, script) {
+		return nil, nil
+	}
+	_, applied := cronJob.Annotations[LastAppliedConfigAnnotation]
+	if !applied && cronJob.Spec.Suspend != nil && *cronJob.Spec.Suspend {
+		return &cronJob, nil
+	}
+	patch, err := json.Marshal(map[string]any{
+		"metadata": map[string]any{"annotations": map[string]any{LastAppliedConfigAnnotation: nil}},
+		"spec":     map[string]any{"suspend": true},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &cronJob, r.Patch(ctx, &cronJob, client.RawPatch(types.MergePatchType, patch))
 }
 
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=adminscripts,verbs=get;list;watch;create;update;patch;delete
@@ -145,6 +207,7 @@ type AdminScriptReconciler struct {
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=adminscripts/finalizers,verbs=update
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get
 
 // Reconcile renders the CronJob for an AdminScript and mirrors the CronJob's
 // schedule status back onto the AdminScript.
@@ -186,12 +249,39 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if apierrors.IsNotFound(clusterErr) {
 			log.Info("referenced Seaweed cluster not found; waiting", "cluster", clusterKey)
 			msg := fmt.Sprintf("Seaweed cluster %q not found in namespace %q", clusterKey.Name, clusterKey.Namespace)
+			if _, err := r.suspendCronJob(ctx, &script); err != nil {
+				return ctrl.Result{}, err
+			}
 			if err := r.patchStatus(ctx, &script, seaweedv1.AdminScriptPhasePending, metav1.ConditionFalse, "ClusterNotFound", msg); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{RequeueAfter: adminScriptRequeueAfter}, nil
 		}
 		return ctrl.Result{}, clusterErr
+	}
+
+	denyReason, denyMessage, err := r.checkWorkloadIdentity(ctx, &script, &cluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if denyReason != "" {
+		r.Recorder.Event(&script, corev1.EventTypeWarning, denyReason, denyMessage)
+		cronJob, err := r.suspendCronJob(ctx, &script)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if cronJob != nil {
+			r.applyCronJobStatus(&script, cronJob)
+		}
+		if cronJob == nil || len(cronJob.Status.Active) == 0 {
+			if err := r.syncClusterPodLabels(ctx, &script, scriptLabelCluster(&script), false); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		if err := r.patchStatus(ctx, &script, seaweedv1.AdminScriptPhasePending, metav1.ConditionFalse, denyReason, denyMessage); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: adminScriptRequeueAfter}, nil
 	}
 
 	desired := r.buildCronJob(&script, &cluster)
@@ -232,6 +322,11 @@ func (r *AdminScriptReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// Requeue so pods created mid-run get labeled too and a missed
 		// CronJob status event cannot leave the labels stuck on.
 		return ctrl.Result{RequeueAfter: adminScriptLabelRequeue}, nil
+	}
+	if script.Spec.ServiceAccountName != "" {
+		// ServiceAccounts are not watched; recheck so a removed annotation
+		// suspends the CronJob.
+		return ctrl.Result{RequeueAfter: adminScriptRequeueAfter}, nil
 	}
 	return ctrl.Result{}, nil
 }

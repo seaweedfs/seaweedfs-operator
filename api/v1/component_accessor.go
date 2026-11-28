@@ -1,9 +1,34 @@
 package v1
 
 import (
+	"fmt"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 )
+
+// ServiceAccountAllowedAnnotation gates CR-selected workload identity. A
+// ServiceAccount must carry it with value "true" before a Seaweed component or
+// an AdminScript pod may run under it. Without the gate, whoever can write the
+// CR (edit on seaweeds, create adminscripts — ordinary grants in one namespace)
+// could run arbitrary code as any ServiceAccount in that namespace, including
+// platform-owned identities that hold more than the tenant should reach.
+//
+// The annotation is the operator's only durable gate: it is enforced at
+// admission (AdminScript validating webhook) and again at reconcile time (both
+// controllers), so it still holds where admission webhooks are disabled.
+const ServiceAccountAllowedAnnotation = "seaweedfs.com/allow-admin-script"
+
+// ServiceAccountAllowed returns nil when sa may be selected as the workload
+// identity of a Seaweed component or an AdminScript. The annotation must be set
+// deliberately on each identity that is meant to run operator-scheduled code,
+// so it is also the review point for what that identity can do.
+func ServiceAccountAllowed(sa *corev1.ServiceAccount) error {
+	if sa.Annotations[ServiceAccountAllowedAnnotation] == "true" {
+		return nil
+	}
+	return fmt.Errorf("ServiceAccount %q is not permitted; add the annotation %q: \"true\" to it and review what that identity can do", sa.Name, ServiceAccountAllowedAnnotation)
+}
 
 // ComponentAccessor is the interface to access component details, which respects the cluster-level properties
 // and component-level overrides

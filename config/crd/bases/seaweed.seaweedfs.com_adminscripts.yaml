@@ -746,6 +746,8 @@ spec:
                 minLength: 1
                 type: string
               serviceAccountName:
+                maxLength: 253
+                pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                 type: string
               startingDeadlineSeconds:
                 format: int64

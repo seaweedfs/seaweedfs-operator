@@ -34,5 +34,31 @@ webhooks:
     - UPDATE
     resources:
     - seaweeds
+# AdminScript workload identity: spec.image may only retag the referenced
+# cluster's image, and spec.serviceAccountName must name an annotated
+# ServiceAccount. The controller re-checks both every reconcile, so the chart
+# still constrains a script when webhooks are disabled; admission is what
+# rejects the write outright.
+- clientConfig:
+    service:
+      name: {{ include "seaweedfs-operator.fullname" . }}-webhook
+      namespace: {{ .Release.Namespace }}
+      port: 443
+      path: /validate-seaweed-seaweedfs-com-v1-adminscript
+  name: vadminscript.kb.io
+  failurePolicy: Fail
+  sideEffects: None
+  admissionReviewVersions:
+  - v1
+  rules:
+  - apiGroups:
+    - seaweed.seaweedfs.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - adminscripts
 
 {{- end }}

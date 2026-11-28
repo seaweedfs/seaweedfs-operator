@@ -141,7 +141,8 @@ type AdminScriptSpec struct {
 
 	// Image overrides the container image for the run. Defaults to the
 	// referenced cluster's image, so the shell version always matches the
-	// cluster it administers.
+	// cluster it administers. It must name the same repository as the
+	// cluster image; only the tag or digest may differ.
 	// +optional
 	Image *string `json:"image,omitempty"`
 
@@ -165,8 +166,13 @@ type AdminScriptSpec struct {
 	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 
 	// ServiceAccountName runs the pod under a specific ServiceAccount. The
-	// operator does not create it. Defaults to the namespace default SA.
+	// operator does not create it. Defaults to the namespace default SA. A
+	// named ServiceAccount must carry the annotation
+	// seaweedfs.com/allow-admin-script: "true"; otherwise the CronJob is
+	// suspended and the script reports ServiceAccountDenied.
 	// +optional
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$`
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
 	// NodeSelector constrains the run's pod to nodes with matching labels.

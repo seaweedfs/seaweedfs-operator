@@ -53,6 +53,12 @@ rules:
   - patch
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - get
+- apiGroups:
   - apps
   resources:
   - daemonsets

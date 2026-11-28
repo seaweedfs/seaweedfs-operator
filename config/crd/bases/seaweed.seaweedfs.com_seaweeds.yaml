@@ -850,6 +850,8 @@ spec:
                         type: string
                     type: object
                   serviceAccountName:
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -2551,6 +2553,8 @@ spec:
                         type: string
                     type: object
                   serviceAccountName:
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -3576,6 +3580,8 @@ spec:
                         type: string
                     type: object
                   serviceAccountName:
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -4494,6 +4500,8 @@ spec:
                         type: string
                     type: object
                   serviceAccountName:
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -5448,6 +5456,8 @@ spec:
                         type: string
                     type: object
                   serviceAccountName:
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -7200,6 +7210,8 @@ spec:
                   schedulerName:
                     type: string
                   serviceAccountName:
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -8128,6 +8140,8 @@ spec:
                         type: string
                     type: object
                   serviceAccountName:
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true
@@ -9030,6 +9044,8 @@ spec:
                           type: string
                       type: object
                     serviceAccountName:
+                      maxLength: 253
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                       type: string
                     sidecars:
                       x-kubernetes-preserve-unknown-fields: true
@@ -10006,6 +10022,8 @@ spec:
                   schedulerName:
                     type: string
                   serviceAccountName:
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$
                     type: string
                   sidecars:
                     x-kubernetes-preserve-unknown-fields: true

@@ -239,6 +239,13 @@ StatefulSet. Every `replicas` value becomes that many Pods:
 
 Fields that commonly cause confusion:
 
+- **`<component>.serviceAccountName`** — runs that component's Pods under an
+  existing ServiceAccount instead of the namespace default. The ServiceAccount
+  must carry the annotation `seaweedfs.com/allow-admin-script: "true"`;
+  otherwise the operator stops reconciling the cluster and sets the Ready
+  reason to `ServiceAccountDenied` until the annotation is added or the field
+  is cleared.
+
 - **`volume.requests.storage`** — the size of each volume-server PVC. This is *where storage comes from*: Kubernetes dynamically provisions a PersistentVolume of this size from the default StorageClass (or `volume.storageClassName` if set) and binds it to the Pod. To use specific or pre-provisioned disks, see `config/samples/seaweed_v1_seaweed_existing_storage.yaml`.
 - **`volume.storageAnnotations` / `volume.storageLabels`** — stamped onto every generated volume-server PVC (the filer's metadata PVC takes the same under `filer.persistence.annotations` / `.labels`). Use these for CSI provisioners that read PVC annotations at provision time — e.g. NetApp Trident's `trident.netapp.io/snapshotPolicy` and `snapshotReserve`. Set them at cluster creation: StatefulSet `volumeClaimTemplates` are immutable, so changing them on a running cluster is **not** applied automatically — the operator emits a `VolumeClaimTemplatesMismatch` warning and you must recreate the StatefulSet (e.g. `kubectl delete statefulset … --cascade=orphan`, which keeps Pods and PVCs) before new PVCs pick up the change. Already-provisioned PVCs keep the metadata they were created with.
 - **`volumeServerDiskCount`** — number of data disks (PVCs) attached to *each* volume-server Pod. They are mounted at `/data0`, `/data1`, … and passed to the volume server as `-dir`. Total PVCs = `volume.replicas × volumeServerDiskCount`. Leave at 1 unless a node exposes multiple disks.
@@ -1188,8 +1195,18 @@ spec:
 - `successfulJobsHistoryLimit` / `failedJobsHistoryLimit` / `backoffLimit` /
   `activeDeadlineSeconds` / `startingDeadlineSeconds` / `timeZone` are passed
   through to the generated `CronJob`/`Job`.
-- `image` overrides the container image (defaults to the cluster's image), and
-  `credentialsSecret` projects a Secret's keys into the run pod as environment
+- `image` overrides the container image (defaults to the cluster's image). It
+  must name the cluster image's repository; only the tag or digest may differ.
+- `serviceAccountName` must name a ServiceAccount annotated
+  `seaweedfs.com/allow-admin-script: "true"`. Annotate only identities that
+  AdminScript authors may run code as. The operator rechecks the annotation on
+  a 30-second interval, so a run can still start after the annotation is
+  removed and before the next check suspends the CronJob.
+- A refused `image` or `serviceAccountName` sets the Ready reason to
+  `ImageDenied` or `ServiceAccountDenied` and suspends an existing CronJob until
+  the spec or the ServiceAccount is fixed. With webhooks enabled, a create or
+  an update that changes either field is also rejected.
+- `credentialsSecret` projects a Secret's keys into the run pod as environment
   variables for scripts that need them (defaults to the cluster's admin
   `credentialsSecret` when set).
 - `podSecurityContext` and `containerSecurityContext` optionally harden each

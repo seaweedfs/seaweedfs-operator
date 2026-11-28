@@ -2,6 +2,34 @@ package v1
 
 import "strings"
 
+// ImageRepository returns image without its tag or digest, with Docker Hub
+// names qualified, so only references to the same repository compare equal:
+// "weed:3.6" and "docker.io/library/weed@sha256:…" are both
+// "docker.io/library/weed".
+//
+// It backs the workload-identity check shared by the AdminScript controller and
+// its admission webhook: a script may change the tag or digest of the image it
+// runs, but not the repository the cluster admin chose.
+func ImageRepository(image string) string {
+	if i := strings.Index(image, "@"); i >= 0 {
+		image = image[:i]
+	}
+	if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
+		image = image[:i]
+	}
+	domain, path := "docker.io", image
+	if i := strings.Index(image, "/"); i >= 0 && (strings.ContainsAny(image[:i], ".:") || image[:i] == "localhost") {
+		domain, path = image[:i], image[i+1:]
+	}
+	if domain == "index.docker.io" {
+		domain = "docker.io"
+	}
+	if domain == "docker.io" && !strings.Contains(path, "/") {
+		path = "library/" + path
+	}
+	return domain + "/" + path
+}
+
 // applyVersion returns image with its tag replaced by version.
 //
 // A digest-pinned image is returned untouched: a digest is an exact,

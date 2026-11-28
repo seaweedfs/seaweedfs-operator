@@ -1116,7 +1116,12 @@ type ComponentSpec struct {
 	// in the same namespace as the Seaweed CR. Required on clusters that
 	// bind SCCs or PSA-restricted privileges per-SA (e.g. OpenShift) and
 	// want to avoid granting elevated permissions to the default SA.
+	// A named ServiceAccount must carry the annotation
+	// seaweedfs.com/allow-admin-script: "true"; otherwise the cluster is not
+	// reconciled and reports ServiceAccountDenied.
 	// +optional
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$`
 	ServiceAccountName *string `json:"serviceAccountName,omitempty"`
 
 	// SchedulerName of the component. Override the cluster-level one if present

@@ -33,7 +33,7 @@ rbac:
   # webhook.certManager.enabled removes that hook.
   create: true
   # -- Render one ClusterRole covering every namespace instead of the default
-  # namespaced Role. This is the pre-0.1.46 behaviour, and it grants the manager
+  # namespaced Role. This is the pre-0.2.0 behaviour, and it grants the manager
   # read and write on every Secret in the cluster: set it only when the operator
   # must reconcile CRs across namespaces (or all of them). Cannot be combined
   # with `watchNamespaces`.

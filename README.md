@@ -43,12 +43,16 @@ helm install seaweedfs-operator oci://ghcr.io/seaweedfs/charts/seaweedfs-operato
 
 #### Scoped RBAC
 
-The chart restricts the manager to the release namespace by default: it renders
+Starting in chart version 0.2.0, the chart restricts the manager to the release namespace by default: it renders
 one `Role` per watched namespace plus a small `ClusterRole` for the
 cluster-scoped reads the controllers need, and starts the manager with
 `--watch-namespaces`. Before this, a default install held a single `ClusterRole`
 that could read and write **every Secret in the cluster** — the largest blast
-radius an operator compromise could reach.
+radius an operator compromise could reach. See
+[#477](https://github.com/seaweedfs/seaweedfs-operator/issues/477) for the issue
+and [#478](https://github.com/seaweedfs/seaweedfs-operator/pull/478) for the
+change; chart release notes are in
+[`deploy/helm/CHANGELOG.md`](deploy/helm/CHANGELOG.md).
 
 **If you keep `Seaweed` CRs in more than one namespace, list them in
 `watchNamespaces`, or set `rbac.clusterWide: true` to restore the previous

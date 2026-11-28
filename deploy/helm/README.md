@@ -1,6 +1,6 @@
 # seaweedfs-operator
 
-![Version: 0.1.45](https://img.shields.io/badge/Version-0.1.45-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.42](https://img.shields.io/badge/AppVersion-1.0.42-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.46](https://img.shields.io/badge/AppVersion-1.0.46-informational?style=flat-square)
 
 A Helm chart for the seaweedfs-operator
 
@@ -40,7 +40,7 @@ A Helm chart for the seaweedfs-operator
 | podSecurityContext.seccompProfile.type | string | `"RuntimeDefault"` |  |
 | port.name | string | `"http"` | name of the container port to use for the Kubernete service and ingress. "health" is reserved for the manager health port, and when webhooks are enabled "https" is reserved for the webhook port. |
 | port.number | int | `8080` | container port number to use for the Kubernete service and ingress. When webhooks are enabled this must differ from webhook port 9443. |
-| rbac.clusterWide | bool | `false` | Render one ClusterRole covering every namespace instead of the default namespaced Role. This is the pre-0.1.46 behaviour, and it grants the manager read and write on every Secret in the cluster: set it only when the operator must reconcile CRs across namespaces (or all of them). Cannot be combined with `watchNamespaces`. |
+| rbac.clusterWide | bool | `false` | Render one ClusterRole covering every namespace instead of the default namespaced Role. This is the pre-0.2.0 behaviour, and it grants the manager read and write on every Secret in the cluster: set it only when the operator must reconcile CRs across namespaces (or all of them). Cannot be combined with `watchNamespaces`. |
 | rbac.create | bool | `true` | Create the Roles, ClusterRoles and bindings the chart would otherwise install. Set to false when RBAC is provisioned out-of-band (e.g., a restricted cluster where a platform team owns it). Two service accounts then need the equivalent permissions bound before install: the operator's, and the pre-install webhook certificate hook's, which blocks the release if it cannot reach its secret and the webhook configurations. Setting webhook.certManager.enabled removes that hook. |
 | rbac.serviceAccount.annotations | object | `{}` | Annotations to add to the service account |
 | rbac.serviceAccount.automount | bool | `true` | Automount service account token for the server service account |

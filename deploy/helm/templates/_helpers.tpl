@@ -217,6 +217,23 @@ mode, which is the explicit `rbac.clusterWide: true`.
 {{- end -}}
 
 {{/*
+Admission scope matching the watch list, so a scoped release's webhooks only
+see objects in the namespaces it can read. Empty in cluster-wide mode.
+*/}}
+{{- define "seaweedfs-operator.webhookNamespaceSelector" -}}
+{{- with include "seaweedfs-operator.watchNamespaces" . }}
+namespaceSelector:
+  matchExpressions:
+  - key: kubernetes.io/metadata.name
+    operator: In
+    values:
+    {{- range splitList "," . }}
+    - {{ . | quote }}
+    {{- end }}
+{{- end }}
+{{- end -}}
+
+{{/*
 Namespaced rules of the manager role — everything the controllers need
 inside watched namespaces. Rendered into a per-namespace Role unless
 rbac.clusterWide is set, then into the cluster-wide ClusterRole. The

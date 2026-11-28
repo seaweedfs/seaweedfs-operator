@@ -310,7 +310,7 @@ func helmManagerRules(t *testing.T, chartDir string, extraArgs ...string) []rbac
 	// operator binary registers at runtime (it sets ENABLE_CSI_DRIVER), so
 	// the two renders are compared separately, each against the matching
 	// kustomize overlay. TestHelmManagerRoleCSIGate holds the two together.
-	args := append([]string{"template", "drift-test", chartDir}, extraArgs...)
+	args := append([]string{"template", "drift-test", chartDir, "--namespace", "default"}, extraArgs...)
 	cmd := exec.Command("helm", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -512,7 +512,7 @@ func requireHelm(t *testing.T) {
 func helmRender(t *testing.T, chartDir string, extraArgs ...string) []byte {
 	t.Helper()
 	requireHelm(t)
-	args := append([]string{"template", "drift-test", chartDir}, extraArgs...)
+	args := append([]string{"template", "drift-test", chartDir, "--namespace", "default"}, extraArgs...)
 	cmd := exec.Command("helm", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

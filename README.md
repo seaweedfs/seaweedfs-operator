@@ -46,7 +46,8 @@ helm install seaweedfs-operator oci://ghcr.io/seaweedfs/charts/seaweedfs-operato
 Starting in chart version 0.2.0, the chart restricts the manager to the release namespace by default: it renders
 one `Role` per watched namespace plus a small `ClusterRole` for the
 cluster-scoped reads the controllers need, and starts the manager with
-`--watch-namespaces`. Before this, a default install held a single `ClusterRole`
+`--watch-namespaces`; its admission webhooks cover the same namespaces. Before
+this, a default install held a single `ClusterRole`
 that could read and write **every Secret in the cluster** — the largest blast
 radius an operator compromise could reach.
 

@@ -92,7 +92,8 @@ csiDriver:
 # namespace: the operator gets a per-namespace Role in each listed namespace
 # plus a small ClusterRole limited to the cluster-scoped reads the controllers
 # still need (namespaces, storageclasses), and is started with
-# `--watch-namespaces`. Set `rbac.clusterWide: true` instead to watch and
+# `--watch-namespaces`; the admission webhooks see only these namespaces too.
+# Set `rbac.clusterWide: true` instead to watch and
 # reconcile every namespace with one ClusterRole that can read and write every
 # Secret in the cluster. Leader-election leases are already covered by the
 # chart's dedicated Role in the release namespace.

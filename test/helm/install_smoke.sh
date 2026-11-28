@@ -109,6 +109,14 @@ log "  resolved operator Deployment: $DEPLOYMENT"
 kubectl wait deployment.apps/"$DEPLOYMENT" \
   --for=condition=Available --namespace "$NAMESPACE" --timeout 5m
 
+# A rerun reuses the Kind cluster; drop the previous run's fixtures so
+# await_reconciled below cannot pass on their old status.
+log "removing fixtures left by a previous run"
+kubectl -n "$NAMESPACE" delete -f "$FIXTURE_DIR/bucket.yaml" \
+  --ignore-not-found --wait --timeout 3m
+kubectl -n "$NAMESPACE" delete -f "$FIXTURE_DIR/seaweed.yaml" \
+  --ignore-not-found --wait --cascade=foreground --timeout 5m
+
 # Apply a basic Seaweed fixture. It drives the SeaweedReconciler which,
 # among other things, attempts to upsert ServiceMonitors for the
 # master/volume/filer/admin/worker components — that's the path that

@@ -38,6 +38,11 @@
 #                      the fixtures and inspecting operator logs)
 #   RECONCILE_TIMEOUT  (default: 180 — seconds to wait for each fixture to
 #                      report status.observedGeneration)
+#   RECONCILE_DELETE_TIMEOUT
+#                      (default: 300 — seconds to wait for fixtures left by a
+#                      previous run to be deleted before they are re-applied;
+#                      deleting a Seaweed runs its finalizer, which tears down
+#                      the cluster it created)
 
 set -euo pipefail
 
@@ -50,22 +55,25 @@ IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-ghcr.io/seaweedfs/seaweedfs-operator}"
 IMAGE_TAG="${IMAGE_TAG:-v0.0.1}"
 RECONCILE_WAIT="${RECONCILE_WAIT:-30}"
 RECONCILE_TIMEOUT="${RECONCILE_TIMEOUT:-180}"
+RECONCILE_DELETE_TIMEOUT="${RECONCILE_DELETE_TIMEOUT:-300}"
 FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 log() { printf '[smoke] %s\n' "$*"; }
 fail() { printf '[smoke] FAIL: %s\n' "$*" >&2; exit 1; }
 
 # await_reconciled fails unless the named CR reports status.observedGeneration
-# within RECONCILE_TIMEOUT seconds: proof that its controller watches
-# $NAMESPACE and reconciled the object, rather than never seeing it.
+# equal to its current metadata.generation within RECONCILE_TIMEOUT seconds:
+# proof that its controller watches $NAMESPACE and reconciled the object as it
+# exists now, rather than never seeing it or having reconciled an older
+# generation.
 await_reconciled() {
-  local kind="$1" name="$2" deadline=$((SECONDS + RECONCILE_TIMEOUT)) observed=""
+  local kind="$1" name="$2" deadline=$((SECONDS + RECONCILE_TIMEOUT)) generation="" observed=""
   log "waiting for $kind/$name to be reconciled"
   while [ "$SECONDS" -lt "$deadline" ]; do
-    observed="$(kubectl -n "$NAMESPACE" get "$kind" "$name" \
-      -o jsonpath='{.status.observedGeneration}' 2>/dev/null || true)"
-    if [ -n "$observed" ]; then
-      log "  $kind/$name reconciled (observedGeneration=$observed)"
+    read -r generation observed <<<"$(kubectl -n "$NAMESPACE" get "$kind" "$name" \
+      -o jsonpath='{.metadata.generation} {.status.observedGeneration}' 2>/dev/null || true)" || true
+    if [ -n "$generation" ] && [ "$observed" = "$generation" ]; then
+      log "  $kind/$name reconciled (generation=$generation)"
       return 0
     fi
     sleep 3
@@ -118,6 +126,17 @@ kubectl wait deployment.apps/"$DEPLOYMENT" \
 # watches. Anywhere else they would be neither admitted by the webhooks nor
 # reconciled, and the log scan below would pass without exercising either
 # controller.
+#
+# A rerun on the same cluster would otherwise reuse the fixtures left by the
+# previous run, status and all, and await_reconciled could return from status
+# written by that older operator run. Delete whatever is left, wait until it is
+# gone, and only then apply, so any status the gate later sees was produced by
+# this run. The first run on a fresh cluster has nothing to delete.
+log "deleting fixtures left in $NAMESPACE by a previous run"
+kubectl -n "$NAMESPACE" delete \
+  -f "$FIXTURE_DIR/bucket.yaml" -f "$FIXTURE_DIR/seaweed.yaml" \
+  --ignore-not-found --wait=true --timeout="${RECONCILE_DELETE_TIMEOUT}s"
+
 log "applying Seaweed fixture in $NAMESPACE"
 kubectl apply -n "$NAMESPACE" -f "$FIXTURE_DIR/seaweed.yaml"
 

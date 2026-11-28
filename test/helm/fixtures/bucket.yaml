@@ -1,0 +1,11 @@
+# Applied by test/helm/install_smoke.sh with `kubectl apply -n "$NAMESPACE"`.
+# clusterRef.namespace is omitted on purpose: it defaults to the Bucket's own
+# namespace, which is the watched release namespace the Seaweed fixture lives
+# in, so no ResourceReferenceGrant is needed.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: photos
+spec:
+  clusterRef:
+    name: seaweed1

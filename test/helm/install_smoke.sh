@@ -35,7 +35,9 @@
 #   IMAGE_REPOSITORY   (default: ghcr.io/seaweedfs/seaweedfs-operator)
 #   IMAGE_TAG          (default: v0.0.1)
 #   RECONCILE_WAIT     (default: 30 — seconds to wait between applying
-#                      sample CRs and inspecting operator logs)
+#                      the fixtures and inspecting operator logs)
+#   RECONCILE_TIMEOUT  (default: 180 — seconds to wait for each fixture to
+#                      report status.observedGeneration)
 
 set -euo pipefail
 
@@ -47,9 +49,29 @@ CHART_DIR="${CHART_DIR:-$REPO_ROOT/deploy/helm}"
 IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-ghcr.io/seaweedfs/seaweedfs-operator}"
 IMAGE_TAG="${IMAGE_TAG:-v0.0.1}"
 RECONCILE_WAIT="${RECONCILE_WAIT:-30}"
+RECONCILE_TIMEOUT="${RECONCILE_TIMEOUT:-180}"
+FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 log() { printf '[smoke] %s\n' "$*"; }
 fail() { printf '[smoke] FAIL: %s\n' "$*" >&2; exit 1; }
+
+# await_reconciled fails unless the named CR reports status.observedGeneration
+# within RECONCILE_TIMEOUT seconds: proof that its controller watches
+# $NAMESPACE and reconciled the object, rather than never seeing it.
+await_reconciled() {
+  local kind="$1" name="$2" deadline=$((SECONDS + RECONCILE_TIMEOUT)) observed=""
+  log "waiting for $kind/$name to be reconciled"
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    observed="$(kubectl -n "$NAMESPACE" get "$kind" "$name" \
+      -o jsonpath='{.status.observedGeneration}' 2>/dev/null || true)"
+    if [ -n "$observed" ]; then
+      log "  $kind/$name reconciled (observedGeneration=$observed)"
+      return 0
+    fi
+    sleep 3
+  done
+  fail "$kind/$name was not reconciled within ${RECONCILE_TIMEOUT}s — is it outside the operator's watch namespace ($NAMESPACE)?"
+}
 
 require() {
   command -v "$1" >/dev/null 2>&1 || fail "$1 not found in PATH"
@@ -58,22 +80,16 @@ require() {
 require helm
 require kubectl
 
-# The chart renders a Role into every watched namespace, so `media` has
-# to exist before the install.
-kubectl create namespace media --dry-run=client -o yaml | kubectl apply -f -
-
 log "deploying operator via Helm with chart defaults"
 # Override only the image registry/tag so the locally-loaded image is
-# used, plus the watch list: the sample CRs live in `default` and
-# `media`, which the default scope (the release namespace) would leave
-# unreconciled and unadmitted. The rendered RBAC is still the default
-# namespaced Role set, one per listed namespace.
+# used; everything else — including the default watch scope, the release
+# namespace — stays at chart defaults, so the test reflects what
+# `helm install seaweedfs/seaweedfs-operator` produces for a real user.
 helm upgrade --install "$RELEASE" "$CHART_DIR" \
   --namespace "$NAMESPACE" --create-namespace \
   --set "image.registry=$(dirname "$IMAGE_REPOSITORY")" \
   --set "image.repository=$(basename "$IMAGE_REPOSITORY")" \
   --set "image.tag=$IMAGE_TAG" \
-  --set "watchNamespaces={$NAMESPACE,default,media}" \
   --wait --timeout 5m
 
 log "waiting for operator deployment Available"
@@ -93,21 +109,31 @@ log "  resolved operator Deployment: $DEPLOYMENT"
 kubectl wait deployment.apps/"$DEPLOYMENT" \
   --for=condition=Available --namespace "$NAMESPACE" --timeout 5m
 
-# Apply a basic Seaweed CR. This drives the SeaweedReconciler which,
+# Apply a basic Seaweed fixture. It drives the SeaweedReconciler which,
 # among other things, attempts to upsert ServiceMonitors for the
 # master/volume/filer/admin/worker components — that's the path that
 # would trip a missing servicemonitor RBAC rule.
-log "applying sample Seaweed CR"
-kubectl apply -f "$REPO_ROOT/config/samples/seaweed_v1_seaweed.yaml"
+#
+# Both fixtures go into $NAMESPACE, the namespace a default install
+# watches. Anywhere else they would be neither admitted by the webhooks nor
+# reconciled, and the log scan below would pass without exercising either
+# controller.
+log "applying Seaweed fixture in $NAMESPACE"
+kubectl apply -n "$NAMESPACE" -f "$FIXTURE_DIR/seaweed.yaml"
 
 # Apply a basic Bucket CR. This drives the BucketReconciler all the
 # way through its full reconcile sequence (List, Get, finalizer
-# Update, Status Patch), not just the initial List. The bucket
-# sample is in the `media` namespace, created before the install.
-log "applying sample Bucket CR"
-kubectl apply -f "$REPO_ROOT/config/samples/seaweed_v1_bucket.yaml"
+# Update, Status Patch), not just the initial List. Its clusterRef is
+# same-namespace, so no ResourceReferenceGrant is involved.
+log "applying Bucket fixture in $NAMESPACE"
+kubectl apply -n "$NAMESPACE" -f "$FIXTURE_DIR/bucket.yaml"
 
-log "sleeping ${RECONCILE_WAIT}s for reconcile cycles to run"
+# Prove the controllers saw the CRs before trusting the log scan: both
+# publish status.observedGeneration only after reconciling the object.
+await_reconciled seaweed seaweed1
+await_reconciled bucket photos
+
+log "sleeping ${RECONCILE_WAIT}s for further reconcile cycles to run"
 sleep "$RECONCILE_WAIT"
 
 log "scraping operator logs for RBAC permission errors"
@@ -158,7 +184,7 @@ kubectl -n "$NAMESPACE" wait certificates.cert-manager.io/"$CERTIFICATE" \
 log "verifying webhook admission through the cert-manager certificate"
 ADMITTED=""
 for attempt in $(seq 1 24); do
-  if kubectl annotate -f "$REPO_ROOT/config/samples/seaweed_v1_seaweed.yaml" \
+  if kubectl -n "$NAMESPACE" annotate -f "$FIXTURE_DIR/seaweed.yaml" \
        smoke-test/cert-manager="attempt-$attempt" --overwrite >/dev/null 2>&1; then
     ADMITTED=1
     break

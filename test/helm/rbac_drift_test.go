@@ -499,7 +499,7 @@ func TestHelmDefaultScopesManagerRole(t *testing.T) {
 
 	t.Run("mutuallyExclusive", func(t *testing.T) {
 		requireHelm(t)
-		cmd := exec.Command("helm", "template", "drift-test", chartDir,
+		cmd := exec.Command("helm", "template", "drift-test", chartDir, "--namespace", "default",
 			"--set", "rbac.clusterWide=true", "--set", "watchNamespaces={a}")
 		if err := cmd.Run(); err == nil {
 			t.Errorf("watchNamespaces and rbac.clusterWide together must fail the render, so the two cannot disagree")

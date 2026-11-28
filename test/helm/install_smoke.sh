@@ -41,9 +41,9 @@
 #   RECONCILE_DELETE_TIMEOUT
 #                      (default: 300 — seconds to wait per delete for fixtures
 #                      left by a previous run to disappear before they are
-#                      re-applied; the Seaweed delete also waits for the
-#                      StatefulSets and Services it owns to be garbage
-#                      collected, which is the slow part)
+#                      re-applied; the Seaweed delete also waits for every
+#                      resource it owns (StatefulSets, Services, ConfigMaps,
+#                      …) to be garbage collected, which is the slow part)
 
 set -euo pipefail
 
@@ -130,15 +130,16 @@ kubectl wait deployment.apps/"$DEPLOYMENT" \
 #
 # A rerun reuses the Kind cluster, so drop whatever the previous run left
 # behind first: await_reconciled would otherwise pass on status written by
-# that older operator run. Bucket first — its finalizer deletes the S3
-# bucket through the Seaweed cluster, and a Seaweed deleted first would
-# orphan that bucket and make the next apply fail with BucketAlreadyExists.
+# that older operator run. Bucket before Seaweed only so that a Bucket
+# deleted under reclaimPolicy: Delete would still reach the cluster to
+# remove its S3 bucket; this fixture keeps the default Retain, so its
+# finalizer drops without touching S3 either way.
 log "removing fixtures left by a previous run"
 kubectl -n "$NAMESPACE" delete -f "$FIXTURE_DIR/bucket.yaml" \
-  --ignore-not-found --wait --timeout="${RECONCILE_DELETE_TIMEOUT}s" \
+  --ignore-not-found --timeout="${RECONCILE_DELETE_TIMEOUT}s" \
   || fail "leftover Bucket/photos did not delete within ${RECONCILE_DELETE_TIMEOUT}s"
 kubectl -n "$NAMESPACE" delete -f "$FIXTURE_DIR/seaweed.yaml" \
-  --ignore-not-found --wait --cascade=foreground --timeout="${RECONCILE_DELETE_TIMEOUT}s" \
+  --ignore-not-found --cascade=foreground --timeout="${RECONCILE_DELETE_TIMEOUT}s" \
   || fail "leftover Seaweed/seaweed1 did not delete within ${RECONCILE_DELETE_TIMEOUT}s"
 
 log "applying Seaweed fixture in $NAMESPACE"

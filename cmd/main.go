@@ -323,10 +323,11 @@ func main() {
 	// node and mount DaemonSets. Opt in with ENABLE_CSI_DRIVER=true.
 	if os.Getenv("ENABLE_CSI_DRIVER") == "true" {
 		if err = (&controller.SeaweedCSIDriverReconciler{
-			Client:   mgr.GetClient(),
-			Log:      ctrl.Log.WithName("controller").WithName("SeaweedCSIDriver"),
-			Scheme:   mgr.GetScheme(),
-			Recorder: mgr.GetEventRecorderFor("seaweedcsidriver-controller"),
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+			Log:       ctrl.Log.WithName("controller").WithName("SeaweedCSIDriver"),
+			Scheme:    mgr.GetScheme(),
+			Recorder:  mgr.GetEventRecorderFor("seaweedcsidriver-controller"),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "SeaweedCSIDriver")
 			os.Exit(1)

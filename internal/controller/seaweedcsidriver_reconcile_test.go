@@ -172,6 +172,30 @@ func TestReconcileDriverNameConflictReconcilesNothing(t *testing.T) {
 	mustNotExist(t, cli, &appsv1.DaemonSet{}, "storage", "seaweedfs-csi-lose-node")
 }
 
+// TestDriverNameConflictSeesOwnersOutsideTheCache checks that the owner check
+// lists through the uncached reader: with --watch-namespaces the cache holds
+// only the watched namespaces, and an older owner elsewhere must still win.
+func TestDriverNameConflictSeesOwnersOutsideTheCache(t *testing.T) {
+	ctx := context.Background()
+	win := reconcileTestDriver("win", "elsewhere")
+	win.CreationTimestamp = metav1.NewTime(time.Unix(1000, 0))
+	win.UID = "uid-win"
+	win.Spec.DriverName = "shared"
+
+	lose := reconcileTestDriver("lose", "storage")
+	lose.CreationTimestamp = metav1.NewTime(time.Unix(2000, 0))
+	lose.UID = "uid-lose"
+	lose.Spec.DriverName = "shared"
+
+	r, _ := newCSIReconciler(t, lose)
+	apiReader, _ := newCSIReconciler(t, win, lose)
+	r.APIReader = apiReader.Client
+
+	owner, err := r.driverNameConflict(ctx, lose)
+	require.NoError(t, err)
+	assert.Equal(t, "elsewhere/win", owner)
+}
+
 // TestConflictLoserDeletionKeepsOwnersStorageClass is the regression test for
 // the ownership-guarded StorageClass cleanup: a conflict loser sharing a
 // driverName must not delete the StorageClass the winner created.

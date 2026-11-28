@@ -53,9 +53,12 @@ const (
 // cluster-scoped CSIDriver object and RBAC, and an optional StorageClass.
 type SeaweedCSIDriverReconciler struct {
 	client.Client
-	Log      logr.Logger
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	// APIReader lists SeaweedCSIDrivers uncached, so a driverName owner
+	// outside the watched namespaces still counts; nil falls back to Client.
+	APIReader client.Reader
+	Log       logr.Logger
+	Scheme    *runtime.Scheme
+	Recorder  record.EventRecorder
 }
 
 // The RBAC this controller needs is declared in internal/controller/csirbac,
@@ -206,8 +209,12 @@ func (r *SeaweedCSIDriverReconciler) resolveFiler(ctx context.Context, driver *s
 // already owns this object's driverName, or "" if this object is the rightful
 // owner. The oldest object (by creation time, UID as tie-break) wins.
 func (r *SeaweedCSIDriverReconciler) driverNameConflict(ctx context.Context, driver *seaweedv1.SeaweedCSIDriver) (string, error) {
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.Client
+	}
 	var list seaweedv1.SeaweedCSIDriverList
-	if err := r.List(ctx, &list); err != nil {
+	if err := reader.List(ctx, &list); err != nil {
 		return "", err
 	}
 	for i := range list.Items {

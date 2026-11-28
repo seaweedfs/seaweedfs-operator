@@ -39,10 +39,11 @@
 #   RECONCILE_TIMEOUT  (default: 180 — seconds to wait for each fixture to
 #                      report status.observedGeneration)
 #   RECONCILE_DELETE_TIMEOUT
-#                      (default: 300 — seconds to wait for fixtures left by a
-#                      previous run to be deleted before they are re-applied;
-#                      deleting a Seaweed runs its finalizer, which tears down
-#                      the cluster it created)
+#                      (default: 300 — seconds to wait per delete for fixtures
+#                      left by a previous run to disappear before they are
+#                      re-applied; the Seaweed delete also waits for the
+#                      StatefulSets and Services it owns to be garbage
+#                      collected, which is the slow part)
 
 set -euo pipefail
 
@@ -117,14 +118,6 @@ log "  resolved operator Deployment: $DEPLOYMENT"
 kubectl wait deployment.apps/"$DEPLOYMENT" \
   --for=condition=Available --namespace "$NAMESPACE" --timeout 5m
 
-# A rerun reuses the Kind cluster; drop the previous run's fixtures so
-# await_reconciled below cannot pass on their old status.
-log "removing fixtures left by a previous run"
-kubectl -n "$NAMESPACE" delete -f "$FIXTURE_DIR/bucket.yaml" \
-  --ignore-not-found --wait --timeout 3m
-kubectl -n "$NAMESPACE" delete -f "$FIXTURE_DIR/seaweed.yaml" \
-  --ignore-not-found --wait --cascade=foreground --timeout 5m
-
 # Apply a basic Seaweed fixture. It drives the SeaweedReconciler which,
 # among other things, attempts to upsert ServiceMonitors for the
 # master/volume/filer/admin/worker components — that's the path that
@@ -135,15 +128,18 @@ kubectl -n "$NAMESPACE" delete -f "$FIXTURE_DIR/seaweed.yaml" \
 # reconciled, and the log scan below would pass without exercising either
 # controller.
 #
-# A rerun on the same cluster would otherwise reuse the fixtures left by the
-# previous run, status and all, and await_reconciled could return from status
-# written by that older operator run. Delete whatever is left, wait until it is
-# gone, and only then apply, so any status the gate later sees was produced by
-# this run. The first run on a fresh cluster has nothing to delete.
-log "deleting fixtures left in $NAMESPACE by a previous run"
-kubectl -n "$NAMESPACE" delete \
-  -f "$FIXTURE_DIR/bucket.yaml" -f "$FIXTURE_DIR/seaweed.yaml" \
-  --ignore-not-found --wait=true --timeout="${RECONCILE_DELETE_TIMEOUT}s"
+# A rerun reuses the Kind cluster, so drop whatever the previous run left
+# behind first: await_reconciled would otherwise pass on status written by
+# that older operator run. Bucket first — its finalizer deletes the S3
+# bucket through the Seaweed cluster, and a Seaweed deleted first would
+# orphan that bucket and make the next apply fail with BucketAlreadyExists.
+log "removing fixtures left by a previous run"
+kubectl -n "$NAMESPACE" delete -f "$FIXTURE_DIR/bucket.yaml" \
+  --ignore-not-found --wait --timeout="${RECONCILE_DELETE_TIMEOUT}s" \
+  || fail "leftover Bucket/photos did not delete within ${RECONCILE_DELETE_TIMEOUT}s"
+kubectl -n "$NAMESPACE" delete -f "$FIXTURE_DIR/seaweed.yaml" \
+  --ignore-not-found --wait --cascade=foreground --timeout="${RECONCILE_DELETE_TIMEOUT}s" \
+  || fail "leftover Seaweed/seaweed1 did not delete within ${RECONCILE_DELETE_TIMEOUT}s"
 
 log "applying Seaweed fixture in $NAMESPACE"
 kubectl apply -n "$NAMESPACE" -f "$FIXTURE_DIR/seaweed.yaml"

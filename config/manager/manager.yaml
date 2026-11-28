@@ -22,6 +22,7 @@ spec:
       labels:
         control-plane: controller-manager
     spec:
+      serviceAccountName: manager
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532

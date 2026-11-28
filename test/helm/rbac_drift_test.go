@@ -327,10 +327,18 @@ func helmManagerRules(t *testing.T, chartDir string, extraArgs ...string) []rbac
 	return findManagerRoleRules(t, stdout.Bytes(), "drift-test")
 }
 
+// findManagerRoleRules unions the rules the chart grants the manager, wherever
+// they live: the default render puts them in a namespaced Role plus a small
+// cluster-scoped ClusterRole, and rbac.clusterWide puts them all in one
+// ClusterRole. The parity tests below compare grants, not scope; scope is
+// pinned by TestHelmDefaultScopesManagerRole.
 func findManagerRoleRules(t *testing.T, rendered []byte, releaseName string) []rbacv1.PolicyRule {
 	t.Helper()
-	dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(rendered), 4096)
 	wantName := releaseName + "-seaweedfs-operator-manager-role"
+	var rules []rbacv1.PolicyRule
+	found := 0
+
+	dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(rendered), 4096)
 	for {
 		var role rbacv1.ClusterRole
 		if err := dec.Decode(&role); err != nil {
@@ -344,11 +352,30 @@ func findManagerRoleRules(t *testing.T, rendered []byte, releaseName string) []r
 			continue
 		}
 		if role.Kind == "ClusterRole" && role.Name == wantName {
-			return role.Rules
+			found++
+			rules = append(rules, role.Rules...)
 		}
 	}
-	t.Fatalf("no ClusterRole named %q found in rendered chart output (helm release: %q)", wantName, releaseName)
-	return nil
+
+	dec = yaml.NewYAMLOrJSONDecoder(bytes.NewReader(rendered), 4096)
+	for {
+		var role rbacv1.Role
+		if err := dec.Decode(&role); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			continue
+		}
+		if role.Kind == "Role" && role.Name == wantName {
+			found++
+			rules = append(rules, role.Rules...)
+		}
+	}
+
+	if found == 0 {
+		t.Fatalf("no Role or ClusterRole named %q found in rendered chart output (helm release: %q)", wantName, releaseName)
+	}
+	return rules
 }
 
 // kustomizeBuild renders a kustomize directory, skipping the test when no
@@ -427,6 +454,114 @@ func kustomizeManagerRules(t *testing.T, path string) []rbacv1.PolicyRule {
 		t.Fatalf("%s declares no rules; did controller-gen output move?", path)
 	}
 	return role.Rules
+}
+
+// TestHelmDefaultScopesManagerRole pins the scoping change: with default values
+// the manager must be restricted to the release namespace and must not hold
+// cluster-wide writes, and the cluster-wide ClusterRole must come back only when
+// rbac.clusterWide is set. A values refactor that flipped the default back would
+// pass every rule-parity test, because the grants would be identical — only
+// their scope would have changed.
+func TestHelmDefaultScopesManagerRole(t *testing.T) {
+	root := projectRoot(t)
+	chartDir := filepath.Join(root, "deploy", "helm")
+	wantName := "drift-test-seaweedfs-operator-manager-role"
+	secretsWrite := ruleTriple{resource: "secrets", verb: "create"}
+
+	t.Run("default", func(t *testing.T) {
+		rendered := helmRender(t, chartDir)
+		if !bytes.Contains(rendered, []byte("--watch-namespaces=default")) {
+			t.Errorf("default render does not pass --watch-namespaces: the manager would watch every namespace while holding only a namespaced Role")
+		}
+		if clusterRoleTriples(t, rendered)[secretsWrite] {
+			t.Errorf("default render grants %s cluster-wide; that is what rbac.clusterWide is for", secretsWrite)
+		}
+		if !roleTriples(t, rendered, wantName)[secretsWrite] {
+			t.Errorf("default render does not grant %s in a Role named %q", secretsWrite, wantName)
+		}
+	})
+
+	t.Run("clusterWide", func(t *testing.T) {
+		rendered := helmRender(t, chartDir, "--set", "rbac.clusterWide=true")
+		if bytes.Contains(rendered, []byte("--watch-namespaces=")) {
+			t.Errorf("rbac.clusterWide=true still passes --watch-namespaces, so the manager watches less than its RBAC allows")
+		}
+		if !clusterRoleTriples(t, rendered)[secretsWrite] {
+			t.Errorf("rbac.clusterWide=true does not grant %s cluster-wide", secretsWrite)
+		}
+	})
+
+	t.Run("mutuallyExclusive", func(t *testing.T) {
+		requireHelm(t)
+		cmd := exec.Command("helm", "template", "drift-test", chartDir,
+			"--set", "rbac.clusterWide=true", "--set", "watchNamespaces={a}")
+		if err := cmd.Run(); err == nil {
+			t.Errorf("watchNamespaces and rbac.clusterWide together must fail the render, so the two cannot disagree")
+		}
+	})
+}
+
+func requireHelm(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skipf("helm not found in PATH; skipping chart render test: %v", err)
+	}
+}
+
+// helmRender renders the chart with its default values plus extraArgs.
+func helmRender(t *testing.T, chartDir string, extraArgs ...string) []byte {
+	t.Helper()
+	requireHelm(t)
+	args := append([]string{"template", "drift-test", chartDir}, extraArgs...)
+	cmd := exec.Command("helm", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("helm template failed: %v\nstderr: %s", err, stderr.String())
+	}
+	return stdout.Bytes()
+}
+
+// clusterRoleTriples is every (apiGroup, resource, verb) triple any ClusterRole
+// in the render grants.
+func clusterRoleTriples(t *testing.T, rendered []byte) map[ruleTriple]bool {
+	t.Helper()
+	var rules []rbacv1.PolicyRule
+	dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(rendered), 4096)
+	for {
+		var role rbacv1.ClusterRole
+		if err := dec.Decode(&role); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			continue
+		}
+		if role.Kind == "ClusterRole" {
+			rules = append(rules, role.Rules...)
+		}
+	}
+	return flattenRules(rules)
+}
+
+// roleTriples is every triple the named namespaced Role grants.
+func roleTriples(t *testing.T, rendered []byte, name string) map[ruleTriple]bool {
+	t.Helper()
+	var rules []rbacv1.PolicyRule
+	dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(rendered), 4096)
+	for {
+		var role rbacv1.Role
+		if err := dec.Decode(&role); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			continue
+		}
+		if role.Kind == "Role" && role.Name == name {
+			rules = append(rules, role.Rules...)
+		}
+	}
+	return flattenRules(rules)
 }
 
 // projectRoot finds the operator repo root by walking up from the test

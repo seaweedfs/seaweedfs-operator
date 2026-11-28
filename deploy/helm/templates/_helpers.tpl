@@ -194,13 +194,6 @@ cert-manager resource names
 {{- end -}}
 
 {{/*
-Namespaced rules of the manager role — everything the controllers need
-inside watched namespaces. Rendered into a per-namespace Role when
-watchNamespaces is set, or into the cluster-wide ClusterRole otherwise.
-The
-leader-election lease has its own Role in the release namespace.
-*/}}
-{{/*
 Effective watch list, shared by the RBAC templates and the Deployment so the
 manager can never watch more than it is allowed to. Returns "" in cluster-wide
 mode, which is the explicit `rbac.clusterWide: true`.
@@ -223,6 +216,12 @@ mode, which is the explicit `rbac.clusterWide: true`.
 {{- end -}}
 {{- end -}}
 
+{{/*
+Namespaced rules of the manager role — everything the controllers need
+inside watched namespaces. Rendered into a per-namespace Role unless
+rbac.clusterWide is set, then into the cluster-wide ClusterRole. The
+leader-election lease has its own Role in the release namespace.
+*/}}
 {{- define "seaweedfs-operator.managerNamespacedRules" -}}
 - apiGroups:
   - ""

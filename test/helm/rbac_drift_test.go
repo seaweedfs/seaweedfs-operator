@@ -479,6 +479,9 @@ func TestHelmDefaultScopesManagerRole(t *testing.T) {
 		if !roleTriples(t, rendered, wantName)[secretsWrite] {
 			t.Errorf("default render does not grant %s in a Role named %q", secretsWrite, wantName)
 		}
+		if got := bytes.Count(rendered, []byte("key: kubernetes.io/metadata.name")); got != 3 {
+			t.Errorf("default render scopes %d webhooks to the watch list, want 3: the AdminScript validator cannot read outside it", got)
+		}
 	})
 
 	t.Run("clusterWide", func(t *testing.T) {
@@ -488,6 +491,9 @@ func TestHelmDefaultScopesManagerRole(t *testing.T) {
 		}
 		if !clusterRoleTriples(t, rendered)[secretsWrite] {
 			t.Errorf("rbac.clusterWide=true does not grant %s cluster-wide", secretsWrite)
+		}
+		if bytes.Contains(rendered, []byte("key: kubernetes.io/metadata.name")) {
+			t.Errorf("rbac.clusterWide=true still limits the webhooks to a namespace list")
 		}
 	})
 

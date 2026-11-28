@@ -58,16 +58,22 @@ require() {
 require helm
 require kubectl
 
+# The chart renders a Role into every watched namespace, so `media` has
+# to exist before the install.
+kubectl create namespace media --dry-run=client -o yaml | kubectl apply -f -
+
 log "deploying operator via Helm with chart defaults"
 # Override only the image registry/tag so the locally-loaded image is
-# used; everything else stays at chart defaults so the test reflects
-# what `helm install seaweedfs/seaweedfs-operator` produces for a real
-# user.
+# used, plus the watch list: the sample CRs live in `default` and
+# `media`, which the default scope (the release namespace) would leave
+# unreconciled and unadmitted. The rendered RBAC is still the default
+# namespaced Role set, one per listed namespace.
 helm upgrade --install "$RELEASE" "$CHART_DIR" \
   --namespace "$NAMESPACE" --create-namespace \
   --set "image.registry=$(dirname "$IMAGE_REPOSITORY")" \
   --set "image.repository=$(basename "$IMAGE_REPOSITORY")" \
   --set "image.tag=$IMAGE_TAG" \
+  --set "watchNamespaces={$NAMESPACE,default,media}" \
   --wait --timeout 5m
 
 log "waiting for operator deployment Available"
@@ -97,11 +103,8 @@ kubectl apply -f "$REPO_ROOT/config/samples/seaweed_v1_seaweed.yaml"
 # Apply a basic Bucket CR. This drives the BucketReconciler all the
 # way through its full reconcile sequence (List, Get, finalizer
 # Update, Status Patch), not just the initial List. The bucket
-# sample is in the `media` namespace, so create it first — without
-# the namespace the apply errors before any RBAC verb beyond List
-# gets exercised.
+# sample is in the `media` namespace, created before the install.
 log "applying sample Bucket CR"
-kubectl create namespace media --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f "$REPO_ROOT/config/samples/seaweed_v1_bucket.yaml"
 
 log "sleeping ${RECONCILE_WAIT}s for reconcile cycles to run"

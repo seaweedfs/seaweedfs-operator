@@ -32,6 +32,12 @@ rbac:
   # it cannot reach its secret and the webhook configurations. Setting
   # webhook.certManager.enabled removes that hook.
   create: true
+  # -- Render one ClusterRole covering every namespace instead of the default
+  # namespaced Role. This is the pre-0.2.0 behaviour, and it grants the manager
+  # read and write on every Secret in the cluster: set it only when the operator
+  # must reconcile CRs across namespaces (or all of them). Cannot be combined
+  # with `watchNamespaces`.
+  clusterWide: false
   serviceAccount:
     # -- Specifies whether a service account should be created
     create: true
@@ -82,13 +88,15 @@ csiDriver:
   # none of those grants.
   enabled: false
 
-# -- Restrict the operator to specific namespaces. When empty (default),
-# the operator watches all namespaces cluster-wide and gets a ClusterRole.
-# When set, the operator only watches and reconciles namespaced resources
-# in these namespaces and gets a per-namespace Role in each, plus a small
-# ClusterRole limited to the cluster-scoped reads the controllers still
-# need (namespaces, storageclasses). Leader-election leases are already
-# covered by the chart's dedicated Role in the release namespace.
+# -- Namespaces the operator is restricted to. Defaults to the release
+# namespace: the operator gets a per-namespace Role in each listed namespace
+# plus a small ClusterRole limited to the cluster-scoped reads the controllers
+# still need (namespaces, storageclasses), and is started with
+# `--watch-namespaces`; the admission webhooks see only these namespaces too.
+# Set `rbac.clusterWide: true` instead to watch and
+# reconcile every namespace with one ClusterRole that can read and write every
+# Secret in the cluster. Leader-election leases are already covered by the
+# chart's dedicated Role in the release namespace.
 watchNamespaces: []
 #  - seaweedfs
 

@@ -22,6 +22,7 @@ webhooks:
   name: vseaweed.kb.io
   failurePolicy: Fail
   sideEffects: None
+  {{- include "seaweedfs-operator.webhookNamespaceSelector" . | nindent 2 }}
   admissionReviewVersions:
   - v1
   rules:
@@ -48,6 +49,7 @@ webhooks:
   name: vadminscript.kb.io
   failurePolicy: Fail
   sideEffects: None
+  {{- include "seaweedfs-operator.webhookNamespaceSelector" . | nindent 2 }}
   admissionReviewVersions:
   - v1
   rules:

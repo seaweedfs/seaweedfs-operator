@@ -194,10 +194,49 @@ cert-manager resource names
 {{- end -}}
 
 {{/*
+Effective watch list, shared by the RBAC templates and the Deployment so the
+manager can never watch more than it is allowed to. Returns "" in cluster-wide
+mode, which is the explicit `rbac.clusterWide: true`.
+
+  watchNamespaces: [a, b]  -> "a,b"
+  neither set              -> the release namespace
+  rbac.clusterWide: true   -> "" (every namespace)
+*/}}
+{{- define "seaweedfs-operator.watchNamespaces" -}}
+{{- $explicit := .Values.watchNamespaces | default (list) | compact | uniq -}}
+{{- if and $explicit .Values.rbac.clusterWide -}}
+{{- fail "set either watchNamespaces or rbac.clusterWide, not both: the first lists namespaces, the second means all of them" -}}
+{{- end -}}
+{{- if $explicit -}}
+{{- join "," $explicit -}}
+{{- else if .Values.rbac.clusterWide -}}
+{{- "" -}}
+{{- else -}}
+{{- .Release.Namespace -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Admission scope matching the watch list, so a scoped release's webhooks only
+see objects in the namespaces it can read. Empty in cluster-wide mode.
+*/}}
+{{- define "seaweedfs-operator.webhookNamespaceSelector" -}}
+{{- with include "seaweedfs-operator.watchNamespaces" . }}
+namespaceSelector:
+  matchExpressions:
+  - key: kubernetes.io/metadata.name
+    operator: In
+    values:
+    {{- range splitList "," . }}
+    - {{ . | quote }}
+    {{- end }}
+{{- end }}
+{{- end -}}
+
+{{/*
 Namespaced rules of the manager role — everything the controllers need
-inside watched namespaces. Rendered into a per-namespace Role when
-watchNamespaces is set, or into the cluster-wide ClusterRole otherwise.
-The
+inside watched namespaces. Rendered into a per-namespace Role unless
+rbac.clusterWide is set, then into the cluster-wide ClusterRole. The
 leader-election lease has its own Role in the release namespace.
 */}}
 {{- define "seaweedfs-operator.managerNamespacedRules" -}}

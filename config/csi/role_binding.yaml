@@ -10,5 +10,5 @@ roleRef:
   name: seaweedfs-operator-manager-role-csi
 subjects:
 - kind: ServiceAccount
-  name: default
+  name: manager
   namespace: seaweedfs-operator-system

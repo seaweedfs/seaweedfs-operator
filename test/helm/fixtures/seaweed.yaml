@@ -1,0 +1,27 @@
+# Applied by test/helm/install_smoke.sh with `kubectl apply -n "$NAMESPACE"`,
+# so it deliberately carries no metadata.namespace: the chart watches only the
+# release namespace by default, and a CR anywhere else is not reconciled.
+# Same shape as config/samples/seaweed_v1_seaweed.yaml.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: seaweed1
+spec:
+  image: chrislusf/seaweedfs:latest
+  volumeServerDiskCount: 1
+  hostSuffix: seaweed.abcdefg.com
+  master:
+    replicas: 3
+    volumeSizeLimitMB: 1024
+  volume:
+    replicas: 1
+    requests:
+      storage: 2Gi
+  filer:
+    replicas: 2
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"
+  s3:
+    replicas: 1

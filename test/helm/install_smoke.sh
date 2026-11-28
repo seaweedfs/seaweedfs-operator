@@ -35,7 +35,15 @@
 #   IMAGE_REPOSITORY   (default: ghcr.io/seaweedfs/seaweedfs-operator)
 #   IMAGE_TAG          (default: v0.0.1)
 #   RECONCILE_WAIT     (default: 30 — seconds to wait between applying
-#                      sample CRs and inspecting operator logs)
+#                      the fixtures and inspecting operator logs)
+#   RECONCILE_TIMEOUT  (default: 180 — seconds to wait for each fixture to
+#                      report status.observedGeneration)
+#   RECONCILE_DELETE_TIMEOUT
+#                      (default: 300 — seconds to wait per delete for fixtures
+#                      left by a previous run to disappear before they are
+#                      re-applied; the Seaweed delete also waits for every
+#                      resource it owns (StatefulSets, Services, ConfigMaps,
+#                      …) to be garbage collected, which is the slow part)
 
 set -euo pipefail
 
@@ -47,9 +55,32 @@ CHART_DIR="${CHART_DIR:-$REPO_ROOT/deploy/helm}"
 IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-ghcr.io/seaweedfs/seaweedfs-operator}"
 IMAGE_TAG="${IMAGE_TAG:-v0.0.1}"
 RECONCILE_WAIT="${RECONCILE_WAIT:-30}"
+RECONCILE_TIMEOUT="${RECONCILE_TIMEOUT:-180}"
+RECONCILE_DELETE_TIMEOUT="${RECONCILE_DELETE_TIMEOUT:-300}"
+FIXTURE_DIR="$SCRIPT_DIR/fixtures"
 
 log() { printf '[smoke] %s\n' "$*"; }
 fail() { printf '[smoke] FAIL: %s\n' "$*" >&2; exit 1; }
+
+# await_reconciled fails unless the named CR reports status.observedGeneration
+# equal to its current metadata.generation within RECONCILE_TIMEOUT seconds:
+# proof that its controller watches $NAMESPACE and reconciled the object as it
+# exists now, rather than never seeing it or having reconciled an older
+# generation.
+await_reconciled() {
+  local kind="$1" name="$2" deadline=$((SECONDS + RECONCILE_TIMEOUT)) generation="" observed=""
+  log "waiting for $kind/$name to be reconciled"
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    read -r generation observed <<<"$(kubectl -n "$NAMESPACE" get "$kind" "$name" \
+      -o jsonpath='{.metadata.generation} {.status.observedGeneration}' 2>/dev/null || true)" || true
+    if [ -n "$generation" ] && [ "$observed" = "$generation" ]; then
+      log "  $kind/$name reconciled (generation=$generation)"
+      return 0
+    fi
+    sleep 3
+  done
+  fail "$kind/$name was not reconciled within ${RECONCILE_TIMEOUT}s — is it outside the operator's watch namespace ($NAMESPACE)?"
+}
 
 require() {
   command -v "$1" >/dev/null 2>&1 || fail "$1 not found in PATH"
@@ -60,9 +91,9 @@ require kubectl
 
 log "deploying operator via Helm with chart defaults"
 # Override only the image registry/tag so the locally-loaded image is
-# used; everything else stays at chart defaults so the test reflects
-# what `helm install seaweedfs/seaweedfs-operator` produces for a real
-# user.
+# used; everything else — including the default watch scope, the release
+# namespace — stays at chart defaults, so the test reflects what
+# `helm install seaweedfs/seaweedfs-operator` produces for a real user.
 helm upgrade --install "$RELEASE" "$CHART_DIR" \
   --namespace "$NAMESPACE" --create-namespace \
   --set "image.registry=$(dirname "$IMAGE_REPOSITORY")" \
@@ -87,24 +118,46 @@ log "  resolved operator Deployment: $DEPLOYMENT"
 kubectl wait deployment.apps/"$DEPLOYMENT" \
   --for=condition=Available --namespace "$NAMESPACE" --timeout 5m
 
-# Apply a basic Seaweed CR. This drives the SeaweedReconciler which,
+# Apply a basic Seaweed fixture. It drives the SeaweedReconciler which,
 # among other things, attempts to upsert ServiceMonitors for the
 # master/volume/filer/admin/worker components — that's the path that
 # would trip a missing servicemonitor RBAC rule.
-log "applying sample Seaweed CR"
-kubectl apply -f "$REPO_ROOT/config/samples/seaweed_v1_seaweed.yaml"
+#
+# Both fixtures go into $NAMESPACE, the namespace a default install
+# watches. Anywhere else they would be neither admitted by the webhooks nor
+# reconciled, and the log scan below would pass without exercising either
+# controller.
+#
+# A rerun reuses the Kind cluster, so drop whatever the previous run left
+# behind first: await_reconciled would otherwise pass on status written by
+# that older operator run. Bucket before Seaweed only so that a Bucket
+# deleted under reclaimPolicy: Delete would still reach the cluster to
+# remove its S3 bucket; this fixture keeps the default Retain, so its
+# finalizer drops without touching S3 either way.
+log "removing fixtures left by a previous run"
+kubectl -n "$NAMESPACE" delete -f "$FIXTURE_DIR/bucket.yaml" \
+  --ignore-not-found --timeout="${RECONCILE_DELETE_TIMEOUT}s" \
+  || fail "leftover Bucket/photos did not delete within ${RECONCILE_DELETE_TIMEOUT}s"
+kubectl -n "$NAMESPACE" delete -f "$FIXTURE_DIR/seaweed.yaml" \
+  --ignore-not-found --cascade=foreground --timeout="${RECONCILE_DELETE_TIMEOUT}s" \
+  || fail "leftover Seaweed/seaweed1 did not delete within ${RECONCILE_DELETE_TIMEOUT}s"
+
+log "applying Seaweed fixture in $NAMESPACE"
+kubectl apply -n "$NAMESPACE" -f "$FIXTURE_DIR/seaweed.yaml"
 
 # Apply a basic Bucket CR. This drives the BucketReconciler all the
 # way through its full reconcile sequence (List, Get, finalizer
-# Update, Status Patch), not just the initial List. The bucket
-# sample is in the `media` namespace, so create it first — without
-# the namespace the apply errors before any RBAC verb beyond List
-# gets exercised.
-log "applying sample Bucket CR"
-kubectl create namespace media --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -f "$REPO_ROOT/config/samples/seaweed_v1_bucket.yaml"
+# Update, Status Patch), not just the initial List. Its clusterRef is
+# same-namespace, so no ResourceReferenceGrant is involved.
+log "applying Bucket fixture in $NAMESPACE"
+kubectl apply -n "$NAMESPACE" -f "$FIXTURE_DIR/bucket.yaml"
 
-log "sleeping ${RECONCILE_WAIT}s for reconcile cycles to run"
+# Prove the controllers saw the CRs before trusting the log scan: both
+# publish status.observedGeneration only after reconciling the object.
+await_reconciled seaweed seaweed1
+await_reconciled bucket photos
+
+log "sleeping ${RECONCILE_WAIT}s for further reconcile cycles to run"
 sleep "$RECONCILE_WAIT"
 
 log "scraping operator logs for RBAC permission errors"
@@ -155,7 +208,7 @@ kubectl -n "$NAMESPACE" wait certificates.cert-manager.io/"$CERTIFICATE" \
 log "verifying webhook admission through the cert-manager certificate"
 ADMITTED=""
 for attempt in $(seq 1 24); do
-  if kubectl annotate -f "$REPO_ROOT/config/samples/seaweed_v1_seaweed.yaml" \
+  if kubectl -n "$NAMESPACE" annotate -f "$FIXTURE_DIR/seaweed.yaml" \
        smoke-test/cert-manager="attempt-$attempt" --overwrite >/dev/null 2>&1; then
     ADMITTED=1
     break

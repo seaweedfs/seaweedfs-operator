@@ -41,6 +41,22 @@ The chart is also published as an OCI artifact to the GitHub Container Registry,
 helm install seaweedfs-operator oci://ghcr.io/seaweedfs/charts/seaweedfs-operator --version <chart-version>
 ```
 
+#### Scoped RBAC
+
+Starting in chart version 0.2.0, the chart restricts the manager to the release namespace by default: it renders
+one `Role` per watched namespace plus a small `ClusterRole` for the
+cluster-scoped reads the controllers need, and starts the manager with
+`--watch-namespaces`; its admission webhooks cover the same namespaces. Before
+this, a default install held a single `ClusterRole`
+that could read and write **every Secret in the cluster** — the largest blast
+radius an operator compromise could reach.
+
+**If you keep `Seaweed` CRs in more than one namespace, list them in
+`watchNamespaces`, or set `rbac.clusterWide: true` to restore the previous
+behaviour.** With the new default, CRs outside the release namespace are neither
+watched nor reconciled. On `helm upgrade` the release's `ClusterRoleBinding` is
+replaced by namespaced bindings; nothing else needs cleaning up.
+
 #### Upgrading from chart versions <= 0.1.14
 
 Starting in chart version 0.1.15, the `seaweeds.seaweed.seaweedfs.com` CRD is shipped as a templated resource instead of living in `crds/`. This lets `helm upgrade` actually update it — the `crds/` directory is install-only in Helm 3.
@@ -139,7 +155,9 @@ By default, the defaulting and validation webhooks are disabled, so `make deploy
 The Kustomize manager deployment uses the same hardened defaults as the Helm
 chart: it runs as the image's non-root user, applies the `RuntimeDefault`
 seccomp profile, disables privilege escalation, drops all Linux capabilities,
-and uses a read-only root filesystem.
+and uses a read-only root filesystem. It also runs under its own `manager`
+ServiceAccount rather than the namespace's `default`, so other pods in
+`seaweedfs-operator-system` do not share its permissions.
 
 First clone the repository:
 
